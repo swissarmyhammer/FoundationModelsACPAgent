@@ -15,41 +15,41 @@ import Testing
 /// this file compiles and the tests pass, each dependency in `Package.swift`
 /// is real and not declared prose.
 @Suite struct ImportSmokeTests {
-    /// The wire: the ACP `Agent` role protocol that `RoutedACPAgent` adopts.
-    @Test func wireLinksTheAgentProtocol() {
-        #expect(String(describing: (any Agent).self) == "Agent")
-    }
+  /// The wire: the ACP `Agent` role protocol that `RoutedACPAgent` adopts.
+  @Test func wireLinksTheAgentProtocol() {
+    #expect(String(describing: (any Agent).self) == "Agent")
+  }
 
-    /// The runtime: `Router` resolves a profile to a resident model.
-    @Test func runtimeLinksTheRouter() {
-        #expect(String(describing: Router.self) == "Router")
-    }
+  /// The runtime: `Router` resolves a profile to a resident model.
+  @Test func runtimeLinksTheRouter() {
+    #expect(String(describing: Router.self) == "Router")
+  }
 
-    /// The dotfolder stack: `DotfolderStack` is the configuration substrate.
-    @Test func extrasLinksTheDotfolderStack() {
-        #expect(String(describing: DotfolderStack.self) == "DotfolderStack")
-    }
+  /// The dotfolder stack: `DotfolderStack` is the configuration substrate.
+  @Test func extrasLinksTheDotfolderStack() {
+    #expect(String(describing: DotfolderStack.self) == "DotfolderStack")
+  }
 
-    /// The consolidated tool surface: `MultiTool.Builder` composes the
-    /// capability modules behind one `runCode` tool.
-    @Test func multitoolLinksTheBuilder() {
-        #expect(String(describing: MultiTool.Builder.self) == "Builder")
-    }
+  /// The consolidated tool surface: `MultiTool.Builder` composes the
+  /// capability modules behind one `runCode` tool.
+  @Test func multitoolLinksTheBuilder() {
+    #expect(String(describing: MultiTool.Builder.self) == "Builder")
+  }
 
-    /// The stand-alone skills package: `SkillsRegistry` is its catalog.
-    @Test func skillsLinksTheRegistry() {
-        #expect(String(describing: SkillsRegistry.self) == "SkillsRegistry")
-    }
+  /// The stand-alone skills package: `SkillsRegistry` is its catalog.
+  @Test func skillsLinksTheRegistry() {
+    #expect(String(describing: SkillsRegistry.self) == "SkillsRegistry")
+  }
 
-    /// The client driver: the test target links
-    /// `FoundationModelsACPClient`, and the library target never does. The
-    /// client depends on the wire and Extras only, so no cycle is possible.
-    @Test func testTargetLinksTheClientDriver() {
-        #expect(String(describing: ConnectionModel.self) == "ConnectionModel")
-    }
+  /// The client driver: the test target links
+  /// `FoundationModelsACPClient`, and the library target never does. The
+  /// client depends on the wire and Extras only, so no cycle is possible.
+  @Test func testTargetLinksTheClientDriver() {
+    #expect(String(describing: ConnectionModel.self) == "ConnectionModel")
+  }
 
-    /// This package: the `Agent` conformance the library target exports.
-    @Test func libraryExportsTheAgentConformance() {
-        #expect(String(describing: RoutedACPAgent.self) == "RoutedACPAgent")
-    }
+  /// This package: the `Agent` conformance the library target exports.
+  @Test func libraryExportsTheAgentConformance() {
+    #expect(String(describing: RoutedACPAgent.self) == "RoutedACPAgent")
+  }
 }

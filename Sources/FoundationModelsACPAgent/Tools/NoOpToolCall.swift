@@ -20,32 +20,32 @@ import FoundationModelsRouter
 /// real. `session/new` and `session/resume` both give ``check`` to the
 /// session, so the two paths cannot differ.
 enum NoOpToolCall {
-    /// The name of the code-mode tool of Multitool.
-    static let runCodeToolName = "runCode"
+  /// The name of the code-mode tool of Multitool.
+  static let runCodeToolName = "runCode"
 
-    /// The property of a `runCode` call that holds the snippet
-    /// (`RunCodeArguments.code`).
-    static let snippetProperty = "code"
+  /// The property of a `runCode` call that holds the snippet
+  /// (`RunCodeArguments.code`).
+  static let snippetProperty = "code"
 
-    /// The check that each session of the agent gets.
-    static let check: NoOpToolCallCheck = { toolName, arguments in
-        isNoOp(toolName: toolName, arguments: arguments)
+  /// The check that each session of the agent gets.
+  static let check: NoOpToolCallCheck = { toolName, arguments in
+    isNoOp(toolName: toolName, arguments: arguments)
+  }
+
+  /// Whether a tool call is a no-op.
+  ///
+  /// - Parameters:
+  ///   - toolName: The name of the called tool.
+  ///   - arguments: The arguments of the call.
+  /// - Returns: `true` for a `runCode` call whose snippet calls no
+  ///   `tools.*` verb. `false` for a call of each other tool, and for a
+  ///   `runCode` call with no snippet.
+  static func isNoOp(toolName: String, arguments: GeneratedContent) -> Bool {
+    guard toolName == runCodeToolName,
+      let snippet = try? arguments.value(String.self, forProperty: snippetProperty)
+    else {
+      return false
     }
-
-    /// Whether a tool call is a no-op.
-    ///
-    /// - Parameters:
-    ///   - toolName: The name of the called tool.
-    ///   - arguments: The arguments of the call.
-    /// - Returns: `true` for a `runCode` call whose snippet calls no
-    ///   `tools.*` verb. `false` for a call of each other tool, and for a
-    ///   `runCode` call with no snippet.
-    static func isNoOp(toolName: String, arguments: GeneratedContent) -> Bool {
-        guard toolName == runCodeToolName,
-            let snippet = try? arguments.value(String.self, forProperty: snippetProperty)
-        else {
-            return false
-        }
-        return MultiTool.callsNoTool(snippet: snippet)
-    }
+    return MultiTool.callsNoTool(snippet: snippet)
+  }
 }

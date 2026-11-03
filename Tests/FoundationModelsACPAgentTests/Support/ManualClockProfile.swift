@@ -22,18 +22,18 @@ import FoundationModelsExtras
 /// - Returns: The resolved profile.
 /// - Throws: Whatever resolving the profile throws.
 func makeStubProfile(
-    cacheDirectory: URL, loader: StubModelLoader, runClock: any RunClock
+  cacheDirectory: URL, loader: StubModelLoader, runClock: any RunClock
 ) async throws -> LanguageModelProfile {
-    let router = EchoModel.makeRouter(cacheDirectory: cacheDirectory, loader: loader)
-    await router.useRunClock(runClock)
-    return try await router.resolve(
-        profile: ProfileDefinition(
-            name: "stub",
-            description: "the stub profile these fixtures run on",
-            standard: ["stub/standard"],
-            flash: ["stub/flash"],
-            embedding: ["stub/embedding"]
-        ),
-        reporting: ResolutionProgress()
-    )
+  let router = EchoModel.makeRouter(cacheDirectory: cacheDirectory, loader: loader)
+  await router.useRunClock(runClock)
+  return try await router.resolve(
+    profile: ProfileDefinition(
+      name: "stub",
+      description: "the stub profile these fixtures run on",
+      standard: ["stub/standard"],
+      flash: ["stub/flash"],
+      embedding: ["stub/embedding"]
+    ),
+    reporting: ResolutionProgress()
+  )
 }

@@ -21,266 +21,267 @@ import Testing
 /// one architecture rule: the CLI reaches the agent through an ACP
 /// connection, and only the transport changes.
 struct RunCommandTests {
-    // MARK: - Constants
+  // MARK: - Constants
 
-    /// The text of the first prompt of every test here.
-    private static let promptText = "write a haiku"
+  /// The text of the first prompt of every test here.
+  private static let promptText = "write a haiku"
 
-    /// The text of the resumed prompt, which differs from
-    /// ``promptText`` so the answer names which prompt produced it.
-    private static let resumedPromptText = "write another haiku"
+  /// The text of the resumed prompt, which differs from
+  /// ``promptText`` so the answer names which prompt produced it.
+  private static let resumedPromptText = "write another haiku"
 
-    /// The text the scripted model streams as its one delta.
-    private static let scriptedAnswer = "an answer over the in-process pair"
+  /// The text the scripted model streams as its one delta.
+  private static let scriptedAnswer = "an answer over the in-process pair"
 
-    /// The deltas of a scripted answer that arrives in parts, so the
-    /// byte-for-byte proof reads more than one chunk.
-    private static let scriptedChunks = ["an answer ", "in three ", "parts"]
+  /// The deltas of a scripted answer that arrives in parts, so the
+  /// byte-for-byte proof reads more than one chunk.
+  private static let scriptedChunks = ["an answer ", "in three ", "parts"]
 
-    /// The `compaction.trigger` of the first repository. The key is
-    /// inert — it changes no model and no tool — so a resolved value
-    /// names exactly one project layer and nothing else.
-    private static let firstTrigger = 0.31
+  /// The `compaction.trigger` of the first repository. The key is
+  /// inert — it changes no model and no tool — so a resolved value
+  /// names exactly one project layer and nothing else.
+  private static let firstTrigger = 0.31
 
-    /// The `compaction.trigger` of the second repository.
-    private static let secondTrigger = 0.62
+  /// The `compaction.trigger` of the second repository.
+  private static let secondTrigger = 0.62
 
-    /// The directory that holds the CLI's source files, under the
-    /// repository root.
-    private static let commandSourceDirectory = "Sources/acp-agent"
+  /// The directory that holds the CLI's source files, under the
+  /// repository root.
+  private static let commandSourceDirectory = "Sources/acp-agent"
 
-    /// The extension of a Swift source file.
-    private static let swiftExtension = "swift"
+  /// The extension of a Swift source file.
+  private static let swiftExtension = "swift"
 
-    /// The one file of ``commandSourceDirectory`` that may name the agent
-    /// type: it is the file that composes the agent through the library.
-    private static let compositionFileName = "AgentComposition.swift"
+  /// The one file of ``commandSourceDirectory`` that may name the agent
+  /// type: it is the file that composes the agent through the library.
+  private static let compositionFileName = "AgentComposition.swift"
 
-    /// The agent type no other file of the CLI may name.
-    private static let agentTypeName = "RoutedACPAgent"
+  /// The agent type no other file of the CLI may name.
+  private static let agentTypeName = "RoutedACPAgent"
 
-    // MARK: - Fixtures
+  // MARK: - Fixtures
 
-    /// Composes over the resume-shaped model: every generating call
-    /// appends real prompt, reasoning and response transcript entries, so
-    /// the session is on disk and `session/load` can restore it.
-    ///
-    /// - Parameter label: The directory label, so a leftover directory
-    ///   says where it came from.
-    /// - Returns: The composition, over the stub model path.
-    /// - Throws: Whatever the agent construction throws.
-    private static func resumableComposition(
-        label: String
-    ) async throws -> AgentComposition.Composed {
-        var loader = StubModelLoader()
-        loader.makeLLMContainer = { _ in ResumeRecordingContainer() }
-        return try await CLICompositionFixture.make(loader: loader, label: label)
+  /// Composes over the resume-shaped model: every generating call
+  /// appends real prompt, reasoning and response transcript entries, so
+  /// the session is on disk and `session/load` can restore it.
+  ///
+  /// - Parameter label: The directory label, so a leftover directory
+  ///   says where it came from.
+  /// - Returns: The composition, over the stub model path.
+  /// - Throws: Whatever the agent construction throws.
+  private static func resumableComposition(
+    label: String
+  ) async throws -> AgentComposition.Composed {
+    var loader = StubModelLoader()
+    loader.makeLLMContainer = { _ in ResumeRecordingContainer() }
+    return try await CLICompositionFixture.make(loader: loader, label: label)
+  }
+
+  /// Parses `acp-agent run --cwd <workspace> <prompt>` over `fixture`'s
+  /// workspace, the way the shell hands the arguments over.
+  ///
+  /// - Parameter fixture: The two-layer tree the run reads.
+  /// - Returns: The parsed `run` command.
+  /// - Throws: The parse error, or when the parse selects another
+  ///   subcommand.
+  private static func parseRun(in fixture: ConfigCommandFixture) throws -> AcpAgentCommand.Run {
+    try #require(
+      try AcpAgentCommand.parseAsRoot(["run", "--cwd", fixture.workspace.path, promptText])
+        as? AcpAgentCommand.Run)
+  }
+
+  /// The id of the one session `composed`'s agent holds.
+  ///
+  /// - Parameter composed: The composition whose agent to read.
+  /// - Returns: The one session id.
+  /// - Throws: When the agent holds no session, or more than one.
+  private static func oneSessionId(of composed: AgentComposition.Composed) async throws
+    -> SessionId
+  {
+    let sessions = await composed.agent.sessions
+    #expect(sessions.count == 1)
+    return try #require(sessions.keys.first)
+  }
+
+  /// The Swift source files directly under `directory`, in name order.
+  ///
+  /// - Parameter directory: The directory to read.
+  /// - Returns: The Swift files.
+  /// - Throws: The directory-read error.
+  private static func swiftFiles(under directory: URL) throws -> [URL] {
+    try FileManager.default
+      .contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+      .filter { $0.pathExtension == swiftExtension }
+      .sorted { $0.lastPathComponent < $1.lastPathComponent }
+  }
+
+  // MARK: - One prompt over the in-process pair (cli-plan.md §4)
+
+  /// One prompt over `InMemoryTransport.pair()` gives the text the model
+  /// produced, and ends on `end_turn`. No subprocess and no pipe: one
+  /// process holds the agent connection and the client connection.
+  @Test
+  func aPromptOverTheInProcessPairGivesTheScriptedAnswer() async throws {
+    let workspace = makeResolvedDirectory(label: "RunCommandTests-prompt-repo")
+    let composed = try await CLICompositionFixture.scripted(
+      script: [.textDelta(Self.scriptedAnswer), .endPass], label: "RunCommandTests-prompt")
+    let capture = try AnswerCapture(label: "RunCommandTests-prompt-answer")
+
+    let result = try await RunPrompt.answer(
+      of: composed,
+      in: .new(workingDirectory: workspace),
+      prompt: Self.promptText,
+      into: capture.writer)
+
+    #expect(try capture.text() == Self.scriptedAnswer)
+    #expect(result.stopReason == .endTurn)
+  }
+
+  /// The bytes on the descriptor equal the scripted chunks joined,
+  /// with nothing added and nothing removed (cli-plan.md §5.6). The
+  /// model streams three deltas, so the proof reads a whole answer and
+  /// not one chunk. This is what `acp-agent run "hi" > out.txt` puts
+  /// in the file.
+  @Test
+  func thePromptWritesTheScriptedChunksByteForByte() async throws {
+    let workspace = makeResolvedDirectory(label: "RunCommandTests-bytes-repo")
+    let composed = try await CLICompositionFixture.scripted(
+      script: Self.scriptedChunks.map { .textDelta($0) } + [.endPass],
+      label: "RunCommandTests-bytes")
+    let capture = try AnswerCapture(label: "RunCommandTests-bytes-answer")
+
+    _ = try await RunPrompt.answer(
+      of: composed,
+      in: .new(workingDirectory: workspace),
+      prompt: Self.promptText,
+      into: capture.writer)
+
+    #expect(try capture.bytes() == Data(Self.scriptedChunks.joined().utf8))
+  }
+
+  /// The run closes its connection with no `session/close`, so the agent
+  /// closes the session of the prompt itself. The run
+  /// returns only after that close, so the process does not exit before
+  /// the agent wrote the history and stopped the MCP servers.
+  @Test
+  func theRunReturnsAfterTheAgentClosedTheSessionOfThePrompt() async throws {
+    let workspace = makeResolvedDirectory(label: "RunCommandTests-teardown-repo")
+    let composed = try await CLICompositionFixture.scripted(
+      script: [.textDelta(Self.scriptedAnswer), .endPass], label: "RunCommandTests-teardown")
+    let capture = try AnswerCapture(label: "RunCommandTests-teardown-answer")
+
+    _ = try await RunPrompt.answer(
+      of: composed,
+      in: .new(workingDirectory: workspace),
+      prompt: Self.promptText,
+      into: capture.writer)
+
+    let sessionId = try await Self.oneSessionId(of: composed)
+    #expect(await composed.agent.sessions[sessionId]?.isClosed == true)
+  }
+
+  /// `acp-agent run "<prompt>"` runs the whole prompt and writes the
+  /// answer to the descriptor. The stub model answers with the prompt
+  /// it received, so the bytes carry the prompt.
+  @Test
+  func theRunWritesTheAnswerToTheDescriptor() async throws {
+    let fixture = ConfigCommandFixture(label: "RunCommandTests-report")
+    let capture = try AnswerCapture(label: "RunCommandTests-report-answer")
+
+    _ = try await Self.parseRun(in: fixture)
+      .perform(environment: fixture.makeStubEnvironment(), into: capture.writer)
+
+    #expect(try capture.text().contains(Self.promptText))
+  }
+
+  // MARK: - `--resume` through `session/load` (cli-plan.md §5.4)
+
+  /// `--resume` continues the recorded session: the second prompt runs in
+  /// the id the first prompt opened, and the run sends no working
+  /// directory of its own — it reads the stored one, because the stored
+  /// session already has one and it wins.
+  @Test
+  func resumeRunsTheSecondPromptInTheRecordedSession() async throws {
+    let workspace = makeResolvedDirectory(label: "RunCommandTests-resume-repo")
+    let composed = try await Self.resumableComposition(label: "RunCommandTests-resume")
+    let first = try AnswerCapture(label: "RunCommandTests-resume-first")
+    _ = try await RunPrompt.answer(
+      of: composed,
+      in: .new(workingDirectory: workspace),
+      prompt: Self.promptText,
+      into: first.writer)
+    let opened = try await Self.oneSessionId(of: composed)
+    let capture = try AnswerCapture(label: "RunCommandTests-resume-second")
+
+    let result = try await RunPrompt.answer(
+      of: composed,
+      in: .resumed(opened),
+      prompt: Self.resumedPromptText,
+      into: capture.writer)
+
+    #expect(try await Self.oneSessionId(of: composed) == opened)
+    #expect(try capture.text().contains(Self.resumedPromptText))
+    #expect(result.stopReason == .endTurn)
+  }
+
+  /// A `--resume` of an id no listed session carries is refused by
+  /// name, and never degrades into a fresh session.
+  @Test
+  func resumeOfAnUnlistedSessionIsRefused() async throws {
+    let composed = try await CLICompositionFixture.scripted(
+      script: [.textDelta(Self.scriptedAnswer), .endPass],
+      label: "RunCommandTests-unlisted")
+    let unlisted = SessionId(rawValue: ULID().ulidString)
+    let capture = try AnswerCapture(label: "RunCommandTests-unlisted-answer")
+
+    await #expect(throws: UnknownResumedSessionError.self) {
+      _ = try await RunPrompt.answer(
+        of: composed,
+        in: .resumed(unlisted),
+        prompt: Self.promptText,
+        into: capture.writer)
     }
+  }
 
-    /// Parses `acp-agent run --cwd <workspace> <prompt>` over `fixture`'s
-    /// workspace, the way the shell hands the arguments over.
-    ///
-    /// - Parameter fixture: The two-layer tree the run reads.
-    /// - Returns: The parsed `run` command.
-    /// - Throws: The parse error, or when the parse selects another
-    ///   subcommand.
-    private static func parseRun(in fixture: ConfigCommandFixture) throws -> AcpAgentCommand.Run {
-        try #require(
-            try AcpAgentCommand.parseAsRoot(["run", "--cwd", fixture.workspace.path, promptText])
-                as? AcpAgentCommand.Run)
-    }
+  // MARK: - `--cwd` selects the stack (cli-plan.md §5.4, §5.10)
 
-    /// The id of the one session `composed`'s agent holds.
-    ///
-    /// - Parameter composed: The composition whose agent to read.
-    /// - Returns: The one session id.
-    /// - Throws: When the agent holds no session, or more than one.
-    private static func oneSessionId(of composed: AgentComposition.Composed) async throws
-        -> SessionId
-    {
-        let sessions = await composed.agent.sessions
-        #expect(sessions.count == 1)
-        return try #require(sessions.keys.first)
-    }
+  /// `--cwd` selects WHICH dotfolder stack the start-up load reads: two
+  /// directories with two `config.yaml` files give two resolved
+  /// configurations, from one binary and one process.
+  @Test
+  func cwdSelectsTheConfigurationTheRunLoads() async throws {
+    let first = ConfigCommandFixture(label: "RunCommandTests-first")
+    let second = ConfigCommandFixture(label: "RunCommandTests-second")
+    try first.writeProjectCompactionTrigger(Self.firstTrigger)
+    try second.writeProjectCompactionTrigger(Self.secondTrigger)
 
-    /// The Swift source files directly under `directory`, in name order.
-    ///
-    /// - Parameter directory: The directory to read.
-    /// - Returns: The Swift files.
-    /// - Throws: The directory-read error.
-    private static func swiftFiles(under directory: URL) throws -> [URL] {
-        try FileManager.default
-            .contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
-            .filter { $0.pathExtension == swiftExtension }
-            .sorted { $0.lastPathComponent < $1.lastPathComponent }
-    }
+    let firstComposed = try await Self.parseRun(in: first)
+      .compose(environment: first.makeStubEnvironment())
+    let secondComposed = try await Self.parseRun(in: second)
+      .compose(environment: second.makeStubEnvironment())
 
-    // MARK: - One prompt over the in-process pair (cli-plan.md §4)
+    #expect(firstComposed.configuration.compaction.trigger == Self.firstTrigger)
+    #expect(secondComposed.configuration.compaction.trigger == Self.secondTrigger)
+  }
 
-    /// One prompt over `InMemoryTransport.pair()` gives the text the model
-    /// produced, and ends on `end_turn`. No subprocess and no pipe: one
-    /// process holds the agent connection and the client connection.
-    @Test
-    func aPromptOverTheInProcessPairGivesTheScriptedAnswer() async throws {
-        let workspace = makeResolvedDirectory(label: "RunCommandTests-prompt-repo")
-        let composed = try await CLICompositionFixture.scripted(
-            script: [.textDelta(Self.scriptedAnswer), .endPass], label: "RunCommandTests-prompt")
-        let capture = try AnswerCapture(label: "RunCommandTests-prompt-answer")
+  // MARK: - The one architecture rule (cli-plan.md §4)
 
-        let result = try await RunPrompt.answer(
-            of: composed,
-            in: .new(workingDirectory: workspace),
-            prompt: Self.promptText,
-            into: capture.writer)
+  /// The composition is the only file of the CLI that names the agent
+  /// type. Every other file reaches the agent through an ACP
+  /// connection, and only the transport changes between the modes. A
+  /// direct call would make the later socket mode a rewrite, and would
+  /// stop the CLI proving the protocol.
+  @Test func onlyTheCompositionNamesTheAgentType() throws {
+    let directory = try PackageRoot.directory()
+      .appendingPathComponent(Self.commandSourceDirectory, isDirectory: true)
+    let sources = try Self.swiftFiles(under: directory)
+    #expect(!sources.isEmpty)
 
-        #expect(try capture.text() == Self.scriptedAnswer)
-        #expect(result.stopReason == .endTurn)
-    }
+    let naming =
+      try sources
+      .filter { try String(contentsOf: $0, encoding: .utf8).contains(Self.agentTypeName) }
+      .map(\.lastPathComponent)
 
-    /// The bytes on the descriptor equal the scripted chunks joined,
-    /// with nothing added and nothing removed (cli-plan.md §5.6). The
-    /// model streams three deltas, so the proof reads a whole answer and
-    /// not one chunk. This is what `acp-agent run "hi" > out.txt` puts
-    /// in the file.
-    @Test
-    func thePromptWritesTheScriptedChunksByteForByte() async throws {
-        let workspace = makeResolvedDirectory(label: "RunCommandTests-bytes-repo")
-        let composed = try await CLICompositionFixture.scripted(
-            script: Self.scriptedChunks.map { .textDelta($0) } + [.endPass],
-            label: "RunCommandTests-bytes")
-        let capture = try AnswerCapture(label: "RunCommandTests-bytes-answer")
-
-        _ = try await RunPrompt.answer(
-            of: composed,
-            in: .new(workingDirectory: workspace),
-            prompt: Self.promptText,
-            into: capture.writer)
-
-        #expect(try capture.bytes() == Data(Self.scriptedChunks.joined().utf8))
-    }
-
-    /// The run closes its connection with no `session/close`, so the agent
-    /// closes the session of the prompt itself. The run
-    /// returns only after that close, so the process does not exit before
-    /// the agent wrote the history and stopped the MCP servers.
-    @Test
-    func theRunReturnsAfterTheAgentClosedTheSessionOfThePrompt() async throws {
-        let workspace = makeResolvedDirectory(label: "RunCommandTests-teardown-repo")
-        let composed = try await CLICompositionFixture.scripted(
-            script: [.textDelta(Self.scriptedAnswer), .endPass], label: "RunCommandTests-teardown")
-        let capture = try AnswerCapture(label: "RunCommandTests-teardown-answer")
-
-        _ = try await RunPrompt.answer(
-            of: composed,
-            in: .new(workingDirectory: workspace),
-            prompt: Self.promptText,
-            into: capture.writer)
-
-        let sessionId = try await Self.oneSessionId(of: composed)
-        #expect(await composed.agent.sessions[sessionId]?.isClosed == true)
-    }
-
-    /// `acp-agent run "<prompt>"` runs the whole prompt and writes the
-    /// answer to the descriptor. The stub model answers with the prompt
-    /// it received, so the bytes carry the prompt.
-    @Test
-    func theRunWritesTheAnswerToTheDescriptor() async throws {
-        let fixture = ConfigCommandFixture(label: "RunCommandTests-report")
-        let capture = try AnswerCapture(label: "RunCommandTests-report-answer")
-
-        _ = try await Self.parseRun(in: fixture)
-            .perform(environment: fixture.makeStubEnvironment(), into: capture.writer)
-
-        #expect(try capture.text().contains(Self.promptText))
-    }
-
-    // MARK: - `--resume` through `session/load` (cli-plan.md §5.4)
-
-    /// `--resume` continues the recorded session: the second prompt runs in
-    /// the id the first prompt opened, and the run sends no working
-    /// directory of its own — it reads the stored one, because the stored
-    /// session already has one and it wins.
-    @Test
-    func resumeRunsTheSecondPromptInTheRecordedSession() async throws {
-        let workspace = makeResolvedDirectory(label: "RunCommandTests-resume-repo")
-        let composed = try await Self.resumableComposition(label: "RunCommandTests-resume")
-        let first = try AnswerCapture(label: "RunCommandTests-resume-first")
-        _ = try await RunPrompt.answer(
-            of: composed,
-            in: .new(workingDirectory: workspace),
-            prompt: Self.promptText,
-            into: first.writer)
-        let opened = try await Self.oneSessionId(of: composed)
-        let capture = try AnswerCapture(label: "RunCommandTests-resume-second")
-
-        let result = try await RunPrompt.answer(
-            of: composed,
-            in: .resumed(opened),
-            prompt: Self.resumedPromptText,
-            into: capture.writer)
-
-        #expect(try await Self.oneSessionId(of: composed) == opened)
-        #expect(try capture.text().contains(Self.resumedPromptText))
-        #expect(result.stopReason == .endTurn)
-    }
-
-    /// A `--resume` of an id no listed session carries is refused by
-    /// name, and never degrades into a fresh session.
-    @Test
-    func resumeOfAnUnlistedSessionIsRefused() async throws {
-        let composed = try await CLICompositionFixture.scripted(
-            script: [.textDelta(Self.scriptedAnswer), .endPass],
-            label: "RunCommandTests-unlisted")
-        let unlisted = SessionId(rawValue: ULID().ulidString)
-        let capture = try AnswerCapture(label: "RunCommandTests-unlisted-answer")
-
-        await #expect(throws: UnknownResumedSessionError.self) {
-            _ = try await RunPrompt.answer(
-                of: composed,
-                in: .resumed(unlisted),
-                prompt: Self.promptText,
-                into: capture.writer)
-        }
-    }
-
-    // MARK: - `--cwd` selects the stack (cli-plan.md §5.4, §5.10)
-
-    /// `--cwd` selects WHICH dotfolder stack the start-up load reads: two
-    /// directories with two `config.yaml` files give two resolved
-    /// configurations, from one binary and one process.
-    @Test
-    func cwdSelectsTheConfigurationTheRunLoads() async throws {
-        let first = ConfigCommandFixture(label: "RunCommandTests-first")
-        let second = ConfigCommandFixture(label: "RunCommandTests-second")
-        try first.writeProjectCompactionTrigger(Self.firstTrigger)
-        try second.writeProjectCompactionTrigger(Self.secondTrigger)
-
-        let firstComposed = try await Self.parseRun(in: first)
-            .compose(environment: first.makeStubEnvironment())
-        let secondComposed = try await Self.parseRun(in: second)
-            .compose(environment: second.makeStubEnvironment())
-
-        #expect(firstComposed.configuration.compaction.trigger == Self.firstTrigger)
-        #expect(secondComposed.configuration.compaction.trigger == Self.secondTrigger)
-    }
-
-    // MARK: - The one architecture rule (cli-plan.md §4)
-
-    /// The composition is the only file of the CLI that names the agent
-    /// type. Every other file reaches the agent through an ACP
-    /// connection, and only the transport changes between the modes. A
-    /// direct call would make the later socket mode a rewrite, and would
-    /// stop the CLI proving the protocol.
-    @Test func onlyTheCompositionNamesTheAgentType() throws {
-        let directory = try PackageRoot.directory()
-            .appendingPathComponent(Self.commandSourceDirectory, isDirectory: true)
-        let sources = try Self.swiftFiles(under: directory)
-        #expect(!sources.isEmpty)
-
-        let naming = try sources
-            .filter { try String(contentsOf: $0, encoding: .utf8).contains(Self.agentTypeName) }
-            .map(\.lastPathComponent)
-
-        #expect(naming == [Self.compositionFileName])
-    }
+    #expect(naming == [Self.compositionFileName])
+  }
 }

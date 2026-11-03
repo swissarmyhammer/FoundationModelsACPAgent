@@ -21,8 +21,9 @@ import FoundationModelsRouterTestSupport
 /// - Parameter script: The steps every session plays.
 /// - Returns: The loader to inject.
 func makeHookLayeredModelLoader(script: [ScriptedPassStep]) -> StubModelLoader {
-    var loader = makeScriptedModelLoader(script: script)
-    let makeScriptedContainer = loader.makeLLMContainer
-    loader.makeLLMContainer = { slot in HookLayeredLLMContainer(wrapping: makeScriptedContainer(slot)) }
-    return loader
+  var loader = makeScriptedModelLoader(script: script)
+  let makeScriptedContainer = loader.makeLLMContainer
+  loader.makeLLMContainer = { slot in HookLayeredLLMContainer(wrapping: makeScriptedContainer(slot))
+  }
+  return loader
 }

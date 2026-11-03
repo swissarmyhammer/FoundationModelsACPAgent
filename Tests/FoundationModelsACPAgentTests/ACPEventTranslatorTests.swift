@@ -15,912 +15,921 @@ import Testing
 /// settlement's terminal reference, the compaction meter, and the diff
 /// path directions.
 @Suite struct ACPEventTranslatorTests {
-    // MARK: - Constants
+  // MARK: - Constants
 
-    /// The SDK tool-call id the scripted tool events carry. It is
-    /// Apple's `Transcript.ToolCall.id`, passed through unchanged.
-    private static let sdkToolCallId = "call-1"
+  /// The SDK tool-call id the scripted tool events carry. It is
+  /// Apple's `Transcript.ToolCall.id`, passed through unchanged.
+  private static let sdkToolCallId = "call-1"
 
-    /// The tool name of the scripted tool call; the creation's title.
-    private static let scriptedToolName = "read_file"
+  /// The tool name of the scripted tool call; the creation's title.
+  private static let scriptedToolName = "read_file"
 
-    /// The arguments JSON of the scripted tool call.
-    private static let scriptedArgumentsJSON = #"{"path":"notes.txt"}"#
+  /// The arguments JSON of the scripted tool call.
+  private static let scriptedArgumentsJSON = #"{"path":"notes.txt"}"#
 
-    /// The completion token of the scripted operation run. It is the
-    /// run's `correlationID`, its `commandID`, and its `toolCallId`.
-    private static let completionToken = "01SCRIPTEDRUNTOKEN00000000"
+  /// The completion token of the scripted operation run. It is the
+  /// run's `correlationID`, its `commandID`, and its `toolCallId`.
+  private static let completionToken = "01SCRIPTEDRUNTOKEN00000000"
 
-    /// The tool name the scripted attachment report carries.
-    private static let reportedToolName = "files"
+  /// The tool name the scripted attachment report carries.
+  private static let reportedToolName = "files"
 
-    /// The operation name the scripted attachment report carries; the
-    /// update's title.
-    private static let reportedOpName = "edit file"
+  /// The operation name the scripted attachment report carries; the
+  /// update's title.
+  private static let reportedOpName = "edit file"
 
-    /// The schema name of the scripted file-change attachment.
-    private static let fileChangeSchemaName = "file-change"
+  /// The schema name of the scripted file-change attachment.
+  private static let fileChangeSchemaName = "file-change"
 
-    /// The document of the scripted file-change attachment.
-    private static let fileChangeJSON = #"{"kind":"modify","path":"/tmp/notes.txt"}"#
+  /// The document of the scripted file-change attachment.
+  private static let fileChangeJSON = #"{"kind":"modify","path":"/tmp/notes.txt"}"#
 
-    /// The schema name of the scripted note attachment.
-    private static let noteSchemaName = "note"
+  /// The schema name of the scripted note attachment.
+  private static let noteSchemaName = "note"
 
-    /// The document of the scripted note attachment.
-    private static let noteJSON = #"{"note":"the run changed two files"}"#
+  /// The document of the scripted note attachment.
+  private static let noteJSON = #"{"note":"the run changed two files"}"#
 
-    /// The session root of the scripted change set.
-    private static let changeSetRoot = URL(fileURLWithPath: "/tmp/tier", isDirectory: true)
+  /// The session root of the scripted change set.
+  private static let changeSetRoot = URL(fileURLWithPath: "/tmp/tier", isDirectory: true)
 
-    /// The absolute path of the file the scripted change set rewrote.
-    private static let modifiedPath = "/tmp/tier/notes.txt"
+  /// The absolute path of the file the scripted change set rewrote.
+  private static let modifiedPath = "/tmp/tier/notes.txt"
 
-    /// The absolute path of the file the scripted change set created.
-    private static let addedPath = "/tmp/tier/added.txt"
+  /// The absolute path of the file the scripted change set created.
+  private static let addedPath = "/tmp/tier/added.txt"
 
-    /// The absolute destination path of the scripted rename.
-    private static let renamedPath = "/tmp/tier/renamed.txt"
+  /// The absolute destination path of the scripted rename.
+  private static let renamedPath = "/tmp/tier/renamed.txt"
 
-    /// The estimated transcript size before the scripted fold.
-    private static let tokensBeforeFold = 900
+  /// The estimated transcript size before the scripted fold.
+  private static let tokensBeforeFold = 900
 
-    /// The estimated transcript size after the scripted fold.
-    private static let tokensAfterFold = 300
+  /// The estimated transcript size after the scripted fold.
+  private static let tokensAfterFold = 300
 
-    /// The number of notifications the raw wire test waits for: two
-    /// tool-call updates and the idle terminator.
-    private static let rawWireNotificationCount = 3
+  /// The number of notifications the raw wire test waits for: two
+  /// tool-call updates and the idle terminator.
+  private static let rawWireNotificationCount = 3
 
-    // MARK: - Fixtures
+  // MARK: - Fixtures
 
-    /// Makes an operation event of the scripted run.
-    ///
-    /// - Parameters:
-    ///   - outcome: How the run ended, or `nil`.
-    ///   - kind: The event category; terminal by default.
-    /// - Returns: The event.
-    private static func makeOperationEvent(
-        outcome: OperationOutcome?, kind: OperationEventKind = .completed
-    ) -> OperationEvent {
-        OperationEvent(
-            tool: "shell",
-            op: "execute command",
-            correlationID: completionToken,
-            kind: kind,
-            detail: "{}",
-            outcome: outcome)
+  /// Makes an operation event of the scripted run.
+  ///
+  /// - Parameters:
+  ///   - outcome: How the run ended, or `nil`.
+  ///   - kind: The event category; terminal by default.
+  /// - Returns: The event.
+  private static func makeOperationEvent(
+    outcome: OperationOutcome?, kind: OperationEventKind = .completed
+  ) -> OperationEvent {
+    OperationEvent(
+      tool: "shell",
+      op: "execute command",
+      correlationID: completionToken,
+      kind: kind,
+      detail: "{}",
+      outcome: outcome)
+  }
+
+  /// Makes the stored raw output of one stream from `text`.
+  ///
+  /// - Parameters:
+  ///   - text: The stored text of the stream.
+  ///   - truncated: Tells if the store dropped output; false by
+  ///     default.
+  ///   - binaryDetected: Tells if the capture saw binary content;
+  ///     false by default.
+  /// - Returns: The raw output.
+  private static func makeRawOutput(
+    text: String, truncated: Bool = false, binaryDetected: Bool = false
+  ) -> ShellRawOutput {
+    let bytes = Array(text.utf8)
+    return ShellRawOutput(
+      bytes: bytes, binaryDetected: binaryDetected, truncated: truncated,
+      storedByteCount: bytes.count)
+  }
+
+  /// Makes an attachment report of the scripted run.
+  ///
+  /// - Parameter attachments: The records the report carries.
+  /// - Returns: The report.
+  private static func makeToolCallReport(
+    attachments: [ToolCallAttachment]
+  ) -> ToolCallReport {
+    ToolCallReport(
+      tool: reportedToolName,
+      op: reportedOpName,
+      correlationID: completionToken,
+      sessionID: ULID.generate(),
+      attachments: attachments)
+  }
+
+  /// Makes the `fileChanges` attachment of a change set — the
+  /// envelope a mutating files verb attaches at journal commit.
+  ///
+  /// - Parameter changes: The recorded changes.
+  /// - Returns: The attachment.
+  private static func makeFileChangeSetAttachment(
+    changes: [FileChange]
+  ) -> ToolCallAttachment {
+    ToolCallAttachment(
+      schemaName: FileChangeSet.operationEventDetailKey,
+      contentJSON: FileChangeSet(root: changeSetRoot, changes: changes)
+        .encodedOperationEventDetail())
+  }
+
+  /// Makes the result of the scripted fold, which shrinks the transcript
+  /// from `tokensBeforeFold` to `tokensAfterFold`.
+  ///
+  /// - Returns: The compaction result.
+  private static func makeFoldResult() -> CompactionResult {
+    CompactionResult(
+      summary: nil,
+      tokensBefore: tokensBeforeFold,
+      tokensAfter: tokensAfterFold,
+      stagesApplied: ["fold"])
+  }
+
+  // MARK: - Readers
+
+  /// The message ids of the agent message chunks in the sequence.
+  private static func chunkMessageIds(in updates: [SessionUpdate]) -> [MessageId] {
+    updates.compactMap { update in
+      if case .agentMessageChunk(let chunk) = update { return chunk.messageId }
+      return nil
+    }
+  }
+
+  /// The paths of a filled `locations` patch, or `nil` when the patch
+  /// leaves the field unchanged.
+  ///
+  /// - Parameter locations: The patch the update carries.
+  /// - Returns: The location paths, or `nil`.
+  private static func locationPaths(
+    of locations: PatchField<[ToolCallLocation]>
+  ) -> [String]? {
+    guard case .value(let value) = locations else { return nil }
+    return value.map(\.path.rawValue)
+  }
+
+  /// The elements of a JSON array value, or `nil` for another shape.
+  ///
+  /// - Parameter value: The value to read.
+  /// - Returns: The elements, or `nil`.
+  private static func arrayValues(
+    _ value: FoundationModelsACP.JSONValue?
+  ) -> [FoundationModelsACP.JSONValue]? {
+    guard case .array(let values) = value ?? .null else { return nil }
+    return values
+  }
+
+  /// The two endpoints of a move change, or `nil` for another
+  /// operation.
+  ///
+  /// - Parameter change: The wire change to read.
+  /// - Returns: The endpoint pair, or `nil`.
+  private static func movePair(of change: DiffChange) -> DiffPathPairChange? {
+    guard case .move(let pair) = change.operation else { return nil }
+    return pair
+  }
+
+  /// The two endpoints of a copy change, or `nil` for another
+  /// operation.
+  ///
+  /// - Parameter change: The wire change to read.
+  /// - Returns: The endpoint pair, or `nil`.
+  private static func copyPair(of change: DiffChange) -> DiffPathPairChange? {
+    guard case .copy(let pair) = change.operation else { return nil }
+    return pair
+  }
+
+  /// The one path of an add change, or `nil` for another operation.
+  ///
+  /// - Parameter change: The wire change to read.
+  /// - Returns: The path change, or `nil`.
+  private static func addPath(of change: DiffChange) -> DiffPathChange? {
+    guard case .add(let added) = change.operation else { return nil }
+    return added
+  }
+
+  /// The one path of a delete change, or `nil` for another
+  /// operation.
+  ///
+  /// - Parameter change: The wire change to read.
+  /// - Returns: The path change, or `nil`.
+  private static func deletePath(of change: DiffChange) -> DiffPathChange? {
+    guard case .delete(let deleted) = change.operation else { return nil }
+    return deleted
+  }
+
+  /// The one path of a modify change, or `nil` for another
+  /// operation.
+  ///
+  /// - Parameter change: The wire change to read.
+  /// - Returns: The path change, or `nil`.
+  private static func modifyPath(of change: DiffChange) -> DiffPathChange? {
+    guard case .modify(let modified) = change.operation else { return nil }
+    return modified
+  }
+
+  // MARK: - The terminal status function
+
+  /// The `OperationOutcome` to `ToolCallStatus` function is total and
+  /// follows the outcome table: `succeeded` gives `completed`, `failed`
+  /// and `timedOut` give `failed`, `stopped` and `cancelled` give
+  /// `cancelled`. `lost` maps to `_lost` and never to `failed`.
+  @Test func theOutcomeStatusFunctionMapsEveryCasePerTheTable() {
+    #expect(ACPEventTranslator.wireStatus(for: .succeeded) == .completed)
+    #expect(ACPEventTranslator.wireStatus(for: OperationOutcome.failed) == .failed)
+    #expect(ACPEventTranslator.wireStatus(for: .timedOut) == .failed)
+    #expect(ACPEventTranslator.wireStatus(for: .stopped) == .cancelled)
+    #expect(ACPEventTranslator.wireStatus(for: .cancelled) == .cancelled)
+    #expect(
+      ACPEventTranslator.wireStatus(for: .lost)
+        == .unknown(ACPEventTranslator.lostStatusWireValue))
+    #expect(ACPEventTranslator.wireStatus(for: .lost) != .failed)
+  }
+
+  /// An `other(raw)` outcome passes its raw value through under the
+  /// `_` extension rule of ACP: an unprefixed value gains the prefix,
+  /// and a prefixed value stays as it is.
+  @Test func anOtherOutcomePassesThroughUnderTheUnderscoreRule() {
+    #expect(ACPEventTranslator.wireStatus(for: .other("paused")) == .unknown("_paused"))
+    #expect(ACPEventTranslator.wireStatus(for: .other("_held")) == .unknown("_held"))
+  }
+
+  // MARK: - The tool-call upsert
+
+  /// A scripted tool pass creates the call with a title, an
+  /// `in_progress` status and the parsed raw input, keeps the one
+  /// `toolCallId` across the updates, and completes it.
+  @Test func aScriptedToolPromptCreatesWithTitleThenRunsThenCompletes() async throws {
+    let updates = await SyntheticPrompt.sentUpdates([
+      .toolCall(
+        id: Self.sdkToolCallId, name: Self.scriptedToolName,
+        argumentsJSON: Self.scriptedArgumentsJSON),
+      .toolStatus(id: Self.sdkToolCallId, status: .running, summary: nil, output: nil),
+      .toolStatus(
+        id: Self.sdkToolCallId, status: .completed, summary: "done",
+        output: [.text(id: "segment-1", content: "file text")]),
+    ])
+    let calls = toolCallUpdates(in: updates)
+
+    #expect(
+      calls.map(\.toolCallId.rawValue) == Array(repeating: Self.sdkToolCallId, count: calls.count))
+    let creation = try #require(
+      calls.first, "expected three tool_call_update sends, got \(calls)")
+    let running = try #require(
+      calls.dropFirst().first,
+      "expected three tool_call_update sends, got \(calls)")
+    let completion = try #require(
+      calls.dropFirst(2).first,
+      "expected three tool_call_update sends, got \(calls)")
+    #expect(creation.title == .value(Self.scriptedToolName))
+    #expect(creation.status == .value(.inProgress))
+    #expect(creation.rawInput == .value(.object(["path": .string("notes.txt")])))
+    #expect(running.status == .value(.inProgress))
+    #expect(completion.status == .value(.completed))
+    #expect(texts(in: completion.content) == ["done", "file text"])
+  }
+
+  /// The creating update of an SDK tool call names the tool for a program
+  /// (ACP schema-v2.0.0-alpha.7 `ToolCallUpdate.name`), beside the title
+  /// for a person. The later updates leave the name unchanged.
+  @Test func theCreatingToolCallUpdateNamesTheTool() async throws {
+    let updates = await SyntheticPrompt.sentUpdates([
+      .toolCall(
+        id: Self.sdkToolCallId, name: Self.scriptedToolName,
+        argumentsJSON: Self.scriptedArgumentsJSON),
+      .toolStatus(id: Self.sdkToolCallId, status: .completed, summary: "done", output: nil),
+    ])
+    let calls = toolCallUpdates(in: updates)
+
+    #expect(calls.map(\.name) == [.value(Self.scriptedToolName), .unchanged])
+  }
+
+  /// A run settlement can create the wire call of a run, so it names the
+  /// tool that posted the run.
+  @Test func aRunSettlementNamesTheToolOfTheRun() async throws {
+    let event = Self.makeOperationEvent(outcome: .succeeded)
+    let updates = await SyntheticPrompt.sentUpdates([.runSettled(event)])
+    let call = try #require(toolCallUpdates(in: updates).first)
+
+    #expect(call.name == .value(event.tool))
+  }
+
+  /// An attachment report can create the wire call of a run, so it names
+  /// the tool of the call.
+  @Test func aToolCallReportNamesTheToolOfTheCall() async throws {
+    let report = Self.makeToolCallReport(attachments: [
+      ToolCallAttachment(schemaName: Self.noteSchemaName, contentJSON: Self.noteJSON)
+    ])
+    let updates = await SyntheticPrompt.sentUpdates([.toolCallReport(report)])
+    let call = try #require(toolCallUpdates(in: updates).first)
+
+    #expect(call.name == .value(Self.reportedToolName))
+  }
+
+  /// A failed tool status reports `failed`.
+  @Test func aFailedToolStatusReportsFailed() async throws {
+    let updates = await SyntheticPrompt.sentUpdates([
+      .toolStatus(id: Self.sdkToolCallId, status: .failed, summary: nil, output: nil)
+    ])
+    let call = try #require(toolCallUpdates(in: updates).first)
+    #expect(call.status == .value(.failed))
+  }
+
+  // MARK: - The settlement
+
+  /// A `.lost` outcome settles as `_lost` — never as `failed` — and
+  /// its text says the run's fate is unknown.
+  @Test func aLostRunSettlesAsUnderscoreLostAndNeverFailed() async throws {
+    let updates = await SyntheticPrompt.sentUpdates([
+      .runSettled(Self.makeOperationEvent(outcome: .lost))
+    ])
+    let call = try #require(toolCallUpdates(in: updates).first)
+
+    #expect(call.toolCallId.rawValue == Self.completionToken)
+    #expect(call.status == .value(.unknown(ACPEventTranslator.lostStatusWireValue)))
+    #expect(call.status != .value(.failed))
+    #expect(texts(in: call.content).contains { $0.contains("do not know") })
+  }
+
+  /// A `.timedOut` outcome settles as `failed` and names the timeout
+  /// in the text.
+  @Test func aTimedOutRunSettlesAsFailedAndNamesTheTimeout() async throws {
+    let updates = await SyntheticPrompt.sentUpdates([
+      .runSettled(Self.makeOperationEvent(outcome: .timedOut))
+    ])
+    let call = try #require(toolCallUpdates(in: updates).first)
+
+    #expect(call.status == .value(.failed))
+    #expect(texts(in: call.content).contains { $0.contains("timed out") })
+  }
+
+  /// A `.cancelled` outcome settles as `cancelled` and says "we
+  /// stopped listening": a still-running detached call cannot
+  /// be forced to stop past a process boundary, so the honest claim
+  /// is that we stopped listening, not that the work stopped.
+  @Test func aCancelledRunSettlesAsCancelledAndSaysWeStoppedListening() async throws {
+    let updates = await SyntheticPrompt.sentUpdates([
+      .runSettled(Self.makeOperationEvent(outcome: .cancelled))
+    ])
+    let call = try #require(toolCallUpdates(in: updates).first)
+
+    #expect(call.status == .value(.cancelled))
+    #expect(texts(in: call.content).contains { $0.contains("we stopped listening") })
+  }
+
+  /// A `.completed` event that arrives with a nil outcome — the rule
+  /// is a doc comment, not a type guarantee — settles as unknown and
+  /// does not crash the projection.
+  @Test func aCompletedEventWithNilOutcomeSettlesAsUnknown() async throws {
+    let updates = await SyntheticPrompt.sentUpdates([
+      .runSettled(Self.makeOperationEvent(outcome: nil))
+    ])
+    let call = try #require(toolCallUpdates(in: updates).first)
+
+    #expect(
+      call.status
+        == .value(.unknown(ACPEventTranslator.unknownOutcomeStatusWireValue)))
+  }
+
+  /// An outcome on a non-terminal event is ignored: a `.progress`
+  /// event that carries one settles nothing.
+  @Test func anOutcomeOnAProgressEventIsIgnored() async throws {
+    let updates = await SyntheticPrompt.sentUpdates([
+      .runSettled(Self.makeOperationEvent(outcome: .succeeded, kind: .progress))
+    ])
+    #expect(toolCallUpdates(in: updates).isEmpty)
+  }
+
+  /// The settlement update replaces the call's content with the run's
+  /// `Terminal` reference, keyed by the run's `commandID`, so the
+  /// bytes stay on the terminal stream and never come back as coerced
+  /// text.
+  @Test func aSettledRunReplacesContentWithTheTerminalReference() async throws {
+    let snapshot = ShellOutputSnapshot(
+      stdout: Self.makeRawOutput(text: "hello"),
+      stderr: Self.makeRawOutput(text: "oops"))
+    let updates = await SyntheticPrompt.sentUpdates(
+      [.runSettled(Self.makeOperationEvent(outcome: .succeeded))]
+    ) { commandID in
+      commandID == Self.completionToken ? snapshot : nil
+    }
+    let call = try #require(toolCallUpdates(in: updates).first)
+
+    #expect(call.status == .value(.completed))
+    #expect(terminalIds(in: call.content) == [Self.completionToken])
+    #expect(texts(in: call.content).isEmpty)
+  }
+
+  /// A truncated capture is said in the settlement text, so a
+  /// partial record is never presented as complete.
+  @Test func aTruncatedCaptureIsSaidInTheSettlementText() async throws {
+    let snapshot = ShellOutputSnapshot(
+      stdout: Self.makeRawOutput(text: "part", truncated: true),
+      stderr: Self.makeRawOutput(text: ""))
+    let updates = await SyntheticPrompt.sentUpdates(
+      [.runSettled(Self.makeOperationEvent(outcome: .succeeded))]
+    ) { commandID in
+      commandID == Self.completionToken ? snapshot : nil
+    }
+    let call = try #require(toolCallUpdates(in: updates).first)
+
+    #expect(
+      texts(in: call.content).contains { text in
+        text.contains("truncated") && text.contains("stdout")
+      })
+  }
+
+  /// A binary detection is said in the settlement text, beside the
+  /// byte-true record on the terminal stream.
+  @Test func aBinaryCaptureIsSaidInTheSettlementText() async throws {
+    let snapshot = ShellOutputSnapshot(
+      stdout: Self.makeRawOutput(text: ""),
+      stderr: Self.makeRawOutput(text: "raw", binaryDetected: true))
+    let updates = await SyntheticPrompt.sentUpdates(
+      [.runSettled(Self.makeOperationEvent(outcome: .succeeded))]
+    ) { commandID in
+      commandID == Self.completionToken ? snapshot : nil
+    }
+    let call = try #require(toolCallUpdates(in: updates).first)
+
+    #expect(
+      texts(in: call.content).contains { text in
+        text.contains("binary") && text.contains("stderr")
+      })
+  }
+
+  // MARK: - The message-closing entry record
+
+  /// A recorded `.response` entry closes the agent message: the next
+  /// text delta starts a new message id, and an update with a new
+  /// `messageId` begins a new message.
+  @Test func aRecordedResponseEntryClosesTheAgentMessage() async throws {
+    let updates = await SyntheticPrompt.sentUpdates([
+      .textDelta("first"),
+      .entryRecorded(id: "entry-1", kind: .response),
+      .textDelta("second"),
+    ])
+    let ids = Self.chunkMessageIds(in: updates)
+
+    #expect(ids.count == 2)
+    #expect(Set(ids).count == 2)
+  }
+
+  /// A recorded `.reasoning` entry closes the thought message the
+  /// same way.
+  @Test func aRecordedReasoningEntryClosesTheThoughtMessage() async throws {
+    let updates = await SyntheticPrompt.sentUpdates([
+      .reasoningDelta("first"),
+      .entryRecorded(id: "entry-1", kind: .reasoning),
+      .reasoningDelta("second"),
+    ])
+    let ids = updates.compactMap { update -> MessageId? in
+      if case .agentThoughtChunk(let chunk) = update { return chunk.messageId }
+      return nil
     }
 
-    /// Makes the stored raw output of one stream from `text`.
-    ///
-    /// - Parameters:
-    ///   - text: The stored text of the stream.
-    ///   - truncated: Tells if the store dropped output; false by
-    ///     default.
-    ///   - binaryDetected: Tells if the capture saw binary content;
-    ///     false by default.
-    /// - Returns: The raw output.
-    private static func makeRawOutput(
-        text: String, truncated: Bool = false, binaryDetected: Bool = false
-    ) -> ShellRawOutput {
-        let bytes = Array(text.utf8)
-        return ShellRawOutput(
-            bytes: bytes, binaryDetected: binaryDetected, truncated: truncated,
-            storedByteCount: bytes.count)
+    #expect(ids.count == 2)
+    #expect(Set(ids).count == 2)
+  }
+
+  // MARK: - The delivery-only and log-only events
+
+  /// A `toolInvocation` record, a priming failure, and a stall report
+  /// send nothing on the wire: the only update of the prompt is its
+  /// idle terminator.
+  @Test func deliveryOnlyEventsSendNoWireMessage() async {
+    let record = ToolInvocationRecord(
+      tool: "shell",
+      op: "execute command",
+      correlationID: Self.completionToken,
+      sessionID: ULID.generate(),
+      openedAt: Date())
+    let stall = GenerationStall(
+      timeWithoutProgress: .seconds(1),
+      timeInFlight: .seconds(1),
+      visibility: .wholeAnswer, lastProgress: .callStart)
+    let updates = await SyntheticPrompt.sentUpdates([
+      .toolInvocation(record),
+      .discoveryPrimingFailed(.toolNotMounted(tool: "codemode")),
+      .generationStalled(stall),
+    ])
+
+    #expect(updates.map(\.kind) == [.stateUpdate])
+  }
+
+  /// A reasoning stop sends nothing on the wire, and writes one `notice`
+  /// record that carries Router's report of the stop: the reasoning tokens,
+  /// the limit, the finish reason of the pass and the recovery (task
+  /// ^7fsfw7y). Without its own arm the event falls into the
+  /// `@unknown default`, which writes a `debug` record with no report.
+  @Test func aReasoningStopWritesOneNoticeWithRouterReport() async throws {
+    let stop = ReasoningStop(
+      reasoningTokens: RepetitionDetection.defaultReasoningTokenLimit,
+      limit: RepetitionDetection.defaultReasoningTokenLimit,
+      passFinishReason: .reasoningTokenLimit,
+      detection: RepetitionDetection(),
+      recovery: nil)
+
+    let (updates, records) = try await TelemetryCapture.run(forbidding: []) { context in
+      (await SyntheticPrompt.sentUpdates([.reasoningStopped(stop)]), context.logRecords)
     }
 
-    /// Makes an attachment report of the scripted run.
-    ///
-    /// - Parameter attachments: The records the report carries.
-    /// - Returns: The report.
-    private static func makeToolCallReport(
-        attachments: [ToolCallAttachment]
-    ) -> ToolCallReport {
-        ToolCallReport(
-            tool: reportedToolName,
-            op: reportedOpName,
-            correlationID: completionToken,
-            sessionID: ULID.generate(),
-            attachments: attachments)
+    let reportKey = ACPAgentTelemetry.LogMetadataKey.routerReport
+    let stopRecords = records.filter { $0.metadata[reportKey] == .string(stop.description) }
+    #expect(updates.map(\.kind) == [.stateUpdate])
+    #expect(stopRecords.count == 1)
+    #expect(stopRecords.first?.level == .notice)
+  }
+
+  // MARK: - The record of a cut prompt (task ^dcmsxpw)
+
+  /// Drives a prompt that Router stopped three times: two repetition stops
+  /// with a recovery each, then one reasoning stop with no recovery left.
+  /// The last submission ends at the reasoning token limit.
+  ///
+  /// - Parameter before: The events that come before the stops.
+  /// - Returns: The log records of the drive.
+  private static func driveReasoningLimitPrompt(before: [SessionEvent]) async throws
+    -> [TelemetryCapture.LogRecord]
+  {
+    let detection = RepetitionDetection()
+    let repetition: (Int) -> SessionEvent = { recovery in
+      .repetitionStopped(
+        RepetitionStop(
+          generatedTokens: 4096, countedLines: 100, newLines: 20, tokensWithoutNewLine: 2048,
+          detection: detection, recovery: recovery))
     }
-
-    /// Makes the `fileChanges` attachment of a change set — the
-    /// envelope a mutating files verb attaches at journal commit.
-    ///
-    /// - Parameter changes: The recorded changes.
-    /// - Returns: The attachment.
-    private static func makeFileChangeSetAttachment(
-        changes: [FileChange]
-    ) -> ToolCallAttachment {
-        ToolCallAttachment(
-            schemaName: FileChangeSet.operationEventDetailKey,
-            contentJSON: FileChangeSet(root: changeSetRoot, changes: changes)
-                .encodedOperationEventDetail())
+    let reasoning = ReasoningStop(
+      reasoningTokens: RepetitionDetection.defaultReasoningTokenLimit,
+      limit: RepetitionDetection.defaultReasoningTokenLimit,
+      passFinishReason: .reasoningTokenLimit,
+      detection: detection,
+      recovery: nil)
+    let events =
+      before + [
+        repetition(1),
+        repetition(2),
+        .reasoningStopped(reasoning),
+        makeSubmissionEnded(
+          TokenUsage(
+            tokensIn: 100, tokensOut: RepetitionDetection.defaultReasoningTokenLimit,
+            contextFill: .nan, finishReason: .reasoningTokenLimit)),
+      ]
+    return try await TelemetryCapture.run(forbidding: []) { context in
+      _ = await SyntheticPrompt.sentUpdates(events)
+      return context.logRecords
     }
+  }
 
-    /// Makes the result of the scripted fold, which shrinks the transcript
-    /// from `tokensBeforeFold` to `tokensAfterFold`.
-    ///
-    /// - Returns: The compaction result.
-    private static func makeFoldResult() -> CompactionResult {
-        CompactionResult(
-            summary: nil,
-            tokensBefore: tokensBeforeFold,
-            tokensAfter: tokensAfterFold,
-            stagesApplied: ["fold"])
-    }
+  /// The one `error` record of a cut prompt, found by its stop reason.
+  ///
+  /// - Parameter records: The log records of the drive.
+  /// - Returns: The record.
+  private static func cutRecord(
+    in records: [TelemetryCapture.LogRecord]
+  ) throws -> TelemetryCapture.LogRecord {
+    let key = ACPAgentTelemetry.LogMetadataKey.stopReason
+    let value = Logger.MetadataValue.string(PromptExecution.reasoningLimitStopReasonValue)
+    let cut = records.filter { $0.level == .error && $0.metadata[key] == value }
+    #expect(cut.count == 1)
+    return try #require(cut.first)
+  }
 
-    // MARK: - Readers
+  /// The record of a prompt cut at the reasoning token limit names the
+  /// cause: the reasoning tokens and the limit of the last stopped pass,
+  /// the Router stops and the recoveries that ran, and the number of files
+  /// that the prompt changed. Before task ^dcmsxpw the record said only
+  /// "The last submission of the prompt did not end by itself."
+  @Test func theReasoningLimitRecordNamesTheLimitTheTokensAndTheRecoveries() async throws {
+    let record = try Self.cutRecord(in: await Self.driveReasoningLimitPrompt(before: []))
+    let keys = ACPAgentTelemetry.LogMetadataKey.self
+    let limit = "\(RepetitionDetection.defaultReasoningTokenLimit)"
 
-    /// The message ids of the agent message chunks in the sequence.
-    private static func chunkMessageIds(in updates: [SessionUpdate]) -> [MessageId] {
-        updates.compactMap { update in
-            if case .agentMessageChunk(let chunk) = update { return chunk.messageId }
-            return nil
-        }
-    }
+    #expect(record.metadata[keys.reasoningTokens] == .string(limit))
+    #expect(record.metadata[keys.reasoningLimit] == .string(limit))
+    #expect(record.metadata[keys.routerStops] == .string("3"))
+    #expect(record.metadata[keys.routerRecoveries] == .string("2"))
+    #expect(record.metadata[keys.filesChanged] == .string("0"))
+    #expect("\(record.message)".contains("reasoning token limit"))
+    #expect("\(record.message)".contains("changed no file"))
+  }
 
-    /// The paths of a filled `locations` patch, or `nil` when the patch
-    /// leaves the field unchanged.
-    ///
-    /// - Parameter locations: The patch the update carries.
-    /// - Returns: The location paths, or `nil`.
-    private static func locationPaths(
-        of locations: PatchField<[ToolCallLocation]>
-    ) -> [String]? {
-        guard case .value(let value) = locations else { return nil }
-        return value.map(\.path.rawValue)
-    }
+  /// The record counts each distinct file that a `FileChangeSet` of the
+  /// prompt recorded, and does not say that no file changed.
+  @Test func theReasoningLimitRecordCountsTheChangedFiles() async throws {
+    let report = Self.makeToolCallReport(attachments: [
+      Self.makeFileChangeSetAttachment(changes: [
+        FileChange(kind: .modify, path: Self.modifiedPath),
+        FileChange(kind: .add, path: Self.addedPath),
+        FileChange(kind: .modify, path: Self.modifiedPath),
+      ])
+    ])
+    let record = try Self.cutRecord(
+      in: await Self.driveReasoningLimitPrompt(before: [.toolCallReport(report)]))
 
-    /// The elements of a JSON array value, or `nil` for another shape.
-    ///
-    /// - Parameter value: The value to read.
-    /// - Returns: The elements, or `nil`.
-    private static func arrayValues(
-        _ value: FoundationModelsACP.JSONValue?
-    ) -> [FoundationModelsACP.JSONValue]? {
-        guard case .array(let values) = value ?? .null else { return nil }
-        return values
-    }
+    #expect(record.metadata[ACPAgentTelemetry.LogMetadataKey.filesChanged] == .string("2"))
+    #expect(!"\(record.message)".contains("changed no file"))
+  }
 
-    /// The two endpoints of a move change, or `nil` for another
-    /// operation.
-    ///
-    /// - Parameter change: The wire change to read.
-    /// - Returns: The endpoint pair, or `nil`.
-    private static func movePair(of change: DiffChange) -> DiffPathPairChange? {
-        guard case .move(let pair) = change.operation else { return nil }
-        return pair
-    }
+  // MARK: - The attachment report
 
-    /// The two endpoints of a copy change, or `nil` for another
-    /// operation.
-    ///
-    /// - Parameter change: The wire change to read.
-    /// - Returns: The endpoint pair, or `nil`.
-    private static func copyPair(of change: DiffChange) -> DiffPathPairChange? {
-        guard case .copy(let pair) = change.operation else { return nil }
-        return pair
-    }
+  /// A tool call report sends one `tool_call_update` keyed by the
+  /// run's completion token: each attached document rides as one
+  /// content item in call order, the op rides as the title, and the
+  /// update claims no status. Neither document is a change set, so
+  /// the update fills no locations either.
+  @Test func aToolCallReportSendsOneUpdateKeyedByTheRunToken() async throws {
+    let report = Self.makeToolCallReport(attachments: [
+      ToolCallAttachment(
+        schemaName: Self.fileChangeSchemaName, contentJSON: Self.fileChangeJSON),
+      ToolCallAttachment(schemaName: Self.noteSchemaName, contentJSON: Self.noteJSON),
+    ])
+    let updates = await SyntheticPrompt.sentUpdates([.toolCallReport(report)])
+    let calls = toolCallUpdates(in: updates)
 
-    /// The one path of an add change, or `nil` for another operation.
-    ///
-    /// - Parameter change: The wire change to read.
-    /// - Returns: The path change, or `nil`.
-    private static func addPath(of change: DiffChange) -> DiffPathChange? {
-        guard case .add(let added) = change.operation else { return nil }
-        return added
-    }
+    #expect(calls.map(\.toolCallId.rawValue) == [Self.completionToken])
+    let call = try #require(calls.first)
+    #expect(call.title == .value(Self.reportedOpName))
+    #expect(texts(in: call.content) == [Self.fileChangeJSON, Self.noteJSON])
+    #expect(call.status == .unchanged)
+    #expect(call.locations == .unchanged)
+  }
 
-    /// The one path of a delete change, or `nil` for another
-    /// operation.
-    ///
-    /// - Parameter change: The wire change to read.
-    /// - Returns: The path change, or `nil`.
-    private static func deletePath(of change: DiffChange) -> DiffPathChange? {
-        guard case .delete(let deleted) = change.operation else { return nil }
-        return deleted
-    }
+  /// One attached document becomes the report's `rawOutput` value
+  /// itself, parsed from the document — never a rendered string.
+  @Test func aSingleAttachmentDocumentBecomesTheRawOutputValue() async throws {
+    let report = Self.makeToolCallReport(attachments: [
+      ToolCallAttachment(
+        schemaName: Self.fileChangeSchemaName, contentJSON: Self.fileChangeJSON)
+    ])
+    let updates = await SyntheticPrompt.sentUpdates([.toolCallReport(report)])
+    let call = try #require(toolCallUpdates(in: updates).first)
 
-    /// The one path of a modify change, or `nil` for another
-    /// operation.
-    ///
-    /// - Parameter change: The wire change to read.
-    /// - Returns: The path change, or `nil`.
-    private static func modifyPath(of change: DiffChange) -> DiffPathChange? {
-        guard case .modify(let modified) = change.operation else { return nil }
-        return modified
-    }
+    let value = try #require(
+      patchValue(call.rawOutput),
+      "expected a raw output value, got \(call.rawOutput)")
+    let fields = try #require(jsonObject(of: value))
+    #expect(jsonString(of: fields["kind"]) == "modify")
+    #expect(jsonString(of: fields["path"]) == "/tmp/notes.txt")
+  }
 
-    // MARK: - The terminal status function
+  /// Several attached documents become one `rawOutput` array, in
+  /// call order.
+  @Test func severalAttachmentDocumentsBecomeARawOutputArray() async throws {
+    let report = Self.makeToolCallReport(attachments: [
+      ToolCallAttachment(
+        schemaName: Self.fileChangeSchemaName, contentJSON: Self.fileChangeJSON),
+      ToolCallAttachment(schemaName: Self.noteSchemaName, contentJSON: Self.noteJSON),
+    ])
+    let updates = await SyntheticPrompt.sentUpdates([.toolCallReport(report)])
+    let call = try #require(toolCallUpdates(in: updates).first)
 
-    /// The `OperationOutcome` to `ToolCallStatus` function is total and
-    /// follows the outcome table: `succeeded` gives `completed`, `failed`
-    /// and `timedOut` give `failed`, `stopped` and `cancelled` give
-    /// `cancelled`. `lost` maps to `_lost` and never to `failed`.
-    @Test func theOutcomeStatusFunctionMapsEveryCasePerTheTable() {
-        #expect(ACPEventTranslator.wireStatus(for: .succeeded) == .completed)
-        #expect(ACPEventTranslator.wireStatus(for: OperationOutcome.failed) == .failed)
-        #expect(ACPEventTranslator.wireStatus(for: .timedOut) == .failed)
-        #expect(ACPEventTranslator.wireStatus(for: .stopped) == .cancelled)
-        #expect(ACPEventTranslator.wireStatus(for: .cancelled) == .cancelled)
-        #expect(
-            ACPEventTranslator.wireStatus(for: .lost)
-                == .unknown(ACPEventTranslator.lostStatusWireValue))
-        #expect(ACPEventTranslator.wireStatus(for: .lost) != .failed)
-    }
+    let values = try #require(
+      Self.arrayValues(patchValue(call.rawOutput)),
+      "expected a raw output array, got \(call.rawOutput)")
+    let first = try #require(jsonObject(of: values.first))
+    #expect(jsonString(of: first["kind"]) == "modify")
+    let last = try #require(jsonObject(of: values.last))
+    #expect(jsonString(of: last["note"]) == "the run changed two files")
+  }
 
-    /// An `other(raw)` outcome passes its raw value through under the
-    /// `_` extension rule of ACP: an unprefixed value gains the prefix,
-    /// and a prefixed value stays as it is.
-    @Test func anOtherOutcomePassesThroughUnderTheUnderscoreRule() {
-        #expect(ACPEventTranslator.wireStatus(for: .other("paused")) == .unknown("_paused"))
-        #expect(ACPEventTranslator.wireStatus(for: .other("_held")) == .unknown("_held"))
-    }
+  /// A document that is not JSON still rides as a content item, and
+  /// the `rawOutput` stays unchanged: the projection never invents a
+  /// value from text it cannot parse.
+  @Test func aDocumentThatIsNotJSONStillRidesAsContent() async throws {
+    let report = Self.makeToolCallReport(attachments: [
+      ToolCallAttachment(schemaName: Self.noteSchemaName, contentJSON: "not json")
+    ])
+    let updates = await SyntheticPrompt.sentUpdates([.toolCallReport(report)])
+    let call = try #require(toolCallUpdates(in: updates).first)
 
-    // MARK: - The tool-call upsert
+    #expect(texts(in: call.content) == ["not json"])
+    #expect(call.rawOutput == .unchanged)
+  }
 
-    /// A scripted tool pass creates the call with a title, an
-    /// `in_progress` status and the parsed raw input, keeps the one
-    /// `toolCallId` across the updates, and completes it.
-    @Test func aScriptedToolPromptCreatesWithTitleThenRunsThenCompletes() async throws {
-        let updates = await SyntheticPrompt.sentUpdates([
-            .toolCall(
-                id: Self.sdkToolCallId, name: Self.scriptedToolName,
-                argumentsJSON: Self.scriptedArgumentsJSON),
-            .toolStatus(id: Self.sdkToolCallId, status: .running, summary: nil, output: nil),
-            .toolStatus(
-                id: Self.sdkToolCallId, status: .completed, summary: "done",
-                output: [.text(id: "segment-1", content: "file text")]),
-        ])
-        let calls = toolCallUpdates(in: updates)
+  /// A `FileChangeSet` attachment fills `locations`: one location per
+  /// recorded change, in call order, at the absolute path the
+  /// structured record carries.
+  @Test func aFileChangeSetAttachmentFillsTheLocations() async throws {
+    let report = Self.makeToolCallReport(attachments: [
+      Self.makeFileChangeSetAttachment(changes: [
+        FileChange(kind: .modify, path: Self.modifiedPath),
+        FileChange(kind: .add, path: Self.addedPath),
+      ])
+    ])
+    let updates = await SyntheticPrompt.sentUpdates([.toolCallReport(report)])
+    let call = try #require(toolCallUpdates(in: updates).first)
+    let paths = try #require(Self.locationPaths(of: call.locations))
 
-        #expect(calls.map(\.toolCallId.rawValue) == Array(repeating: Self.sdkToolCallId, count: calls.count))
-        let creation = try #require(
-            calls.first, "expected three tool_call_update sends, got \(calls)")
-        let running = try #require(
-            calls.dropFirst().first,
-            "expected three tool_call_update sends, got \(calls)")
-        let completion = try #require(
-            calls.dropFirst(2).first,
-            "expected three tool_call_update sends, got \(calls)")
-        #expect(creation.title == .value(Self.scriptedToolName))
-        #expect(creation.status == .value(.inProgress))
-        #expect(creation.rawInput == .value(.object(["path": .string("notes.txt")])))
-        #expect(running.status == .value(.inProgress))
-        #expect(completion.status == .value(.completed))
-        #expect(texts(in: completion.content) == ["done", "file text"])
-    }
+    #expect(paths == [Self.modifiedPath, Self.addedPath])
+  }
 
-    /// The creating update of an SDK tool call names the tool for a program
-    /// (ACP schema-v2.0.0-alpha.7 `ToolCallUpdate.name`), beside the title
-    /// for a person. The later updates leave the name unchanged.
-    @Test func theCreatingToolCallUpdateNamesTheTool() async throws {
-        let updates = await SyntheticPrompt.sentUpdates([
-            .toolCall(
-                id: Self.sdkToolCallId, name: Self.scriptedToolName,
-                argumentsJSON: Self.scriptedArgumentsJSON),
-            .toolStatus(id: Self.sdkToolCallId, status: .completed, summary: "done", output: nil),
-        ])
-        let calls = toolCallUpdates(in: updates)
+  /// A recorded rename reports the destination: the location path is
+  /// post-operation, so a client never points at a name that is gone.
+  @Test func aRecordedRenameReportsTheDestinationPath() async throws {
+    let report = Self.makeToolCallReport(attachments: [
+      Self.makeFileChangeSetAttachment(changes: [
+        FileChange(
+          kind: .move, path: Self.modifiedPath, destinationPath: Self.renamedPath)
+      ])
+    ])
+    let updates = await SyntheticPrompt.sentUpdates([.toolCallReport(report)])
+    let call = try #require(toolCallUpdates(in: updates).first)
+    let paths = try #require(Self.locationPaths(of: call.locations))
 
-        #expect(calls.map(\.name) == [.value(Self.scriptedToolName), .unchanged])
-    }
+    #expect(paths == [Self.renamedPath])
+  }
 
-    /// A run settlement can create the wire call of a run, so it names the
-    /// tool that posted the run.
-    @Test func aRunSettlementNamesTheToolOfTheRun() async throws {
-        let event = Self.makeOperationEvent(outcome: .succeeded)
-        let updates = await SyntheticPrompt.sentUpdates([.runSettled(event)])
-        let call = try #require(toolCallUpdates(in: updates).first)
+  /// A document under the change-set schema name that is not a change
+  /// set leaves `locations` unchanged: the projection never invents a
+  /// path from text it cannot decode, and an empty replace would
+  /// erase the call's locations.
+  @Test func aDocumentThatIsNotAChangeSetLeavesTheLocationsUnchanged() async throws {
+    let report = Self.makeToolCallReport(attachments: [
+      ToolCallAttachment(
+        schemaName: FileChangeSet.operationEventDetailKey, contentJSON: Self.noteJSON)
+    ])
+    let updates = await SyntheticPrompt.sentUpdates([.toolCallReport(report)])
+    let call = try #require(toolCallUpdates(in: updates).first)
 
-        #expect(call.name == .value(event.tool))
-    }
+    #expect(call.locations == .unchanged)
+  }
 
-    /// An attachment report can create the wire call of a run, so it names
-    /// the tool of the call.
-    @Test func aToolCallReportNamesTheToolOfTheCall() async throws {
-        let report = Self.makeToolCallReport(attachments: [
-            ToolCallAttachment(schemaName: Self.noteSchemaName, contentJSON: Self.noteJSON)
-        ])
-        let updates = await SyntheticPrompt.sentUpdates([.toolCallReport(report)])
-        let call = try #require(toolCallUpdates(in: updates).first)
+  /// A report with no attachments sends nothing: the "at least one
+  /// attachment" rule is a doc comment upstream, not a type
+  /// guarantee, and an empty content replace would erase the call's
+  /// content.
+  @Test func aToolCallReportWithNoAttachmentsSendsNothing() async {
+    let updates = await SyntheticPrompt.sentUpdates([
+      .toolCallReport(Self.makeToolCallReport(attachments: []))
+    ])
+    #expect(updates.map(\.kind) == [.stateUpdate])
+  }
 
-        #expect(call.name == .value(Self.reportedToolName))
-    }
+  // MARK: - Compaction
 
-    /// A failed tool status reports `failed`.
-    @Test func aFailedToolStatusReportsFailed() async throws {
-        let updates = await SyntheticPrompt.sentUpdates([
-            .toolStatus(id: Self.sdkToolCallId, status: .failed, summary: nil, output: nil)
-        ])
-        let call = try #require(toolCallUpdates(in: updates).first)
-        #expect(call.status == .value(.failed))
-    }
+  /// A compaction sends its compaction entry, then one `usage_update` —
+  /// the meter drops to the post-fold size — and no message update. The
+  /// entry is the stable `compaction_update` (`CompactionReportTests` reads
+  /// its fields).
+  @Test func aCompactionSendsItsEntryAndOneUsageUpdateAndNoMessageUpdate() async throws {
+    let updates = await SyntheticPrompt.sentUpdates([.compaction(Self.makeFoldResult())])
 
-    // MARK: - The settlement
+    #expect(updates.map(\.kind) == [.compactionUpdate, .usageUpdate, .stateUpdate])
+    let usage = try #require(
+      updates.lazy.compactMap(usageReport(of:)).first,
+      "expected one usage update, got \(updates)")
+    #expect(usage.used == Self.tokensAfterFold)
+    #expect(usage.size == Self.tokensBeforeFold)
+  }
 
-    /// A `.lost` outcome settles as `_lost` — never as `failed` — and
-    /// its text says the run's fate is unknown.
-    @Test func aLostRunSettlesAsUnderscoreLostAndNeverFailed() async throws {
-        let updates = await SyntheticPrompt.sentUpdates([.runSettled(Self.makeOperationEvent(outcome: .lost))])
-        let call = try #require(toolCallUpdates(in: updates).first)
+  /// A retry after a context overflow is two submissions with one
+  /// compaction between them, and one `answered` event with the total
+  /// usage of the chain. The compaction sends its meter update. The
+  /// prompt then sends one more `usage_update`, which gives the context
+  /// that the retry left and adds nothing from the `answered` total.
+  @Test func anOverflowRetrySendsItsCompactionUpdateAndOneUsageUpdate() async throws {
+    let overflowed = TokenUsage(tokensIn: 800, tokensOut: 0, contextFill: 0.8)
+    let retried = TokenUsage(tokensIn: 300, tokensOut: 100, contextFill: 0.4)
+    let chain = TokenUsage(tokensIn: 1100, tokensOut: 100, contextFill: 0.4)
+    let updates = await SyntheticPrompt.sentUpdates([
+      makeSubmissionStarted(),
+      makeSubmissionEnded(overflowed),
+      .compaction(Self.makeFoldResult()),
+      makeSubmissionStarted(cause: .continuation),
+      .textDelta("the answer after the retry"),
+      .generationCall(
+        GenerationCallUsage(
+          tokensIn: retried.tokensIn, tokensOut: retried.tokensOut, finishReason: .completed,
+          entryKind: .text, contextFill: retried.contextFill)),
+      makeSubmissionEnded(retried),
+      .answered(.makeSynthetic(usage: chain)),
+    ])
 
-        #expect(call.toolCallId.rawValue == Self.completionToken)
-        #expect(call.status == .value(.unknown(ACPEventTranslator.lostStatusWireValue)))
-        #expect(call.status != .value(.failed))
-        #expect(texts(in: call.content).contains { $0.contains("do not know") })
-    }
+    let usages = updates.compactMap(usageReport(of:))
+    #expect(usages.count == 2, "expected the compaction meter and the prompt meter, got \(updates)")
+    #expect(usages.first?.used == Self.tokensAfterFold)
+    #expect(usages.last?.used == retried.tokensIn + retried.tokensOut)
+    #expect(updates.count { isRunningState($0) } == 1)
+  }
 
-    /// A `.timedOut` outcome settles as `failed` and names the timeout
-    /// in the text.
-    @Test func aTimedOutRunSettlesAsFailedAndNamesTheTimeout() async throws {
-        let updates = await SyntheticPrompt.sentUpdates([.runSettled(Self.makeOperationEvent(outcome: .timedOut))])
-        let call = try #require(toolCallUpdates(in: updates).first)
+  // MARK: - The NaN meter guard
 
-        #expect(call.status == .value(.failed))
-        #expect(texts(in: call.content).contains { $0.contains("timed out") })
-    }
+  /// A `NaN` context fill means "no stamp": the prompt sends no meter
+  /// and never puts a `NaN` on the wire.
+  @Test func aNaNContextFillOmitsTheUsageUpdate() async {
+    let updates = await SyntheticPrompt.sentUpdates([
+      makeSubmissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan))
+    ])
+    #expect(!updates.contains { $0.kind == .usageUpdate })
+  }
 
-    /// A `.cancelled` outcome settles as `cancelled` and says "we
-    /// stopped listening": a still-running detached call cannot
-    /// be forced to stop past a process boundary, so the honest claim
-    /// is that we stopped listening, not that the work stopped.
-    @Test func aCancelledRunSettlesAsCancelledAndSaysWeStoppedListening() async throws {
-        let updates = await SyntheticPrompt.sentUpdates([.runSettled(Self.makeOperationEvent(outcome: .cancelled))])
-        let call = try #require(toolCallUpdates(in: updates).first)
+  // MARK: - The diff path directions
 
-        #expect(call.status == .value(.cancelled))
-        #expect(texts(in: call.content).contains { $0.contains("we stopped listening") })
-    }
+  /// A move maps the source to `oldPath` and the destination to
+  /// `path`: ACP's `path` is post-operation.
+  @Test func aMoveMapsTheSourceToOldPathAndTheDestinationToPath() throws {
+    let source = AbsolutePath(rawValue: "/repo/old.txt")
+    let destination = AbsolutePath(rawValue: "/repo/new.txt")
+    let change = ACPEventTranslator.diffChange(
+      for: .move(source: source, destination: destination))
 
-    /// A `.completed` event that arrives with a nil outcome — the rule
-    /// is a doc comment, not a type guarantee — settles as unknown and
-    /// does not crash the projection.
-    @Test func aCompletedEventWithNilOutcomeSettlesAsUnknown() async throws {
-        let updates = await SyntheticPrompt.sentUpdates([.runSettled(Self.makeOperationEvent(outcome: nil))])
-        let call = try #require(toolCallUpdates(in: updates).first)
+    let pair = try #require(
+      Self.movePair(of: change),
+      "expected a move operation, got \(change.operation)")
+    #expect(pair.oldPath == source)
+    #expect(pair.path == destination)
+  }
 
-        #expect(
-            call.status
-                == .value(.unknown(ACPEventTranslator.unknownOutcomeStatusWireValue)))
-    }
+  /// A copy maps the two endpoints the same way as a move.
+  @Test func aCopyMapsTheSourceToOldPathAndTheDestinationToPath() throws {
+    let source = AbsolutePath(rawValue: "/repo/a.txt")
+    let destination = AbsolutePath(rawValue: "/repo/b.txt")
+    let change = ACPEventTranslator.diffChange(
+      for: .copy(source: source, destination: destination))
 
-    /// An outcome on a non-terminal event is ignored: a `.progress`
-    /// event that carries one settles nothing.
-    @Test func anOutcomeOnAProgressEventIsIgnored() async throws {
-        let updates = await SyntheticPrompt.sentUpdates([
-            .runSettled(Self.makeOperationEvent(outcome: .succeeded, kind: .progress))
-        ])
-        #expect(toolCallUpdates(in: updates).isEmpty)
-    }
+    let pair = try #require(
+      Self.copyPair(of: change),
+      "expected a copy operation, got \(change.operation)")
+    #expect(pair.oldPath == source)
+    #expect(pair.path == destination)
+  }
 
-    /// The settlement update replaces the call's content with the run's
-    /// `Terminal` reference, keyed by the run's `commandID`, so the
-    /// bytes stay on the terminal stream and never come back as coerced
-    /// text.
-    @Test func aSettledRunReplacesContentWithTheTerminalReference() async throws {
-        let snapshot = ShellOutputSnapshot(
-            stdout: Self.makeRawOutput(text: "hello"),
-            stderr: Self.makeRawOutput(text: "oops"))
-        let updates = await SyntheticPrompt.sentUpdates(
-            [.runSettled(Self.makeOperationEvent(outcome: .succeeded))]
-        ) { commandID in
-            commandID == Self.completionToken ? snapshot : nil
-        }
-        let call = try #require(toolCallUpdates(in: updates).first)
+  /// An add, a delete, and a modify map the one path without change.
+  @Test func addDeleteAndModifyMapThePathWithoutChange() throws {
+    let path = AbsolutePath(rawValue: "/repo/file.txt")
 
-        #expect(call.status == .value(.completed))
-        #expect(terminalIds(in: call.content) == [Self.completionToken])
-        #expect(texts(in: call.content).isEmpty)
-    }
+    let added = try #require(
+      Self.addPath(of: ACPEventTranslator.diffChange(for: .add(path: path))),
+      "expected add, delete and modify operations")
+    let deleted = try #require(
+      Self.deletePath(of: ACPEventTranslator.diffChange(for: .delete(path: path))),
+      "expected add, delete and modify operations")
+    let modified = try #require(
+      Self.modifyPath(of: ACPEventTranslator.diffChange(for: .modify(path: path))),
+      "expected add, delete and modify operations")
+    #expect(added.path == path)
+    #expect(deleted.path == path)
+    #expect(modified.path == path)
+  }
 
-    /// A truncated capture is said in the settlement text, so a
-    /// partial record is never presented as complete.
-    @Test func aTruncatedCaptureIsSaidInTheSettlementText() async throws {
-        let snapshot = ShellOutputSnapshot(
-            stdout: Self.makeRawOutput(text: "part", truncated: true),
-            stderr: Self.makeRawOutput(text: ""))
-        let updates = await SyntheticPrompt.sentUpdates(
-            [.runSettled(Self.makeOperationEvent(outcome: .succeeded))]
-        ) { commandID in
-            commandID == Self.completionToken ? snapshot : nil
-        }
-        let call = try #require(toolCallUpdates(in: updates).first)
+  // MARK: - The raw wire shape
 
-        #expect(
-            texts(in: call.content).contains { text in
-                text.contains("truncated") && text.contains("stdout")
-            })
-    }
+  /// The tool updates cross the transport with the v2 shape: the
+  /// `snake_case` `sessionUpdate` discriminator, the `camelCase`
+  /// properties, the `in_progress` status spelling, and the `_lost`
+  /// extension value.
+  @Test
+  func toolUpdatesHaveTheV2WireShapeThroughTheTransport() async throws {
+    let (clientEnd, agentEnd) = InMemoryTransport.pair()
+    let agent = try await makeStubAgent(
+      name: AgentClientHarness.dotfolderName,
+      cacheDirectory: makeResolvedDirectory(label: "ACPEventTranslatorTests-cache"))
+    let connection = await AgentSideConnection(stream: agentEnd) { _ in agent }
+    let frames = NDJSONCodec.frames(from: clientEnd.bytes, logger: .disabled)
+    let sessionId = SessionId(rawValue: syntheticSessionIdValue)
+    let send: SessionUpdateSink = { update in await connection.post(update, in: sessionId) }
+    let execution = SyntheticExecution(send: send)
 
-    /// A binary detection is said in the settlement text, beside the
-    /// byte-true record on the terminal stream.
-    @Test func aBinaryCaptureIsSaidInTheSettlementText() async throws {
-        let snapshot = ShellOutputSnapshot(
-            stdout: Self.makeRawOutput(text: ""),
-            stderr: Self.makeRawOutput(text: "raw", binaryDetected: true))
-        let updates = await SyntheticPrompt.sentUpdates(
-            [.runSettled(Self.makeOperationEvent(outcome: .succeeded))]
-        ) { commandID in
-            commandID == Self.completionToken ? snapshot : nil
-        }
-        let call = try #require(toolCallUpdates(in: updates).first)
+    _ = await execution.drive(
+      events: makeEventStream([
+        .toolCall(
+          id: Self.sdkToolCallId, name: Self.scriptedToolName,
+          argumentsJSON: Self.scriptedArgumentsJSON),
+        .runSettled(Self.makeOperationEvent(outcome: .lost)),
+      ]))
 
-        #expect(
-            texts(in: call.content).contains { text in
-                text.contains("binary") && text.contains("stderr")
-            })
-    }
-
-    // MARK: - The message-closing entry record
-
-    /// A recorded `.response` entry closes the agent message: the next
-    /// text delta starts a new message id, and an update with a new
-    /// `messageId` begins a new message.
-    @Test func aRecordedResponseEntryClosesTheAgentMessage() async throws {
-        let updates = await SyntheticPrompt.sentUpdates([
-            .textDelta("first"),
-            .entryRecorded(id: "entry-1", kind: .response),
-            .textDelta("second"),
-        ])
-        let ids = Self.chunkMessageIds(in: updates)
-
-        #expect(ids.count == 2)
-        #expect(Set(ids).count == 2)
-    }
-
-    /// A recorded `.reasoning` entry closes the thought message the
-    /// same way.
-    @Test func aRecordedReasoningEntryClosesTheThoughtMessage() async throws {
-        let updates = await SyntheticPrompt.sentUpdates([
-            .reasoningDelta("first"),
-            .entryRecorded(id: "entry-1", kind: .reasoning),
-            .reasoningDelta("second"),
-        ])
-        let ids = updates.compactMap { update -> MessageId? in
-            if case .agentThoughtChunk(let chunk) = update { return chunk.messageId }
-            return nil
-        }
-
-        #expect(ids.count == 2)
-        #expect(Set(ids).count == 2)
-    }
-
-    // MARK: - The delivery-only and log-only events
-
-    /// A `toolInvocation` record, a priming failure, and a stall report
-    /// send nothing on the wire: the only update of the prompt is its
-    /// idle terminator.
-    @Test func deliveryOnlyEventsSendNoWireMessage() async {
-        let record = ToolInvocationRecord(
-            tool: "shell",
-            op: "execute command",
-            correlationID: Self.completionToken,
-            sessionID: ULID.generate(),
-            openedAt: Date())
-        let stall = GenerationStall(
-            timeWithoutProgress: .seconds(1),
-            timeInFlight: .seconds(1),
-            visibility: .wholeAnswer, lastProgress: .callStart)
-        let updates = await SyntheticPrompt.sentUpdates([
-            .toolInvocation(record),
-            .discoveryPrimingFailed(.toolNotMounted(tool: "codemode")),
-            .generationStalled(stall),
-        ])
-
-        #expect(updates.map(\.kind) == [.stateUpdate])
-    }
-
-    /// A reasoning stop sends nothing on the wire, and writes one `notice`
-    /// record that carries Router's report of the stop: the reasoning tokens,
-    /// the limit, the finish reason of the pass and the recovery (task
-    /// ^7fsfw7y). Without its own arm the event falls into the
-    /// `@unknown default`, which writes a `debug` record with no report.
-    @Test func aReasoningStopWritesOneNoticeWithRouterReport() async throws {
-        let stop = ReasoningStop(
-            reasoningTokens: RepetitionDetection.defaultReasoningTokenLimit,
-            limit: RepetitionDetection.defaultReasoningTokenLimit,
-            passFinishReason: .reasoningTokenLimit,
-            detection: RepetitionDetection(),
-            recovery: nil)
-
-        let (updates, records) = try await TelemetryCapture.run(forbidding: []) { context in
-            (await SyntheticPrompt.sentUpdates([.reasoningStopped(stop)]), context.logRecords)
-        }
-
-        let reportKey = ACPAgentTelemetry.LogMetadataKey.routerReport
-        let stopRecords = records.filter { $0.metadata[reportKey] == .string(stop.description) }
-        #expect(updates.map(\.kind) == [.stateUpdate])
-        #expect(stopRecords.count == 1)
-        #expect(stopRecords.first?.level == .notice)
-    }
-
-    // MARK: - The record of a cut prompt (task ^dcmsxpw)
-
-    /// Drives a prompt that Router stopped three times: two repetition stops
-    /// with a recovery each, then one reasoning stop with no recovery left.
-    /// The last submission ends at the reasoning token limit.
-    ///
-    /// - Parameter before: The events that come before the stops.
-    /// - Returns: The log records of the drive.
-    private static func driveReasoningLimitPrompt(before: [SessionEvent]) async throws
-        -> [TelemetryCapture.LogRecord]
+    var notifications: [[String: FoundationModelsACP.JSONValue]] = []
+    var iterator = frames.makeAsyncIterator()
+    while notifications.count < Self.rawWireNotificationCount,
+      let frame = try await iterator.next()
     {
-        let detection = RepetitionDetection()
-        let repetition: (Int) -> SessionEvent = { recovery in
-            .repetitionStopped(
-                RepetitionStop(
-                    generatedTokens: 4096, countedLines: 100, newLines: 20, tokensWithoutNewLine: 2048,
-                    detection: detection, recovery: recovery))
-        }
-        let reasoning = ReasoningStop(
-            reasoningTokens: RepetitionDetection.defaultReasoningTokenLimit,
-            limit: RepetitionDetection.defaultReasoningTokenLimit,
-            passFinishReason: .reasoningTokenLimit,
-            detection: detection,
-            recovery: nil)
-        let events =
-            before + [
-                repetition(1),
-                repetition(2),
-                .reasoningStopped(reasoning),
-                makeSubmissionEnded(
-                    TokenUsage(
-                        tokensIn: 100, tokensOut: RepetitionDetection.defaultReasoningTokenLimit,
-                        contextFill: .nan, finishReason: .reasoningTokenLimit)),
-            ]
-        return try await TelemetryCapture.run(forbidding: []) { context in
-            _ = await SyntheticPrompt.sentUpdates(events)
-            return context.logRecords
-        }
+      guard case .message(.object(let fields)) = frame,
+        jsonString(of: fields["method"]) == "session/update",
+        let params = jsonObject(of: fields["params"])
+      else { continue }
+      #expect(jsonString(of: params["sessionId"]) == syntheticSessionIdValue)
+      let update = try #require(jsonObject(of: params["update"]))
+      notifications.append(update)
     }
+    await connection.close()
+    clientEnd.close()
 
-    /// The one `error` record of a cut prompt, found by its stop reason.
-    ///
-    /// - Parameter records: The log records of the drive.
-    /// - Returns: The record.
-    private static func cutRecord(
-        in records: [TelemetryCapture.LogRecord]
-    ) throws -> TelemetryCapture.LogRecord {
-        let key = ACPAgentTelemetry.LogMetadataKey.stopReason
-        let value = Logger.MetadataValue.string(PromptExecution.reasoningLimitStopReasonValue)
-        let cut = records.filter { $0.level == .error && $0.metadata[key] == value }
-        #expect(cut.count == 1)
-        return try #require(cut.first)
-    }
-
-    /// The record of a prompt cut at the reasoning token limit names the
-    /// cause: the reasoning tokens and the limit of the last stopped pass,
-    /// the Router stops and the recoveries that ran, and the number of files
-    /// that the prompt changed. Before task ^dcmsxpw the record said only
-    /// "The last submission of the prompt did not end by itself."
-    @Test func theReasoningLimitRecordNamesTheLimitTheTokensAndTheRecoveries() async throws {
-        let record = try Self.cutRecord(in: await Self.driveReasoningLimitPrompt(before: []))
-        let keys = ACPAgentTelemetry.LogMetadataKey.self
-        let limit = "\(RepetitionDetection.defaultReasoningTokenLimit)"
-
-        #expect(record.metadata[keys.reasoningTokens] == .string(limit))
-        #expect(record.metadata[keys.reasoningLimit] == .string(limit))
-        #expect(record.metadata[keys.routerStops] == .string("3"))
-        #expect(record.metadata[keys.routerRecoveries] == .string("2"))
-        #expect(record.metadata[keys.filesChanged] == .string("0"))
-        #expect("\(record.message)".contains("reasoning token limit"))
-        #expect("\(record.message)".contains("changed no file"))
-    }
-
-    /// The record counts each distinct file that a `FileChangeSet` of the
-    /// prompt recorded, and does not say that no file changed.
-    @Test func theReasoningLimitRecordCountsTheChangedFiles() async throws {
-        let report = Self.makeToolCallReport(attachments: [
-            Self.makeFileChangeSetAttachment(changes: [
-                FileChange(kind: .modify, path: Self.modifiedPath),
-                FileChange(kind: .add, path: Self.addedPath),
-                FileChange(kind: .modify, path: Self.modifiedPath),
-            ])
-        ])
-        let record = try Self.cutRecord(
-            in: await Self.driveReasoningLimitPrompt(before: [.toolCallReport(report)]))
-
-        #expect(record.metadata[ACPAgentTelemetry.LogMetadataKey.filesChanged] == .string("2"))
-        #expect(!"\(record.message)".contains("changed no file"))
-    }
-
-    // MARK: - The attachment report
-
-    /// A tool call report sends one `tool_call_update` keyed by the
-    /// run's completion token: each attached document rides as one
-    /// content item in call order, the op rides as the title, and the
-    /// update claims no status. Neither document is a change set, so
-    /// the update fills no locations either.
-    @Test func aToolCallReportSendsOneUpdateKeyedByTheRunToken() async throws {
-        let report = Self.makeToolCallReport(attachments: [
-            ToolCallAttachment(
-                schemaName: Self.fileChangeSchemaName, contentJSON: Self.fileChangeJSON),
-            ToolCallAttachment(schemaName: Self.noteSchemaName, contentJSON: Self.noteJSON),
-        ])
-        let updates = await SyntheticPrompt.sentUpdates([.toolCallReport(report)])
-        let calls = toolCallUpdates(in: updates)
-
-        #expect(calls.map(\.toolCallId.rawValue) == [Self.completionToken])
-        let call = try #require(calls.first)
-        #expect(call.title == .value(Self.reportedOpName))
-        #expect(texts(in: call.content) == [Self.fileChangeJSON, Self.noteJSON])
-        #expect(call.status == .unchanged)
-        #expect(call.locations == .unchanged)
-    }
-
-    /// One attached document becomes the report's `rawOutput` value
-    /// itself, parsed from the document — never a rendered string.
-    @Test func aSingleAttachmentDocumentBecomesTheRawOutputValue() async throws {
-        let report = Self.makeToolCallReport(attachments: [
-            ToolCallAttachment(
-                schemaName: Self.fileChangeSchemaName, contentJSON: Self.fileChangeJSON)
-        ])
-        let updates = await SyntheticPrompt.sentUpdates([.toolCallReport(report)])
-        let call = try #require(toolCallUpdates(in: updates).first)
-
-        let value = try #require(
-            patchValue(call.rawOutput),
-            "expected a raw output value, got \(call.rawOutput)")
-        let fields = try #require(jsonObject(of: value))
-        #expect(jsonString(of: fields["kind"]) == "modify")
-        #expect(jsonString(of: fields["path"]) == "/tmp/notes.txt")
-    }
-
-    /// Several attached documents become one `rawOutput` array, in
-    /// call order.
-    @Test func severalAttachmentDocumentsBecomeARawOutputArray() async throws {
-        let report = Self.makeToolCallReport(attachments: [
-            ToolCallAttachment(
-                schemaName: Self.fileChangeSchemaName, contentJSON: Self.fileChangeJSON),
-            ToolCallAttachment(schemaName: Self.noteSchemaName, contentJSON: Self.noteJSON),
-        ])
-        let updates = await SyntheticPrompt.sentUpdates([.toolCallReport(report)])
-        let call = try #require(toolCallUpdates(in: updates).first)
-
-        let values = try #require(
-            Self.arrayValues(patchValue(call.rawOutput)),
-            "expected a raw output array, got \(call.rawOutput)")
-        let first = try #require(jsonObject(of: values.first))
-        #expect(jsonString(of: first["kind"]) == "modify")
-        let last = try #require(jsonObject(of: values.last))
-        #expect(jsonString(of: last["note"]) == "the run changed two files")
-    }
-
-    /// A document that is not JSON still rides as a content item, and
-    /// the `rawOutput` stays unchanged: the projection never invents a
-    /// value from text it cannot parse.
-    @Test func aDocumentThatIsNotJSONStillRidesAsContent() async throws {
-        let report = Self.makeToolCallReport(attachments: [
-            ToolCallAttachment(schemaName: Self.noteSchemaName, contentJSON: "not json")
-        ])
-        let updates = await SyntheticPrompt.sentUpdates([.toolCallReport(report)])
-        let call = try #require(toolCallUpdates(in: updates).first)
-
-        #expect(texts(in: call.content) == ["not json"])
-        #expect(call.rawOutput == .unchanged)
-    }
-
-    /// A `FileChangeSet` attachment fills `locations`: one location per
-    /// recorded change, in call order, at the absolute path the
-    /// structured record carries.
-    @Test func aFileChangeSetAttachmentFillsTheLocations() async throws {
-        let report = Self.makeToolCallReport(attachments: [
-            Self.makeFileChangeSetAttachment(changes: [
-                FileChange(kind: .modify, path: Self.modifiedPath),
-                FileChange(kind: .add, path: Self.addedPath),
-            ])
-        ])
-        let updates = await SyntheticPrompt.sentUpdates([.toolCallReport(report)])
-        let call = try #require(toolCallUpdates(in: updates).first)
-        let paths = try #require(Self.locationPaths(of: call.locations))
-
-        #expect(paths == [Self.modifiedPath, Self.addedPath])
-    }
-
-    /// A recorded rename reports the destination: the location path is
-    /// post-operation, so a client never points at a name that is gone.
-    @Test func aRecordedRenameReportsTheDestinationPath() async throws {
-        let report = Self.makeToolCallReport(attachments: [
-            Self.makeFileChangeSetAttachment(changes: [
-                FileChange(
-                    kind: .move, path: Self.modifiedPath, destinationPath: Self.renamedPath)
-            ])
-        ])
-        let updates = await SyntheticPrompt.sentUpdates([.toolCallReport(report)])
-        let call = try #require(toolCallUpdates(in: updates).first)
-        let paths = try #require(Self.locationPaths(of: call.locations))
-
-        #expect(paths == [Self.renamedPath])
-    }
-
-    /// A document under the change-set schema name that is not a change
-    /// set leaves `locations` unchanged: the projection never invents a
-    /// path from text it cannot decode, and an empty replace would
-    /// erase the call's locations.
-    @Test func aDocumentThatIsNotAChangeSetLeavesTheLocationsUnchanged() async throws {
-        let report = Self.makeToolCallReport(attachments: [
-            ToolCallAttachment(
-                schemaName: FileChangeSet.operationEventDetailKey, contentJSON: Self.noteJSON)
-        ])
-        let updates = await SyntheticPrompt.sentUpdates([.toolCallReport(report)])
-        let call = try #require(toolCallUpdates(in: updates).first)
-
-        #expect(call.locations == .unchanged)
-    }
-
-    /// A report with no attachments sends nothing: the "at least one
-    /// attachment" rule is a doc comment upstream, not a type
-    /// guarantee, and an empty content replace would erase the call's
-    /// content.
-    @Test func aToolCallReportWithNoAttachmentsSendsNothing() async {
-        let updates = await SyntheticPrompt.sentUpdates([
-            .toolCallReport(Self.makeToolCallReport(attachments: []))
-        ])
-        #expect(updates.map(\.kind) == [.stateUpdate])
-    }
-
-    // MARK: - Compaction
-
-    /// A compaction sends its compaction entry, then one `usage_update` —
-    /// the meter drops to the post-fold size — and no message update. The
-    /// entry is the stable `compaction_update` (`CompactionReportTests` reads
-    /// its fields).
-    @Test func aCompactionSendsItsEntryAndOneUsageUpdateAndNoMessageUpdate() async throws {
-        let updates = await SyntheticPrompt.sentUpdates([.compaction(Self.makeFoldResult())])
-
-        #expect(updates.map(\.kind) == [.compactionUpdate, .usageUpdate, .stateUpdate])
-        let usage = try #require(
-            updates.lazy.compactMap(usageReport(of:)).first,
-            "expected one usage update, got \(updates)")
-        #expect(usage.used == Self.tokensAfterFold)
-        #expect(usage.size == Self.tokensBeforeFold)
-    }
-
-    /// A retry after a context overflow is two submissions with one
-    /// compaction between them, and one `answered` event with the total
-    /// usage of the chain. The compaction sends its meter update. The
-    /// prompt then sends one more `usage_update`, which gives the context
-    /// that the retry left and adds nothing from the `answered` total.
-    @Test func anOverflowRetrySendsItsCompactionUpdateAndOneUsageUpdate() async throws {
-        let overflowed = TokenUsage(tokensIn: 800, tokensOut: 0, contextFill: 0.8)
-        let retried = TokenUsage(tokensIn: 300, tokensOut: 100, contextFill: 0.4)
-        let chain = TokenUsage(tokensIn: 1100, tokensOut: 100, contextFill: 0.4)
-        let updates = await SyntheticPrompt.sentUpdates([
-            makeSubmissionStarted(),
-            makeSubmissionEnded(overflowed),
-            .compaction(Self.makeFoldResult()),
-            makeSubmissionStarted(cause: .continuation),
-            .textDelta("the answer after the retry"),
-            .generationCall(
-                GenerationCallUsage(
-                    tokensIn: retried.tokensIn, tokensOut: retried.tokensOut, finishReason: .completed,
-                    entryKind: .text, contextFill: retried.contextFill)),
-            makeSubmissionEnded(retried),
-            .answered(.makeSynthetic(usage: chain)),
-        ])
-
-        let usages = updates.compactMap(usageReport(of:))
-        #expect(usages.count == 2, "expected the compaction meter and the prompt meter, got \(updates)")
-        #expect(usages.first?.used == Self.tokensAfterFold)
-        #expect(usages.last?.used == retried.tokensIn + retried.tokensOut)
-        #expect(updates.count { isRunningState($0) } == 1)
-    }
-
-    // MARK: - The NaN meter guard
-
-    /// A `NaN` context fill means "no stamp": the prompt sends no meter
-    /// and never puts a `NaN` on the wire.
-    @Test func aNaNContextFillOmitsTheUsageUpdate() async {
-        let updates = await SyntheticPrompt.sentUpdates([
-            makeSubmissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan))
-        ])
-        #expect(!updates.contains { $0.kind == .usageUpdate })
-    }
-
-    // MARK: - The diff path directions
-
-    /// A move maps the source to `oldPath` and the destination to
-    /// `path`: ACP's `path` is post-operation.
-    @Test func aMoveMapsTheSourceToOldPathAndTheDestinationToPath() throws {
-        let source = AbsolutePath(rawValue: "/repo/old.txt")
-        let destination = AbsolutePath(rawValue: "/repo/new.txt")
-        let change = ACPEventTranslator.diffChange(
-            for: .move(source: source, destination: destination))
-
-        let pair = try #require(
-            Self.movePair(of: change),
-            "expected a move operation, got \(change.operation)")
-        #expect(pair.oldPath == source)
-        #expect(pair.path == destination)
-    }
-
-    /// A copy maps the two endpoints the same way as a move.
-    @Test func aCopyMapsTheSourceToOldPathAndTheDestinationToPath() throws {
-        let source = AbsolutePath(rawValue: "/repo/a.txt")
-        let destination = AbsolutePath(rawValue: "/repo/b.txt")
-        let change = ACPEventTranslator.diffChange(
-            for: .copy(source: source, destination: destination))
-
-        let pair = try #require(
-            Self.copyPair(of: change),
-            "expected a copy operation, got \(change.operation)")
-        #expect(pair.oldPath == source)
-        #expect(pair.path == destination)
-    }
-
-    /// An add, a delete, and a modify map the one path without change.
-    @Test func addDeleteAndModifyMapThePathWithoutChange() throws {
-        let path = AbsolutePath(rawValue: "/repo/file.txt")
-
-        let added = try #require(
-            Self.addPath(of: ACPEventTranslator.diffChange(for: .add(path: path))),
-            "expected add, delete and modify operations")
-        let deleted = try #require(
-            Self.deletePath(of: ACPEventTranslator.diffChange(for: .delete(path: path))),
-            "expected add, delete and modify operations")
-        let modified = try #require(
-            Self.modifyPath(of: ACPEventTranslator.diffChange(for: .modify(path: path))),
-            "expected add, delete and modify operations")
-        #expect(added.path == path)
-        #expect(deleted.path == path)
-        #expect(modified.path == path)
-    }
-
-    // MARK: - The raw wire shape
-
-    /// The tool updates cross the transport with the v2 shape: the
-    /// `snake_case` `sessionUpdate` discriminator, the `camelCase`
-    /// properties, the `in_progress` status spelling, and the `_lost`
-    /// extension value.
-    @Test
-    func toolUpdatesHaveTheV2WireShapeThroughTheTransport() async throws {
-        let (clientEnd, agentEnd) = InMemoryTransport.pair()
-        let agent = try await makeStubAgent(
-            name: AgentClientHarness.dotfolderName,
-            cacheDirectory: makeResolvedDirectory(label: "ACPEventTranslatorTests-cache"))
-        let connection = await AgentSideConnection(stream: agentEnd) { _ in agent }
-        let frames = NDJSONCodec.frames(from: clientEnd.bytes, logger: .disabled)
-        let sessionId = SessionId(rawValue: syntheticSessionIdValue)
-        let send: SessionUpdateSink = { update in await connection.post(update, in: sessionId) }
-        let execution = SyntheticExecution(send: send)
-
-        _ = await execution.drive(
-            events: makeEventStream([
-                .toolCall(
-                    id: Self.sdkToolCallId, name: Self.scriptedToolName,
-                    argumentsJSON: Self.scriptedArgumentsJSON),
-                .runSettled(Self.makeOperationEvent(outcome: .lost)),
-            ]))
-
-        var notifications: [[String: FoundationModelsACP.JSONValue]] = []
-        var iterator = frames.makeAsyncIterator()
-        while notifications.count < Self.rawWireNotificationCount,
-            let frame = try await iterator.next()
-        {
-            guard case .message(.object(let fields)) = frame,
-                jsonString(of: fields["method"]) == "session/update",
-                let params = jsonObject(of: fields["params"])
-            else { continue }
-            #expect(jsonString(of: params["sessionId"]) == syntheticSessionIdValue)
-            let update = try #require(jsonObject(of: params["update"]))
-            notifications.append(update)
-        }
-        await connection.close()
-        clientEnd.close()
-
-        #expect(
-            notifications.map { jsonString(of: $0["sessionUpdate"]) } == [
-                "tool_call_update", "tool_call_update", "state_update",
-            ])
-        let creation = try #require(notifications.first)
-        #expect(jsonString(of: creation["toolCallId"]) == Self.sdkToolCallId)
-        #expect(jsonString(of: creation["status"]) == "in_progress")
-        #expect(jsonString(of: creation["title"]) == Self.scriptedToolName)
-        let settlement = try #require(notifications.dropFirst().first)
-        #expect(
-            jsonString(of: settlement["status"]) == ACPEventTranslator.lostStatusWireValue)
-    }
+    #expect(
+      notifications.map { jsonString(of: $0["sessionUpdate"]) } == [
+        "tool_call_update", "tool_call_update", "state_update",
+      ])
+    let creation = try #require(notifications.first)
+    #expect(jsonString(of: creation["toolCallId"]) == Self.sdkToolCallId)
+    #expect(jsonString(of: creation["status"]) == "in_progress")
+    #expect(jsonString(of: creation["title"]) == Self.scriptedToolName)
+    let settlement = try #require(notifications.dropFirst().first)
+    #expect(
+      jsonString(of: settlement["status"]) == ACPEventTranslator.lostStatusWireValue)
+  }
 }

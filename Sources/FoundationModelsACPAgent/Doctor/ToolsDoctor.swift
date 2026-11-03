@@ -23,459 +23,460 @@ import FoundationModelsMultitool
 /// is a component of its own, and the files capability reaches only the
 /// session root set, which the sandbox row already covers.
 public struct ToolsDoctor: Doctorable {
-    // MARK: - Constants
+  // MARK: - Constants
 
-    /// The group every finding of this component belongs to.
-    public static let category = "tools"
+  /// The group every finding of this component belongs to.
+  public static let category = "tools"
 
-    /// How long one prober call may take, in seconds.
-    ///
-    /// A probe starts a subprocess or asks a network endpoint, so it is
-    /// never instant; and `doctor` must print its table even when one of
-    /// them stops answering. This is the bound both statements meet.
-    public static let probeTimeoutSeconds = 5.0
+  /// How long one prober call may take, in seconds.
+  ///
+  /// A probe starts a subprocess or asks a network endpoint, so it is
+  /// never instant; and `doctor` must print its table even when one of
+  /// them stops answering. This is the bound both statements meet.
+  public static let probeTimeoutSeconds = 5.0
 
-    /// The check that states whether the sandbox starts.
-    private static let sandboxCheckName = "the seatbelt sandbox"
+  /// The check that states whether the sandbox starts.
+  private static let sandboxCheckName = "the seatbelt sandbox"
 
-    /// What the sandbox check says when the confined command ran.
-    private static let sandboxPassed = "a confined command ran under the sandbox"
+  /// What the sandbox check says when the confined command ran.
+  private static let sandboxPassed = "a confined command ran under the sandbox"
 
-    /// What the sandbox check calls the thing it probed.
-    private static let sandboxSubject = "the seatbelt sandbox"
+  /// What the sandbox check calls the thing it probed.
+  private static let sandboxSubject = "the seatbelt sandbox"
 
-    /// The prefix of the check that states one extra write path.
-    private static let extraWritePathPrefix = "the extra write path"
+  /// The prefix of the check that states one extra write path.
+  private static let extraWritePathPrefix = "the extra write path"
 
-    /// The check that states the shell store directory.
-    private static let storeCheckName = "the shell store directory"
+  /// The check that states the shell store directory.
+  private static let storeCheckName = "the shell store directory"
 
-    /// What stands at the store path, for the message of a path that a file
-    /// already blocks.
-    private static let storeSubject = "shell store directory"
+  /// What stands at the store path, for the message of a path that a file
+  /// already blocks.
+  private static let storeSubject = "shell store directory"
 
-    /// The check that states the shell tool is off.
-    private static let shellToolCheckName = "the shell tool"
+  /// The check that states the shell tool is off.
+  private static let shellToolCheckName = "the shell tool"
 
-    /// The check that states the web tool and its search providers.
-    private static let webToolCheckName = "the web tool"
+  /// The check that states the web tool and its search providers.
+  private static let webToolCheckName = "the web tool"
 
-    /// The text between the provider names of the web row.
-    private static let providerSeparator = ", "
+  /// The text between the provider names of the web row.
+  private static let providerSeparator = ", "
 
-    /// The check that states the mcp tool is off.
-    private static let mcpToolCheckName = "the mcp tool"
+  /// The check that states the mcp tool is off.
+  private static let mcpToolCheckName = "the mcp tool"
 
-    /// The prefix of the check that states one configured MCP server.
-    private static let mcpServerPrefix = "the mcp server"
+  /// The prefix of the check that states one configured MCP server.
+  private static let mcpServerPrefix = "the mcp server"
 
-    /// The dotted key path of the extra write paths a fix names.
-    private static let extraWritePathsKey =
-        AgentConfiguration.CodingKeys.sandbox.stringValue
-        + LoadedConfiguration.keyPathSeparator
-        + SandboxConfiguration.CodingKeys.extraWritePaths.stringValue
+  /// The dotted key path of the extra write paths a fix names.
+  private static let extraWritePathsKey =
+    AgentConfiguration.CodingKeys.sandbox.stringValue
+    + LoadedConfiguration.keyPathSeparator
+    + SandboxConfiguration.CodingKeys.extraWritePaths.stringValue
 
-    /// The dotted key path of the sandbox section a fix names.
-    private static let sandboxKey = AgentConfiguration.CodingKeys.sandbox.stringValue
+  /// The dotted key path of the sandbox section a fix names.
+  private static let sandboxKey = AgentConfiguration.CodingKeys.sandbox.stringValue
 
-    /// The dotted key path of the shell section a fix names.
-    private static let shellKey =
-        AgentConfiguration.CodingKeys.tools.stringValue
-        + LoadedConfiguration.keyPathSeparator
-        + ToolsConfiguration.CodingKeys.shell.stringValue
+  /// The dotted key path of the shell section a fix names.
+  private static let shellKey =
+    AgentConfiguration.CodingKeys.tools.stringValue
+    + LoadedConfiguration.keyPathSeparator
+    + ToolsConfiguration.CodingKeys.shell.stringValue
 
-    /// The dotted key path of the store directory a fix names.
-    private static let storeDirectoryKey =
-        shellKey
-        + LoadedConfiguration.keyPathSeparator
-        + ShellToolOptions.CodingKeys.storeDirectory.stringValue
+  /// The dotted key path of the store directory a fix names.
+  private static let storeDirectoryKey =
+    shellKey
+    + LoadedConfiguration.keyPathSeparator
+    + ShellToolOptions.CodingKeys.storeDirectory.stringValue
 
-    /// The dotted key path that turns the web tool off.
-    private static let webEnabledKey = enabledKey(
-        ofTool: .web, enabledKey: WebToolOptions.CodingKeys.enabled)
+  /// The dotted key path that turns the web tool off.
+  private static let webEnabledKey = enabledKey(
+    ofTool: .web, enabledKey: WebToolOptions.CodingKeys.enabled)
 
-    /// The check that states the git tool.
-    private static let gitToolCheckName = "the git tool"
+  /// The check that states the git tool.
+  private static let gitToolCheckName = "the git tool"
 
-    /// The dotted key path that turns the git tool off.
-    private static let gitEnabledKey = enabledKey(
-        ofTool: .git, enabledKey: GitToolOptions.CodingKeys.enabled)
+  /// The dotted key path that turns the git tool off.
+  private static let gitEnabledKey = enabledKey(
+    ofTool: .git, enabledKey: GitToolOptions.CodingKeys.enabled)
 
-    /// The check that states the environment tool.
-    private static let environmentToolCheckName = "the environment tool"
+  /// The check that states the environment tool.
+  private static let environmentToolCheckName = "the environment tool"
 
-    /// The dotted key path that turns the environment tool off.
-    private static let environmentEnabledKey = enabledKey(
-        ofTool: .environment, enabledKey: EnvironmentToolOptions.CodingKeys.enabled)
+  /// The dotted key path that turns the environment tool off.
+  private static let environmentEnabledKey = enabledKey(
+    ofTool: .environment, enabledKey: EnvironmentToolOptions.CodingKeys.enabled)
 
-    /// The dotted key path of the verb that gives the model each variable
-    /// of the process.
-    private static let environmentVariablesKey =
-        AgentConfiguration.CodingKeys.tools.stringValue
-        + LoadedConfiguration.keyPathSeparator
-        + ToolsConfiguration.CodingKeys.environment.stringValue
-        + LoadedConfiguration.keyPathSeparator
-        + environmentVariablesVerb
+  /// The dotted key path of the verb that gives the model each variable
+  /// of the process.
+  private static let environmentVariablesKey =
+    AgentConfiguration.CodingKeys.tools.stringValue
+    + LoadedConfiguration.keyPathSeparator
+    + ToolsConfiguration.CodingKeys.environment.stringValue
+    + LoadedConfiguration.keyPathSeparator
+    + environmentVariablesVerb
 
-    /// The verb of the environment tool that reads the variables of the
-    /// process.
-    private static let environmentVariablesVerb = "variables"
+  /// The verb of the environment tool that reads the variables of the
+  /// process.
+  private static let environmentVariablesVerb = "variables"
 
-    /// What the environment row says when the tool is on. It states the
-    /// secret risk and names the key that turns the tool off. It holds no
-    /// variable value.
-    private static let environmentOnMessage =
-        "on; \(environmentVariablesKey) gives the model each variable of this process, "
-        + "and a variable can hold a secret, for example a web API key; set "
-        + "\(environmentEnabledKey) to false to keep the variables out of the model context"
+  /// What the environment row says when the tool is on. It states the
+  /// secret risk and names the key that turns the tool off. It holds no
+  /// variable value.
+  private static let environmentOnMessage =
+    "on; \(environmentVariablesKey) gives the model each variable of this process, "
+    + "and a variable can hold a secret, for example a web API key; set "
+    + "\(environmentEnabledKey) to false to keep the variables out of the model context"
 
-    /// The dotted key path of the `enabled:` key of one tool section, such
-    /// as `tools.web.enabled`.
-    ///
-    /// - Parameters:
-    ///   - tool: The key of the tool section under `tools:`.
-    ///   - enabledKey: The `enabled:` key of the option body of that tool.
-    /// - Returns: The dotted key path.
-    private static func enabledKey(
-        ofTool tool: ToolsConfiguration.CodingKeys, enabledKey: some CodingKey
-    ) -> String {
-        AgentConfiguration.CodingKeys.tools.stringValue
-            + LoadedConfiguration.keyPathSeparator
-            + tool.stringValue
-            + LoadedConfiguration.keyPathSeparator
-            + enabledKey.stringValue
+  /// The dotted key path of the `enabled:` key of one tool section, such
+  /// as `tools.web.enabled`.
+  ///
+  /// - Parameters:
+  ///   - tool: The key of the tool section under `tools:`.
+  ///   - enabledKey: The `enabled:` key of the option body of that tool.
+  /// - Returns: The dotted key path.
+  private static func enabledKey(
+    ofTool tool: ToolsConfiguration.CodingKeys, enabledKey: some CodingKey
+  ) -> String {
+    AgentConfiguration.CodingKeys.tools.stringValue
+      + LoadedConfiguration.keyPathSeparator
+      + tool.stringValue
+      + LoadedConfiguration.keyPathSeparator
+      + enabledKey.stringValue
+  }
+
+  /// The dotted key path of the mcp section a fix names.
+  private static let mcpKey =
+    AgentConfiguration.CodingKeys.tools.stringValue
+    + LoadedConfiguration.keyPathSeparator
+    + ToolsConfiguration.CodingKeys.mcp.stringValue
+
+  // MARK: - Stored state
+
+  /// The resolved configuration, which names the sandbox grants and the
+  /// tool roster.
+  private let configuration: AgentConfiguration
+
+  /// The directory `--cwd` names. It is the first writable root of the
+  /// sandbox, and it names the project of the default shell store.
+  private let workingDirectory: URL
+
+  /// The home of the host. The default shell store of the project is in
+  /// it (``AgentHome/shellStoreDirectory(of:)``).
+  private let home: AgentHome
+
+  /// How the checks reach the world.
+  private let prober: any ToolsProber
+
+  /// How long one prober call may take, in seconds.
+  public let timeoutSeconds: Double
+
+  /// The process environment that the web row reads the API keys from.
+  /// The row names the providers that the keys select, and never a key.
+  private let environment: [String: String]
+
+  // MARK: - Doctorable
+
+  /// What this component is called in the doctor report.
+  public let doctorName = ToolsDoctor.category
+
+  /// The group its findings belong to.
+  public let doctorCategory = ToolsDoctor.category
+
+  /// Makes the component over one resolved configuration and one prober.
+  ///
+  /// - Parameters:
+  ///   - configuration: The resolved configuration.
+  ///   - workingDirectory: The directory `--cwd` names.
+  ///   - home: The home of the host, which holds the default shell store
+  ///     of the project.
+  ///   - prober: How the checks reach the world.
+  ///   - timeoutSeconds: How long one prober call may take. The default
+  ///     is ``probeTimeoutSeconds``.
+  ///   - environment: The process environment that the web row reads the
+  ///     API keys from. The default is the environment of the process.
+  public init(
+    configuration: AgentConfiguration, workingDirectory: URL, home: AgentHome,
+    prober: any ToolsProber,
+    timeoutSeconds: Double = ToolsDoctor.probeTimeoutSeconds,
+    environment: [String: String] = ProcessInfo.processInfo.environment
+  ) {
+    self.configuration = configuration
+    self.workingDirectory = workingDirectory
+    self.home = home
+    self.prober = prober
+    self.timeoutSeconds = timeoutSeconds
+    self.environment = environment
+  }
+
+  /// Reports the sandbox, then one finding per extra write path, then the
+  /// shell, then the web tool, then the git tool, then the environment
+  /// tool, then the MCP servers.
+  ///
+  /// - Returns: The findings, in that order.
+  public func runHealthChecks() async -> [HealthCheck] {
+    await [sandboxCheck()]
+      + configuration.sandbox.extraWritePaths.map(Self.check(ofExtraWritePath:))
+      + [shellCheck(), webCheck(), gitCheck(), environmentCheck()]
+      + mcpChecks()
+  }
+
+  // MARK: - The sandbox
+
+  /// The finding of the sandbox itself: one trivial confined command,
+  /// through the prober.
+  ///
+  /// - Returns: A pass, or the failure the prober reported.
+  private func sandboxCheck() async -> HealthCheck {
+    let options = configuration.sandbox.sandboxOptions(workingDirectory: workingDirectory)
+    let outcome = await probe { await prober.startSandbox(options: options) }
+    return finding(
+      of: outcome, name: Self.sandboxCheckName, passed: Self.sandboxPassed,
+      subject: Self.sandboxSubject, fix: Self.sandboxFix)
+  }
+
+  /// The fix of a sandbox that does not start: the grants are what a
+  /// person controls.
+  private static let sandboxFix =
+    "check the \(sandboxKey) section of \(ConfigurationLoader.configFileName), "
+    + "and that this host can run a confined command"
+
+  /// The finding of one extra write path: whether it is on disk.
+  ///
+  /// A grant of a path that is not there widens nothing, and the shell
+  /// still runs, so a missing entry is a warning and not a failure.
+  ///
+  /// - Parameter path: The configured path.
+  /// - Returns: The finding of that path.
+  private static func check(ofExtraWritePath path: String) -> HealthCheck {
+    let name = "\(extraWritePathPrefix) \(path)"
+    guard FileManager.default.fileExists(atPath: path) else {
+      return .warning(
+        name: name,
+        message: "\(path) is not on disk, so the sandbox grants nothing there",
+        fix: "create \(path), or remove it from \(extraWritePathsKey) in "
+          + ConfigurationLoader.configFileName,
+        category: category)
     }
+    return .ok(name: name, message: "\(path) is on disk", category: category)
+  }
 
-    /// The dotted key path of the mcp section a fix names.
-    private static let mcpKey =
-        AgentConfiguration.CodingKeys.tools.stringValue
-        + LoadedConfiguration.keyPathSeparator
-        + ToolsConfiguration.CodingKeys.mcp.stringValue
+  // MARK: - The shell
 
-    // MARK: - Stored state
-
-    /// The resolved configuration, which names the sandbox grants and the
-    /// tool roster.
-    private let configuration: AgentConfiguration
-
-    /// The directory `--cwd` names. It is the first writable root of the
-    /// sandbox, and it names the project of the default shell store.
-    private let workingDirectory: URL
-
-    /// The home of the host. The default shell store of the project is in
-    /// it (``AgentHome/shellStoreDirectory(of:)``).
-    private let home: AgentHome
-
-    /// How the checks reach the world.
-    private let prober: any ToolsProber
-
-    /// How long one prober call may take, in seconds.
-    public let timeoutSeconds: Double
-
-    /// The process environment that the web row reads the API keys from.
-    /// The row names the providers that the keys select, and never a key.
-    private let environment: [String: String]
-
-    // MARK: - Doctorable
-
-    /// What this component is called in the doctor report.
-    public let doctorName = ToolsDoctor.category
-
-    /// The group its findings belong to.
-    public let doctorCategory = ToolsDoctor.category
-
-    /// Makes the component over one resolved configuration and one prober.
-    ///
-    /// - Parameters:
-    ///   - configuration: The resolved configuration.
-    ///   - workingDirectory: The directory `--cwd` names.
-    ///   - home: The home of the host, which holds the default shell store
-    ///     of the project.
-    ///   - prober: How the checks reach the world.
-    ///   - timeoutSeconds: How long one prober call may take. The default
-    ///     is ``probeTimeoutSeconds``.
-    ///   - environment: The process environment that the web row reads the
-    ///     API keys from. The default is the environment of the process.
-    public init(
-        configuration: AgentConfiguration, workingDirectory: URL, home: AgentHome, prober: any ToolsProber,
-        timeoutSeconds: Double = ToolsDoctor.probeTimeoutSeconds,
-        environment: [String: String] = ProcessInfo.processInfo.environment
-    ) {
-        self.configuration = configuration
-        self.workingDirectory = workingDirectory
-        self.home = home
-        self.prober = prober
-        self.timeoutSeconds = timeoutSeconds
-        self.environment = environment
+  /// The finding of the shell section: the store directory when the tool
+  /// is on, and one row that says disabled when it is off.
+  ///
+  /// - Returns: That one finding.
+  private func shellCheck() -> HealthCheck {
+    switch configuration.tools.shell {
+    case .disabled:
+      return DisabledSectionCheck.check(
+        name: Self.shellToolCheckName, key: Self.shellKey, category: Self.category)
+    case .enabled(let options):
+      return WritableDirectoryCheck.check(
+        of: options.storeDirectory ?? defaultStoreDirectory,
+        name: Self.storeCheckName, subject: Self.storeSubject, category: Self.category,
+        fix: Self.storeFix(naming:))
     }
+  }
 
-    /// Reports the sandbox, then one finding per extra write path, then the
-    /// shell, then the web tool, then the git tool, then the environment
-    /// tool, then the MCP servers.
-    ///
-    /// - Returns: The findings, in that order.
-    public func runHealthChecks() async -> [HealthCheck] {
-        await [sandboxCheck()]
-            + configuration.sandbox.extraWritePaths.map(Self.check(ofExtraWritePath:))
-            + [shellCheck(), webCheck(), gitCheck(), environmentCheck()]
-            + mcpChecks()
+  /// The store directory the shell capability makes when
+  /// `tools.shell.storeDirectory` names none: the shell store of the
+  /// project in the home, the folder that the tool catalog gives the shell.
+  private var defaultStoreDirectory: URL {
+    home.shellStoreDirectory(of: workingDirectory)
+  }
+
+  /// The fix of a store directory that cannot be used: make the directory
+  /// writable, or point the configuration key somewhere else.
+  ///
+  /// - Parameter directory: The directory that stands in the way.
+  /// - Returns: The fix text.
+  private static func storeFix(naming directory: URL) -> String {
+    "make \(directory.path) writable, or set \(storeDirectoryKey) in "
+      + "\(ConfigurationLoader.configFileName) to a directory that can be written"
+  }
+
+  // MARK: - The web tool
+
+  /// The finding of the web section: the search providers in force, by
+  /// name and in order, or one row that says disabled.
+  ///
+  /// The row sends no request. The providers come from the configured
+  /// keys and the process environment, and a provider name holds no key.
+  ///
+  /// - Returns: That one finding.
+  private func webCheck() -> HealthCheck {
+    let names = WebComposition.providerNames(
+      section: configuration.tools.web, processEnvironment: environment)
+    return Self.switchableSectionCheck(
+      name: Self.webToolCheckName, key: Self.webEnabledKey,
+      onMessage: names.map {
+        "on; the search providers in order: "
+          + $0.joined(separator: Self.providerSeparator)
+      })
+  }
+
+  // MARK: - The git tool
+
+  /// The finding of the git section: one row that says the read-only git
+  /// verbs mount over the working directory, or one row that says
+  /// disabled.
+  ///
+  /// The row reads no repository. A working directory outside a
+  /// repository is not a fault: each git verb then answers with a
+  /// correction that the model reads.
+  ///
+  /// - Returns: That one finding.
+  private func gitCheck() -> HealthCheck {
+    Self.switchableSectionCheck(
+      name: Self.gitToolCheckName, key: Self.gitEnabledKey,
+      onMessage: configuration.tools.git.mountedOptions.map { _ in
+        "on; the read-only git verbs read the repository at \(workingDirectory.path)"
+      })
+  }
+
+  // MARK: - The environment tool
+
+  /// The finding of the environment section: one row that says the tool
+  /// is on and states the secret risk of `tools.environment.variables`,
+  /// or one row that says disabled.
+  ///
+  /// The row reads no variable, so it never prints a variable value. The
+  /// on row is a pass and not a warning: the tool is on in the default
+  /// configuration, and a warning makes `doctor` fail on that
+  /// configuration.
+  ///
+  /// - Returns: That one finding.
+  private func environmentCheck() -> HealthCheck {
+    Self.switchableSectionCheck(
+      name: Self.environmentToolCheckName, key: Self.environmentEnabledKey,
+      onMessage: configuration.tools.environment.mountedOptions.map { _ in
+        Self.environmentOnMessage
+      })
+  }
+
+  // MARK: - The MCP servers
+
+  /// The findings of the `mcp:` section: one per configured server, or
+  /// one row that says disabled.
+  ///
+  /// The servers are probed together, so one slow server does not add its
+  /// wait to the next one. The findings come back in document order.
+  ///
+  /// - Returns: The findings, in document order.
+  private func mcpChecks() async -> [HealthCheck] {
+    guard case .enabled(let servers) = configuration.tools.mcp else {
+      return [
+        DisabledSectionCheck.check(
+          name: Self.mcpToolCheckName, key: Self.mcpKey, category: Self.category)
+      ]
     }
-
-    // MARK: - The sandbox
-
-    /// The finding of the sandbox itself: one trivial confined command,
-    /// through the prober.
-    ///
-    /// - Returns: A pass, or the failure the prober reported.
-    private func sandboxCheck() async -> HealthCheck {
-        let options = configuration.sandbox.sandboxOptions(workingDirectory: workingDirectory)
-        let outcome = await probe { await prober.startSandbox(options: options) }
-        return finding(
-            of: outcome, name: Self.sandboxCheckName, passed: Self.sandboxPassed,
-            subject: Self.sandboxSubject, fix: Self.sandboxFix)
+    return await withTaskGroup(of: (Int, HealthCheck).self) { group in
+      for (position, entry) in servers.enumerated() {
+        group.addTask { (position, await self.mcpCheck(of: entry)) }
+      }
+      var byPosition: [Int: HealthCheck] = [:]
+      for await (position, check) in group {
+        byPosition[position] = check
+      }
+      return servers.indices.compactMap { byPosition[$0] }
     }
+  }
 
-    /// The fix of a sandbox that does not start: the grants are what a
-    /// person controls.
-    private static let sandboxFix =
-        "check the \(sandboxKey) section of \(ConfigurationLoader.configFileName), "
-        + "and that this host can run a confined command"
+  /// The finding of one configured MCP server: the prober starts it and
+  /// stops it again.
+  ///
+  /// - Parameter entry: The server entry to probe.
+  /// - Returns: A pass, or the failure the prober reported.
+  private func mcpCheck(of entry: MCPServerConfiguration) async -> HealthCheck {
+    let subject = Self.subject(of: entry)
+    let outcome = await probe { await prober.startMCPServer(entry) }
+    return finding(
+      of: outcome, name: "\(Self.mcpServerPrefix) \(entry.name)",
+      passed: "\(subject) answered", subject: subject, fix: Self.fix(naming: entry))
+  }
 
-    /// The finding of one extra write path: whether it is on disk.
-    ///
-    /// A grant of a path that is not there widens nothing, and the shell
-    /// still runs, so a missing entry is a warning and not a failure.
-    ///
-    /// - Parameter path: The configured path.
-    /// - Returns: The finding of that path.
-    private static func check(ofExtraWritePath path: String) -> HealthCheck {
-        let name = "\(extraWritePathPrefix) \(path)"
-        guard FileManager.default.fileExists(atPath: path) else {
-            return .warning(
-                name: name,
-                message: "\(path) is not on disk, so the sandbox grants nothing there",
-                fix: "create \(path), or remove it from \(extraWritePathsKey) in "
-                    + ConfigurationLoader.configFileName,
-                category: category)
-        }
-        return .ok(name: name, message: "\(path) is on disk", category: category)
+  /// One server entry as a person reads it: the name it mounts under, and
+  /// the command or the URL it is reached at.
+  ///
+  /// - Parameter entry: The server entry to describe.
+  /// - Returns: The noun phrase a message carries.
+  private static func subject(of entry: MCPServerConfiguration) -> String {
+    switch entry.transport {
+    case .stdio(let command, _, _):
+      return "mcp server \"\(entry.name)\" (command \(command))"
+    case .http(let url, _):
+      return "mcp server \"\(entry.name)\" (url \(url))"
     }
+  }
 
-    // MARK: - The shell
+  /// The fix of a server that cannot be reached: its own entry is what a
+  /// person edits.
+  ///
+  /// - Parameter entry: The server entry that did not answer.
+  /// - Returns: The fix text.
+  private static func fix(naming entry: MCPServerConfiguration) -> String {
+    "check the \"\(entry.name)\" entry under \(mcpKey) in "
+      + ConfigurationLoader.configFileName
+  }
 
-    /// The finding of the shell section: the store directory when the tool
-    /// is on, and one row that says disabled when it is off.
-    ///
-    /// - Returns: That one finding.
-    private func shellCheck() -> HealthCheck {
-        switch configuration.tools.shell {
-        case .disabled:
-            return DisabledSectionCheck.check(
-                name: Self.shellToolCheckName, key: Self.shellKey, category: Self.category)
-        case .enabled(let options):
-            return WritableDirectoryCheck.check(
-                of: options.storeDirectory ?? defaultStoreDirectory,
-                name: Self.storeCheckName, subject: Self.storeSubject, category: Self.category,
-                fix: Self.storeFix(naming:))
-        }
+  // MARK: - The shared shapes
+
+  /// The one row of a tool section that is on or off: a pass with the on
+  /// message, or the row that says disabled and names the key that turns
+  /// the tool on again.
+  ///
+  /// - Parameters:
+  ///   - name: What the row is called in the report.
+  ///   - key: The dotted `enabled:` key path of the section.
+  ///   - onMessage: What the row says when the tool is on, or `nil` when
+  ///     the tool is off.
+  /// - Returns: That one row.
+  private static func switchableSectionCheck(
+    name: String, key: String, onMessage: String?
+  ) -> HealthCheck {
+    guard let onMessage else {
+      return DisabledSectionCheck.check(name: name, key: key, category: category)
     }
+    return .ok(name: name, message: onMessage, category: category)
+  }
 
-    /// The store directory the shell capability makes when
-    /// `tools.shell.storeDirectory` names none: the shell store of the
-    /// project in the home, the folder that the tool catalog gives the shell.
-    private var defaultStoreDirectory: URL {
-        home.shellStoreDirectory(of: workingDirectory)
+  /// The finding one probe gives.
+  ///
+  /// - Parameters:
+  ///   - outcome: What the probe gave.
+  ///   - name: What the finding is called in the report.
+  ///   - passed: The message of a probe that answered.
+  ///   - subject: What was probed, as a noun phrase.
+  ///   - fix: What to do about a probe that did not pass.
+  /// - Returns: The finding.
+  private func finding(
+    of outcome: ProbeOutcome, name: String, passed: String, subject: String, fix: String
+  ) -> HealthCheck {
+    switch outcome {
+    case .answered:
+      return .ok(name: name, message: passed, category: Self.category)
+    case .failed(let reason):
+      return .error(
+        name: name, message: "\(subject) did not pass: \(reason)", fix: fix,
+        category: Self.category)
+    case .timedOut:
+      return .warning(
+        name: name,
+        message: "\(subject) did not answer in \(timeoutSeconds) seconds",
+        fix: fix, category: Self.category)
     }
+  }
 
-    /// The fix of a store directory that cannot be used: make the directory
-    /// writable, or point the configuration key somewhere else.
-    ///
-    /// - Parameter directory: The directory that stands in the way.
-    /// - Returns: The fix text.
-    private static func storeFix(naming directory: URL) -> String {
-        "make \(directory.path) writable, or set \(storeDirectoryKey) in "
-            + "\(ConfigurationLoader.configFileName) to a directory that can be written"
-    }
-
-    // MARK: - The web tool
-
-    /// The finding of the web section: the search providers in force, by
-    /// name and in order, or one row that says disabled.
-    ///
-    /// The row sends no request. The providers come from the configured
-    /// keys and the process environment, and a provider name holds no key.
-    ///
-    /// - Returns: That one finding.
-    private func webCheck() -> HealthCheck {
-        let names = WebComposition.providerNames(
-            section: configuration.tools.web, processEnvironment: environment)
-        return Self.switchableSectionCheck(
-            name: Self.webToolCheckName, key: Self.webEnabledKey,
-            onMessage: names.map {
-                "on; the search providers in order: "
-                    + $0.joined(separator: Self.providerSeparator)
-            })
-    }
-
-    // MARK: - The git tool
-
-    /// The finding of the git section: one row that says the read-only git
-    /// verbs mount over the working directory, or one row that says
-    /// disabled.
-    ///
-    /// The row reads no repository. A working directory outside a
-    /// repository is not a fault: each git verb then answers with a
-    /// correction that the model reads.
-    ///
-    /// - Returns: That one finding.
-    private func gitCheck() -> HealthCheck {
-        Self.switchableSectionCheck(
-            name: Self.gitToolCheckName, key: Self.gitEnabledKey,
-            onMessage: configuration.tools.git.mountedOptions.map { _ in
-                "on; the read-only git verbs read the repository at \(workingDirectory.path)"
-            })
-    }
-
-    // MARK: - The environment tool
-
-    /// The finding of the environment section: one row that says the tool
-    /// is on and states the secret risk of `tools.environment.variables`,
-    /// or one row that says disabled.
-    ///
-    /// The row reads no variable, so it never prints a variable value. The
-    /// on row is a pass and not a warning: the tool is on in the default
-    /// configuration, and a warning makes `doctor` fail on that
-    /// configuration.
-    ///
-    /// - Returns: That one finding.
-    private func environmentCheck() -> HealthCheck {
-        Self.switchableSectionCheck(
-            name: Self.environmentToolCheckName, key: Self.environmentEnabledKey,
-            onMessage: configuration.tools.environment.mountedOptions.map { _ in
-                Self.environmentOnMessage
-            })
-    }
-
-    // MARK: - The MCP servers
-
-    /// The findings of the `mcp:` section: one per configured server, or
-    /// one row that says disabled.
-    ///
-    /// The servers are probed together, so one slow server does not add its
-    /// wait to the next one. The findings come back in document order.
-    ///
-    /// - Returns: The findings, in document order.
-    private func mcpChecks() async -> [HealthCheck] {
-        guard case .enabled(let servers) = configuration.tools.mcp else {
-            return [
-                DisabledSectionCheck.check(
-                    name: Self.mcpToolCheckName, key: Self.mcpKey, category: Self.category)
-            ]
-        }
-        return await withTaskGroup(of: (Int, HealthCheck).self) { group in
-            for (position, entry) in servers.enumerated() {
-                group.addTask { (position, await self.mcpCheck(of: entry)) }
-            }
-            var byPosition: [Int: HealthCheck] = [:]
-            for await (position, check) in group {
-                byPosition[position] = check
-            }
-            return servers.indices.compactMap { byPosition[$0] }
-        }
-    }
-
-    /// The finding of one configured MCP server: the prober starts it and
-    /// stops it again.
-    ///
-    /// - Parameter entry: The server entry to probe.
-    /// - Returns: A pass, or the failure the prober reported.
-    private func mcpCheck(of entry: MCPServerConfiguration) async -> HealthCheck {
-        let subject = Self.subject(of: entry)
-        let outcome = await probe { await prober.startMCPServer(entry) }
-        return finding(
-            of: outcome, name: "\(Self.mcpServerPrefix) \(entry.name)",
-            passed: "\(subject) answered", subject: subject, fix: Self.fix(naming: entry))
-    }
-
-    /// One server entry as a person reads it: the name it mounts under, and
-    /// the command or the URL it is reached at.
-    ///
-    /// - Parameter entry: The server entry to describe.
-    /// - Returns: The noun phrase a message carries.
-    private static func subject(of entry: MCPServerConfiguration) -> String {
-        switch entry.transport {
-        case .stdio(let command, _, _):
-            return "mcp server \"\(entry.name)\" (command \(command))"
-        case .http(let url, _):
-            return "mcp server \"\(entry.name)\" (url \(url))"
-        }
-    }
-
-    /// The fix of a server that cannot be reached: its own entry is what a
-    /// person edits.
-    ///
-    /// - Parameter entry: The server entry that did not answer.
-    /// - Returns: The fix text.
-    private static func fix(naming entry: MCPServerConfiguration) -> String {
-        "check the \"\(entry.name)\" entry under \(mcpKey) in "
-            + ConfigurationLoader.configFileName
-    }
-
-    // MARK: - The shared shapes
-
-    /// The one row of a tool section that is on or off: a pass with the on
-    /// message, or the row that says disabled and names the key that turns
-    /// the tool on again.
-    ///
-    /// - Parameters:
-    ///   - name: What the row is called in the report.
-    ///   - key: The dotted `enabled:` key path of the section.
-    ///   - onMessage: What the row says when the tool is on, or `nil` when
-    ///     the tool is off.
-    /// - Returns: That one row.
-    private static func switchableSectionCheck(
-        name: String, key: String, onMessage: String?
-    ) -> HealthCheck {
-        guard let onMessage else {
-            return DisabledSectionCheck.check(name: name, key: key, category: category)
-        }
-        return .ok(name: name, message: onMessage, category: category)
-    }
-
-    /// The finding one probe gives.
-    ///
-    /// - Parameters:
-    ///   - outcome: What the probe gave.
-    ///   - name: What the finding is called in the report.
-    ///   - passed: The message of a probe that answered.
-    ///   - subject: What was probed, as a noun phrase.
-    ///   - fix: What to do about a probe that did not pass.
-    /// - Returns: The finding.
-    private func finding(
-        of outcome: ProbeOutcome, name: String, passed: String, subject: String, fix: String
-    ) -> HealthCheck {
-        switch outcome {
-        case .answered:
-            return .ok(name: name, message: passed, category: Self.category)
-        case .failed(let reason):
-            return .error(
-                name: name, message: "\(subject) did not pass: \(reason)", fix: fix,
-                category: Self.category)
-        case .timedOut:
-            return .warning(
-                name: name,
-                message: "\(subject) did not answer in \(timeoutSeconds) seconds",
-                fix: fix, category: Self.category)
-        }
-    }
-
-    /// Runs one prober call under ``timeoutSeconds``.
-    ///
-    /// - Parameter call: The prober call to run.
-    /// - Returns: What the call gave, or ``ProbeOutcome/timedOut``.
-    private func probe(
-        _ call: @escaping @Sendable () async -> ProbeOutcome
-    ) async -> ProbeOutcome {
-        await ProbeTimeout.run(seconds: timeoutSeconds, timedOut: .timedOut, probe: call)
-    }
+  /// Runs one prober call under ``timeoutSeconds``.
+  ///
+  /// - Parameter call: The prober call to run.
+  /// - Returns: What the call gave, or ``ProbeOutcome/timedOut``.
+  private func probe(
+    _ call: @escaping @Sendable () async -> ProbeOutcome
+  ) async -> ProbeOutcome {
+    await ProbeTimeout.run(seconds: timeoutSeconds, timedOut: .timedOut, probe: call)
+  }
 }

@@ -34,94 +34,95 @@ import FoundationModelsExtras
 /// and a check of the bundle would restate what SwiftPM guarantees and
 /// could name no configuration key to fix. See card `^vsj5hyh`.
 public struct RuntimeDoctor: Doctorable {
-    // MARK: - Constants
+  // MARK: - Constants
 
-    /// The group every finding of this component belongs to.
-    public static let category = "runtime"
+  /// The group every finding of this component belongs to.
+  public static let category = "runtime"
 
-    /// The skills section: a layer row says that skills are optional.
-    ///
-    /// A layer that is not on disk is no fault, because skills are optional.
-    /// An unreadable one loses every skill in it, and a person either opens
-    /// the directory or takes it away.
-    private static let skillsSection = DotfolderSection(
-        kind: .skills,
-        wording: DotfolderLayerCheck.Wording(
-            missingReason: "skills are optional",
-            noun: ToolCatalog.skillsDotfolderName,
-            unreadableCost: ", so its skills are lost",
-            unreadableFixHint: ", or remove it"))
+  /// The skills section: a layer row says that skills are optional.
+  ///
+  /// A layer that is not on disk is no fault, because skills are optional.
+  /// An unreadable one loses every skill in it, and a person either opens
+  /// the directory or takes it away.
+  private static let skillsSection = DotfolderSection(
+    kind: .skills,
+    wording: DotfolderLayerCheck.Wording(
+      missingReason: "skills are optional",
+      noun: ToolCatalog.skillsDotfolderName,
+      unreadableCost: ", so its skills are lost",
+      unreadableFixHint: ", or remove it"))
 
-    /// The agents section: a layer row says that agents are optional.
-    ///
-    /// A layer that is not on disk is no fault, because agents are optional.
-    /// An unreadable one loses every agent in it.
-    private static let agentsSection = DotfolderSection(
-        kind: .agents,
-        wording: DotfolderLayerCheck.Wording(
-            missingReason: "agents are optional",
-            noun: ToolCatalog.agentsDotfolderName,
-            unreadableCost: ", so its agents are lost",
-            unreadableFixHint: ", or remove it"))
+  /// The agents section: a layer row says that agents are optional.
+  ///
+  /// A layer that is not on disk is no fault, because agents are optional.
+  /// An unreadable one loses every agent in it.
+  private static let agentsSection = DotfolderSection(
+    kind: .agents,
+    wording: DotfolderLayerCheck.Wording(
+      missingReason: "agents are optional",
+      noun: ToolCatalog.agentsDotfolderName,
+      unreadableCost: ", so its agents are lost",
+      unreadableFixHint: ", or remove it"))
 
-    /// The values that make the rows of one dotfolder section different from
-    /// the rows of an other section.
-    private struct DotfolderSection {
-        /// The kind of settings whose stack the section reads.
-        let kind: SettingsFolders.Kind
+  /// The values that make the rows of one dotfolder section different from
+  /// the rows of an other section.
+  private struct DotfolderSection {
+    /// The kind of settings whose stack the section reads.
+    let kind: SettingsFolders.Kind
 
-        /// The words of a layer row.
-        let wording: DotfolderLayerCheck.Wording
+    /// The words of a layer row.
+    let wording: DotfolderLayerCheck.Wording
+  }
+
+  // MARK: - Stored state
+
+  /// The directory `--cwd` names, which roots the project layer of each
+  /// stack.
+  private let workingDirectory: URL
+
+  /// The settings folders that each stack comes from: the same folders
+  /// that the sessions read.
+  private let settingsFolders: SettingsFolders
+
+  // MARK: - Doctorable
+
+  /// What this component is called in the doctor report.
+  public let doctorName = RuntimeDoctor.category
+
+  /// The group its findings belong to.
+  public let doctorCategory = RuntimeDoctor.category
+
+  /// Makes the component over the stacks of `settingsFolders`.
+  ///
+  /// - Parameters:
+  ///   - workingDirectory: The directory `--cwd` names.
+  ///   - settingsFolders: The settings folders that each stack comes from.
+  public init(workingDirectory: URL, settingsFolders: SettingsFolders) {
+    self.workingDirectory = workingDirectory
+    self.settingsFolders = settingsFolders
+  }
+
+  /// Reports one finding per layer of the skills stack, lowest precedence
+  /// first, then the same for the agents stack.
+  ///
+  /// - Returns: The findings, in that order.
+  public func runHealthChecks() async -> [HealthCheck] {
+    checks(of: Self.skillsSection) + checks(of: Self.agentsSection)
+  }
+
+  /// The findings of one dotfolder section: one per layer of its stack.
+  ///
+  /// The stack is the stack of the kind of the section in
+  /// ``settingsFolders``, so this component reports the very layers a
+  /// session reads.
+  ///
+  /// - Parameter section: The values of the section.
+  /// - Returns: The findings, lowest precedence first.
+  private func checks(of section: DotfolderSection) -> [HealthCheck] {
+    settingsFolders.stack(for: section.kind, workingDirectory: workingDirectory).layers.map {
+      layer in
+      DotfolderLayerCheck.check(
+        of: layer, wording: section.wording, category: Self.category, requiresWrite: false)
     }
-
-    // MARK: - Stored state
-
-    /// The directory `--cwd` names, which roots the project layer of each
-    /// stack.
-    private let workingDirectory: URL
-
-    /// The settings folders that each stack comes from: the same folders
-    /// that the sessions read.
-    private let settingsFolders: SettingsFolders
-
-    // MARK: - Doctorable
-
-    /// What this component is called in the doctor report.
-    public let doctorName = RuntimeDoctor.category
-
-    /// The group its findings belong to.
-    public let doctorCategory = RuntimeDoctor.category
-
-    /// Makes the component over the stacks of `settingsFolders`.
-    ///
-    /// - Parameters:
-    ///   - workingDirectory: The directory `--cwd` names.
-    ///   - settingsFolders: The settings folders that each stack comes from.
-    public init(workingDirectory: URL, settingsFolders: SettingsFolders) {
-        self.workingDirectory = workingDirectory
-        self.settingsFolders = settingsFolders
-    }
-
-    /// Reports one finding per layer of the skills stack, lowest precedence
-    /// first, then the same for the agents stack.
-    ///
-    /// - Returns: The findings, in that order.
-    public func runHealthChecks() async -> [HealthCheck] {
-        checks(of: Self.skillsSection) + checks(of: Self.agentsSection)
-    }
-
-    /// The findings of one dotfolder section: one per layer of its stack.
-    ///
-    /// The stack is the stack of the kind of the section in
-    /// ``settingsFolders``, so this component reports the very layers a
-    /// session reads.
-    ///
-    /// - Parameter section: The values of the section.
-    /// - Returns: The findings, lowest precedence first.
-    private func checks(of section: DotfolderSection) -> [HealthCheck] {
-        settingsFolders.stack(for: section.kind, workingDirectory: workingDirectory).layers.map { layer in
-            DotfolderLayerCheck.check(
-                of: layer, wording: section.wording, category: Self.category, requiresWrite: false)
-        }
-    }
+  }
 }

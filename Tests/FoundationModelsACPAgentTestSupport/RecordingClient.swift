@@ -11,41 +11,41 @@ import FoundationModelsACPClient
 /// ``wait(for:until:)``: each append resumes the waits whose condition is
 /// now true, so the wait uses no clock and no poll.
 public actor UpdateCollector {
-    /// The collected notifications, in arrival order, with their waits.
-    private let collected = WatchedValue<[UpdateSessionNotification]>([])
+  /// The collected notifications, in arrival order, with their waits.
+  private let collected = WatchedValue<[UpdateSessionNotification]>([])
 
-    /// The collected notifications, in arrival order.
-    public var updates: [UpdateSessionNotification] {
-        collected.value
-    }
+  /// The collected notifications, in arrival order.
+  public var updates: [UpdateSessionNotification] {
+    collected.value
+  }
 
-    /// Creates a collector that has collected nothing.
-    public init() {}
+  /// Creates a collector that has collected nothing.
+  public init() {}
 
-    /// Appends one notification, and resumes each wait whose condition is
-    /// now true.
-    ///
-    /// - Parameter notification: The notification to record.
-    public func append(notification: UpdateSessionNotification) {
-        collected.update { $0.append(notification) }
-    }
+  /// Appends one notification, and resumes each wait whose condition is
+  /// now true.
+  ///
+  /// - Parameter notification: The notification to record.
+  public func append(notification: UpdateSessionNotification) {
+    collected.update { $0.append(notification) }
+  }
 
-    /// Waits until `isMet` is true for the collected sequence. Returns at
-    /// once when it is true now.
-    ///
-    /// - Parameters:
-    ///   - condition: The name of the condition, for the error of a
-    ///     cancelled wait.
-    ///   - isMet: Tells if the condition is true for a sequence.
-    /// - Returns: The first collected sequence for which `isMet` is true.
-    /// - Throws: ``ConditionWaitCancelled`` when the task of the wait is
-    ///   cancelled before the condition comes.
-    public nonisolated func wait(
-        for condition: String,
-        until isMet: @escaping @Sendable ([UpdateSessionNotification]) -> Bool
-    ) async throws -> [UpdateSessionNotification] {
-        try await collected.wait(for: condition, until: isMet)
-    }
+  /// Waits until `isMet` is true for the collected sequence. Returns at
+  /// once when it is true now.
+  ///
+  /// - Parameters:
+  ///   - condition: The name of the condition, for the error of a
+  ///     cancelled wait.
+  ///   - isMet: Tells if the condition is true for a sequence.
+  /// - Returns: The first collected sequence for which `isMet` is true.
+  /// - Throws: ``ConditionWaitCancelled`` when the task of the wait is
+  ///   cancelled before the condition comes.
+  public nonisolated func wait(
+    for condition: String,
+    until isMet: @escaping @Sendable ([UpdateSessionNotification]) -> Bool
+  ) async throws -> [UpdateSessionNotification] {
+    try await collected.wait(for: condition, until: isMet)
+  }
 }
 
 /// Collects the elicitation traffic the agent sends to the client: each
@@ -53,49 +53,68 @@ public actor UpdateCollector {
 /// notification, in arrival order. The observable models keep no history
 /// of them, so a count or an order proof reads this recorder.
 public actor ElicitationWireRecorder {
-    /// The recorded create requests, in arrival order.
-    public private(set) var creates: [CreateElicitationRequest] = []
+  /// The recorded create requests, in arrival order, with their waits.
+  private let recordedCreates = WatchedValue<[CreateElicitationRequest]>([])
 
-    /// The recorded completion notifications, in arrival order.
-    public private(set) var completions: [CompleteElicitationNotification] = []
+  /// The recorded create requests, in arrival order.
+  public var creates: [CreateElicitationRequest] {
+    recordedCreates.value
+  }
 
-    /// Creates a recorder that has recorded nothing.
-    public init() {}
+  /// The recorded completion notifications, in arrival order.
+  public private(set) var completions: [CompleteElicitationNotification] = []
 
-    /// Appends one create request.
-    ///
-    /// - Parameter request: The request to record.
-    public func recordCreate(request: CreateElicitationRequest) {
-        creates.append(request)
+  /// Creates a recorder that has recorded nothing.
+  public init() {}
+
+  /// Appends one create request.
+  ///
+  /// - Parameter request: The request to record.
+  public func recordCreate(request: CreateElicitationRequest) {
+    recordedCreates.update { $0.append(request) }
+  }
+
+  /// Waits until at least `count` create requests were recorded. Returns
+  /// at once when they are recorded now. The wait uses no clock and no
+  /// poll: each record resumes it.
+  ///
+  /// - Parameter count: The number of create requests to wait for.
+  /// - Returns: The recorded requests, in arrival order.
+  /// - Throws: ``ConditionWaitCancelled`` when the task of the wait is
+  ///   cancelled before the requests come.
+  public nonisolated func waitForCreates(count: Int) async throws -> [CreateElicitationRequest] {
+    try await recordedCreates.wait(for: "\(count) elicitation create request(s)") {
+      $0.count >= count
     }
+  }
 
-    /// Appends one completion notification.
-    ///
-    /// - Parameter notification: The notification to record.
-    public func recordCompletion(notification: CompleteElicitationNotification) {
-        completions.append(notification)
-    }
+  /// Appends one completion notification.
+  ///
+  /// - Parameter notification: The notification to record.
+  public func recordCompletion(notification: CompleteElicitationNotification) {
+    completions.append(notification)
+  }
 }
 
 /// One `_sah/graphql/*` notification that the agent sent to the client.
 public enum GraphQLTunnelNotification: Equatable, Sendable {
-    /// `_sah/graphql/next`: the next result of a subscription.
-    case next(SAH.GraphQL.NextNotification)
+  /// `_sah/graphql/next`: the next result of a subscription.
+  case next(SAH.GraphQL.NextNotification)
 
-    /// `_sah/graphql/error`: the subscription ended with errors.
-    case error(SAH.GraphQL.ErrorNotification)
+  /// `_sah/graphql/error`: the subscription ended with errors.
+  case error(SAH.GraphQL.ErrorNotification)
 
-    /// `_sah/graphql/complete`: the subscription ended with no error.
-    case complete(SAH.GraphQL.CompleteNotification)
+  /// `_sah/graphql/complete`: the subscription ended with no error.
+  case complete(SAH.GraphQL.CompleteNotification)
 
-    /// Whether the notification ends its subscription: `error` or
-    /// `complete`.
-    public var endsSubscription: Bool {
-        switch self {
-        case .next: false
-        case .error, .complete: true
-        }
+  /// Whether the notification ends its subscription: `error` or
+  /// `complete`.
+  public var endsSubscription: Bool {
+    switch self {
+    case .next: false
+    case .error, .complete: true
     }
+  }
 }
 
 /// Collects the `_sah/graphql/*` notifications that the agent sends to the
@@ -105,36 +124,36 @@ public enum GraphQLTunnelNotification: Equatable, Sendable {
 /// ``wait(for:until:)``: each record resumes the waits whose condition is
 /// now true, so the wait uses no clock and no poll.
 public final class GraphQLTunnelRecorder: Sendable {
-    /// The recorded notifications, in arrival order, with their waits.
-    private let recorded = WatchedValue<[GraphQLTunnelNotification]>([])
+  /// The recorded notifications, in arrival order, with their waits.
+  private let recorded = WatchedValue<[GraphQLTunnelNotification]>([])
 
-    /// Creates a recorder that has recorded nothing.
-    public init() {}
+  /// Creates a recorder that has recorded nothing.
+  public init() {}
 
-    /// Appends one notification, and resumes each wait whose condition is
-    /// now true.
-    ///
-    /// - Parameter notification: The notification to record.
-    public func record(_ notification: GraphQLTunnelNotification) {
-        recorded.update { $0.append(notification) }
-    }
+  /// Appends one notification, and resumes each wait whose condition is
+  /// now true.
+  ///
+  /// - Parameter notification: The notification to record.
+  public func record(_ notification: GraphQLTunnelNotification) {
+    recorded.update { $0.append(notification) }
+  }
 
-    /// Waits until `isMet` is true for the recorded sequence. Returns at
-    /// once when it is true now.
-    ///
-    /// - Parameters:
-    ///   - condition: The name of the condition, for the error of a
-    ///     cancelled wait.
-    ///   - isMet: Tells if the condition is true for a sequence.
-    /// - Returns: The first recorded sequence for which `isMet` is true.
-    /// - Throws: ``ConditionWaitCancelled`` when the task of the wait is
-    ///   cancelled before the condition comes.
-    public func wait(
-        for condition: String,
-        until isMet: @escaping @Sendable ([GraphQLTunnelNotification]) -> Bool
-    ) async throws -> [GraphQLTunnelNotification] {
-        try await recorded.wait(for: condition, until: isMet)
-    }
+  /// Waits until `isMet` is true for the recorded sequence. Returns at
+  /// once when it is true now.
+  ///
+  /// - Parameters:
+  ///   - condition: The name of the condition, for the error of a
+  ///     cancelled wait.
+  ///   - isMet: Tells if the condition is true for a sequence.
+  /// - Returns: The first recorded sequence for which `isMet` is true.
+  /// - Throws: ``ConditionWaitCancelled`` when the task of the wait is
+  ///   cancelled before the condition comes.
+  public func wait(
+    for condition: String,
+    until isMet: @escaping @Sendable ([GraphQLTunnelNotification]) -> Bool
+  ) async throws -> [GraphQLTunnelNotification] {
+    try await recorded.wait(for: condition, until: isMet)
+  }
 }
 
 /// The forwarding recorder: it appends each
@@ -155,75 +174,81 @@ public final class GraphQLTunnelRecorder: Sendable {
 /// `pendingPermissions` stays empty as a regression tripwire. Every
 /// request therefore forwards to the router unchanged.
 final class RecordingClient: Client {
-    /// The recorder of the raw update sequence.
-    let collector: UpdateCollector
+  /// The recorder of the raw update sequence.
+  let collector: UpdateCollector
 
-    /// The recorder of the elicitation traffic.
-    let elicitations: ElicitationWireRecorder
+  /// The recorder of the elicitation traffic.
+  let elicitations: ElicitationWireRecorder
 
-    /// The recorder of the `_sah/graphql/*` notifications.
-    let graphQLNotifications: GraphQLTunnelRecorder
+  /// The recorder of the `_sah/graphql/*` notifications.
+  let graphQLNotifications: GraphQLTunnelRecorder
 
-    /// The router of the connection model, which gets each message.
-    private let router: any Client
+  /// The router of the connection model, which gets each message.
+  private let router: any Client
 
-    /// Creates a recorder in front of `router`.
-    ///
-    /// - Parameters:
-    ///   - router: The router of the connection model to forward to.
-    ///   - collector: The recorder of the raw update sequence.
-    ///   - elicitations: The recorder of the elicitation traffic.
-    ///   - graphQLNotifications: The recorder of the `_sah/graphql/*`
-    ///     notifications.
-    init(
-        forwardingTo router: any Client,
-        collector: UpdateCollector,
-        elicitations: ElicitationWireRecorder,
-        graphQLNotifications: GraphQLTunnelRecorder
+  /// Creates a recorder in front of `router`.
+  ///
+  /// - Parameters:
+  ///   - router: The router of the connection model to forward to.
+  ///   - collector: The recorder of the raw update sequence.
+  ///   - elicitations: The recorder of the elicitation traffic.
+  ///   - graphQLNotifications: The recorder of the `_sah/graphql/*`
+  ///     notifications.
+  init(
+    forwardingTo router: any Client,
+    collector: UpdateCollector,
+    elicitations: ElicitationWireRecorder,
+    graphQLNotifications: GraphQLTunnelRecorder
+  ) {
+    self.router = router
+    self.collector = collector
+    self.elicitations = elicitations
+    self.graphQLNotifications = graphQLNotifications
+  }
+
+  /// The handlers of the router, with one handler for each notification
+  /// of the GraphQL tunnel that records it in ``graphQLNotifications``.
+  var extensionHandlers: ExtensionHandlers {
+    var handlers = router.extensionHandlers
+    let recorder = graphQLNotifications
+    handlers.registerNotification(
+      SAH.GraphQL.Method.next, params: SAH.GraphQL.NextNotification.self
     ) {
-        self.router = router
-        self.collector = collector
-        self.elicitations = elicitations
-        self.graphQLNotifications = graphQLNotifications
+      recorder.record(.next($0))
     }
+    handlers.registerNotification(
+      SAH.GraphQL.Method.error, params: SAH.GraphQL.ErrorNotification.self
+    ) {
+      recorder.record(.error($0))
+    }
+    handlers.registerNotification(
+      SAH.GraphQL.Method.complete, params: SAH.GraphQL.CompleteNotification.self
+    ) {
+      recorder.record(.complete($0))
+    }
+    return handlers
+  }
 
-    /// The handlers of the router, with one handler for each notification
-    /// of the GraphQL tunnel that records it in ``graphQLNotifications``.
-    var extensionHandlers: ExtensionHandlers {
-        var handlers = router.extensionHandlers
-        let recorder = graphQLNotifications
-        handlers.registerNotification(SAH.GraphQL.Method.next, params: SAH.GraphQL.NextNotification.self) {
-            recorder.record(.next($0))
-        }
-        handlers.registerNotification(SAH.GraphQL.Method.error, params: SAH.GraphQL.ErrorNotification.self) {
-            recorder.record(.error($0))
-        }
-        handlers.registerNotification(SAH.GraphQL.Method.complete, params: SAH.GraphQL.CompleteNotification.self) {
-            recorder.record(.complete($0))
-        }
-        return handlers
-    }
+  func sessionUpdate(_ notification: UpdateSessionNotification) async {
+    await collector.append(notification: notification)
+    await router.sessionUpdate(notification)
+  }
 
-    func sessionUpdate(_ notification: UpdateSessionNotification) async {
-        await collector.append(notification: notification)
-        await router.sessionUpdate(notification)
-    }
+  func requestPermission(
+    _ params: RequestPermissionRequest
+  ) async throws -> RequestPermissionResponse {
+    try await router.requestPermission(params)
+  }
 
-    func requestPermission(
-        _ params: RequestPermissionRequest
-    ) async throws -> RequestPermissionResponse {
-        try await router.requestPermission(params)
-    }
+  func createElicitation(
+    _ params: CreateElicitationRequest
+  ) async throws -> CreateElicitationResponse {
+    await elicitations.recordCreate(request: params)
+    return try await router.createElicitation(params)
+  }
 
-    func createElicitation(
-        _ params: CreateElicitationRequest
-    ) async throws -> CreateElicitationResponse {
-        await elicitations.recordCreate(request: params)
-        return try await router.createElicitation(params)
-    }
-
-    func elicitationComplete(_ notification: CompleteElicitationNotification) async {
-        await elicitations.recordCompletion(notification: notification)
-        await router.elicitationComplete(notification)
-    }
+  func elicitationComplete(_ notification: CompleteElicitationNotification) async {
+    await elicitations.recordCompletion(notification: notification)
+    await router.elicitationComplete(notification)
+  }
 }

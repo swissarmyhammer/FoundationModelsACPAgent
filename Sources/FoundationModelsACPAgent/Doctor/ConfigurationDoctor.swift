@@ -13,135 +13,135 @@ import FoundationModelsExtras
 /// ``HealthStatus/error`` status, so one broken configuration never stops
 /// the other components.
 public struct ConfigurationDoctor: Doctorable {
-    // MARK: - Constants
+  // MARK: - Constants
 
-    /// The group every finding of this component belongs to.
-    public static let category = "configuration"
+  /// The group every finding of this component belongs to.
+  public static let category = "configuration"
 
-    /// The check that states whether the configuration loads.
-    private static let loadCheckName = "the configuration loads"
+  /// The check that states whether the configuration loads.
+  private static let loadCheckName = "the configuration loads"
 
-    /// What the load check says when the configuration decodes.
-    private static let loadPassed = "the merged configuration decodes"
+  /// What the load check says when the configuration decodes.
+  private static let loadPassed = "the merged configuration decodes"
 
-    /// The fix of a load that failed. It names the command that shows the
-    /// merged tree and the layer each key came from.
-    private static let loadFix = "run acp-agent config show to see the merged tree"
+  /// The fix of a load that failed. It names the command that shows the
+  /// merged tree and the layer each key came from.
+  private static let loadFix = "run acp-agent config show to see the merged tree"
 
-    /// The check that states one section the schema does not know.
-    private static let sectionCheckName = "the configuration schema"
+  /// The check that states one section the schema does not know.
+  private static let sectionCheckName = "the configuration schema"
 
-    /// The words this component says about the layers of its own stack.
-    ///
-    /// A layer that is not on disk is no fault, because the stack works
-    /// with no file at all. An unreadable one is reported with the `chmod`
-    /// command alone, which is the whole repair.
-    private static let layerWording = DotfolderLayerCheck.Wording(
-        missingReason: "the stack needs no file")
+  /// The words this component says about the layers of its own stack.
+  ///
+  /// A layer that is not on disk is no fault, because the stack works
+  /// with no file at all. An unreadable one is reported with the `chmod`
+  /// command alone, which is the whole repair.
+  private static let layerWording = DotfolderLayerCheck.Wording(
+    missingReason: "the stack needs no file")
 
-    // MARK: - Stored state
+  // MARK: - Stored state
 
-    /// The layer stack the paths are checked against.
-    private let stack: DotfolderStack
+  /// The layer stack the paths are checked against.
+  private let stack: DotfolderStack
 
-    /// What the one load of the run gave.
-    private let outcome: ConfigurationLoadOutcome
+  /// What the one load of the run gave.
+  private let outcome: ConfigurationLoadOutcome
 
-    // MARK: - Doctorable
+  // MARK: - Doctorable
 
-    /// What this component is called in the doctor report.
-    public let doctorName = ConfigurationDoctor.category
+  /// What this component is called in the doctor report.
+  public let doctorName = ConfigurationDoctor.category
 
-    /// The group its findings belong to.
-    public let doctorCategory = ConfigurationDoctor.category
+  /// The group its findings belong to.
+  public let doctorCategory = ConfigurationDoctor.category
 
-    /// Makes the component over one stack and the load that read it.
-    ///
-    /// - Parameters:
-    ///   - stack: The layer stack whose paths are checked.
-    ///   - outcome: What the one load of the run gave.
-    public init(stack: DotfolderStack, outcome: ConfigurationLoadOutcome) {
-        self.stack = stack
-        self.outcome = outcome
+  /// Makes the component over one stack and the load that read it.
+  ///
+  /// - Parameters:
+  ///   - stack: The layer stack whose paths are checked.
+  ///   - outcome: What the one load of the run gave.
+  public init(stack: DotfolderStack, outcome: ConfigurationLoadOutcome) {
+    self.stack = stack
+    self.outcome = outcome
+  }
+
+  /// Reports the load, then one finding per loader warning, then one
+  /// finding per layer path, lowest precedence first.
+  ///
+  /// - Returns: The findings, in that order.
+  public func runHealthChecks() async -> [HealthCheck] {
+    [Self.check(of: outcome)]
+      + outcome.warnings.map(Self.check(of:))
+      + stack.layers.map(Self.check(of:))
+  }
+
+  // MARK: - The load
+
+  /// The finding of the load itself.
+  ///
+  /// - Parameter outcome: What the load gave.
+  /// - Returns: A pass, or the failure with the reason as its message.
+  private static func check(of outcome: ConfigurationLoadOutcome) -> HealthCheck {
+    switch outcome {
+    case .loaded:
+      return .ok(name: loadCheckName, message: loadPassed, category: category)
+    case .failed(let reason):
+      return .error(
+        name: loadCheckName, message: reason, fix: loadFix, category: category)
     }
+  }
 
-    /// Reports the load, then one finding per loader warning, then one
-    /// finding per layer path, lowest precedence first.
-    ///
-    /// - Returns: The findings, in that order.
-    public func runHealthChecks() async -> [HealthCheck] {
-        [Self.check(of: outcome)]
-            + outcome.warnings.map(Self.check(of:))
-            + stack.layers.map(Self.check(of:))
+  // MARK: - The warnings
+
+  /// The finding of one loader warning: the warning's own message, and a
+  /// fix that names the key and the file it sits in. A secret reference
+  /// with no item, or a secret reference whose lookup failed, is one
+  /// finding, which names the reference and never a value.
+  ///
+  /// - Parameter warning: The warning the loader returned.
+  /// - Returns: A finding with the ``HealthStatus/warning`` status.
+  private static func check(of warning: ConfigurationWarning) -> HealthCheck {
+    .warning(
+      name: sectionCheckName,
+      message: warning.description,
+      fix: fix(for: warning),
+      category: category)
+  }
+
+  /// The fix of one loader warning. A secret reference with no item is
+  /// repaired in the secret store, or by the removal of its key. A secret
+  /// reference whose lookup failed is repaired when the store can read the
+  /// item, or by the removal of its key. Each other warning is repaired by
+  /// the removal of its key.
+  ///
+  /// - Parameter warning: The warning the loader returned.
+  /// - Returns: The fix text.
+  private static func fix(for warning: ConfigurationWarning) -> String {
+    let removal = "remove \"\(warning.sectionKeyPath)\" from \(ConfigurationLoader.configFileName)"
+    switch warning {
+    case .unresolvedSecret(_, let reference):
+      return "add an item for the reference \"\(reference)\" to the secret store, or \(removal)"
+    case .unreadableSecret(_, let reference):
+      return
+        "unlock the secret store and let this app read the item for the reference \"\(reference)\", or \(removal)"
+    case .unknownSection, .unknownToolSection, .cannotDisable:
+      return removal
     }
+  }
 
-    // MARK: - The load
+  // MARK: - The layer paths
 
-    /// The finding of the load itself.
-    ///
-    /// - Parameter outcome: What the load gave.
-    /// - Returns: A pass, or the failure with the reason as its message.
-    private static func check(of outcome: ConfigurationLoadOutcome) -> HealthCheck {
-        switch outcome {
-        case .loaded:
-            return .ok(name: loadCheckName, message: loadPassed, category: category)
-        case .failed(let reason):
-            return .error(
-                name: loadCheckName, message: reason, fix: loadFix, category: category)
-        }
-    }
-
-    // MARK: - The warnings
-
-    /// The finding of one loader warning: the warning's own message, and a
-    /// fix that names the key and the file it sits in. A secret reference
-    /// with no item, or a secret reference whose lookup failed, is one
-    /// finding, which names the reference and never a value.
-    ///
-    /// - Parameter warning: The warning the loader returned.
-    /// - Returns: A finding with the ``HealthStatus/warning`` status.
-    private static func check(of warning: ConfigurationWarning) -> HealthCheck {
-        .warning(
-            name: sectionCheckName,
-            message: warning.description,
-            fix: fix(for: warning),
-            category: category)
-    }
-
-    /// The fix of one loader warning. A secret reference with no item is
-    /// repaired in the secret store, or by the removal of its key. A secret
-    /// reference whose lookup failed is repaired when the store can read the
-    /// item, or by the removal of its key. Each other warning is repaired by
-    /// the removal of its key.
-    ///
-    /// - Parameter warning: The warning the loader returned.
-    /// - Returns: The fix text.
-    private static func fix(for warning: ConfigurationWarning) -> String {
-        let removal = "remove \"\(warning.sectionKeyPath)\" from \(ConfigurationLoader.configFileName)"
-        switch warning {
-        case .unresolvedSecret(_, let reference):
-            return "add an item for the reference \"\(reference)\" to the secret store, or \(removal)"
-        case .unreadableSecret(_, let reference):
-            return
-                "unlock the secret store and let this app read the item for the reference \"\(reference)\", or \(removal)"
-        case .unknownSection, .unknownToolSection, .cannotDisable:
-            return removal
-        }
-    }
-
-    // MARK: - The layer paths
-
-    /// The finding of one layer path: whether the directory is on disk, and
-    /// whether it can be read and written.
-    ///
-    /// A layer directory that is not on disk passes. The stack is built to
-    /// work with no file at all, so a missing user or project directory is
-    /// what a fresh install looks like and not a fault.
-    ///
-    /// - Parameter layer: The layer to check.
-    /// - Returns: The finding of that layer.
-    private static func check(of layer: DotfolderStack.Layer) -> HealthCheck {
-        DotfolderLayerCheck.check(
-            of: layer, wording: layerWording, category: category, requiresWrite: true)
-    }
+  /// The finding of one layer path: whether the directory is on disk, and
+  /// whether it can be read and written.
+  ///
+  /// A layer directory that is not on disk passes. The stack is built to
+  /// work with no file at all, so a missing user or project directory is
+  /// what a fresh install looks like and not a fault.
+  ///
+  /// - Parameter layer: The layer to check.
+  /// - Returns: The finding of that layer.
+  private static func check(of layer: DotfolderStack.Layer) -> HealthCheck {
+    DotfolderLayerCheck.check(
+      of: layer, wording: layerWording, category: category, requiresWrite: true)
+  }
 }

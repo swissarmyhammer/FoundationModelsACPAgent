@@ -8,9 +8,9 @@ import Foundation
 ///   directory's role, so a leftover directory says where it came from.
 /// - Returns: The created directory.
 public func makeResolvedDirectory(label: String) -> URL {
-    let directory = URL(fileURLWithPath: "/private/tmp", isDirectory: true)
-        .appendingPathComponent("\(label)-\(UUID().uuidString)", isDirectory: true)
-    try! FileManager.default.createDirectory(
-        at: directory, withIntermediateDirectories: true)
-    return directory
+  let directory = URL(fileURLWithPath: "/private/tmp", isDirectory: true)
+    .appendingPathComponent("\(label)-\(UUID().uuidString)", isDirectory: true)
+  try! FileManager.default.createDirectory(
+    at: directory, withIntermediateDirectories: true)
+  return directory
 }

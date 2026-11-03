@@ -23,6 +23,10 @@ comments:
   id: 01m6h7g3n2qzrxdagtcxdwd7f7
   text: 'UPSTREAM NOTE (ACP v2, PR 2743, text already in alpha.13): session/cancel does not stop work that is in the latest background list. The agent stops waiting for the pending requests of the CANCELLED work and SHOULD send $/cancel_request for them (the client answers a request cancelled by the agent with cancelled). For this task: (1) a parent session/cancel leaves the listed sub-agents running (they are in the background list) and cancels the foreground work, including the sub-agent that the turn waits for (not listed); (2) every pending elicitation (and any other agent-to-client request) of the cancelled foreground work gets $/cancel_request; none of a listed background child is cancelled. Add a test for both. Also watch (no card needed yet): draft RFDs 2756 (a failure session update replayed like messages), 2755 (error classification in the error data), 2485 (token usage semantics for sub-agents).'
   timestamp: 2026-11-03T17:32:19.490875+00:00
+- actor: claude-code
+  id: 01m6hk2m78pydkj3eapj8zdy71
+  text: 'ROUTER REVIEW (2026-11-03): (1) PromptExecution cancelRunningPrompt near line 940 calls entry.session.cancelAll() for ACP session/cancel. Change it to cancelForeground() (spares detached background runs). Keep cancelAll() in tearDownSession. (4) session/close on a root: cancelRun per child, then stopAgentRuns cancels the same runs again, and cancelRun pushes idle(cancelled) for a child whose run just ended. Fix if duplicate idle updates show; add a test. (5) cancelRun(of:) uses run.state == .running, not the ledger; a held (holdStart) child may count as running. Check it and test it.'
+  timestamp: 2026-11-03T20:54:40.616244+00:00
 depends_on:
 - 01M6GH30709S58BK3AQ1VMBAM7
 - 01M6GH353HTRBREVKKN3N2WZW8

@@ -11,15 +11,15 @@ import Logging
 /// the mail queue of the session (elicitation-plan task 3). A `closed`
 /// session is resumable, not promptable.
 enum SessionAvailability: Equatable, Sendable {
-    /// No prompt is in flight.
-    case idle
+  /// No prompt is in flight.
+  case idle
 
-    /// At least one prompt is in flight.
-    case busy
+  /// At least one prompt is in flight.
+  case busy
 
-    /// `session/close` released the session. The transcript stays, so
-    /// `session/resume` can bring it back.
-    case closed
+  /// `session/close` released the session. The transcript stays, so
+  /// `session/resume` can bring it back.
+  case closed
 }
 
 /// One live session in the agent's table: the Router
@@ -42,426 +42,428 @@ enum SessionAvailability: Equatable, Sendable {
 /// (``ownsSurface``) alone stops the agent runs, finishes the shell stream
 /// and shuts the surface down.
 struct ActiveSession: Sendable {
-    /// The Router session that answers this ACP session's prompts.
-    /// Retaining it is what keeps the resident profile alive for this
-    /// session's lifetime. Born as the root session from the standard
-    /// slot; a model-slot switch replaces it with one
-    /// vended from the selected slot's handle.
-    var session: any RoutedSession
+  /// The Router session that answers this ACP session's prompts.
+  /// Retaining it is what keeps the resident profile alive for this
+  /// session's lifetime. Born as the root session from the standard
+  /// slot; a model-slot switch replaces it with one
+  /// vended from the selected slot's handle.
+  var session: any RoutedSession
 
-    /// The merged per-cwd configuration this session was composed from.
-    /// The project layer resolves per session, from the session cwd,
-    /// never from the process cwd.
-    let configuration: AgentConfiguration
+  /// The merged per-cwd configuration this session was composed from.
+  /// The project layer resolves per session, from the session cwd,
+  /// never from the process cwd.
+  let configuration: AgentConfiguration
 
-    /// The assembled instructions text the session was born with. A
-    /// running session keeps this text through each
-    /// compaction fold; only a new session re-assembles.
-    let instructions: String
+  /// The assembled instructions text the session was born with. A
+  /// running session keeps this text through each
+  /// compaction fold; only a new session re-assembles.
+  let instructions: String
 
-    /// The session working directory — the base for relative paths and
-    /// the root set's first member.
-    let workingDirectory: URL
+  /// The session working directory — the base for relative paths and
+  /// the root set's first member.
+  let workingDirectory: URL
 
-    /// The session's additional confinement roots, in wire order.
-    /// They extend confinement only; they never change
-    /// ``workingDirectory``.
-    let additionalRoots: [URL]
+  /// The session's additional confinement roots, in wire order.
+  /// They extend confinement only; they never change
+  /// ``workingDirectory``.
+  let additionalRoots: [URL]
 
-    /// The session's own transcript directory,
-    /// `<recording root>/<sessionId>/`.
-    let transcriptDirectory: URL
+  /// The session's own transcript directory,
+  /// `<recording root>/<sessionId>/`.
+  let transcriptDirectory: URL
 
-    /// The mounted tool surface. The session-close task calls
-    /// `surface.serverPool.shutdownAll()` after the session sweep, never
-    /// before, so the settling runs still have their transports.
-    let surface: SessionSurface
+  /// The mounted tool surface. The session-close task calls
+  /// `surface.serverPool.shutdownAll()` after the session sweep, never
+  /// before, so the settling runs still have their transports.
+  let surface: SessionSurface
 
-    /// The session's slash-command registry, assembled
-    /// at session creation. The `prompt()` handler dispatches a leading
-    /// `/name` through it before anything touches the session.
-    let commands: CommandRegistry
+  /// The session's slash-command registry, assembled
+  /// at session creation. The `prompt()` handler dispatches a leading
+  /// `/name` through it before anything touches the session.
+  let commands: CommandRegistry
 
-    /// The model slot ``session`` was vended from. Only
-    /// `standard` and `flash` occur; embedding is not a chat slot.
-    var selectedSlot: ModelSlot
+  /// The model slot ``session`` was vended from. Only
+  /// `standard` and `flash` occur; embedding is not a chat slot.
+  var selectedSlot: ModelSlot
 
-    /// The config-option state the client last saw:
-    /// what `session/new` or `session/set_config_option` answered, or a
-    /// `config_option_update` pushed. The divergence check compares the
-    /// truth against this baseline.
-    var announcedConfigOptions: [SessionConfigOption]
+  /// The config-option state the client last saw:
+  /// what `session/new` or `session/set_config_option` answered, or a
+  /// `config_option_update` pushed. The divergence check compares the
+  /// truth against this baseline.
+  var announcedConfigOptions: [SessionConfigOption]
 
-    /// The user presence that the session got when the agent opened it
-    /// (``RoutedACPAgent/userPresence``). A model slot switch gives it to
-    /// the replacement session, so the presence of the session does not
-    /// change.
-    let userPresence: UserPresence
+  /// The user presence that the session got when the agent opened it
+  /// (``RoutedACPAgent/userPresence``). A model slot switch gives it to
+  /// the replacement session, so the presence of the session does not
+  /// change.
+  let userPresence: UserPresence
 
-    /// The state owner of each prompt in flight, in the order of
-    /// acceptance. `session/cancel` and `session/close` reach the prompts
-    /// through it.
-    var openPrompts: [PromptStateOwner] = []
+  /// The state owner of each prompt in flight, in the order of
+  /// acceptance. `session/cancel` and `session/close` reach the prompts
+  /// through it.
+  var openPrompts: [PromptStateOwner] = []
 
-    /// The `state_update` of the session over all its open prompts.
-    let stateLedger: SessionStateLedger
+  /// The `state_update` of the session over all its open prompts.
+  let stateLedger: SessionStateLedger
 
-    /// The one reader of the events of the session, from its open to its
-    /// close (``SessionProjector``). It holds the elicitation relay of the
-    /// session: `session/cancel` and `session/close` answer every pending
-    /// elicitation with `cancel` through it.
-    let projector: SessionProjector
+  /// The one reader of the events of the session, from its open to its
+  /// close (``SessionProjector``). It holds the elicitation relay of the
+  /// session: `session/cancel` and `session/close` answer every pending
+  /// elicitation with `cancel` through it.
+  let projector: SessionProjector
 
-    /// The session's descendants — its forks. `session/close`
-    /// closes each one, so no orphan keeps a run or a submission in the model
-    /// queue after the parent goes. The runs of the `agents` tool are not
-    /// here: `SessionSurface.stopAgentRuns()` stops them.
-    var descendants: [any RoutedSession] = []
+  /// The session's descendants — its forks. `session/close`
+  /// closes each one, so no orphan keeps a run or a submission in the model
+  /// queue after the parent goes. The runs of the `agents` tool are not
+  /// here: `SessionSurface.stopAgentRuns()` stops them.
+  var descendants: [any RoutedSession] = []
 
-    /// The session that this session is nested in, or `nil` for a root
-    /// session. A nested session is a sub-agent session: its id is the
-    /// Router ULID, and the link never changes (``SessionTree``).
-    let parentSessionId: SessionId?
+  /// The session that this session is nested in, or `nil` for a root
+  /// session. A nested session is a sub-agent session: its id is the
+  /// Router ULID, and the link never changes (``SessionTree``).
+  let parentSessionId: SessionId?
 
-    /// The sessions nested directly in this session, in the order that they
-    /// started. The close of this session retires each of them.
-    var children: [SessionId] = []
+  /// The sessions nested directly in this session, in the order that they
+  /// started. The close of this session retires each of them.
+  var children: [SessionId] = []
 
-    /// The gate of the updates of this session. A root session sends from
-    /// its start. A nested session sends nothing until its announcement
-    /// opens the gate (``SessionAnnouncementGate``).
-    let announcement: SessionAnnouncementGate
+  /// The gate of the updates of this session. A root session sends from
+  /// its start. A nested session sends nothing until its announcement
+  /// opens the gate (``SessionAnnouncementGate``).
+  let announcement: SessionAnnouncementGate
 
-    /// Whether this session owns its mounted surface: only a session with no
-    /// parent does. The close of a nested session never stops the agent
-    /// runs of the surface, never finishes its shell stream and never shuts
-    /// it down, because the parent still uses it.
-    var ownsSurface: Bool {
-        parentSessionId == nil
+  /// Whether this session owns its mounted surface: only a session with no
+  /// parent does. The close of a nested session never stops the agent
+  /// runs of the surface, never finishes its shell stream and never shuts
+  /// it down, because the parent still uses it.
+  var ownsSurface: Bool {
+    parentSessionId == nil
+  }
+
+  /// Whether the session is replay-only: `session/resume` found its
+  /// working directory or one of its additional roots missing. The agent
+  /// never makes a session directory, so the session mounts no tool
+  /// surface, writes nothing for the session, and refuses each prompt.
+  let isReplayOnly: Bool
+
+  /// Whether `session/close` released this session.
+  var isClosed = false
+
+  /// Whether the `index.md` of the session holds its title. The first
+  /// prompt sets the title through Router, not `session/new`: the title
+  /// is the first line of that prompt.
+  var titleRecorded = false
+
+  /// The retained history of the session: each
+  /// `session/update` that the agent sent for the session, merged, with
+  /// its id. The `session/new` or `session/resume` response seeds it. A
+  /// compaction changes only the model context, never this history.
+  /// `session/resume` replays it, and ``SessionHistoryFile`` keeps it on
+  /// disk for a new process. The `user_message` recorder of the connection
+  /// shares it (``RetainedHistory``).
+  let retainedHistory: RetainedHistory
+
+  /// A copy of the retained history as it is now.
+  var history: SessionMergeEngine {
+    retainedHistory.snapshot
+  }
+
+  /// Whether the session has a prompt in flight. Derived, so the
+  /// stored prompt list stays the one source of the busy state.
+  var availability: SessionAvailability {
+    if isClosed {
+      return .closed
     }
+    return openPrompts.isEmpty ? .idle : .busy
+  }
 
-    /// Whether the session is replay-only: `session/resume` found its
-    /// working directory or one of its additional roots missing. The agent
-    /// never makes a session directory, so the session mounts no tool
-    /// surface, writes nothing for the session, and refuses each prompt.
-    let isReplayOnly: Bool
-
-    /// Whether `session/close` released this session.
-    var isClosed = false
-
-    /// Whether the `index.md` of the session holds its title. The first
-    /// prompt sets the title through Router, not `session/new`: the title
-    /// is the first line of that prompt.
-    var titleRecorded = false
-
-    /// The retained history of the session: each
-    /// `session/update` that the agent sent for the session, merged, with
-    /// its id. The `session/new` or `session/resume` response seeds it. A
-    /// compaction changes only the model context, never this history.
-    /// `session/resume` replays it, and ``SessionHistoryFile`` keeps it on
-    /// disk for a new process. The `user_message` recorder of the connection
-    /// shares it (``RetainedHistory``).
-    let retainedHistory: RetainedHistory
-
-    /// A copy of the retained history as it is now.
-    var history: SessionMergeEngine {
-        retainedHistory.snapshot
+  /// Inserts the prompt of `request` as the user message of the session.
+  /// After the success response to the current request, the connection
+  /// gives the `user_message` echo to the retained history and then sends
+  /// the echo. Thus the history gets the message after the handler
+  /// returns. The prompt defers its work after this call, so the history
+  /// holds the message before the first update of the prompt.
+  ///
+  /// Call it in the handler of the `session/prompt` request, after each
+  /// check that can refuse the prompt and before the prompt defers its
+  /// work, so the echo goes out first.
+  ///
+  /// - Parameters:
+  ///   - request: The prompt request.
+  ///   - messageId: The id of the user message: the description of the
+  ///     `MailID` of the prompt, or `nil` for a new id.
+  ///   - connection: The connection that sends the echo.
+  /// - Returns: The id of the user message, for the prompt response.
+  func insertUserMessage(
+    _ request: PromptRequest, messageId: MessageId? = nil, through connection: AgentSideConnection
+  ) -> MessageId {
+    let history = retainedHistory
+    return connection.insertUserMessage(request, messageId: messageId) { update in
+      history.apply(update)
     }
-
-    /// Whether the session has a prompt in flight. Derived, so the
-    /// stored prompt list stays the one source of the busy state.
-    var availability: SessionAvailability {
-        if isClosed {
-            return .closed
-        }
-        return openPrompts.isEmpty ? .idle : .busy
-    }
-
-    /// Inserts the prompt of `request` as the user message of the session.
-    /// After the success response to the current request, the connection
-    /// gives the `user_message` echo to the retained history and then sends
-    /// the echo. Thus the history gets the message after the handler
-    /// returns. The prompt defers its work after this call, so the history
-    /// holds the message before the first update of the prompt.
-    ///
-    /// Call it in the handler of the `session/prompt` request, after each
-    /// check that can refuse the prompt and before the prompt defers its
-    /// work, so the echo goes out first.
-    ///
-    /// - Parameters:
-    ///   - request: The prompt request.
-    ///   - messageId: The id of the user message: the description of the
-    ///     `MailID` of the prompt, or `nil` for a new id.
-    ///   - connection: The connection that sends the echo.
-    /// - Returns: The id of the user message, for the prompt response.
-    func insertUserMessage(
-        _ request: PromptRequest, messageId: MessageId? = nil, through connection: AgentSideConnection
-    ) -> MessageId {
-        let history = retainedHistory
-        return connection.insertUserMessage(request, messageId: messageId) { update in history.apply(update) }
-    }
+  }
 }
 
 /// The per-session composition helpers of `session/new`:
 /// cwd validation and the config → instructions → tools pipeline that
 /// feeds `profile.standard.makeSession(...)`.
 enum SessionSetup {
-    /// The prefix every absolute path starts with.
-    private static let absolutePathPrefix = "/"
+  /// The prefix every absolute path starts with.
+  private static let absolutePathPrefix = "/"
 
-    /// The request field one wire path came from.
-    /// A refusal names the field, so a person reads which part of the
-    /// request failed rather than guessing.
-    enum PathField: String {
-        /// The session working directory: the `cwd` of `session/new` and
-        /// `session/resume`, and the project filter of `session/list`.
-        case cwd
+  /// The request field one wire path came from.
+  /// A refusal names the field, so a person reads which part of the
+  /// request failed rather than guessing.
+  enum PathField: String {
+    /// The session working directory: the `cwd` of `session/new` and
+    /// `session/resume`, and the project filter of `session/list`.
+    case cwd
 
-        /// One entry of the ordered `additionalDirectories` list.
-        case additionalDirectories
+    /// One entry of the ordered `additionalDirectories` list.
+    case additionalDirectories
+  }
+
+  /// Whether `path` is absolute.
+  ///
+  /// The ACP schema types a path as a plain string and states the
+  /// absolute rule in prose only, so no decoder enforces it. This agent
+  /// owns the file system, so this agent is the only judge, and this is
+  /// the one place the rule is written down.
+  ///
+  /// - Parameter path: The candidate path string.
+  /// - Returns: `true` when `path` begins with `/`.
+  static func isAbsolute(_ path: String) -> Bool {
+    path.hasPrefix(absolutePathPrefix)
+  }
+
+  /// Validates that `path` is absolute and returns it as a directory
+  /// URL. `cwd` MUST be absolute: it keys the config
+  /// layer, the AGENTS.md walk, and the transcript directory, and a
+  /// relative path would key them off the process cwd instead.
+  ///
+  /// - Parameters:
+  ///   - path: The path string of the request.
+  ///   - field: The request field `path` came from, named in the
+  ///     refusal so the client learns which one to fix.
+  /// - Returns: The working directory URL.
+  /// - Throws: ``RequestError/relativePath(field:)``
+  ///   when `path` is relative.
+  static func validatedWorkingDirectory(
+    path: String, field: PathField
+  ) throws(RequestError) -> URL {
+    guard isAbsolute(path) else {
+      throw .relativePath(field: field)
     }
+    return URL(fileURLWithPath: path, isDirectory: true)
+  }
 
-    /// Whether `path` is absolute.
-    ///
-    /// The ACP schema types a path as a plain string and states the
-    /// absolute rule in prose only, so no decoder enforces it. This agent
-    /// owns the file system, so this agent is the only judge, and this is
-    /// the one place the rule is written down.
-    ///
-    /// - Parameter path: The candidate path string.
-    /// - Returns: `true` when `path` begins with `/`.
-    static func isAbsolute(_ path: String) -> Bool {
-        path.hasPrefix(absolutePathPrefix)
+  /// Why a request directory cannot hold a session. The raw value is the
+  /// `reason` that the refusal reports in `data`.
+  enum DirectoryDefect: String {
+    /// The file system holds nothing at the path.
+    case doesNotExist = "does not exist"
+
+    /// The file system holds a file, not a directory, at the path.
+    case notADirectory = "is not a directory"
+  }
+
+  /// One request directory that fails the existence check, with the
+  /// request field it came from and the reason.
+  struct DirectoryFailure {
+    /// The request directory that fails the check.
+    let directory: URL
+
+    /// The request field the directory came from.
+    let field: PathField
+
+    /// Why the directory cannot hold a session.
+    let defect: DirectoryDefect
+  }
+
+  /// The defect of `directory`, or `nil` when it is an existing
+  /// directory. ``PathKind`` does the probe, so a symbolic link to a
+  /// directory is a directory.
+  ///
+  /// - Parameter directory: The request directory.
+  /// - Returns: The defect, or `nil`.
+  static func defect(of directory: URL) -> DirectoryDefect? {
+    switch PathKind.of(directory) {
+    case .missing:
+      return .doesNotExist
+    case .notADirectory:
+      return .notADirectory
+    case .directory:
+      return nil
     }
+  }
 
-    /// Validates that `path` is absolute and returns it as a directory
-    /// URL. `cwd` MUST be absolute: it keys the config
-    /// layer, the AGENTS.md walk, and the transcript directory, and a
-    /// relative path would key them off the process cwd instead.
-    ///
-    /// - Parameters:
-    ///   - path: The path string of the request.
-    ///   - field: The request field `path` came from, named in the
-    ///     refusal so the client learns which one to fix.
-    /// - Returns: The working directory URL.
-    /// - Throws: ``RequestError/relativePath(field:)``
-    ///   when `path` is relative.
-    static func validatedWorkingDirectory(
-        path: String, field: PathField
-    ) throws(RequestError) -> URL {
-        guard isAbsolute(path) else {
-            throw .relativePath(field: field)
-        }
-        return URL(fileURLWithPath: path, isDirectory: true)
+  /// The first directory of a session that fails the existence check,
+  /// in request order: the cwd first, then each additional root in wire
+  /// order. This walk is the one statement of which directories a
+  /// session needs.
+  ///
+  /// - Parameters:
+  ///   - workingDirectory: The session working directory.
+  ///   - additionalRoots: The additional confinement roots, in wire order.
+  /// - Returns: The first failure, or `nil` when each directory exists.
+  static func firstDirectoryFailure(
+    workingDirectory: URL, additionalRoots: [URL]
+  ) -> DirectoryFailure? {
+    let requested =
+      [(workingDirectory, PathField.cwd)]
+      + additionalRoots.map { ($0, PathField.additionalDirectories) }
+    return requested.lazy.compactMap { directory, field in
+      defect(of: directory).map {
+        DirectoryFailure(directory: directory, field: field, defect: $0)
+      }
+    }.first
+  }
+
+  /// Validates that the working directory and each additional root of a
+  /// session are existing directories.
+  ///
+  /// The agent never makes a session directory. Each tool mount reads or
+  /// writes the directory it is given, so a composition that runs over a
+  /// missing directory can make it, or watch and index a folder that is
+  /// not there. So `session/new` refuses a missing directory before it
+  /// composes anything.
+  ///
+  /// - Parameters:
+  ///   - workingDirectory: The session working directory.
+  ///   - additionalRoots: The additional confinement roots, in wire order.
+  /// - Throws: ``RequestError/missingDirectory(_:field:defect:)`` for the
+  ///   first directory that fails the check.
+  static func requireExistingDirectories(
+    workingDirectory: URL, additionalRoots: [URL]
+  ) throws(RequestError) {
+    guard
+      let failure = firstDirectoryFailure(
+        workingDirectory: workingDirectory, additionalRoots: additionalRoots)
+    else {
+      return
     }
+    throw .missingDirectory(failure.directory, field: failure.field, defect: failure.defect)
+  }
 
-    /// Why a request directory cannot hold a session. The raw value is the
-    /// `reason` that the refusal reports in `data`.
-    enum DirectoryDefect: String {
-        /// The file system holds nothing at the path.
-        case doesNotExist = "does not exist"
+  /// Whether the working directory and each additional root of a session
+  /// are existing directories. `session/resume` reads it: a resumed
+  /// session with a missing directory is replay-only, not refused.
+  ///
+  /// - Parameters:
+  ///   - workingDirectory: The session working directory.
+  ///   - additionalRoots: The additional confinement roots.
+  /// - Returns: `true` when no directory fails the check.
+  static func allDirectoriesExist(workingDirectory: URL, additionalRoots: [URL]) -> Bool {
+    firstDirectoryFailure(workingDirectory: workingDirectory, additionalRoots: additionalRoots)
+      == nil
+  }
 
-        /// The file system holds a file, not a directory, at the path.
-        case notADirectory = "is not a directory"
+  /// Converts the wire `additionalDirectories` path strings to
+  /// confinement root URLs, in wire order. Each entry
+  /// goes through the same ``validatedWorkingDirectory(path:field:)``
+  /// check the `cwd` goes through, under its own field name.
+  ///
+  /// A relative entry refuses the whole request. The wire decode
+  /// carries every entry as sent, so a skip here would drop a
+  /// confinement root the client asked for and never say so, and the
+  /// session would then run with a boundary neither side agreed on.
+  ///
+  /// - Parameter paths: The requested directory paths, in wire order.
+  /// - Returns: The confinement root URLs, in the same order.
+  /// - Throws: ``RequestError/relativePath(field:)``
+  ///   for the first relative entry.
+  static func additionalRoots(fromPaths paths: [String]) throws(RequestError) -> [URL] {
+    try paths.map { path throws(RequestError) in
+      try validatedWorkingDirectory(path: path, field: .additionalDirectories)
     }
+  }
 
-    /// One request directory that fails the existence check, with the
-    /// request field it came from and the reason.
-    struct DirectoryFailure {
-        /// The request directory that fails the check.
-        let directory: URL
-
-        /// The request field the directory came from.
-        let field: PathField
-
-        /// Why the directory cannot hold a session.
-        let defect: DirectoryDefect
+  /// The user layer's root in `stack`: the synced root of a custom home,
+  /// and `$XDG_CONFIG_HOME/<name>/` of the XDG home of the CLI. The `home`
+  /// transcript location resolves against it.
+  ///
+  /// - Parameter stack: The session's dotfolder stack.
+  /// - Returns: The user layer root.
+  static func userLayerRoot(of stack: DotfolderStack) -> URL {
+    guard let userLayer = stack.layers.first(where: { $0.source == .user }) else {
+      preconditionFailure("DotfolderStack always builds a user layer")
     }
-
-    /// The defect of `directory`, or `nil` when it is an existing
-    /// directory. ``PathKind`` does the probe, so a symbolic link to a
-    /// directory is a directory.
-    ///
-    /// - Parameter directory: The request directory.
-    /// - Returns: The defect, or `nil`.
-    static func defect(of directory: URL) -> DirectoryDefect? {
-        switch PathKind.of(directory) {
-        case .missing:
-            return .doesNotExist
-        case .notADirectory:
-            return .notADirectory
-        case .directory:
-            return nil
-        }
-    }
-
-    /// The first directory of a session that fails the existence check,
-    /// in request order: the cwd first, then each additional root in wire
-    /// order. This walk is the one statement of which directories a
-    /// session needs.
-    ///
-    /// - Parameters:
-    ///   - workingDirectory: The session working directory.
-    ///   - additionalRoots: The additional confinement roots, in wire order.
-    /// - Returns: The first failure, or `nil` when each directory exists.
-    static func firstDirectoryFailure(
-        workingDirectory: URL, additionalRoots: [URL]
-    ) -> DirectoryFailure? {
-        let requested =
-            [(workingDirectory, PathField.cwd)]
-            + additionalRoots.map { ($0, PathField.additionalDirectories) }
-        return requested.lazy.compactMap { directory, field in
-            defect(of: directory).map {
-                DirectoryFailure(directory: directory, field: field, defect: $0)
-            }
-        }.first
-    }
-
-    /// Validates that the working directory and each additional root of a
-    /// session are existing directories.
-    ///
-    /// The agent never makes a session directory. Each tool mount reads or
-    /// writes the directory it is given, so a composition that runs over a
-    /// missing directory can make it, or watch and index a folder that is
-    /// not there. So `session/new` refuses a missing directory before it
-    /// composes anything.
-    ///
-    /// - Parameters:
-    ///   - workingDirectory: The session working directory.
-    ///   - additionalRoots: The additional confinement roots, in wire order.
-    /// - Throws: ``RequestError/missingDirectory(_:field:defect:)`` for the
-    ///   first directory that fails the check.
-    static func requireExistingDirectories(
-        workingDirectory: URL, additionalRoots: [URL]
-    ) throws(RequestError) {
-        guard
-            let failure = firstDirectoryFailure(
-                workingDirectory: workingDirectory, additionalRoots: additionalRoots)
-        else {
-            return
-        }
-        throw .missingDirectory(failure.directory, field: failure.field, defect: failure.defect)
-    }
-
-    /// Whether the working directory and each additional root of a session
-    /// are existing directories. `session/resume` reads it: a resumed
-    /// session with a missing directory is replay-only, not refused.
-    ///
-    /// - Parameters:
-    ///   - workingDirectory: The session working directory.
-    ///   - additionalRoots: The additional confinement roots.
-    /// - Returns: `true` when no directory fails the check.
-    static func allDirectoriesExist(workingDirectory: URL, additionalRoots: [URL]) -> Bool {
-        firstDirectoryFailure(workingDirectory: workingDirectory, additionalRoots: additionalRoots)
-            == nil
-    }
-
-    /// Converts the wire `additionalDirectories` path strings to
-    /// confinement root URLs, in wire order. Each entry
-    /// goes through the same ``validatedWorkingDirectory(path:field:)``
-    /// check the `cwd` goes through, under its own field name.
-    ///
-    /// A relative entry refuses the whole request. The wire decode
-    /// carries every entry as sent, so a skip here would drop a
-    /// confinement root the client asked for and never say so, and the
-    /// session would then run with a boundary neither side agreed on.
-    ///
-    /// - Parameter paths: The requested directory paths, in wire order.
-    /// - Returns: The confinement root URLs, in the same order.
-    /// - Throws: ``RequestError/relativePath(field:)``
-    ///   for the first relative entry.
-    static func additionalRoots(fromPaths paths: [String]) throws(RequestError) -> [URL] {
-        try paths.map { path throws(RequestError) in
-            try validatedWorkingDirectory(path: path, field: .additionalDirectories)
-        }
-    }
-
-    /// The user layer's root in `stack`: the synced root of a custom home,
-    /// and `$XDG_CONFIG_HOME/<name>/` of the XDG home of the CLI. The `home`
-    /// transcript location resolves against it.
-    ///
-    /// - Parameter stack: The session's dotfolder stack.
-    /// - Returns: The user layer root.
-    static func userLayerRoot(of stack: DotfolderStack) -> URL {
-        guard let userLayer = stack.layers.first(where: { $0.source == .user }) else {
-            preconditionFailure("DotfolderStack always builds a user layer")
-        }
-        return userLayer.root
-    }
+    return userLayer.root
+  }
 }
 
 extension RequestError {
-    /// The `reason` a relative-path refusal reports in `data`.
-    private static let mustBeAbsoluteReason = "must be absolute"
+  /// The `reason` a relative-path refusal reports in `data`.
+  private static let mustBeAbsoluteReason = "must be absolute"
 
-    /// The relative-path refusal: JSON-RPC invalid
-    /// params naming the field that failed and why. This is the `data`
-    /// shape `FoundationModelsACP` pins in
-    /// `RequestErrorTests.theWireFormRoundTrips`.
-    ///
-    /// - Parameter field: The request field the relative path came from.
-    /// - Returns: The typed invalid-params error.
-    static func relativePath(field: SessionSetup.PathField) -> RequestError {
-        pathRefusal(field: field, reason: mustBeAbsoluteReason)
-    }
+  /// The relative-path refusal: JSON-RPC invalid
+  /// params naming the field that failed and why. This is the `data`
+  /// shape `FoundationModelsACP` pins in
+  /// `RequestErrorTests.theWireFormRoundTrips`.
+  ///
+  /// - Parameter field: The request field the relative path came from.
+  /// - Returns: The typed invalid-params error.
+  static func relativePath(field: SessionSetup.PathField) -> RequestError {
+    pathRefusal(field: field, reason: mustBeAbsoluteReason)
+  }
 
-    /// The missing-directory refusal: JSON-RPC invalid params naming the
-    /// field, the path and the reason. The agent never makes a session
-    /// directory, so a request directory must exist.
-    ///
-    /// - Parameters:
-    ///   - directory: The refused request directory.
-    ///   - field: The request field the directory came from.
-    ///   - defect: Why the directory cannot hold a session.
-    /// - Returns: The typed invalid-params error.
-    static func missingDirectory(
-        _ directory: URL, field: SessionSetup.PathField, defect: SessionSetup.DirectoryDefect
-    ) -> RequestError {
-        pathRefusal(field: field, reason: defect.rawValue, path: directory)
-    }
+  /// The missing-directory refusal: JSON-RPC invalid params naming the
+  /// field, the path and the reason. The agent never makes a session
+  /// directory, so a request directory must exist.
+  ///
+  /// - Parameters:
+  ///   - directory: The refused request directory.
+  ///   - field: The request field the directory came from.
+  ///   - defect: Why the directory cannot hold a session.
+  /// - Returns: The typed invalid-params error.
+  static func missingDirectory(
+    _ directory: URL, field: SessionSetup.PathField, defect: SessionSetup.DirectoryDefect
+  ) -> RequestError {
+    pathRefusal(field: field, reason: defect.rawValue, path: directory)
+  }
 
-    /// The one builder of a request-path refusal: JSON-RPC invalid params
-    /// with `data` that names the field, the reason and, when given, the
-    /// refused path.
-    ///
-    /// - Parameters:
-    ///   - field: The request field that failed.
-    ///   - reason: Why the request path is refused.
-    ///   - path: The refused path, or `nil` when the refusal does not name
-    ///     it.
-    /// - Returns: The typed invalid-params error.
-    private static func pathRefusal(
-        field: SessionSetup.PathField, reason: String, path: URL? = nil
-    ) -> RequestError {
-        var data: [String: FoundationModelsACP.JSONValue] = [
-            "field": .string(field.rawValue),
-            "reason": .string(reason),
-        ]
-        data["path"] = path.map { .string($0.path) }
-        return RequestError(
-            code: .invalidParams, message: RequestError.invalidParams.message,
-            data: .object(data))
-    }
+  /// The one builder of a request-path refusal: JSON-RPC invalid params
+  /// with `data` that names the field, the reason and, when given, the
+  /// refused path.
+  ///
+  /// - Parameters:
+  ///   - field: The request field that failed.
+  ///   - reason: Why the request path is refused.
+  ///   - path: The refused path, or `nil` when the refusal does not name
+  ///     it.
+  /// - Returns: The typed invalid-params error.
+  private static func pathRefusal(
+    field: SessionSetup.PathField, reason: String, path: URL? = nil
+  ) -> RequestError {
+    var data: [String: FoundationModelsACP.JSONValue] = [
+      "field": .string(field.rawValue),
+      "reason": .string(reason),
+    ]
+    data["path"] = path.map { .string($0.path) }
+    return RequestError(
+      code: .invalidParams, message: RequestError.invalidParams.message,
+      data: .object(data))
+  }
 }
 
 extension AbsolutePath {
-    /// The wire path for `rawValue`, or `nil` when `rawValue` is not
-    /// absolute.
-    ///
-    /// The wire type carries whatever string it was given, so this is the
-    /// one door for every projection that must DROP a path it cannot put
-    /// on the wire — a damaged stored record, or a tool report the agent
-    /// only relays. A path that arrives in a request is refused instead,
-    /// through ``SessionSetup/validatedWorkingDirectory(path:field:)``.
-    ///
-    /// - Parameter rawValue: The candidate path string.
-    /// - Returns: The path, or `nil` when it is relative.
-    init?(absolute rawValue: String) {
-        guard SessionSetup.isAbsolute(rawValue) else {
-            return nil
-        }
-        self.init(rawValue: rawValue)
+  /// The wire path for `rawValue`, or `nil` when `rawValue` is not
+  /// absolute.
+  ///
+  /// The wire type carries whatever string it was given, so this is the
+  /// one door for every projection that must DROP a path it cannot put
+  /// on the wire — a damaged stored record, or a tool report the agent
+  /// only relays. A path that arrives in a request is refused instead,
+  /// through ``SessionSetup/validatedWorkingDirectory(path:field:)``.
+  ///
+  /// - Parameter rawValue: The candidate path string.
+  /// - Returns: The path, or `nil` when it is relative.
+  init?(absolute rawValue: String) {
+    guard SessionSetup.isAbsolute(rawValue) else {
+      return nil
     }
+    self.init(rawValue: rawValue)
+  }
 }
 
 /// The per-cwd configuration resolution one session request starts from
@@ -473,79 +475,81 @@ extension AbsolutePath {
 /// resolves first, runs the cwd pre-check against ``transcriptRoot``, and
 /// composes only after the check passes.
 struct LoadedSessionContext {
-    /// The loader whose dotfolder stack the instructions assembly reads.
-    let loader: ConfigurationLoader
+  /// The loader whose dotfolder stack the instructions assembly reads.
+  let loader: ConfigurationLoader
 
-    /// The merged and decoded configuration.
-    let loaded: LoadedConfiguration
+  /// The merged and decoded configuration.
+  let loaded: LoadedConfiguration
 
-    /// The user layer root the stack resolved.
-    let userLayerRoot: URL
+  /// The user layer root the stack resolved.
+  let userLayerRoot: URL
 
-    /// The resolved recording root: `<cwd>/.<name>/transcripts/` by
-    /// default.
-    let transcriptRoot: URL
+  /// The resolved recording root: `<cwd>/.<name>/transcripts/` by
+  /// default.
+  let transcriptRoot: URL
 
-    /// Resolves the context of one working directory from the settings in
-    /// memory of `settingsStore` (``SettingsStore/merged(for:)``).
-    ///
-    /// The session requests of the agent and the walk of the project store
-    /// of the home (``RegisteredRecordingRoots``) both call it, thus each of
-    /// them finds the same recording root for a working directory.
-    ///
-    /// - Parameters:
-    ///   - workingDirectory: The working directory to resolve.
-    ///   - settingsStore: The store that gives the loader and the merged
-    ///     configuration. Its dotfolder name names the project layer.
-    /// - Returns: The resolved context.
-    /// - Throws: Whatever ``SettingsStore/merged(for:)`` throws.
-    static func load(workingDirectory: URL, from settingsStore: SettingsStore) async throws -> LoadedSessionContext {
-        let loader = settingsStore.makeConfigurationLoader(workingDirectory: workingDirectory)
-        let loaded = try await settingsStore.merged(for: workingDirectory)
-        let userLayerRoot = SessionSetup.userLayerRoot(of: loader.stack)
-        return LoadedSessionContext(
-            loader: loader,
-            loaded: loaded,
-            userLayerRoot: userLayerRoot,
-            transcriptRoot: loaded.configuration.transcripts.location.recordingRoot(
-                workingDirectory: workingDirectory,
-                name: settingsStore.settingsFolders.name,
-                userDirectory: userLayerRoot))
-    }
+  /// Resolves the context of one working directory from the settings in
+  /// memory of `settingsStore` (``SettingsStore/merged(for:)``).
+  ///
+  /// The session requests of the agent and the walk of the project store
+  /// of the home (``RegisteredRecordingRoots``) both call it, thus each of
+  /// them finds the same recording root for a working directory.
+  ///
+  /// - Parameters:
+  ///   - workingDirectory: The working directory to resolve.
+  ///   - settingsStore: The store that gives the loader and the merged
+  ///     configuration. Its dotfolder name names the project layer.
+  /// - Returns: The resolved context.
+  /// - Throws: Whatever ``SettingsStore/merged(for:)`` throws.
+  static func load(workingDirectory: URL, from settingsStore: SettingsStore) async throws
+    -> LoadedSessionContext
+  {
+    let loader = settingsStore.makeConfigurationLoader(workingDirectory: workingDirectory)
+    let loaded = try await settingsStore.merged(for: workingDirectory)
+    let userLayerRoot = SessionSetup.userLayerRoot(of: loader.stack)
+    return LoadedSessionContext(
+      loader: loader,
+      loaded: loaded,
+      userLayerRoot: userLayerRoot,
+      transcriptRoot: loaded.configuration.transcripts.location.recordingRoot(
+        workingDirectory: workingDirectory,
+        name: settingsStore.settingsFolders.name,
+        userDirectory: userLayerRoot))
+  }
 }
 
 /// What one `session/new` composed before the session was made:
 /// the merged config, the assembled instructions, the
 /// mounted tool surface, and the resolved recording root.
 struct SessionComposition {
-    /// The merged per-cwd configuration.
-    let configuration: AgentConfiguration
+  /// The merged per-cwd configuration.
+  let configuration: AgentConfiguration
 
-    /// The assembled instructions text.
-    let instructions: String
+  /// The assembled instructions text.
+  let instructions: String
 
-    /// The mounted tool surface.
-    let surface: SessionSurface
+  /// The mounted tool surface.
+  let surface: SessionSurface
 
-    /// The later slash-command sources, in precedence order:
-    /// the catalog's linked conformers, then the registered providers, then
-    /// the skills source. The registry is assembled in `newSession`, once the
-    /// live session the builtins capture exists.
-    let commandProviders: [any SlashCommandProviding]
+  /// The later slash-command sources, in precedence order:
+  /// the catalog's linked conformers, then the registered providers, then
+  /// the skills source. The registry is assembled in `newSession`, once the
+  /// live session the builtins capture exists.
+  let commandProviders: [any SlashCommandProviding]
 
-    /// The user layer root the stack resolved, for the builtin commands and
-    /// the `home` transcript location.
-    let userLayerRoot: URL
+  /// The user layer root the stack resolved, for the builtin commands and
+  /// the `home` transcript location.
+  let userLayerRoot: URL
 
-    /// The recording root `makeSession(recordingRoot:)` receives; Router
-    /// records the session to `<transcriptRoot>/<sessionId>/`.
-    let transcriptRoot: URL
+  /// The recording root `makeSession(recordingRoot:)` receives; Router
+  /// records the session to `<transcriptRoot>/<sessionId>/`.
+  let transcriptRoot: URL
 
-    /// Whether the composition is the one of a replay-only resume: no
-    /// instructions, no tool surface, and no command source. The mount
-    /// then writes no project file and no directory list, and announces no
-    /// command.
-    let isReplayOnly: Bool
+  /// Whether the composition is the one of a replay-only resume: no
+  /// instructions, no tool surface, and no command source. The mount
+  /// then writes no project file and no directory list, and announces no
+  /// command.
+  let isReplayOnly: Bool
 }
 
 /// What one mount of a session announces in the `session/new` or
@@ -553,676 +557,688 @@ struct SessionComposition {
 /// the first command list, and the first config-option list. A later
 /// `available_commands_update` or `config_option_update` replaces a list.
 struct SessionActivation {
-    /// The ACP session id: the root Router session's ULID.
-    let sessionId: SessionId
+  /// The ACP session id: the root Router session's ULID.
+  let sessionId: SessionId
 
-    /// The merged command set of the session registry, as the wire list.
-    let availableCommands: [AvailableCommand]
+  /// The merged command set of the session registry, as the wire list.
+  let availableCommands: [AvailableCommand]
 
-    /// The config-option list.
-    let configOptions: [SessionConfigOption]
+  /// The config-option list.
+  let configOptions: [SessionConfigOption]
 }
 
 /// Where one mounted session works, and whether a user can answer it: the
 /// `session/new` or `session/resume` inputs of the mount that the
 /// composition does not hold.
 struct SessionPlacement {
-    /// The validated session working directory.
-    let workingDirectory: URL
+  /// The validated session working directory.
+  let workingDirectory: URL
 
-    /// The session's additional confinement roots, in wire order.
-    let additionalRoots: [URL]
+  /// The session's additional confinement roots, in wire order.
+  let additionalRoots: [URL]
 
-    /// The user presence of the session (``RoutedACPAgent/userPresence(of:)``
-    /// of the connection of the request).
-    let userPresence: UserPresence
+  /// The user presence of the session (``RoutedACPAgent/userPresence(of:)``
+  /// of the connection of the request).
+  let userPresence: UserPresence
 }
 
 extension RoutedACPAgent {
-    /// Creates one root Router session for `params.cwd`.
-    ///
-    /// The ACP `sessionId` IS the root Router session's ULID, serialized —
-    /// there is no mapping table, because a mapping table can drift and
-    /// a resume would then restore the wrong conversation. Router writes
-    /// the `index.md` of the session folder when it makes the session, and
-    /// the cwd is registered in the project store of the home now. The
-    /// title waits for the first prompt, and a session with zero prompts
-    /// is not listed (``RoutedACPAgent/listSessions(_:)``).
-    ///
-    /// The request runs in one server span, and it writes one "enter" record
-    /// when it starts, because the tool and MCP server composition can take a
-    /// long time (``RequestTracing``). The span carries the id of the new
-    /// session.
-    ///
-    /// - Parameter params: The request: the absolute `cwd`, the ordered
-    ///   `additionalDirectories`, and the client's session-scoped
-    ///   `mcpServers`.
-    /// - Returns: The response carrying the new sessionId, the
-    ///   `availableCommands` list and the `configOptions` list.
-    /// - Throws: The order rule's invalid-request error,
-    ///   `RequestError.invalidParams` for a relative cwd or for a cwd or an
-    ///   additional directory that is not an existing directory, or
-    ///   whatever the composition pipeline throws.
-    public func newSession(_ params: NewSessionRequest) async throws -> NewSessionResponse {
-        try await newSession(params, from: .direct)
+  /// Creates one root Router session for `params.cwd`.
+  ///
+  /// The ACP `sessionId` IS the root Router session's ULID, serialized —
+  /// there is no mapping table, because a mapping table can drift and
+  /// a resume would then restore the wrong conversation. Router writes
+  /// the `index.md` of the session folder when it makes the session, and
+  /// the cwd is registered in the project store of the home now. The
+  /// title waits for the first prompt, and a session with zero prompts
+  /// is not listed (``RoutedACPAgent/listSessions(_:)``).
+  ///
+  /// The request runs in one server span, and it writes one "enter" record
+  /// when it starts, because the tool and MCP server composition can take a
+  /// long time (``RequestTracing``). The span carries the id of the new
+  /// session.
+  ///
+  /// - Parameter params: The request: the absolute `cwd`, the ordered
+  ///   `additionalDirectories`, and the client's session-scoped
+  ///   `mcpServers`.
+  /// - Returns: The response carrying the new sessionId, the
+  ///   `availableCommands` list and the `configOptions` list.
+  /// - Throws: The order rule's invalid-request error,
+  ///   `RequestError.invalidParams` for a relative cwd or for a cwd or an
+  ///   additional directory that is not an existing directory, or
+  ///   whatever the composition pipeline throws.
+  public func newSession(_ params: NewSessionRequest) async throws -> NewSessionResponse {
+    try await newSession(params, from: .direct)
+  }
+
+  /// Creates one root Router session for one connection: the work of
+  /// ``newSession(_:)``. The updates of the new session go out on
+  /// `caller`.
+  ///
+  /// - Parameters:
+  ///   - params: The `session/new` request.
+  ///   - caller: The connection of the request.
+  /// - Returns: The response carrying the new sessionId, the
+  ///   `availableCommands` list and the `configOptions` list.
+  /// - Throws: The errors that ``newSession(_:)`` names.
+  func newSession(_ params: NewSessionRequest, from caller: ConnectionId) async throws
+    -> NewSessionResponse
+  {
+    try await RequestTracing.withEnteredRequestSpan(
+      ACPAgentTelemetry.SpanName.sessionNew, method: ACPMethod.sessionNew, sessionId: nil,
+      meta: params.meta, logger: ACPAgentTelemetry.logger(.session)
+    ) { span in
+      let response = try await createSession(params, from: caller)
+      span.attributes[ACPAgentTelemetry.AttributeKey.sessionId] = response.sessionId.rawValue
+      return response
+    }
+  }
+
+  /// Creates the root Router session of one `session/new`: the work of
+  /// ``newSession(_:from:)`` in its span.
+  ///
+  /// - Parameters:
+  ///   - params: The `session/new` request.
+  ///   - caller: The connection of the request.
+  /// - Returns: The response carrying the new sessionId, the
+  ///   `availableCommands` list and the `configOptions` list.
+  /// - Throws: The errors that ``newSession(_:)`` names.
+  private func createSession(
+    _ params: NewSessionRequest, from caller: ConnectionId
+  ) async throws -> NewSessionResponse {
+    try requireInitialized(before: ACPMethod.sessionNew, from: caller)
+    let workingDirectory = try SessionSetup.validatedWorkingDirectory(
+      path: params.cwd.rawValue, field: .cwd)
+    let additionalRoots = try SessionSetup.additionalRoots(
+      fromPaths: (params.additionalDirectories ?? []).map(\.rawValue))
+    // The agent never makes a session directory: the check runs before
+    // the composition, which would make a missing one.
+    try SessionSetup.requireExistingDirectories(
+      workingDirectory: workingDirectory, additionalRoots: additionalRoots)
+
+    let userPresence = userPresence(of: caller)
+    let composition = try await composeSession(
+      from: loadSessionContext(workingDirectory: workingDirectory),
+      workingDirectory: workingDirectory,
+      additionalRoots: additionalRoots,
+      clientMCPServers: params.mcpServers ?? [],
+      userPresence: userPresence)
+
+    // The session comes from the profile's standard slot, never from
+    // the router. `grammar` stays absent — a plain
+    // session, not a guided one — and `agentSpawn` stays nil: an agent
+    // run starts from the standalone `agents` tool of the surface,
+    // never from `session/new`. The budget starts automatic
+    // compaction: the fractions come from the `compaction:` section and
+    // the limit from the model's resolved context, never from
+    // configuration. The
+    // repetition detector takes the `repetition:` section. The settle
+    // period is the one that the surface gave the agent runs. The hooks
+    // see the key of the working directory, which each session of that
+    // folder shares, so they share one snapshot timeline.
+    let hookLineage = HookLineage(workingDirectory: workingDirectory, origin: .new)
+    let session = residentProfile.standard.makeBudgetedSession(
+      instructions: composition.instructions,
+      workingDirectory: workingDirectory,
+      recordingRoot: composition.transcriptRoot,
+      tools: composition.surface.tools,
+      compaction: composition.configuration.compaction,
+      repetition: composition.configuration.repetition,
+      inlineSettleGrace: composition.surface.inlineSettleGrace,
+      userPresence: userPresence,
+      mailOnlyAnswerLimit: mailOnlyAnswerLimit,
+      hookLineage: hookLineage)
+    let sessionId = SessionId(rawValue: session.id.description)
+    SnapshotSessionKeys.shared.record(hookLineage.sessionKey, for: sessionId)
+
+    // The connection of the request owns the new session and is its
+    // starter (D120 c), before the mount sends anything for the session.
+    connections.recordStart(of: sessionId, by: caller)
+
+    // The title is NOT set here: the first prompt sets it, from the
+    // first line of that prompt.
+    let activation = try await activateSession(
+      session,
+      composition: composition,
+      placement: SessionPlacement(
+        workingDirectory: workingDirectory, additionalRoots: additionalRoots,
+        userPresence: userPresence),
+      titleRecorded: false,
+      history: SessionMergeEngine())
+
+    let response = NewSessionResponse(
+      sessionId: activation.sessionId,
+      availableCommands: activation.availableCommands,
+      configOptions: activation.configOptions)
+    sessions[activation.sessionId]?.retainedHistory.seed(from: response)
+    return response
+  }
+
+  /// Mounts one made or restored root Router session into the agent: the
+  /// record of its placement (``recordPlacement(of:placement:)``), the
+  /// command registry with
+  /// its bound builtin context, the table entry with its retained
+  /// history (the one build of a session,
+  /// ``registerSession(_:sessionId:parent:build:events:)``), the command-set
+  /// publication, the terminal projection, and
+  /// the status report of the MCP servers.
+  ///
+  /// The caller sets the owner of the session before the mount
+  /// (``ConnectionTable/recordStart(of:by:)`` or
+  /// ``ConnectionTable/take(_:by:)``), so each update of the mount goes to
+  /// the owner.
+  ///
+  /// - Parameters:
+  ///   - session: The root Router session to mount.
+  ///   - composition: What the composition pipeline built for it.
+  ///   - placement: Where the session works, and its user presence.
+  ///   - titleRecorded: Whether the `index.md` of the session already
+  ///     holds its title, so the first prompt knows whether to set it.
+  ///   - history: The retained history of the session: empty for a new
+  ///     session, the kept history for a resumed one.
+  /// - Returns: The session id, and the command list and the
+  ///   config-option list that the response announces.
+  /// - Throws: Whatever ``recordPlacement(of:placement:)`` throws.
+  func activateSession(
+    _ session: any RoutedSession,
+    composition: SessionComposition,
+    placement: SessionPlacement,
+    titleRecorded: Bool,
+    history: SessionMergeEngine
+  ) async throws -> SessionActivation {
+    let workingDirectory = placement.workingDirectory
+    // A replay-only session has no cwd on disk, so it records nothing.
+    if !composition.isReplayOnly {
+      try await recordPlacement(of: session, placement: placement)
     }
 
-    /// Creates one root Router session for one connection: the work of
-    /// ``newSession(_:)``. The updates of the new session go out on
-    /// `caller`.
-    ///
-    /// - Parameters:
-    ///   - params: The `session/new` request.
-    ///   - caller: The connection of the request.
-    /// - Returns: The response carrying the new sessionId, the
-    ///   `availableCommands` list and the `configOptions` list.
-    /// - Throws: The errors that ``newSession(_:)`` names.
-    func newSession(_ params: NewSessionRequest, from caller: ConnectionId) async throws -> NewSessionResponse {
-        try await RequestTracing.withEnteredRequestSpan(
-            ACPAgentTelemetry.SpanName.sessionNew, method: ACPMethod.sessionNew, sessionId: nil,
-            meta: params.meta, logger: ACPAgentTelemetry.logger(.session)
-        ) { span in
-            let response = try await createSession(params, from: caller)
-            span.attributes[ACPAgentTelemetry.AttributeKey.sessionId] = response.sessionId.rawValue
-            return response
-        }
+    let sessionId = SessionId(rawValue: session.id.description)
+    // Each shell command of the session records this ACP session id as
+    // its owner. A model slot switch replaces the Router session over
+    // the same surface and binds nothing, so the id stays the ACP id.
+    composition.surface.shellSessionIdentity?.bind(sessionId.rawValue)
+
+    // Assemble the command registry now the session exists: the six
+    // builtins capture a context bound to the live
+    // session and, through it, to the registry that carries them, so
+    // `/help` can list every registered command. The reserved-name rule
+    // is enforced by the registry merge.
+    let commandContext = BuiltinCommandContext(
+      workingDirectory: workingDirectory,
+      configuration: composition.configuration,
+      instructions: composition.instructions,
+      modelName: residentProfile.standard.chosen.stringValue,
+      profileName: residentProfile.definitionName,
+      dotfolderName: name,
+      userLayerRoot: composition.userLayerRoot)
+    // A replay-only session refuses each prompt, so it announces no
+    // command, the builtins included.
+    let commands = CommandRegistry(
+      builtins: composition.isReplayOnly ? [] : BuiltinCommands.make(context: commandContext),
+      providers: composition.commandProviders,
+      workingDirectory: workingDirectory)
+    await commands.load()
+    commandContext.bind(
+      BuiltinCommandContext.Binding(
+        session: session,
+        sessionId: sessionId,
+        transcriptDirectory: session.recordingDirectory,
+        registry: commands))
+
+    // The first announcement of the config-option list: one select
+    // over the profile's chat slots, defaulting to
+    // the standard slot the session was just composed from. The
+    // announced state is recorded so the divergence check compares
+    // against what the client actually saw.
+    let configOptions = ConfigOptions.options(
+      profile: residentProfile, selectedSlot: ConfigOptions.defaultSlot)
+
+    // The one reader of the events of the session starts before anything
+    // can mail the session, so it keeps each event (elicitation-plan
+    // task 1). The build is the one that a nested session takes too.
+    try await registerSession(
+      session,
+      sessionId: sessionId,
+      parent: nil,
+      build: SessionBuild(
+        composition: composition, placement: placement, commands: commands,
+        selectedSlot: ConfigOptions.defaultSlot, announcedConfigOptions: configOptions,
+        titleRecorded: titleRecorded, history: history))
+
+    // The announcer of the agent runs of the surface sends through this agent from now on. So
+    // each run is announced on this root session.
+    if let agents = composition.surface.agents {
+      agents.announcer.bind(
+        makeSubagentOutlet(root: sessionId, runner: agents.runner, holds: agents.announcer.holds))
     }
 
-    /// Creates the root Router session of one `session/new`: the work of
-    /// ``newSession(_:from:)`` in its span.
-    ///
-    /// - Parameters:
-    ///   - params: The `session/new` request.
-    ///   - caller: The connection of the request.
-    /// - Returns: The response carrying the new sessionId, the
-    ///   `availableCommands` list and the `configOptions` list.
-    /// - Throws: The errors that ``newSession(_:)`` names.
-    private func createSession(
-        _ params: NewSessionRequest, from caller: ConnectionId
-    ) async throws -> NewSessionResponse {
-        try requireInitialized(before: ACPMethod.sessionNew, from: caller)
-        let workingDirectory = try SessionSetup.validatedWorkingDirectory(
-            path: params.cwd.rawValue, field: .cwd)
-        let additionalRoots = try SessionSetup.additionalRoots(
-            fromPaths: (params.additionalDirectories ?? []).map(\.rawValue))
-        // The agent never makes a session directory: the check runs before
-        // the composition, which would make a missing one.
-        try SessionSetup.requireExistingDirectories(
-            workingDirectory: workingDirectory, additionalRoots: additionalRoots)
+    // The response announces the first command list, and each registry
+    // change after it publishes the new list.
+    publishAvailableCommands(from: commands, sessionId: sessionId)
 
-        let userPresence = userPresence(of: caller)
-        let composition = try await composeSession(
-            from: loadSessionContext(workingDirectory: workingDirectory),
-            workingDirectory: workingDirectory,
-            additionalRoots: additionalRoots,
-            clientMCPServers: params.mcpServers ?? [],
-            userPresence: userPresence)
+    startTerminalProjection(over: composition.surface, sessionId: sessionId)
 
-        // The session comes from the profile's standard slot, never from
-        // the router. `grammar` stays absent — a plain
-        // session, not a guided one — and `agentSpawn` stays nil: an agent
-        // run starts from the standalone `agents` tool of the surface,
-        // never from `session/new`. The budget starts automatic
-        // compaction: the fractions come from the `compaction:` section and
-        // the limit from the model's resolved context, never from
-        // configuration. The
-        // repetition detector takes the `repetition:` section. The settle
-        // period is the one that the surface gave the agent runs. The hooks
-        // see the key of the working directory, which each session of that
-        // folder shares, so they share one snapshot timeline.
-        let hookLineage = HookLineage(workingDirectory: workingDirectory, origin: .new)
-        let session = residentProfile.standard.makeBudgetedSession(
-            instructions: composition.instructions,
-            workingDirectory: workingDirectory,
-            recordingRoot: composition.transcriptRoot,
-            tools: composition.surface.tools,
-            compaction: composition.configuration.compaction,
-            repetition: composition.configuration.repetition,
-            inlineSettleGrace: composition.surface.inlineSettleGrace,
-            userPresence: userPresence,
-            mailOnlyAnswerLimit: mailOnlyAnswerLimit,
-            hookLineage: hookLineage)
-        let sessionId = SessionId(rawValue: session.id.description)
-        SnapshotSessionKeys.shared.record(hookLineage.sessionKey, for: sessionId)
+    reportMCPServerStatus(composition.surface.mcpServerOutcomes, of: sessionId)
 
-        // The connection of the request owns the new session and is its
-        // starter (D120 c), before the mount sends anything for the session.
-        connections.recordStart(of: sessionId, by: caller)
+    return SessionActivation(
+      sessionId: sessionId,
+      availableCommands: CommandRegistry.availableCommands(for: await commands.commands),
+      configOptions: configOptions)
+  }
 
-        // The title is NOT set here: the first prompt sets it, from the
-        // first line of that prompt.
-        let activation = try await activateSession(
-            session,
-            composition: composition,
-            placement: SessionPlacement(
-                workingDirectory: workingDirectory, additionalRoots: additionalRoots, userPresence: userPresence),
-            titleRecorded: false,
-            history: SessionMergeEngine())
+  /// Records where one mounted session works, for the listings. The cwd
+  /// goes into the project store of the home (Router `ProjectStore`, one
+  /// file for each project in ``AgentHome/projectsDirectory``), so a
+  /// cross-project browser finds the project. The additional directories
+  /// go to Router (`setAdditionalDirectories(to:for:)`), which writes them
+  /// to the `index.md` of the session; a resume gives the complete new
+  /// list, because the list of the client is authoritative on each
+  /// reconnect.
+  ///
+  /// - Parameters:
+  ///   - session: The root Router session.
+  ///   - placement: Where the session works.
+  /// - Throws: The error of the project file save, or
+  ///   `SessionDirectoryError.unknownSession` when the session directory of
+  ///   the router does not hold the session.
+  private func recordPlacement(of session: any RoutedSession, placement: SessionPlacement)
+    async throws
+  {
+    try ProjectStore(directory: home.projectsDirectory).register(
+      workingDirectory: placement.workingDirectory)
+    try await sessionDirectory.setAdditionalDirectories(
+      to: placement.additionalRoots, for: session.id)
+  }
 
-        let response = NewSessionResponse(
-            sessionId: activation.sessionId,
-            availableCommands: activation.availableCommands,
-            configOptions: activation.configOptions)
-        sessions[activation.sessionId]?.retainedHistory.seed(from: response)
-        return response
+  /// Starts the session's terminal projection: the
+  /// one consumer loop over the host-owned shell output stream,
+  /// posting each terminal update through the connection of the session
+  /// and keeping it in the retained history (``historySink(for:)``).
+  /// The join table of the surface (``SessionSurface/runCallJoins``) gives
+  /// the wire id of each `Terminal` announce.
+  /// A session with no shell mount starts nothing. The loop ends when
+  /// ``markSessionClosed(_:)`` finishes the stream.
+  ///
+  /// - Parameters:
+  ///   - surface: The session's mounted surface.
+  ///   - sessionId: The session the updates belong to.
+  private func startTerminalProjection(over surface: SessionSurface, sessionId: SessionId) {
+    guard let shellOutput = surface.shellOutput else {
+      return
     }
+    TerminalStream.start(
+      over: shellOutput, runCallJoins: surface.runCallJoins, send: historySink(for: sessionId))
+  }
 
-    /// Mounts one made or restored root Router session into the agent: the
-    /// record of its placement (``recordPlacement(of:placement:)``), the
-    /// command registry with
-    /// its bound builtin context, the table entry with its retained
-    /// history (the one build of a session,
-    /// ``registerSession(_:sessionId:parent:build:events:)``), the command-set
-    /// publication, the terminal projection, and
-    /// the status report of the MCP servers.
-    ///
-    /// The caller sets the owner of the session before the mount
-    /// (``ConnectionTable/recordStart(of:by:)`` or
-    /// ``ConnectionTable/take(_:by:)``), so each update of the mount goes to
-    /// the owner.
-    ///
-    /// - Parameters:
-    ///   - session: The root Router session to mount.
-    ///   - composition: What the composition pipeline built for it.
-    ///   - placement: Where the session works, and its user presence.
-    ///   - titleRecorded: Whether the `index.md` of the session already
-    ///     holds its title, so the first prompt knows whether to set it.
-    ///   - history: The retained history of the session: empty for a new
-    ///     session, the kept history for a resumed one.
-    /// - Returns: The session id, and the command list and the
-    ///   config-option list that the response announces.
-    /// - Throws: Whatever ``recordPlacement(of:placement:)`` throws.
-    func activateSession(
-        _ session: any RoutedSession,
-        composition: SessionComposition,
-        placement: SessionPlacement,
-        titleRecorded: Bool,
-        history: SessionMergeEngine
-    ) async throws -> SessionActivation {
-        let workingDirectory = placement.workingDirectory
-        // A replay-only session has no cwd on disk, so it records nothing.
-        if !composition.isReplayOnly {
-            try await recordPlacement(of: session, placement: placement)
-        }
-
-        let sessionId = SessionId(rawValue: session.id.description)
-        // Each shell command of the session records this ACP session id as
-        // its owner. A model slot switch replaces the Router session over
-        // the same surface and binds nothing, so the id stays the ACP id.
-        composition.surface.shellSessionIdentity?.bind(sessionId.rawValue)
-
-        // Assemble the command registry now the session exists: the six
-        // builtins capture a context bound to the live
-        // session and, through it, to the registry that carries them, so
-        // `/help` can list every registered command. The reserved-name rule
-        // is enforced by the registry merge.
-        let commandContext = BuiltinCommandContext(
-            workingDirectory: workingDirectory,
-            configuration: composition.configuration,
-            instructions: composition.instructions,
-            modelName: residentProfile.standard.chosen.stringValue,
-            profileName: residentProfile.definitionName,
-            dotfolderName: name,
-            userLayerRoot: composition.userLayerRoot)
-        // A replay-only session refuses each prompt, so it announces no
-        // command, the builtins included.
-        let commands = CommandRegistry(
-            builtins: composition.isReplayOnly ? [] : BuiltinCommands.make(context: commandContext),
-            providers: composition.commandProviders,
-            workingDirectory: workingDirectory)
-        await commands.load()
-        commandContext.bind(
-            BuiltinCommandContext.Binding(
-                session: session,
-                sessionId: sessionId,
-                transcriptDirectory: session.recordingDirectory,
-                registry: commands))
-
-        // The first announcement of the config-option list: one select
-        // over the profile's chat slots, defaulting to
-        // the standard slot the session was just composed from. The
-        // announced state is recorded so the divergence check compares
-        // against what the client actually saw.
-        let configOptions = ConfigOptions.options(
-            profile: residentProfile, selectedSlot: ConfigOptions.defaultSlot)
-
-        // The one reader of the events of the session starts before anything
-        // can mail the session, so it keeps each event (elicitation-plan
-        // task 1). The build is the one that a nested session takes too.
-        try await registerSession(
-            session,
-            sessionId: sessionId,
-            parent: nil,
-            build: SessionBuild(
-                composition: composition, placement: placement, commands: commands,
-                selectedSlot: ConfigOptions.defaultSlot, announcedConfigOptions: configOptions,
-                titleRecorded: titleRecorded, history: history))
-
-        // The announcer of the agent runs of the surface sends through this agent from now on. So
-        // each run is announced on this root session.
-        if let agents = composition.surface.agents {
-            agents.announcer.bind(
-                makeSubagentOutlet(root: sessionId, runner: agents.runner, holds: agents.announcer.holds))
-        }
-
-        // The response announces the first command list, and each registry
-        // change after it publishes the new list.
-        publishAvailableCommands(from: commands, sessionId: sessionId)
-
-        startTerminalProjection(over: composition.surface, sessionId: sessionId)
-
-        reportMCPServerStatus(composition.surface.mcpServerOutcomes, of: sessionId)
-
-        return SessionActivation(
-            sessionId: sessionId,
-            availableCommands: CommandRegistry.availableCommands(for: await commands.commands),
-            configOptions: configOptions)
+  /// Sends the status report of the MCP servers of a session after the
+  /// response of the current `session/new` or `session/resume` request:
+  /// one `_mcp_server_status` update for each outcome, in mount order
+  /// (``MCPServerStatusReport``). The client knows the session id only
+  /// from the response, so no update goes out before it. A resume sends a
+  /// full new report, and the client replaces its list.
+  ///
+  /// The updates go through `post(_:in:)` directly, never through the
+  /// history sink: the status is live, and the retained history and a
+  /// replay never hold it. A session with no MCP server, or a session
+  /// whose connection has no outbound path, sends nothing. The deferred
+  /// work keeps the connection weakly, as the agent keeps the connection
+  /// (task `^173qn8n`).
+  ///
+  /// - Parameters:
+  ///   - outcomes: The outcome of each MCP server of the session, in mount
+  ///     order.
+  ///   - sessionId: The session the updates belong to.
+  private func reportMCPServerStatus(
+    _ outcomes: [MCPComposition.ServerOutcome], of sessionId: SessionId
+  ) {
+    guard !outcomes.isEmpty, let connection = connections.path(forSession: sessionId)?.connection
+    else {
+      return
     }
-
-    /// Records where one mounted session works, for the listings. The cwd
-    /// goes into the project store of the home (Router `ProjectStore`, one
-    /// file for each project in ``AgentHome/projectsDirectory``), so a
-    /// cross-project browser finds the project. The additional directories
-    /// go to Router (`setAdditionalDirectories(to:for:)`), which writes them
-    /// to the `index.md` of the session; a resume gives the complete new
-    /// list, because the list of the client is authoritative on each
-    /// reconnect.
-    ///
-    /// - Parameters:
-    ///   - session: The root Router session.
-    ///   - placement: Where the session works.
-    /// - Throws: The error of the project file save, or
-    ///   `SessionDirectoryError.unknownSession` when the session directory of
-    ///   the router does not hold the session.
-    private func recordPlacement(of session: any RoutedSession, placement: SessionPlacement) async throws {
-        try ProjectStore(directory: home.projectsDirectory).register(workingDirectory: placement.workingDirectory)
-        try await sessionDirectory.setAdditionalDirectories(to: placement.additionalRoots, for: session.id)
+    let updates = outcomes.map(MCPServerStatusReport.update(for:))
+    connection.afterRespondingInCurrentInstrumentationContext { [weak connection] in
+      for update in updates {
+        await connection?.post(update, in: sessionId)
+      }
     }
+  }
 
-    /// Starts the session's terminal projection: the
-    /// one consumer loop over the host-owned shell output stream,
-    /// posting each terminal update through the connection of the session
-    /// and keeping it in the retained history (``historySink(for:)``).
-    /// The join table of the surface (``SessionSurface/runCallJoins``) gives
-    /// the wire id of each `Terminal` announce.
-    /// A session with no shell mount starts nothing. The loop ends when
-    /// ``markSessionClosed(_:)`` finishes the stream.
-    ///
-    /// - Parameters:
-    ///   - surface: The session's mounted surface.
-    ///   - sessionId: The session the updates belong to.
-    private func startTerminalProjection(over surface: SessionSurface, sessionId: SessionId) {
-        guard let shellOutput = surface.shellOutput else {
-            return
-        }
-        TerminalStream.start(
-            over: shellOutput, runCallJoins: surface.runCallJoins, send: historySink(for: sessionId))
+  /// Makes the configuration loader of one working directory: the one
+  /// place where this agent makes a `ConfigurationLoader`.
+  ///
+  /// Each request path that reads the configuration of a `cwd` calls it,
+  /// so each read gets the same ``settingsFolders`` and
+  /// ``transcriptLocation``. A new path that calls it cannot miss the code
+  /// override or the home of the host. The loader comes
+  /// from ``settingsStore``, thus the store and the loader read the same
+  /// folders.
+  ///
+  /// - Parameter workingDirectory: The working directory whose project
+  ///   layer the loader reads.
+  /// - Returns: The loader.
+  nonisolated func makeConfigurationLoader(workingDirectory: URL) -> ConfigurationLoader {
+    settingsStore.makeConfigurationLoader(workingDirectory: workingDirectory)
+  }
+
+  /// Resolves the per-cwd configuration one session request starts from:
+  /// the config layer, the user layer root, and
+  /// the recording root.
+  ///
+  /// The configuration comes from the settings in memory
+  /// (``SettingsStore/merged(for:)``), and not from a fresh load of the
+  /// files. The store reads a level file the first time that a request
+  /// needs it, and reads it again when it changes from outside.
+  ///
+  /// - Parameter workingDirectory: The validated session working
+  ///   directory.
+  /// - Returns: The resolved context.
+  /// - Throws: Whatever ``SettingsStore/merged(for:)`` throws.
+  func loadSessionContext(workingDirectory: URL) async throws -> LoadedSessionContext {
+    try await LoadedSessionContext.load(workingDirectory: workingDirectory, from: settingsStore)
+  }
+
+  /// Makes the catalog context of one session composition: the session
+  /// root set and MCP servers, the per-cwd configuration, and what the
+  /// agent shares with each session, among them the snapshot store and the
+  /// one `settings` endpoint of the agent (``settingsEndpoint``), thus the
+  /// `settings` tool of each session runs on that same instance.
+  ///
+  /// - Parameters:
+  ///   - context: The resolved per-cwd configuration.
+  ///   - workingDirectory: The validated session working directory.
+  ///   - additionalRoots: The session's additional confinement roots, in
+  ///     wire order.
+  ///   - clientMCPServers: The client's session-scoped MCP servers, in wire
+  ///     order.
+  ///   - userPresence: The user presence of the session
+  ///     (``userPresence(of:)`` of the connection that opens it).
+  /// - Returns: The catalog context.
+  func catalogContext(
+    from context: LoadedSessionContext,
+    workingDirectory: URL,
+    additionalRoots: [URL],
+    clientMCPServers: [FoundationModelsACP.MCPServer],
+    userPresence: UserPresence
+  ) -> CatalogContext {
+    CatalogContext(
+      workingDirectory: workingDirectory,
+      additionalRoots: additionalRoots,
+      configuration: context.loaded.configuration,
+      profile: residentProfile,
+      clientMCPServers: clientMCPServers,
+      settingsFolders: settingsFolders,
+      environment: environment,
+      inlineSettleGrace: inlineSettleGrace,
+      userPresence: userPresence,
+      snapshotStore: hooks.snapshotStore,
+      settingsEndpoint: settingsEndpoint)
+  }
+
+  /// Composes one session over an already-resolved configuration:
+  /// assemble the instructions, then connect the MCP
+  /// servers and build the tool roster through the catalog.
+  ///
+  /// The catalog context gets ``environment``, the environment of the
+  /// host, so each session tool that reads an environment value reads the
+  /// value the host gave (task ^b2kb6j1). It also gets
+  /// ``settingsFolders``, whose ``home`` gives the marketplace cache folder
+  /// and the machine state folder of the session. `session/new` and
+  /// `session/resume` compose through this function. A model-slot switch
+  /// composes nothing: the replacement session gets the tools of this
+  /// composition.
+  ///
+  /// - Parameters:
+  ///   - context: The resolved per-cwd configuration.
+  ///   - workingDirectory: The validated session working directory.
+  ///   - additionalRoots: The session's additional confinement roots,
+  ///     in wire order.
+  ///   - clientMCPServers: The client's session-scoped MCP servers, in
+  ///     wire order.
+  ///   - userPresence: The user presence of the session
+  ///     (``userPresence(of:)`` of the connection that opens it).
+  /// - Returns: The composed inputs of `makeSession`.
+  /// - Throws: Whatever the instructions assembly or the tool
+  ///   composition throws.
+  func composeSession(
+    from context: LoadedSessionContext,
+    workingDirectory: URL,
+    additionalRoots: [URL],
+    clientMCPServers: [FoundationModelsACP.MCPServer],
+    userPresence: UserPresence
+  ) async throws -> SessionComposition {
+    let catalogContext = catalogContext(
+      from: context, workingDirectory: workingDirectory, additionalRoots: additionalRoots,
+      clientMCPServers: clientMCPServers, userPresence: userPresence)
+
+    // One watched registry serves the preload assembly here, the
+    // slash-command source below, the `skills` tool and the agent runs
+    // (a standalone tool, not a Multitool capability). `watch: true`
+    // is what makes its
+    // `commandUpdates` non-nil.
+    let skills = await ToolCatalog.makeSkillsSource(context: catalogContext)
+    let instructions = try await InstructionsAssembler(
+      stack: context.loader.stack, workingDirectory: workingDirectory
+    ).assemble(skills: skills.registry)
+
+    let surface = try await ToolCatalog.sessionSurface(context: catalogContext, skills: skills)
+      .appending(hostTools: hostTools)
+
+    return SessionComposition(
+      configuration: context.loaded.configuration,
+      instructions: instructions.text,
+      surface: surface,
+      commandProviders: makeCommandProviders(surface: surface, skills: skills.registry),
+      userLayerRoot: context.userLayerRoot,
+      transcriptRoot: context.transcriptRoot,
+      isReplayOnly: false)
+  }
+
+  /// Assembles the registry's later sources in precedence order:
+  /// the catalog's linked `SlashCommandProviding`
+  /// conformers first, then the registered providers, then the skills
+  /// source last, so skills win a non-builtin collision.
+  ///
+  /// - Parameters:
+  ///   - surface: The mounted tool surface whose conformers join.
+  ///   - skills: The session's skills registry.
+  /// - Returns: The providers, in precedence order.
+  private func makeCommandProviders(
+    surface: SessionSurface, skills: SkillsRegistry
+  ) -> [any SlashCommandProviding] {
+    surface.tools.compactMap { $0 as? any SlashCommandProviding } + commandProviders
+      + [SkillCommandSource(registry: skills)]
+  }
+
+  /// Publishes each change of the session's command set:
+  /// the `session/new` or `session/resume` response announces the first
+  /// list (ACP schema-v2.0.0-alpha.7), and the registry starts to publish
+  /// after that response. A publication sends an
+  /// `available_commands_update` only when its list differs from the
+  /// list that the client has (``publishCommandList(_:of:)``),
+  /// so no update repeats the list of the response. Each update goes to
+  /// the connection of the session as it is when the update goes out.
+  ///
+  /// The closures keep the agent and the registry weakly, and no closure
+  /// keeps a connection, as the agent keeps the connection (task
+  /// `^173qn8n`):
+  ///
+  /// - The registry keeps the sink for the life of the session entry. A
+  ///   strong reference to the agent would keep the agent and its models
+  ///   for as long as the publisher lives.
+  /// - Upstream, the connection releases the deferred work after it ran.
+  ///   The skills watcher that `session/new` starts lives on, so a strong
+  ///   reference to the registry would still keep the registry, its
+  ///   builtins, the session they read and the models of the profile for
+  ///   as long as the publisher lives.
+  ///
+  /// The session entry keeps the registry for as long as it publishes. A
+  /// session whose connection has no outbound path (the
+  /// ``ConnectionId/direct`` caller) has no response to follow, so it
+  /// starts no publisher.
+  ///
+  /// - Parameters:
+  ///   - commands: The session's loaded registry.
+  ///   - sessionId: The session the updates belong to.
+  func publishAvailableCommands(from commands: CommandRegistry, sessionId: SessionId) {
+    guard let connection = connections.path(forSession: sessionId)?.connection else { return }
+    connection.afterRespondingToCurrentRequest { [weak self, weak commands] in
+      await commands?.beginPublishing { [weak self] commandSet in
+        await self?.publishCommandList(
+          CommandRegistry.availableCommands(for: commandSet), of: sessionId)
+      }
     }
+  }
 
-    /// Sends the status report of the MCP servers of a session after the
-    /// response of the current `session/new` or `session/resume` request:
-    /// one `_mcp_server_status` update for each outcome, in mount order
-    /// (``MCPServerStatusReport``). The client knows the session id only
-    /// from the response, so no update goes out before it. A resume sends a
-    /// full new report, and the client replaces its list.
-    ///
-    /// The updates go through `post(_:in:)` directly, never through the
-    /// history sink: the status is live, and the retained history and a
-    /// replay never hold it. A session with no MCP server, or a session
-    /// whose connection has no outbound path, sends nothing. The deferred
-    /// work keeps the connection weakly, as the agent keeps the connection
-    /// (task `^173qn8n`).
-    ///
-    /// - Parameters:
-    ///   - outcomes: The outcome of each MCP server of the session, in mount
-    ///     order.
-    ///   - sessionId: The session the updates belong to.
-    private func reportMCPServerStatus(_ outcomes: [MCPComposition.ServerOutcome], of sessionId: SessionId) {
-        guard !outcomes.isEmpty, let connection = connections.path(forSession: sessionId)?.connection else {
-            return
-        }
-        let updates = outcomes.map(MCPServerStatusReport.update(for:))
-        connection.afterRespondingInCurrentInstrumentationContext { [weak connection] in
-            for update in updates {
-                await connection?.post(update, in: sessionId)
-            }
-        }
+  /// Sends one `available_commands_update` with `list` through the
+  /// connection of the session, and keeps it in the retained history,
+  /// when `list` differs from the list that the client has. The history
+  /// holds that list: the response seeded it, and each update after the
+  /// response changed it.
+  ///
+  /// - Parameters:
+  ///   - list: The new command list.
+  ///   - sessionId: The session the list belongs to.
+  private func publishCommandList(_ list: [AvailableCommand], of sessionId: SessionId) async {
+    guard let entry = sessions[sessionId], entry.history.availableCommands != list else {
+      return
     }
-
-    /// Makes the configuration loader of one working directory: the one
-    /// place where this agent makes a `ConfigurationLoader`.
-    ///
-    /// Each request path that reads the configuration of a `cwd` calls it,
-    /// so each read gets the same ``settingsFolders`` and
-    /// ``transcriptLocation``. A new path that calls it cannot miss the code
-    /// override or the home of the host. The loader comes
-    /// from ``settingsStore``, thus the store and the loader read the same
-    /// folders.
-    ///
-    /// - Parameter workingDirectory: The working directory whose project
-    ///   layer the loader reads.
-    /// - Returns: The loader.
-    nonisolated func makeConfigurationLoader(workingDirectory: URL) -> ConfigurationLoader {
-        settingsStore.makeConfigurationLoader(workingDirectory: workingDirectory)
-    }
-
-    /// Resolves the per-cwd configuration one session request starts from:
-    /// the config layer, the user layer root, and
-    /// the recording root.
-    ///
-    /// The configuration comes from the settings in memory
-    /// (``SettingsStore/merged(for:)``), and not from a fresh load of the
-    /// files. The store reads a level file the first time that a request
-    /// needs it, and reads it again when it changes from outside.
-    ///
-    /// - Parameter workingDirectory: The validated session working
-    ///   directory.
-    /// - Returns: The resolved context.
-    /// - Throws: Whatever ``SettingsStore/merged(for:)`` throws.
-    func loadSessionContext(workingDirectory: URL) async throws -> LoadedSessionContext {
-        try await LoadedSessionContext.load(workingDirectory: workingDirectory, from: settingsStore)
-    }
-
-    /// Makes the catalog context of one session composition: the session
-    /// root set and MCP servers, the per-cwd configuration, and what the
-    /// agent shares with each session, among them the snapshot store and the
-    /// one `settings` endpoint of the agent (``settingsEndpoint``), thus the
-    /// `settings` tool of each session runs on that same instance.
-    ///
-    /// - Parameters:
-    ///   - context: The resolved per-cwd configuration.
-    ///   - workingDirectory: The validated session working directory.
-    ///   - additionalRoots: The session's additional confinement roots, in
-    ///     wire order.
-    ///   - clientMCPServers: The client's session-scoped MCP servers, in wire
-    ///     order.
-    ///   - userPresence: The user presence of the session
-    ///     (``userPresence(of:)`` of the connection that opens it).
-    /// - Returns: The catalog context.
-    func catalogContext(
-        from context: LoadedSessionContext,
-        workingDirectory: URL,
-        additionalRoots: [URL],
-        clientMCPServers: [FoundationModelsACP.MCPServer],
-        userPresence: UserPresence
-    ) -> CatalogContext {
-        CatalogContext(
-            workingDirectory: workingDirectory,
-            additionalRoots: additionalRoots,
-            configuration: context.loaded.configuration,
-            profile: residentProfile,
-            clientMCPServers: clientMCPServers,
-            settingsFolders: settingsFolders,
-            environment: environment,
-            inlineSettleGrace: inlineSettleGrace,
-            userPresence: userPresence,
-            snapshotStore: hooks.snapshotStore,
-            settingsEndpoint: settingsEndpoint)
-    }
-
-    /// Composes one session over an already-resolved configuration:
-    /// assemble the instructions, then connect the MCP
-    /// servers and build the tool roster through the catalog.
-    ///
-    /// The catalog context gets ``environment``, the environment of the
-    /// host, so each session tool that reads an environment value reads the
-    /// value the host gave (task ^b2kb6j1). It also gets
-    /// ``settingsFolders``, whose ``home`` gives the marketplace cache folder
-    /// and the machine state folder of the session. `session/new` and
-    /// `session/resume` compose through this function. A model-slot switch
-    /// composes nothing: the replacement session gets the tools of this
-    /// composition.
-    ///
-    /// - Parameters:
-    ///   - context: The resolved per-cwd configuration.
-    ///   - workingDirectory: The validated session working directory.
-    ///   - additionalRoots: The session's additional confinement roots,
-    ///     in wire order.
-    ///   - clientMCPServers: The client's session-scoped MCP servers, in
-    ///     wire order.
-    ///   - userPresence: The user presence of the session
-    ///     (``userPresence(of:)`` of the connection that opens it).
-    /// - Returns: The composed inputs of `makeSession`.
-    /// - Throws: Whatever the instructions assembly or the tool
-    ///   composition throws.
-    func composeSession(
-        from context: LoadedSessionContext,
-        workingDirectory: URL,
-        additionalRoots: [URL],
-        clientMCPServers: [FoundationModelsACP.MCPServer],
-        userPresence: UserPresence
-    ) async throws -> SessionComposition {
-        let catalogContext = catalogContext(
-            from: context, workingDirectory: workingDirectory, additionalRoots: additionalRoots,
-            clientMCPServers: clientMCPServers, userPresence: userPresence)
-
-        // One watched registry serves the preload assembly here, the
-        // slash-command source below, the `skills` tool and the agent runs
-        // (a standalone tool, not a Multitool capability). `watch: true`
-        // is what makes its
-        // `commandUpdates` non-nil.
-        let skills = await ToolCatalog.makeSkillsSource(context: catalogContext)
-        let instructions = try await InstructionsAssembler(
-            stack: context.loader.stack, workingDirectory: workingDirectory
-        ).assemble(skills: skills.registry)
-
-        let surface = try await ToolCatalog.sessionSurface(context: catalogContext, skills: skills)
-            .appending(hostTools: hostTools)
-
-        return SessionComposition(
-            configuration: context.loaded.configuration,
-            instructions: instructions.text,
-            surface: surface,
-            commandProviders: makeCommandProviders(surface: surface, skills: skills.registry),
-            userLayerRoot: context.userLayerRoot,
-            transcriptRoot: context.transcriptRoot,
-            isReplayOnly: false)
-    }
-
-    /// Assembles the registry's later sources in precedence order:
-    /// the catalog's linked `SlashCommandProviding`
-    /// conformers first, then the registered providers, then the skills
-    /// source last, so skills win a non-builtin collision.
-    ///
-    /// - Parameters:
-    ///   - surface: The mounted tool surface whose conformers join.
-    ///   - skills: The session's skills registry.
-    /// - Returns: The providers, in precedence order.
-    private func makeCommandProviders(
-        surface: SessionSurface, skills: SkillsRegistry
-    ) -> [any SlashCommandProviding] {
-        surface.tools.compactMap { $0 as? any SlashCommandProviding } + commandProviders
-            + [SkillCommandSource(registry: skills)]
-    }
-
-    /// Publishes each change of the session's command set:
-    /// the `session/new` or `session/resume` response announces the first
-    /// list (ACP schema-v2.0.0-alpha.7), and the registry starts to publish
-    /// after that response. A publication sends an
-    /// `available_commands_update` only when its list differs from the
-    /// list that the client has (``publishCommandList(_:of:)``),
-    /// so no update repeats the list of the response. Each update goes to
-    /// the connection of the session as it is when the update goes out.
-    ///
-    /// The closures keep the agent and the registry weakly, and no closure
-    /// keeps a connection, as the agent keeps the connection (task
-    /// `^173qn8n`):
-    ///
-    /// - The registry keeps the sink for the life of the session entry. A
-    ///   strong reference to the agent would keep the agent and its models
-    ///   for as long as the publisher lives.
-    /// - Upstream, the connection releases the deferred work after it ran.
-    ///   The skills watcher that `session/new` starts lives on, so a strong
-    ///   reference to the registry would still keep the registry, its
-    ///   builtins, the session they read and the models of the profile for
-    ///   as long as the publisher lives.
-    ///
-    /// The session entry keeps the registry for as long as it publishes. A
-    /// session whose connection has no outbound path (the
-    /// ``ConnectionId/direct`` caller) has no response to follow, so it
-    /// starts no publisher.
-    ///
-    /// - Parameters:
-    ///   - commands: The session's loaded registry.
-    ///   - sessionId: The session the updates belong to.
-    func publishAvailableCommands(from commands: CommandRegistry, sessionId: SessionId) {
-        guard let connection = connections.path(forSession: sessionId)?.connection else { return }
-        connection.afterRespondingToCurrentRequest { [weak self, weak commands] in
-            await commands?.beginPublishing { [weak self] commandSet in
-                await self?.publishCommandList(CommandRegistry.availableCommands(for: commandSet), of: sessionId)
-            }
-        }
-    }
-
-    /// Sends one `available_commands_update` with `list` through the
-    /// connection of the session, and keeps it in the retained history,
-    /// when `list` differs from the list that the client has. The history
-    /// holds that list: the response seeded it, and each update after the
-    /// response changed it.
-    ///
-    /// - Parameters:
-    ///   - list: The new command list.
-    ///   - sessionId: The session the list belongs to.
-    private func publishCommandList(_ list: [AvailableCommand], of sessionId: SessionId) async {
-        guard let entry = sessions[sessionId], entry.history.availableCommands != list else {
-            return
-        }
-        let update = SessionUpdate.availableCommandsUpdate(AvailableCommandsUpdate(availableCommands: list))
-        recordInHistory(update, of: sessionId)
-        await connections.path(forSession: sessionId)?.connection.post(update, in: sessionId)
-    }
+    let update = SessionUpdate.availableCommandsUpdate(
+      AvailableCommandsUpdate(availableCommands: list))
+    recordInHistory(update, of: sessionId)
+    await connections.path(forSession: sessionId)?.connection.post(update, in: sessionId)
+  }
 }
 
 extension RoutedLLM {
-    /// Vends one session with the derived auto-compaction budget (the
-    /// context size comes from the model, never from configuration):
-    /// `compaction` carries the fractions and the
-    /// tool-output cap, and this model carries the resolved working
-    /// context the fractions measure against. `session/new` and the
-    /// model-slot switch both vend through this one door, so the two
-    /// paths cannot drift.
-    ///
-    /// - Parameters:
-    ///   - instructions: The session's assembled instructions text.
-    ///   - workingDirectory: The session working directory.
-    ///   - recordingRoot: The per-session recording root.
-    ///   - tools: The tools the model can call.
-    ///   - compaction: The `compaction:` section the budget derives from.
-    ///   - repetition: The `repetition:` section the repetition detector of
-    ///     the session takes (task ^k51h6bb).
-    ///   - inlineSettleGrace: The settle period of the session, in seconds:
-    ///     the ``SessionSurface/inlineSettleGrace`` of the mounted surface,
-    ///     thus the same period that each agent run of the surface gets.
-    ///   - userPresence: Whether a user can answer the questions of the
-    ///     session (``RoutedACPAgent/userPresence``). `session/new` and the
-    ///     model-slot switch give it; the default is Router's default.
-    ///   - mailOnlyAnswerLimit: The most answers in a row that run mail
-    ///     alone starts (``RoutedACPAgent/mailOnlyAnswerLimit``). The default
-    ///     is Router's default.
-    ///   - hookLineage: The hook lineage that the host gives the session, or
-    ///     `nil` (the default) to let Router give it: then the key is the id
-    ///     of the session. `session/new` gives the lineage of its working
-    ///     directory (``HookLineage/init(workingDirectory:origin:)``), and the
-    ///     model-slot switch gives the same key with the origin
-    ///     `replacement`, so each session of one folder shares one snapshot
-    ///     timeline.
-    /// - Returns: A new session over this model, with automatic
-    ///   compaction on. The compaction keeps each skill that the model
-    ///   loads with `use skill` (``SkillOutputProtection``). While an
-    ///   operation is pending, the session does not run a no-op tool call
-    ///   (``NoOpToolCall``).
-    func makeBudgetedSession(
-        instructions: String,
-        workingDirectory: URL,
-        recordingRoot: URL,
-        tools: [any FoundationModels.Tool],
-        compaction: CompactionConfiguration,
-        repetition: RepetitionConfiguration,
-        inlineSettleGrace: TimeInterval,
-        userPresence: UserPresence = .interactive,
-        mailOnlyAnswerLimit: Int = SessionConfiguration.defaultMailOnlyAnswerLimit,
-        hookLineage: HookLineage? = nil
-    ) -> any RoutedSession {
-        // The resolved context decides two things that a reader cannot see
-        // otherwise: the fold point of the compaction, and the token ceiling
-        // of each generation call, which Router derives from the same number.
-        // A prompt that ends `_truncated` is read against this record.
-        // `notice`, not `info`: a reader of a long run looks for this record
-        // after the run, and a backend often keeps only `notice` and more.
-        ACPAgentTelemetry.logger(.session).notice(
-            "The session has its token budget.",
-            metadata: [
-                ACPAgentTelemetry.LogMetadataKey.contextTokens: "\(contextTokens)",
-                ACPAgentTelemetry.LogMetadataKey.compactionTriggerFraction: "\(compaction.trigger)",
-                ACPAgentTelemetry.LogMetadataKey.compactionTargetFraction: "\(compaction.target)",
-            ])
-        let budget = TokenBudget(
-            limit: contextTokens,
-            trigger: compaction.trigger,
-            target: compaction.target,
-            hardCeiling: compaction.hardCeiling,
-            toolOutputLimit: compaction.toolOutputLimit)
-        return makeSession(
-            configuration: SessionConfiguration(
-                instructions: instructions,
-                workingDirectory: workingDirectory,
-                recordingRoot: recordingRoot,
-                tools: tools,
-                compaction: CompactionSettings(
-                    budget: budget, prompt: .default, toolOutputProtection: SkillOutputProtection.rule),
-                repetitionDetection: repetition.detection,
-                mailOnlyAnswerLimit: mailOnlyAnswerLimit,
-                inlineSettleGrace: inlineSettleGrace,
-                isNoOpToolCall: NoOpToolCall.check,
-                userPresence: userPresence,
-                hookSessionKey: hookLineage?.sessionKey,
-                hookOrigin: hookLineage?.origin))
-    }
+  /// Vends one session with the derived auto-compaction budget (the
+  /// context size comes from the model, never from configuration):
+  /// `compaction` carries the fractions and the
+  /// tool-output cap, and this model carries the resolved working
+  /// context the fractions measure against. `session/new` and the
+  /// model-slot switch both vend through this one door, so the two
+  /// paths cannot drift.
+  ///
+  /// - Parameters:
+  ///   - instructions: The session's assembled instructions text.
+  ///   - workingDirectory: The session working directory.
+  ///   - recordingRoot: The per-session recording root.
+  ///   - tools: The tools the model can call.
+  ///   - compaction: The `compaction:` section the budget derives from.
+  ///   - repetition: The `repetition:` section the repetition detector of
+  ///     the session takes (task ^k51h6bb).
+  ///   - inlineSettleGrace: The settle period of the session, in seconds:
+  ///     the ``SessionSurface/inlineSettleGrace`` of the mounted surface,
+  ///     thus the same period that each agent run of the surface gets.
+  ///   - userPresence: Whether a user can answer the questions of the
+  ///     session (``RoutedACPAgent/userPresence``). `session/new` and the
+  ///     model-slot switch give it; the default is Router's default.
+  ///   - mailOnlyAnswerLimit: The most answers in a row that run mail
+  ///     alone starts (``RoutedACPAgent/mailOnlyAnswerLimit``). The default
+  ///     is Router's default.
+  ///   - hookLineage: The hook lineage that the host gives the session, or
+  ///     `nil` (the default) to let Router give it: then the key is the id
+  ///     of the session. `session/new` gives the lineage of its working
+  ///     directory (``HookLineage/init(workingDirectory:origin:)``), and the
+  ///     model-slot switch gives the same key with the origin
+  ///     `replacement`, so each session of one folder shares one snapshot
+  ///     timeline.
+  /// - Returns: A new session over this model, with automatic
+  ///   compaction on. The compaction keeps each skill that the model
+  ///   loads with `use skill` (``SkillOutputProtection``). While an
+  ///   operation is pending, the session does not run a no-op tool call
+  ///   (``NoOpToolCall``).
+  func makeBudgetedSession(
+    instructions: String,
+    workingDirectory: URL,
+    recordingRoot: URL,
+    tools: [any FoundationModels.Tool],
+    compaction: CompactionConfiguration,
+    repetition: RepetitionConfiguration,
+    inlineSettleGrace: TimeInterval,
+    userPresence: UserPresence = .interactive,
+    mailOnlyAnswerLimit: Int = SessionConfiguration.defaultMailOnlyAnswerLimit,
+    hookLineage: HookLineage? = nil
+  ) -> any RoutedSession {
+    // The resolved context decides two things that a reader cannot see
+    // otherwise: the fold point of the compaction, and the token ceiling
+    // of each generation call, which Router derives from the same number.
+    // A prompt that ends `_truncated` is read against this record.
+    // `notice`, not `info`: a reader of a long run looks for this record
+    // after the run, and a backend often keeps only `notice` and more.
+    ACPAgentTelemetry.logger(.session).notice(
+      "The session has its token budget.",
+      metadata: [
+        ACPAgentTelemetry.LogMetadataKey.contextTokens: "\(contextTokens)",
+        ACPAgentTelemetry.LogMetadataKey.compactionTriggerFraction: "\(compaction.trigger)",
+        ACPAgentTelemetry.LogMetadataKey.compactionTargetFraction: "\(compaction.target)",
+      ])
+    let budget = TokenBudget(
+      limit: contextTokens,
+      trigger: compaction.trigger,
+      target: compaction.target,
+      hardCeiling: compaction.hardCeiling,
+      toolOutputLimit: compaction.toolOutputLimit)
+    return makeSession(
+      configuration: SessionConfiguration(
+        instructions: instructions,
+        workingDirectory: workingDirectory,
+        recordingRoot: recordingRoot,
+        tools: tools,
+        compaction: CompactionSettings(
+          budget: budget, prompt: .default, toolOutputProtection: SkillOutputProtection.rule),
+        repetitionDetection: repetition.detection,
+        mailOnlyAnswerLimit: mailOnlyAnswerLimit,
+        inlineSettleGrace: inlineSettleGrace,
+        isNoOpToolCall: NoOpToolCall.check,
+        userPresence: userPresence,
+        hookSessionKey: hookLineage?.sessionKey,
+        hookOrigin: hookLineage?.origin))
+  }
 
-    /// Restores one recorded session with the host rules that
-    /// ``makeBudgetedSession(instructions:workingDirectory:recordingRoot:tools:compaction:repetition:inlineSettleGrace:)``
-    /// gives a new session. `session/resume` restores through this one door,
-    /// so a restored session and a new session cannot differ.
-    ///
-    /// - Parameters:
-    ///   - id: The id of the recorded root session.
-    ///   - recordingRoot: The recording root that holds the session.
-    ///   - instructions: The freshly assembled instructions, or `nil` to keep
-    ///     the recorded instructions.
-    ///   - tools: The tools the model can call.
-    ///   - userPresence: The user presence of the client that resumes the
-    ///     session now (``RoutedACPAgent/userPresence``). It is required,
-    ///     never `nil`: a restore writes no new configuration, so with `nil` Router
-    ///     would apply the presence recorded when the session was created,
-    ///     which belongs to the client of that time. The value covers the
-    ///     restored root and each restored child.
-    ///   - hookSessionKey: The key that the hooks of the restored root see, or
-    ///     `nil` (the default) to let Router give it: then the key is the id
-    ///     of the session. `session/resume` gives the key of the working
-    ///     directory (``HookLineage/init(workingDirectory:origin:)``), so the
-    ///     resumed session shares the one snapshot timeline of its folder.
-    ///     The `SessionStart` of the root has the origin `resumed`, and Router
-    ///     gives the key to each fork in the same folder and each restored
-    ///     sub-agent.
-    /// - Returns: The restored session and its reports, with the host rules of
-    ///   ``makeBudgetedSession(instructions:workingDirectory:recordingRoot:tools:compaction:repetition:inlineSettleGrace:)``.
-    /// - Throws: Whatever Router's restore throws.
-    func restoreSessionWithHostChecks(
-        id: ULID,
-        recordingRoot: URL,
-        instructions: String?,
-        tools: [any FoundationModels.Tool],
-        userPresence: UserPresence,
-        hookSessionKey: String? = nil
-    ) async throws -> RestoredSession {
-        try await restoreSession(
-            id: id,
-            recordingRoot: recordingRoot,
-            instructions: instructions,
-            tools: tools,
-            toolOutputProtection: SkillOutputProtection.rule,
-            isNoOpToolCall: NoOpToolCall.check,
-            userPresence: userPresence,
-            hookSessionKey: hookSessionKey)
-    }
+  /// Restores one recorded session with the host rules that
+  /// ``makeBudgetedSession(instructions:workingDirectory:recordingRoot:tools:compaction:repetition:inlineSettleGrace:)``
+  /// gives a new session. `session/resume` restores through this one door,
+  /// so a restored session and a new session cannot differ.
+  ///
+  /// - Parameters:
+  ///   - id: The id of the recorded root session.
+  ///   - recordingRoot: The recording root that holds the session.
+  ///   - instructions: The freshly assembled instructions, or `nil` to keep
+  ///     the recorded instructions.
+  ///   - tools: The tools the model can call.
+  ///   - userPresence: The user presence of the client that resumes the
+  ///     session now (``RoutedACPAgent/userPresence``). It is required,
+  ///     never `nil`: a restore writes no new configuration, so with `nil` Router
+  ///     would apply the presence recorded when the session was created,
+  ///     which belongs to the client of that time. The value covers the
+  ///     restored root and each restored child.
+  ///   - hookSessionKey: The key that the hooks of the restored root see, or
+  ///     `nil` (the default) to let Router give it: then the key is the id
+  ///     of the session. `session/resume` gives the key of the working
+  ///     directory (``HookLineage/init(workingDirectory:origin:)``), so the
+  ///     resumed session shares the one snapshot timeline of its folder.
+  ///     The `SessionStart` of the root has the origin `resumed`, and Router
+  ///     gives the key to each fork in the same folder and each restored
+  ///     sub-agent.
+  /// - Returns: The restored session and its reports, with the host rules of
+  ///   ``makeBudgetedSession(instructions:workingDirectory:recordingRoot:tools:compaction:repetition:inlineSettleGrace:)``.
+  /// - Throws: Whatever Router's restore throws.
+  func restoreSessionWithHostChecks(
+    id: ULID,
+    recordingRoot: URL,
+    instructions: String?,
+    tools: [any FoundationModels.Tool],
+    userPresence: UserPresence,
+    hookSessionKey: String? = nil
+  ) async throws -> RestoredSession {
+    try await restoreSession(
+      id: id,
+      recordingRoot: recordingRoot,
+      instructions: instructions,
+      tools: tools,
+      toolOutputProtection: SkillOutputProtection.rule,
+      isNoOpToolCall: NoOpToolCall.check,
+      userPresence: userPresence,
+      hookSessionKey: hookSessionKey)
+  }
 }

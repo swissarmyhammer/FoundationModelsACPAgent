@@ -13,51 +13,52 @@ import FoundationModelsACP
 /// prompt alone, so the merge rules of ACP decide the status of each call,
 /// and `cancelUnfinishedToolCalls()` decides which status is not terminal.
 actor PromptToolCalls {
-    /// The merged tool-call updates of the prompt.
-    private var merged = SessionMergeEngine()
+  /// The merged tool-call updates of the prompt.
+  private var merged = SessionMergeEngine()
 
-    /// A sink that records each tool-call update and then gives each update
-    /// to `send`.
-    ///
-    /// - Parameter send: The sink of the prompt.
-    /// - Returns: The recording sink.
-    nonisolated func recording(into send: @escaping SessionUpdateSink) -> SessionUpdateSink {
-        { update in
-            await self.record(update)
-            await send(update)
-        }
+  /// A sink that records each tool-call update and then gives each update
+  /// to `send`.
+  ///
+  /// - Parameter send: The sink of the prompt.
+  /// - Returns: The recording sink.
+  nonisolated func recording(into send: @escaping SessionUpdateSink) -> SessionUpdateSink {
+    { update in
+      await self.record(update)
+      await send(update)
     }
+  }
 
-    /// The ids of the tool calls that did not finish: each call whose last
-    /// status is not `completed`, `failed` or `cancelled`. The order is the
-    /// order of the first update of each call.
-    ///
-    /// - Returns: The ids of the open tool calls.
-    func unfinishedToolCallIds() -> [ToolCallId] {
-        var probe = merged
-        return probe.cancelUnfinishedToolCalls().compactMap(Self.toolCallId(of:))
-    }
+  /// The ids of the tool calls that did not finish: each call whose last
+  /// status is not `completed`, `failed` or `cancelled`. The order is the
+  /// order of the first update of each call.
+  ///
+  /// - Returns: The ids of the open tool calls.
+  func unfinishedToolCallIds() -> [ToolCallId] {
+    var probe = merged
+    return probe.cancelUnfinishedToolCalls().compactMap(Self.toolCallId(of:))
+  }
 
-    /// Merges `update` when it is a tool-call update. The record keeps no
-    /// other update.
-    ///
-    /// - Parameter update: The update that the prompt sends.
-    private func record(_ update: SessionUpdate) {
-        guard case .toolCallUpdate = update else {
-            return
-        }
-        merged.apply(update)
+  /// Merges `update` when it is a tool-call update. The record keeps no
+  /// other update.
+  ///
+  /// - Parameter update: The update that the prompt sends.
+  private func record(_ update: SessionUpdate) {
+    guard case .toolCallUpdate = update else {
+      return
     }
+    merged.apply(update)
+  }
 
-    /// The tool-call id of a change of the merge engine, or `nil` for a
-    /// change of another entry.
-    ///
-    /// - Parameter change: A change of the merge engine.
-    /// - Returns: The tool-call id, or `nil`.
-    private static func toolCallId(of change: SessionMergeEngine.Change) -> ToolCallId? {
-        guard case .entryChanged(_, let entry) = change, case .toolCall(let toolCall) = entry.kind else {
-            return nil
-        }
-        return toolCall.toolCallId
+  /// The tool-call id of a change of the merge engine, or `nil` for a
+  /// change of another entry.
+  ///
+  /// - Parameter change: A change of the merge engine.
+  /// - Returns: The tool-call id, or `nil`.
+  private static func toolCallId(of change: SessionMergeEngine.Change) -> ToolCallId? {
+    guard case .entryChanged(_, let entry) = change, case .toolCall(let toolCall) = entry.kind
+    else {
+      return nil
     }
+    return toolCall.toolCallId
+  }
 }

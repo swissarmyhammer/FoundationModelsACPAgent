@@ -65,39 +65,39 @@ import Tracing
 ///   `ProfileResolutionError` when the stub resolution fails, or the
 ///   write error of the defaults layer.
 public func makeStubAgent(
-    name: String,
-    cacheDirectory: URL,
-    recordingsDirectory: URL? = nil,
-    userDirectory: URL? = nil,
-    loader: any ModelLoader = StubModelLoader(),
-    tracer: (any Tracer)? = nil,
-    inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
-    environment: [String: String] = [:],
-    secretStore: any SecretStore = InMemorySecretStore(),
-    userDeviceTokens: Set<String> = [],
-    prepareRouter: @Sendable (Router) async -> Void = { _ in }
+  name: String,
+  cacheDirectory: URL,
+  recordingsDirectory: URL? = nil,
+  userDirectory: URL? = nil,
+  loader: any ModelLoader = StubModelLoader(),
+  tracer: (any Tracer)? = nil,
+  inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
+  environment: [String: String] = [:],
+  secretStore: any SecretStore = InMemorySecretStore(),
+  userDeviceTokens: Set<String> = [],
+  prepareRouter: @Sendable (Router) async -> Void = { _ in }
 ) async throws -> RoutedACPAgent {
-    // A custom home over throwaway folders, so no test reads or writes the
-    // real home; the hooks of the production composition keep their data in
-    // its hooks folder.
-    let home = AgentHomeFixture.make(label: "StubAgent", synced: userDirectory)
-    let hooks = AgentHooks(dataDirectory: home.hooksDirectory)
-    let router = EchoModel.makeRouter(
-        cacheDirectory: cacheDirectory,
-        recordingsDirectory: recordingsDirectory,
-        loader: loader,
-        tracer: tracer,
-        hooks: hooks.dispatcher)
-    await prepareRouter(router)
-    return try await RoutedACPAgent(
-        name: DotfolderName(name),
-        router: router,
-        hooks: hooks,
-        home: home,
-        environment: StubAgentDefaultsLayer.makeEnvironment(name: name, base: environment),
-        inlineSettleGrace: inlineSettleGrace,
-        secretStore: secretStore,
-        userDeviceTokens: userDeviceTokens)
+  // A custom home over throwaway folders, so no test reads or writes the
+  // real home; the hooks of the production composition keep their data in
+  // its hooks folder.
+  let home = AgentHomeFixture.make(label: "StubAgent", synced: userDirectory)
+  let hooks = AgentHooks(dataDirectory: home.hooksDirectory)
+  let router = EchoModel.makeRouter(
+    cacheDirectory: cacheDirectory,
+    recordingsDirectory: recordingsDirectory,
+    loader: loader,
+    tracer: tracer,
+    hooks: hooks.dispatcher)
+  await prepareRouter(router)
+  return try await RoutedACPAgent(
+    name: DotfolderName(name),
+    router: router,
+    hooks: hooks,
+    home: home,
+    environment: StubAgentDefaultsLayer.makeEnvironment(name: name, base: environment),
+    inlineSettleGrace: inlineSettleGrace,
+    secretStore: secretStore,
+    userDeviceTokens: userDeviceTokens)
 }
 
 // MARK: - The defaults layer of a stub agent
@@ -127,31 +127,31 @@ public func makeStubAgent(
 /// A suite that composes the CLI agent through `AgentComposition` gives the
 /// same layer to the environment of that composition.
 public enum StubAgentDefaultsLayer {
-    /// The `config.yaml` of the layer.
-    static let configYAML = "tools:\n  codeContext: false\n  skills:\n    marketplaces: []\n"
+  /// The `config.yaml` of the layer.
+  static let configYAML = "tools:\n  codeContext: false\n  skills:\n    marketplaces: []\n"
 
-    /// The suffix of the environment key that `DotfolderStack` reads the
-    /// defaults layer root from: `<NAME>_DEFAULTS_DIR`, with the dotfolder
-    /// name in upper case.
-    public static let environmentKeySuffix = "_DEFAULTS_DIR"
+  /// The suffix of the environment key that `DotfolderStack` reads the
+  /// defaults layer root from: `<NAME>_DEFAULTS_DIR`, with the dotfolder
+  /// name in upper case.
+  public static let environmentKeySuffix = "_DEFAULTS_DIR"
 
-    /// Writes the layer into a fresh directory, and returns `base` with the
-    /// key that names that directory as the defaults layer root of `name`.
-    ///
-    /// - Parameters:
-    ///   - name: The bare dotfolder name of the agent.
-    ///   - base: The environment the agent reads otherwise. Empty by default.
-    /// - Returns: `base`, with the defaults layer key added.
-    /// - Throws: The directory-creation or write error.
-    public static func makeEnvironment(
-        name: String, base: [String: String] = [:]
-    ) throws -> [String: String] {
-        let root = makeResolvedDirectory(label: "StubAgentDefaultsLayer")
-        try ConfigFileFixture.write(configYAML, in: root)
-        var environment = base
-        environment[name.uppercased() + environmentKeySuffix] = root.path
-        return environment
-    }
+  /// Writes the layer into a fresh directory, and returns `base` with the
+  /// key that names that directory as the defaults layer root of `name`.
+  ///
+  /// - Parameters:
+  ///   - name: The bare dotfolder name of the agent.
+  ///   - base: The environment the agent reads otherwise. Empty by default.
+  /// - Returns: `base`, with the defaults layer key added.
+  /// - Throws: The directory-creation or write error.
+  public static func makeEnvironment(
+    name: String, base: [String: String] = [:]
+  ) throws -> [String: String] {
+    let root = makeResolvedDirectory(label: "StubAgentDefaultsLayer")
+    try ConfigFileFixture.write(configYAML, in: root)
+    var environment = base
+    environment[name.uppercased() + environmentKeySuffix] = root.path
+    return environment
+  }
 }
 
 /// Resolves a profile over the stub models, resident and generation-free.
@@ -168,16 +168,16 @@ public enum StubAgentDefaultsLayer {
 ///   holds the profile alone.
 /// - Throws: Whatever resolving the profile throws.
 public func makeStubProfile(
-    cacheDirectory: URL,
-    recordingsDirectory: URL? = nil,
-    loader: StubModelLoader = StubModelLoader()
+  cacheDirectory: URL,
+  recordingsDirectory: URL? = nil,
+  loader: StubModelLoader = StubModelLoader()
 ) async throws -> LanguageModelProfile {
-    try await resolveStubProfile(
-        on: EchoModel.makeRouter(
-            cacheDirectory: cacheDirectory,
-            recordingsDirectory: recordingsDirectory,
-            loader: loader
-        ))
+  try await resolveStubProfile(
+    on: EchoModel.makeRouter(
+      cacheDirectory: cacheDirectory,
+      recordingsDirectory: recordingsDirectory,
+      loader: loader
+    ))
 }
 
 /// Resolves the stub profile on a router the caller made, so the caller
@@ -188,14 +188,14 @@ public func makeStubProfile(
 /// - Returns: The resolved profile. It retains `router`.
 /// - Throws: Whatever resolving the profile throws.
 public func resolveStubProfile(on router: Router) async throws -> LanguageModelProfile {
-    try await router.resolve(
-        profile: ProfileDefinition(
-            name: "stub",
-            description: "the stub profile these fixtures run on",
-            standard: ["stub/standard"],
-            flash: ["stub/flash"],
-            embedding: ["stub/embedding"]
-        ),
-        reporting: ResolutionProgress()
-    )
+  try await router.resolve(
+    profile: ProfileDefinition(
+      name: "stub",
+      description: "the stub profile these fixtures run on",
+      standard: ["stub/standard"],
+      flash: ["stub/flash"],
+      embedding: ["stub/embedding"]
+    ),
+    reporting: ResolutionProgress()
+  )
 }

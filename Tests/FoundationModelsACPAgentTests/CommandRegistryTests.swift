@@ -12,286 +12,289 @@ import Testing
 /// collision), the reserved builtin names, the skills wrap, the pushed
 /// updates, the near-miss search, and the wire mapping.
 struct CommandRegistryTests {
-    /// A collector of published command sets, so a test observes each
-    /// publication in arrival order. A test waits for a publication with
-    /// ``wait(for:until:)``: each append resumes the waits whose condition
-    /// is now true, with no clock.
-    private final class PublicationCollector: Sendable {
-        /// The published sets, in arrival order, with their waits.
-        private let published = WatchedValue<[[SlashCommand]]>([])
+  /// A collector of published command sets, so a test observes each
+  /// publication in arrival order. A test waits for a publication with
+  /// ``wait(for:until:)``: each append resumes the waits whose condition
+  /// is now true, with no clock.
+  private final class PublicationCollector: Sendable {
+    /// The published sets, in arrival order, with their waits.
+    private let published = WatchedValue<[[SlashCommand]]>([])
 
-        /// The published sets, in arrival order.
-        var publications: [[SlashCommand]] {
-            published.value
-        }
-
-        /// Appends one published set.
-        ///
-        /// - Parameter commands: The published set.
-        func append(_ commands: [SlashCommand]) {
-            published.update { $0.append(commands) }
-        }
-
-        /// Waits until `isMet` is true for the published sets.
-        ///
-        /// - Parameters:
-        ///   - condition: The name of the condition, for the error of a
-        ///     cancelled wait.
-        ///   - isMet: Tells if the condition is true for the sets.
-        /// - Throws: ``ConditionWaitCancelled`` when the test is cancelled
-        ///   first.
-        func wait(for condition: String, until isMet: @escaping @Sendable ([[SlashCommand]]) -> Bool) async throws {
-            _ = try await published.wait(for: condition, until: isMet)
-        }
+    /// The published sets, in arrival order.
+    var publications: [[SlashCommand]] {
+      published.value
     }
 
-    // MARK: - Readers of a command body
-
-    /// The action closure of a command body, or `nil` when the body is
-    /// not an `.action` body.
+    /// Appends one published set.
     ///
-    /// A test unwraps the result with `try #require`, so a wrong body
-    /// fails the test instead of ending it quietly.
+    /// - Parameter commands: The published set.
+    func append(_ commands: [SlashCommand]) {
+      published.update { $0.append(commands) }
+    }
+
+    /// Waits until `isMet` is true for the published sets.
     ///
-    /// - Parameter body: The body of the merged command.
-    /// - Returns: The action closure, or `nil`.
-    private static func actionBody(
-        in body: SlashCommand.Body
-    ) -> (@Sendable (SlashCommand.Invocation) -> AsyncThrowingStream<String, Error>)? {
-        guard case .action(let action) = body else {
-            return nil
-        }
-        return action
+    /// - Parameters:
+    ///   - condition: The name of the condition, for the error of a
+    ///     cancelled wait.
+    ///   - isMet: Tells if the condition is true for the sets.
+    /// - Throws: ``ConditionWaitCancelled`` when the test is cancelled
+    ///   first.
+    func wait(for condition: String, until isMet: @escaping @Sendable ([[SlashCommand]]) -> Bool)
+      async throws
+    {
+      _ = try await published.wait(for: condition, until: isMet)
     }
+  }
 
-    /// The render closure of a command body, or `nil` when the body is
-    /// not a `.rendered` body.
-    ///
-    /// A test unwraps the result with `try #require`, so a wrong body
-    /// fails the test instead of ending it quietly.
-    ///
-    /// - Parameter body: The body of the merged command.
-    /// - Returns: The render closure, or `nil`.
-    private static func renderedBody(
-        in body: SlashCommand.Body
-    ) -> (@Sendable (SlashCommand.Invocation) async throws -> String)? {
-        guard case .rendered(let render) = body else {
-            return nil
-        }
-        return render
+  // MARK: - Readers of a command body
+
+  /// The action closure of a command body, or `nil` when the body is
+  /// not an `.action` body.
+  ///
+  /// A test unwraps the result with `try #require`, so a wrong body
+  /// fails the test instead of ending it quietly.
+  ///
+  /// - Parameter body: The body of the merged command.
+  /// - Returns: The action closure, or `nil`.
+  private static func actionBody(
+    in body: SlashCommand.Body
+  ) -> (@Sendable (SlashCommand.Invocation) -> AsyncThrowingStream<String, Error>)? {
+    guard case .action(let action) = body else {
+      return nil
     }
+    return action
+  }
 
-    // MARK: - Precedence and reserved builtins
-
-    /// A provider command that collides with a builtin name loses, and
-    /// the builtin still dispatches.
-    @Test
-    func aBuiltinNameIsReservedAgainstALaterProvider() async throws {
-        let builtin = makeActionCommand(name: "status", output: "BUILTIN STATUS")
-        let provider = StubCommandProvider(commandSet: [
-            SlashCommand(name: "status", description: "provider status", body: .prompt(template: "x"))
-        ])
-        let registry = CommandRegistry(
-            builtins: [builtin],
-            providers: [provider],
-            workingDirectory: makeResolvedDirectory(label: "CommandRegistryTests-reserved"))
-        await registry.load()
-
-        let commands = await registry.commands
-        #expect(commands.count(where: { $0.name == "status" }) == 1)
-        let winner = try #require(await registry.command(named: "status"))
-        #expect(winner.description == builtin.description)
-
-        // The builtin still dispatches: its action streams its text.
-        let action = try #require(
-            Self.actionBody(in: winner.body),
-            "expected the builtin .action body, got \(winner.body)")
-        let invocation = SlashCommand.Invocation(
-            arguments: "", workingDirectory: URL(fileURLWithPath: "/", isDirectory: true))
-        var streamed = ""
-        for try await text in action(invocation) {
-            streamed += text
-        }
-        #expect(streamed == "BUILTIN STATUS")
+  /// The render closure of a command body, or `nil` when the body is
+  /// not a `.rendered` body.
+  ///
+  /// A test unwraps the result with `try #require`, so a wrong body
+  /// fails the test instead of ending it quietly.
+  ///
+  /// - Parameter body: The body of the merged command.
+  /// - Returns: The render closure, or `nil`.
+  private static func renderedBody(
+    in body: SlashCommand.Body
+  ) -> (@Sendable (SlashCommand.Invocation) async throws -> String)? {
+    guard case .rendered(let render) = body else {
+      return nil
     }
+    return render
+  }
 
-    /// A later source wins a name collision, and the merged set keeps
-    /// one entry for the name.
-    @Test
-    func aLaterSourceWinsANameCollision() async throws {
-        let first = StubCommandProvider(commandSet: [
-            SlashCommand(name: "deploy", description: "first source", body: .prompt(template: "a"))
-        ])
-        let second = StubCommandProvider(commandSet: [
-            SlashCommand(name: "deploy", description: "second source", body: .prompt(template: "b"))
-        ])
-        let registry = CommandRegistry(
-            builtins: [],
-            providers: [first, second],
-            workingDirectory: makeResolvedDirectory(label: "CommandRegistryTests-collision"))
-        await registry.load()
+  // MARK: - Precedence and reserved builtins
 
-        let commands = await registry.commands
-        #expect(commands.count(where: { $0.name == "deploy" }) == 1)
-        let winner = try #require(await registry.command(named: "deploy"))
-        #expect(winner.description == "second source")
+  /// A provider command that collides with a builtin name loses, and
+  /// the builtin still dispatches.
+  @Test
+  func aBuiltinNameIsReservedAgainstALaterProvider() async throws {
+    let builtin = makeActionCommand(name: "status", output: "BUILTIN STATUS")
+    let provider = StubCommandProvider(commandSet: [
+      SlashCommand(name: "status", description: "provider status", body: .prompt(template: "x"))
+    ])
+    let registry = CommandRegistry(
+      builtins: [builtin],
+      providers: [provider],
+      workingDirectory: makeResolvedDirectory(label: "CommandRegistryTests-reserved"))
+    await registry.load()
+
+    let commands = await registry.commands
+    #expect(commands.count(where: { $0.name == "status" }) == 1)
+    let winner = try #require(await registry.command(named: "status"))
+    #expect(winner.description == builtin.description)
+
+    // The builtin still dispatches: its action streams its text.
+    let action = try #require(
+      Self.actionBody(in: winner.body),
+      "expected the builtin .action body, got \(winner.body)")
+    let invocation = SlashCommand.Invocation(
+      arguments: "", workingDirectory: URL(fileURLWithPath: "/", isDirectory: true))
+    var streamed = ""
+    for try await text in action(invocation) {
+      streamed += text
     }
+    #expect(streamed == "BUILTIN STATUS")
+  }
 
-    // MARK: - The skills source
+  /// A later source wins a name collision, and the merged set keeps
+  /// one entry for the name.
+  @Test
+  func aLaterSourceWinsANameCollision() async throws {
+    let first = StubCommandProvider(commandSet: [
+      SlashCommand(name: "deploy", description: "first source", body: .prompt(template: "a"))
+    ])
+    let second = StubCommandProvider(commandSet: [
+      SlashCommand(name: "deploy", description: "second source", body: .prompt(template: "b"))
+    ])
+    let registry = CommandRegistry(
+      builtins: [],
+      providers: [first, second],
+      workingDirectory: makeResolvedDirectory(label: "CommandRegistryTests-collision"))
+    await registry.load()
 
-    /// The skills source wraps a `.prompt` skill command in a
-    /// `.rendered` body that runs `registry.call(id:arguments:)`, so
-    /// the `$`-argument pass runs.
-    @Test
-    func theSkillsSourceRoutesThroughRegistryCall() async throws {
-        let root = makeResolvedDirectory(label: "CommandRegistryTests-skills")
-        defer { try? FileManager.default.removeItem(at: root) }
-        try writeSkillFixture(id: "greet", markdown: greetSkillMarkdown, under: root)
+    let commands = await registry.commands
+    #expect(commands.count(where: { $0.name == "deploy" }) == 1)
+    let winner = try #require(await registry.command(named: "deploy"))
+    #expect(winner.description == "second source")
+  }
 
-        let registry = CommandRegistry(
-            builtins: [],
-            providers: [SkillCommandSource(registry: SkillsRegistry(roots: [root]))],
-            workingDirectory: root)
-        await registry.load()
+  // MARK: - The skills source
 
-        let greet = try #require(await registry.command(named: "greet"))
-        let render = try #require(
-            Self.renderedBody(in: greet.body),
-            "expected the skills wrap to give a .rendered body, got \(greet.body)")
-        let rendered = try await render(
-            SlashCommand.Invocation(arguments: "alpha beta", workingDirectory: root))
-        #expect(rendered.contains("Hello beta."))
+  /// The skills source wraps a `.prompt` skill command in a
+  /// `.rendered` body that runs `registry.call(id:arguments:)`, so
+  /// the `$`-argument pass runs.
+  @Test
+  func theSkillsSourceRoutesThroughRegistryCall() async throws {
+    let root = makeResolvedDirectory(label: "CommandRegistryTests-skills")
+    defer { try? FileManager.default.removeItem(at: root) }
+    try writeSkillFixture(id: "greet", markdown: greetSkillMarkdown, under: root)
+
+    let registry = CommandRegistry(
+      builtins: [],
+      providers: [SkillCommandSource(registry: SkillsRegistry(roots: [root]))],
+      workingDirectory: root)
+    await registry.load()
+
+    let greet = try #require(await registry.command(named: "greet"))
+    let render = try #require(
+      Self.renderedBody(in: greet.body),
+      "expected the skills wrap to give a .rendered body, got \(greet.body)")
+    let rendered = try await render(
+      SlashCommand.Invocation(arguments: "alpha beta", workingDirectory: root))
+    #expect(rendered.contains("Hello beta."))
+  }
+
+  // MARK: - The command kind
+
+  /// Each merged command has the kind of its source: a builtin is
+  /// `builtin`, a skill is `skill`, and a linked provider command is
+  /// `action` or `prompt_template` by its body. A name that no source
+  /// offers has no kind.
+  @Test
+  func eachMergedCommandHasTheKindOfItsSource() async throws {
+    let root = makeResolvedDirectory(label: "CommandRegistryTests-kinds")
+    defer { try? FileManager.default.removeItem(at: root) }
+    try writeSkillFixture(id: "greet", markdown: greetSkillMarkdown, under: root)
+    let provider = StubCommandProvider(commandSet: [
+      SlashCommand(name: "deploy", description: "a template", body: .prompt(template: "x")),
+      makeRenderedCommand(name: "render", prefix: ""),
+      makeActionCommand(name: "act", output: "ACT"),
+    ])
+    let registry = CommandRegistry(
+      builtins: [makeActionCommand(name: "status", output: "STATUS")],
+      providers: [provider, SkillCommandSource(registry: SkillsRegistry(roots: [root]))],
+      workingDirectory: root)
+    await registry.load()
+
+    #expect(await registry.kind(ofCommandNamed: "status") == .builtin)
+    #expect(await registry.kind(ofCommandNamed: "greet") == .skill)
+    #expect(await registry.kind(ofCommandNamed: "deploy") == .promptTemplate)
+    #expect(await registry.kind(ofCommandNamed: "render") == .promptTemplate)
+    #expect(await registry.kind(ofCommandNamed: "act") == .action)
+    #expect(await registry.kind(ofCommandNamed: "nosuchcommand") == nil)
+  }
+
+  // MARK: - Pushed updates
+
+  /// A provider update replaces that provider's set, re-merges, and
+  /// publishes the new merged set.
+  @Test
+  func aProviderUpdateReplacesItsSetAndPublishes() async throws {
+    let (stream, continuation) = AsyncStream<[SlashCommand]>.makeStream()
+    let provider = StubCommandProvider(
+      commandSet: [makeRenderedCommand(name: "old", prefix: "OLD ")],
+      updates: stream)
+    let registry = CommandRegistry(
+      builtins: [],
+      providers: [provider],
+      workingDirectory: makeResolvedDirectory(label: "CommandRegistryTests-updates"))
+    await registry.load()
+    #expect(await registry.command(named: "old") != nil)
+
+    let collector = PublicationCollector()
+    await registry.beginPublishing { commands in
+      collector.append(commands)
     }
+    // The initial publication carries the current merged set.
+    try await collector.wait(for: "the initial publication") { $0.count >= 1 }
+    #expect(collector.publications.first?.map(\.name) == ["old"])
 
-    // MARK: - The command kind
-
-    /// Each merged command has the kind of its source: a builtin is
-    /// `builtin`, a skill is `skill`, and a linked provider command is
-    /// `action` or `prompt_template` by its body. A name that no source
-    /// offers has no kind.
-    @Test
-    func eachMergedCommandHasTheKindOfItsSource() async throws {
-        let root = makeResolvedDirectory(label: "CommandRegistryTests-kinds")
-        defer { try? FileManager.default.removeItem(at: root) }
-        try writeSkillFixture(id: "greet", markdown: greetSkillMarkdown, under: root)
-        let provider = StubCommandProvider(commandSet: [
-            SlashCommand(name: "deploy", description: "a template", body: .prompt(template: "x")),
-            makeRenderedCommand(name: "render", prefix: ""),
-            makeActionCommand(name: "act", output: "ACT"),
-        ])
-        let registry = CommandRegistry(
-            builtins: [makeActionCommand(name: "status", output: "STATUS")],
-            providers: [provider, SkillCommandSource(registry: SkillsRegistry(roots: [root]))],
-            workingDirectory: root)
-        await registry.load()
-
-        #expect(await registry.kind(ofCommandNamed: "status") == .builtin)
-        #expect(await registry.kind(ofCommandNamed: "greet") == .skill)
-        #expect(await registry.kind(ofCommandNamed: "deploy") == .promptTemplate)
-        #expect(await registry.kind(ofCommandNamed: "render") == .promptTemplate)
-        #expect(await registry.kind(ofCommandNamed: "act") == .action)
-        #expect(await registry.kind(ofCommandNamed: "nosuchcommand") == nil)
+    continuation.yield([makeRenderedCommand(name: "new", prefix: "NEW ")])
+    // The registry merges the pushed set first, and then it publishes the
+    // merge. Thus the replacement publication also shows the registry state.
+    try await collector.wait(for: "the replacement publication") { publications in
+      publications.contains { $0.map(\.name) == ["new"] }
     }
+    #expect(await registry.command(named: "new") != nil)
+    #expect(await registry.command(named: "old") == nil)
+    continuation.finish()
+  }
 
-    // MARK: - Pushed updates
+  // MARK: - Near misses
 
-    /// A provider update replaces that provider's set, re-merges, and
-    /// publishes the new merged set.
-    @Test
-    func aProviderUpdateReplacesItsSetAndPublishes() async throws {
-        let (stream, continuation) = AsyncStream<[SlashCommand]>.makeStream()
-        let provider = StubCommandProvider(
-            commandSet: [makeRenderedCommand(name: "old", prefix: "OLD ")],
-            updates: stream)
-        let registry = CommandRegistry(
-            builtins: [],
-            providers: [provider],
-            workingDirectory: makeResolvedDirectory(label: "CommandRegistryTests-updates"))
-        await registry.load()
-        #expect(await registry.command(named: "old") != nil)
+  /// The near-miss search names the closest command first.
+  @Test
+  func nearMissesNameTheClosestCommandFirst() async throws {
+    let provider = StubCommandProvider(commandSet: [
+      makeRenderedCommand(name: "deploy", prefix: ""),
+      makeRenderedCommand(name: "status", prefix: ""),
+      makeRenderedCommand(name: "help", prefix: ""),
+    ])
+    let registry = CommandRegistry(
+      builtins: [],
+      providers: [provider],
+      workingDirectory: makeResolvedDirectory(label: "CommandRegistryTests-nearmiss"))
+    await registry.load()
 
-        let collector = PublicationCollector()
-        await registry.beginPublishing { commands in
-            collector.append(commands)
-        }
-        // The initial publication carries the current merged set.
-        try await collector.wait(for: "the initial publication") { $0.count >= 1 }
-        #expect(collector.publications.first?.map(\.name) == ["old"])
+    #expect(await registry.nearMisses(to: "depoly").first == "deploy")
+    #expect(await registry.nearMisses(to: "helq").first == "help")
+  }
 
-        continuation.yield([makeRenderedCommand(name: "new", prefix: "NEW ")])
-        // The registry merges the pushed set first, and then it publishes the
-        // merge. Thus the replacement publication also shows the registry state.
-        try await collector.wait(for: "the replacement publication") { publications in
-            publications.contains { $0.map(\.name) == ["new"] }
-        }
-        #expect(await registry.command(named: "new") != nil)
-        #expect(await registry.command(named: "old") == nil)
-        continuation.finish()
-    }
+  /// A name far from every command gives no suggestion.
+  @Test
+  func aFarNameGivesNoSuggestion() async throws {
+    let provider = StubCommandProvider(commandSet: [
+      makeRenderedCommand(name: "deploy", prefix: "")
+    ])
+    let registry = CommandRegistry(
+      builtins: [],
+      providers: [provider],
+      workingDirectory: makeResolvedDirectory(label: "CommandRegistryTests-far"))
+    await registry.load()
 
-    // MARK: - Near misses
+    #expect(await registry.nearMisses(to: "qqqqqqqqqqqq").isEmpty)
+  }
 
-    /// The near-miss search names the closest command first.
-    @Test
-    func nearMissesNameTheClosestCommandFirst() async throws {
-        let provider = StubCommandProvider(commandSet: [
-            makeRenderedCommand(name: "deploy", prefix: ""),
-            makeRenderedCommand(name: "status", prefix: ""),
-            makeRenderedCommand(name: "help", prefix: ""),
-        ])
-        let registry = CommandRegistry(
-            builtins: [],
-            providers: [provider],
-            workingDirectory: makeResolvedDirectory(label: "CommandRegistryTests-nearmiss"))
-        await registry.load()
+  // MARK: - The wire mapping
 
-        #expect(await registry.nearMisses(to: "depoly").first == "deploy")
-        #expect(await registry.nearMisses(to: "helq").first == "help")
-    }
+  /// The wire mapping passes the argument-hint string through as the
+  /// text input's hint, unchanged.
+  @Test
+  func availableCommandsPassTheArgumentHintThrough() {
+    let hinted = SlashCommand(
+      name: "greet",
+      description: "greets",
+      argumentHint: "<env> [region]",
+      body: .prompt(template: "x"))
+    let bare = SlashCommand(name: "help", description: "helps", body: .prompt(template: "y"))
 
-    /// A name far from every command gives no suggestion.
-    @Test
-    func aFarNameGivesNoSuggestion() async throws {
-        let provider = StubCommandProvider(commandSet: [
-            makeRenderedCommand(name: "deploy", prefix: "")
-        ])
-        let registry = CommandRegistry(
-            builtins: [],
-            providers: [provider],
-            workingDirectory: makeResolvedDirectory(label: "CommandRegistryTests-far"))
-        await registry.load()
+    let available = CommandRegistry.availableCommands(for: [hinted, bare])
+    #expect(available.compactMap(\.commandName) == ["greet", "help"])
+    #expect(available.compactMap(\.command).map(\.description) == ["greets", "helps"])
+    #expect(
+      available.compactMap(\.command)[0].input == .text(TextCommandInput(hint: "<env> [region]")))
+    #expect(available.compactMap(\.command)[1].input == nil)
+  }
 
-        #expect(await registry.nearMisses(to: "qqqqqqqqqqqq").isEmpty)
-    }
+  /// Each wire command carries the `command` type discriminator, because a
+  /// command with no `type` is skipped on decode by a client.
+  @Test
+  func availableCommandsCarryTheCommandTypeDiscriminator() throws {
+    let plain = SlashCommand(name: "help", description: "helps", body: .prompt(template: "y"))
 
-    // MARK: - The wire mapping
-
-    /// The wire mapping passes the argument-hint string through as the
-    /// text input's hint, unchanged.
-    @Test
-    func availableCommandsPassTheArgumentHintThrough() {
-        let hinted = SlashCommand(
-            name: "greet",
-            description: "greets",
-            argumentHint: "<env> [region]",
-            body: .prompt(template: "x"))
-        let bare = SlashCommand(name: "help", description: "helps", body: .prompt(template: "y"))
-
-        let available = CommandRegistry.availableCommands(for: [hinted, bare])
-        #expect(available.compactMap(\.commandName) == ["greet", "help"])
-        #expect(available.compactMap(\.command).map(\.description) == ["greets", "helps"])
-        #expect(available.compactMap(\.command)[0].input == .text(TextCommandInput(hint: "<env> [region]")))
-        #expect(available.compactMap(\.command)[1].input == nil)
-    }
-
-    /// Each wire command carries the `command` type discriminator, because a
-    /// command with no `type` is skipped on decode by a client.
-    @Test
-    func availableCommandsCarryTheCommandTypeDiscriminator() throws {
-        let plain = SlashCommand(name: "help", description: "helps", body: .prompt(template: "y"))
-
-        let data = try JSONEncoder().encode(CommandRegistry.availableCommands(for: [plain])[0])
-        let object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-        #expect(object["type"] as? String == "command")
-    }
+    let data = try JSONEncoder().encode(CommandRegistry.availableCommands(for: [plain])[0])
+    let object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+    #expect(object["type"] as? String == "command")
+  }
 }

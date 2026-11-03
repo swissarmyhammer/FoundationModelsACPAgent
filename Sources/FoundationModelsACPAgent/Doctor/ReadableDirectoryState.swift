@@ -14,28 +14,28 @@ import Foundation
 /// work with no file at all, so a missing layer is what a fresh install
 /// looks like.
 enum ReadableDirectoryState {
-    /// Nothing stands at the path. The layer holds nothing, and the stack
-    /// skips it.
-    case missing
+  /// Nothing stands at the path. The layer holds nothing, and the stack
+  /// skips it.
+  case missing
 
-    /// Something stands at the path, and this process cannot read it.
-    case unreadable
+  /// Something stands at the path, and this process cannot read it.
+  case unreadable
 
-    /// Something stands at the path, and this process can read it.
-    case readable
+  /// Something stands at the path, and this process can read it.
+  case readable
 
-    /// The command that makes a layer directory readable. A `doctor` fix
-    /// names it, so a person has the whole repair in one line.
-    static let readFix = "chmod u+rx"
+  /// The command that makes a layer directory readable. A `doctor` fix
+  /// names it, so a person has the whole repair in one line.
+  static let readFix = "chmod u+rx"
 
-    /// How one directory stands on disk.
-    ///
-    /// - Parameter directory: The directory to test.
-    /// - Returns: The state of that directory.
-    static func of(_ directory: URL) -> ReadableDirectoryState {
-        guard PathKind.of(directory) != .missing else {
-            return .missing
-        }
-        return FileManager.default.isReadableFile(atPath: directory.path) ? .readable : .unreadable
+  /// How one directory stands on disk.
+  ///
+  /// - Parameter directory: The directory to test.
+  /// - Returns: The state of that directory.
+  static func of(_ directory: URL) -> ReadableDirectoryState {
+    guard PathKind.of(directory) != .missing else {
+      return .missing
     }
+    return FileManager.default.isReadableFile(atPath: directory.path) ? .readable : .unreadable
+  }
 }

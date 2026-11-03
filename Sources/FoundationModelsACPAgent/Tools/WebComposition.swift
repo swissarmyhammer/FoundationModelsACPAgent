@@ -22,61 +22,61 @@ import FoundationModelsMultitool
 /// only. ``providerNames(section:processEnvironment:)`` gives names, never a
 /// key.
 public enum WebComposition {
-    /// The `WebConfiguration` of one web section: the given environment
-    /// with the configured keys put in over it, given to
-    /// `WebConfiguration.fromEnvironment(_:)`.
-    ///
-    /// The call sends no request.
-    ///
-    /// - Parameters:
-    ///   - options: The decoded `tools.web:` body.
-    ///   - processEnvironment: The environment the keys are read from: the
-    ///     host environment of a session (``CatalogContext/environment``),
-    ///     or the environment that a CLI command gives.
-    /// - Returns: The configuration, whose environment is the merged
-    ///   dictionary that each key reads at the time of a call.
-    static func configuration(
-        options: WebToolOptions, processEnvironment: [String: String]
-    ) -> WebConfiguration {
-        WebConfiguration.fromEnvironment(options.environment(mergedOver: processEnvironment))
-    }
+  /// The `WebConfiguration` of one web section: the given environment
+  /// with the configured keys put in over it, given to
+  /// `WebConfiguration.fromEnvironment(_:)`.
+  ///
+  /// The call sends no request.
+  ///
+  /// - Parameters:
+  ///   - options: The decoded `tools.web:` body.
+  ///   - processEnvironment: The environment the keys are read from: the
+  ///     host environment of a session (``CatalogContext/environment``),
+  ///     or the environment that a CLI command gives.
+  /// - Returns: The configuration, whose environment is the merged
+  ///   dictionary that each key reads at the time of a call.
+  static func configuration(
+    options: WebToolOptions, processEnvironment: [String: String]
+  ) -> WebConfiguration {
+    WebConfiguration.fromEnvironment(options.environment(mergedOver: processEnvironment))
+  }
 
-    /// The search providers that one web section puts in force, by name and
-    /// in the order to try, or `nil` when the section is off.
-    ///
-    /// `config show` and `doctor` show this list. A name holds no key and
-    /// no URL.
-    ///
-    /// - Parameters:
-    ///   - section: The decoded `tools.web` entry.
-    ///   - processEnvironment: The environment the keys are read from, as in
-    ///     ``configuration(options:processEnvironment:)``.
-    /// - Returns: The provider names, or `nil` when the web tool does not
-    ///   mount.
-    public static func providerNames(
-        section: ToolSection<WebToolOptions>, processEnvironment: [String: String]
-    ) -> [String]? {
-        section.mountedOptions.map { options in
-            configuration(options: options, processEnvironment: processEnvironment)
-                .providers.map(\.name)
-        }
+  /// The search providers that one web section puts in force, by name and
+  /// in the order to try, or `nil` when the section is off.
+  ///
+  /// `config show` and `doctor` show this list. A name holds no key and
+  /// no URL.
+  ///
+  /// - Parameters:
+  ///   - section: The decoded `tools.web` entry.
+  ///   - processEnvironment: The environment the keys are read from, as in
+  ///     ``configuration(options:processEnvironment:)``.
+  /// - Returns: The provider names, or `nil` when the web tool does not
+  ///   mount.
+  public static func providerNames(
+    section: ToolSection<WebToolOptions>, processEnvironment: [String: String]
+  ) -> [String]? {
+    section.mountedOptions.map { options in
+      configuration(options: options, processEnvironment: processEnvironment)
+        .providers.map(\.name)
     }
+  }
 
-    /// Queues the web capability in `builder`, or does nothing when the
-    /// `web:` section is off.
-    ///
-    /// The capability makes one `URLSession` and sends no request when it
-    /// mounts.
-    ///
-    /// - Parameters:
-    ///   - builder: The builder that gets the capability.
-    ///   - context: The session whose configuration and environment give
-    ///     the providers.
-    static func compose(into builder: MultiTool.Builder, context: CatalogContext) {
-        guard let options = context.configuration.tools.web.mountedOptions else {
-            return
-        }
-        builder.withWeb(
-            configuration: configuration(options: options, processEnvironment: context.environment))
+  /// Queues the web capability in `builder`, or does nothing when the
+  /// `web:` section is off.
+  ///
+  /// The capability makes one `URLSession` and sends no request when it
+  /// mounts.
+  ///
+  /// - Parameters:
+  ///   - builder: The builder that gets the capability.
+  ///   - context: The session whose configuration and environment give
+  ///     the providers.
+  static func compose(into builder: MultiTool.Builder, context: CatalogContext) {
+    guard let options = context.configuration.tools.web.mountedOptions else {
+      return
     }
+    builder.withWeb(
+      configuration: configuration(options: options, processEnvironment: context.environment))
+  }
 }

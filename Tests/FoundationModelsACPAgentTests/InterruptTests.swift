@@ -21,164 +21,164 @@ import Testing
 /// window of §5.9 — a `Ctrl-C` during a model download, before the wire
 /// opens — is ``CompositionInterruptTests``.
 @Suite(.closesHarnesses) struct InterruptTests {
-    // MARK: - Constants
+  // MARK: - Constants
 
-    /// The text the scripted model streams before it holds, so a
-    /// cancelled prompt has text that already arrived.
-    private static let arrivedText = "working"
+  /// The text the scripted model streams before it holds, so a
+  /// cancelled prompt has text that already arrived.
+  private static let arrivedText = "working"
 
-    /// The prompt text of every case here.
-    private static let promptText = "write a haiku"
+  /// The prompt text of every case here.
+  private static let promptText = "write a haiku"
 
-    /// The wire method of the cancel notification, as
-    /// `MethodTable.generated.swift` spells it.
-    private static let cancelWireMethod = "session/cancel"
+  /// The wire method of the cancel notification, as
+  /// `MethodTable.generated.swift` spells it.
+  private static let cancelWireMethod = "session/cancel"
 
-    /// The directory that holds the CLI's source files, under the
-    /// repository root.
-    private static let commandSourceDirectory = "Sources/acp-agent"
+  /// The directory that holds the CLI's source files, under the
+  /// repository root.
+  private static let commandSourceDirectory = "Sources/acp-agent"
 
-    /// The file that holds the signal source.
-    private static let handlerFileName = "InterruptHandler.swift"
+  /// The file that holds the signal source.
+  private static let handlerFileName = "InterruptHandler.swift"
 
-    /// The line that opens the signal handler body.
-    private static let handlerOpeningLine = "source.setEventHandler {"
+  /// The line that opens the signal handler body.
+  private static let handlerOpeningLine = "source.setEventHandler {"
 
-    /// The line that closes the signal handler body.
-    private static let handlerClosingLine = "}"
+  /// The line that closes the signal handler body.
+  private static let handlerClosingLine = "}"
 
-    /// The whole body of the signal handler: one atomic add, and one
-    /// resume of the continuation the waiting task is parked on. A
-    /// handler that called anything else would not be async-signal-safe.
-    private static let handlerStatements = [
-        "let ordinal = state.count.wrappingAdd(1, ordering: .sequentiallyConsistent).newValue",
-        "state.arrivals.yield(ordinal)",
-    ]
+  /// The whole body of the signal handler: one atomic add, and one
+  /// resume of the continuation the waiting task is parked on. A
+  /// handler that called anything else would not be async-signal-safe.
+  private static let handlerStatements = [
+    "let ordinal = state.count.wrappingAdd(1, ordering: .sequentiallyConsistent).newValue",
+    "state.arrivals.yield(ordinal)",
+  ]
 
-    // MARK: - Fixtures
+  // MARK: - Fixtures
 
-    /// A stream of exactly one first arrival.
-    ///
-    /// - Returns: The stream, already finished after the one value.
-    private static func oneArrival() -> AsyncStream<Int> {
-        AsyncStream { continuation in
-            continuation.yield(InterruptHandler.firstArrival)
-            continuation.finish()
-        }
+  /// A stream of exactly one first arrival.
+  ///
+  /// - Returns: The stream, already finished after the one value.
+  private static func oneArrival() -> AsyncStream<Int> {
+    AsyncStream { continuation in
+      continuation.yield(InterruptHandler.firstArrival)
+      continuation.finish()
     }
+  }
 
-    /// The statements of the signal handler body in `source`.
-    ///
-    /// - Parameter source: The text of the file that holds the handler.
-    /// - Returns: The trimmed statements between the opening line and the
-    ///   first closing line.
-    /// - Throws: When `source` holds no handler.
-    private static func handlerBody(of source: String) throws -> [String] {
-        let lines = source.split(separator: "\n", omittingEmptySubsequences: false)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-        let opening = try #require(lines.firstIndex(of: handlerOpeningLine))
-        let body = lines[lines.index(after: opening)...]
-        return Array(body.prefix { $0 != handlerClosingLine })
+  /// The statements of the signal handler body in `source`.
+  ///
+  /// - Parameter source: The text of the file that holds the handler.
+  /// - Returns: The trimmed statements between the opening line and the
+  ///   first closing line.
+  /// - Throws: When `source` holds no handler.
+  private static func handlerBody(of source: String) throws -> [String] {
+    let lines = source.split(separator: "\n", omittingEmptySubsequences: false)
+      .map { $0.trimmingCharacters(in: .whitespaces) }
+    let opening = try #require(lines.firstIndex(of: handlerOpeningLine))
+    let body = lines[lines.index(after: opening)...]
+    return Array(body.prefix { $0 != handlerClosingLine })
+  }
+
+  // MARK: - The first signal (cli-plan.md §5.9)
+
+  /// The first interrupt cancels the running prompt, and the text that
+  /// already arrived stays on the answer descriptor.
+  ///
+  /// The scripted model streams one delta and then holds, so the prompt
+  /// ends for one reason only: a `session/cancel` reached the agent.
+  ///
+  /// **The order the case depends on.** A cancel that lands before the
+  /// prompt is running reaches an agent with no active prompt, and that
+  /// agent logs and ignores it. A cancel that overtakes the
+  /// first delta gives a prompt with no text, which is not what the case
+  /// reads back. One fact settles both: the delta is on the answer
+  /// descriptor. The watch waits for that fact and then offers its one
+  /// arrival, so order decides the result and no delay does.
+  @Test
+  func aFirstInterruptCancelsThePromptAndKeepsTheTextThatArrived() async throws {
+    let workspace = makeResolvedDirectory(label: "InterruptTests-first-repo")
+    let composed = try await CLICompositionFixture.scripted(
+      script: [.textDelta(Self.arrivedText), .hold], label: "InterruptTests-first")
+    let capture = try AnswerCapture(label: "InterruptTests-first-answer")
+
+    let result = try await RunPrompt.answer(
+      of: composed,
+      in: .new(workingDirectory: workspace),
+      prompt: Self.promptText,
+      into: capture.writer,
+      interruptedBy: ScriptedInterruptWatch.armed(
+        after: capture.waitUntilHolding(Self.arrivedText)))
+
+    #expect(result.stopReason == .cancelled)
+    #expect(try capture.text() == Self.arrivedText)
+  }
+
+  /// The reaction puts a `session/cancel` on the wire, and the agent
+  /// end receives it.
+  ///
+  /// The tap stands on the agent end, so its lines are the ones the
+  /// client sent. That is the direct reading of the claim: a
+  /// `session/cancel` reached the agent before the run ended.
+  @Test
+  func theInterruptSendsSessionCancelToTheAgent() async throws {
+    let fixture = try await ScriptedPromptFixture.make(
+      script: [.textDelta(Self.arrivedText), .hold],
+      label: "InterruptTests-wire",
+      tapsAgentWire: true)
+    let prompting = Task {
+      try await fixture.harness.connection.prompt(
+        AgentClientHarness.makePromptRequest(
+          sessionId: fixture.sessionId, text: Self.promptText))
     }
+    try await ScriptedPromptFixture.waitForRunning(fixture.collector)
 
-    // MARK: - The first signal (cli-plan.md §5.9)
+    await RunPrompt.react(
+      to: Self.oneArrival(),
+      cancelling: fixture.sessionId,
+      over: fixture.harness.connection)
 
-    /// The first interrupt cancels the running prompt, and the text that
-    /// already arrived stays on the answer descriptor.
-    ///
-    /// The scripted model streams one delta and then holds, so the prompt
-    /// ends for one reason only: a `session/cancel` reached the agent.
-    ///
-    /// **The order the case depends on.** A cancel that lands before the
-    /// prompt is running reaches an agent with no active prompt, and that
-    /// agent logs and ignores it. A cancel that overtakes the
-    /// first delta gives a prompt with no text, which is not what the case
-    /// reads back. One fact settles both: the delta is on the answer
-    /// descriptor. The watch waits for that fact and then offers its one
-    /// arrival, so order decides the result and no delay does.
-    @Test
-    func aFirstInterruptCancelsThePromptAndKeepsTheTextThatArrived() async throws {
-        let workspace = makeResolvedDirectory(label: "InterruptTests-first-repo")
-        let composed = try await CLICompositionFixture.scripted(
-            script: [.textDelta(Self.arrivedText), .hold], label: "InterruptTests-first")
-        let capture = try AnswerCapture(label: "InterruptTests-first-answer")
+    let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+    #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .cancelled)
+    let tap = try #require(fixture.harness.agentWireTap)
+    let lines = await tap.lines
+    let cancels = lines.filter { $0.contains(Self.cancelWireMethod) }
+    #expect(cancels.count == 1, "the agent end read: \(lines)")
+    _ = try await prompting.value
+    await fixture.close()
+  }
 
-        let result = try await RunPrompt.answer(
-            of: composed,
-            in: .new(workingDirectory: workspace),
-            prompt: Self.promptText,
-            into: capture.writer,
-            interruptedBy: ScriptedInterruptWatch.armed(
-                after: capture.waitUntilHolding(Self.arrivedText)))
+  // MARK: - The exit code (cli-plan.md §5.8, §5.9)
 
-        #expect(result.stopReason == .cancelled)
-        #expect(try capture.text() == Self.arrivedText)
-    }
+  /// A cancelled prompt exits 4.
+  @Test func aCancelledPromptExitsFour() {
+    #expect(AgentExitCode(prompt: RunPromptResult(stopReason: .cancelled)) == .cancelled)
+  }
 
-    /// The reaction puts a `session/cancel` on the wire, and the agent
-    /// end receives it.
-    ///
-    /// The tap stands on the agent end, so its lines are the ones the
-    /// client sent. That is the direct reading of the claim: a
-    /// `session/cancel` reached the agent before the run ended.
-    @Test
-    func theInterruptSendsSessionCancelToTheAgent() async throws {
-        let fixture = try await ScriptedPromptFixture.make(
-            script: [.textDelta(Self.arrivedText), .hold],
-            label: "InterruptTests-wire",
-            tapsAgentWire: true)
-        let prompting = Task {
-            try await fixture.harness.connection.prompt(
-                AgentClientHarness.makePromptRequest(
-                    sessionId: fixture.sessionId, text: Self.promptText))
-        }
-        try await ScriptedPromptFixture.waitForRunning(fixture.collector)
+  /// A prompt that ran to its end exits 0, so the interrupt code never
+  /// leaks into an ordinary run.
+  @Test func aFinishedPromptDoesNotExitFour() {
+    #expect(AgentExitCode(prompt: RunPromptResult(stopReason: .endTurn)) == .success)
+  }
 
-        await RunPrompt.react(
-            to: Self.oneArrival(),
-            cancelling: fixture.sessionId,
-            over: fixture.harness.connection)
+  // MARK: - The handler is async-signal-safe (cli-plan.md §5.9)
 
-        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .cancelled)
-        let tap = try #require(fixture.harness.agentWireTap)
-        let lines = await tap.lines
-        let cancels = lines.filter { $0.contains(Self.cancelWireMethod) }
-        #expect(cancels.count == 1, "the agent end read: \(lines)")
-        _ = try await prompting.value
-        await fixture.close()
-    }
+  /// The `DispatchSourceSignal` handler body sets the atomic flag and
+  /// resumes the continuation, and does nothing else.
+  ///
+  /// "Calls nothing that is not async-signal-safe" cannot be asserted
+  /// at runtime, so the source itself is the assertion. Every other
+  /// step of the interrupt — the `session/cancel`, the wait for the
+  /// stop reason, the exit — happens on the normal task that reads the
+  /// arrivals.
+  @Test func theSignalHandlerBodySetsTheFlagAndResumesTheContinuation() throws {
+    let handler = try PackageRoot.directory()
+      .appendingPathComponent(Self.commandSourceDirectory, isDirectory: true)
+      .appendingPathComponent(Self.handlerFileName)
 
-    // MARK: - The exit code (cli-plan.md §5.8, §5.9)
+    let body = try Self.handlerBody(of: String(contentsOf: handler, encoding: .utf8))
 
-    /// A cancelled prompt exits 4.
-    @Test func aCancelledPromptExitsFour() {
-        #expect(AgentExitCode(prompt: RunPromptResult(stopReason: .cancelled)) == .cancelled)
-    }
-
-    /// A prompt that ran to its end exits 0, so the interrupt code never
-    /// leaks into an ordinary run.
-    @Test func aFinishedPromptDoesNotExitFour() {
-        #expect(AgentExitCode(prompt: RunPromptResult(stopReason: .endTurn)) == .success)
-    }
-
-    // MARK: - The handler is async-signal-safe (cli-plan.md §5.9)
-
-    /// The `DispatchSourceSignal` handler body sets the atomic flag and
-    /// resumes the continuation, and does nothing else.
-    ///
-    /// "Calls nothing that is not async-signal-safe" cannot be asserted
-    /// at runtime, so the source itself is the assertion. Every other
-    /// step of the interrupt — the `session/cancel`, the wait for the
-    /// stop reason, the exit — happens on the normal task that reads the
-    /// arrivals.
-    @Test func theSignalHandlerBodySetsTheFlagAndResumesTheContinuation() throws {
-        let handler = try PackageRoot.directory()
-            .appendingPathComponent(Self.commandSourceDirectory, isDirectory: true)
-            .appendingPathComponent(Self.handlerFileName)
-
-        let body = try Self.handlerBody(of: String(contentsOf: handler, encoding: .utf8))
-
-        #expect(body == Self.handlerStatements)
-    }
+    #expect(body == Self.handlerStatements)
+  }
 }

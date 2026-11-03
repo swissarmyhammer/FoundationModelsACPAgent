@@ -42,111 +42,112 @@ import GraphQL
 /// goes through the endpoint (``SettingsSecretKeys``). ``SettingsTool`` runs
 /// each call of the model on this same endpoint.
 public final class SettingsGraph: GraphQLEndpoint, Sendable {
-    /// The name of the endpoint.
-    public static let endpointName = "settings"
+  /// The name of the endpoint.
+  public static let endpointName = "settings"
 
-    /// The other names that a call can write for the names of the schema:
-    /// for the key path and the working directory everywhere, for the
-    /// `updateSetting` and `clearSetting` mutations, whose old names `set`
-    /// and `clear` are aliases, and `settingsChanges` for the `changes`
-    /// subscription (EXTRAS-9 rule 9: `<noun>Changes`).
-    static let rules = GraphQLNameRules(
-        aliases: GraphQLAliasTable(
-            everywhere: [
-                "keyPath": ["key", "keys"],
-                "cwd": ["workingDirectory", "directory", "folder"],
-            ],
-            byType: [
-                "Mutation": [
-                    "updateSetting": ["set", "setSetting", "update"],
-                    "clearSetting": ["clear", "unset", "remove", "removeSetting"],
-                ],
-                "Subscription": [
-                    "changes": ["settingsChanges"]
-                ],
-            ])
-    )
+  /// The other names that a call can write for the names of the schema:
+  /// for the key path and the working directory everywhere, for the
+  /// `updateSetting` and `clearSetting` mutations, whose old names `set`
+  /// and `clear` are aliases, and `settingsChanges` for the `changes`
+  /// subscription (EXTRAS-9 rule 9: `<noun>Changes`).
+  static let rules = GraphQLNameRules(
+    aliases: GraphQLAliasTable(
+      everywhere: [
+        "keyPath": ["key", "keys"],
+        "cwd": ["workingDirectory", "directory", "folder"],
+      ],
+      byType: [
+        "Mutation": [
+          "updateSetting": ["set", "setSetting", "update"],
+          "clearSetting": ["clear", "unset", "remove", "removeSetting"],
+        ],
+        "Subscription": [
+          "changes": ["settingsChanges"]
+        ],
+      ])
+  )
 
-    /// The name of the endpoint.
-    public let name = endpointName
+  /// The name of the endpoint.
+  public let name = endpointName
 
-    /// The version of the schema.
-    public let version = "1"
+  /// The version of the schema.
+  public let version = "1"
 
-    /// The scope of the endpoint: the server.
-    public let scope = GraphQLEndpointScope.server
+  /// The scope of the endpoint: the server.
+  public let scope = GraphQLEndpointScope.server
 
-    /// The Graphiti engine of the endpoint.
-    private let api: SettingsGraphAPI
+  /// The Graphiti engine of the endpoint.
+  private let api: SettingsGraphAPI
 
-    /// Makes the endpoint over a store.
-    ///
-    /// - Parameter store: The store of the agent settings.
-    /// - Throws: An error of the schema builder.
-    public init(store: SettingsStore) throws {
-        api = try SettingsGraphAPI(engine: SettingsEngine(store: store))
-    }
+  /// Makes the endpoint over a store.
+  ///
+  /// - Parameter store: The store of the agent settings.
+  /// - Throws: An error of the schema builder.
+  public init(store: SettingsStore) throws {
+    api = try SettingsGraphAPI(engine: SettingsEngine(store: store))
+  }
 
-    /// The schema of the endpoint in SDL.
-    public var schema: String {
-        api.sdl
-    }
+  /// The schema of the endpoint in SDL.
+  public var schema: String {
+    api.sdl
+  }
 
-    /// Runs one GraphQL document.
-    ///
-    /// - Parameters:
-    ///   - query: The GraphQL document.
-    ///   - variables: The values of the variables of the document.
-    ///   - operationName: The operation of the document to run, or `nil`.
-    ///   - viewer: The client that makes the call, or `nil` for the agent.
-    ///     Each client sees the same settings.
-    /// - Returns: The GraphQL response as JSON text.
-    /// - Throws: A fault that is not a GraphQL error.
-    public func execute(
-        query: String, variables: [String: Map], operationName: String?, viewer _: GraphQLViewer?
-    ) async throws -> String {
-        try await execute(query: query, variables: variables, operationName: operationName, sessionDirectory: nil)
-    }
+  /// Runs one GraphQL document.
+  ///
+  /// - Parameters:
+  ///   - query: The GraphQL document.
+  ///   - variables: The values of the variables of the document.
+  ///   - operationName: The operation of the document to run, or `nil`.
+  ///   - viewer: The client that makes the call, or `nil` for the agent.
+  ///     Each client sees the same settings.
+  /// - Returns: The GraphQL response as JSON text.
+  /// - Throws: A fault that is not a GraphQL error.
+  public func execute(
+    query: String, variables: [String: Map], operationName: String?, viewer _: GraphQLViewer?
+  ) async throws -> String {
+    try await execute(
+      query: query, variables: variables, operationName: operationName, sessionDirectory: nil)
+  }
 
-    /// Runs one GraphQL document for the folder of one session, or for no
-    /// session.
-    ///
-    /// ``SettingsTool`` calls this with its session folder. Then a field with
-    /// no `cwd` reads or writes the levels of that folder, and a field whose
-    /// `cwd` names a different folder is refused
-    /// (``SettingsGraphContext/workingDirectory(given:)``).
-    ///
-    /// - Parameters:
-    ///   - query: The GraphQL document.
-    ///   - variables: The values of the variables of the document.
-    ///   - operationName: The operation of the document to run, or `nil`.
-    ///   - sessionDirectory: The absolute path of the session folder, or
-    ///     `nil` for a call of the endpoint, where a field with no `cwd`
-    ///     works on the user level only.
-    /// - Returns: The GraphQL response as JSON text.
-    /// - Throws: A fault that is not a GraphQL error.
-    func execute(
-        query: String, variables: [String: Map], operationName: String?, sessionDirectory: String?
-    ) async throws -> String {
-        try await api.respond(
-            to: query, variables: variables, operationName: operationName, rules: Self.rules,
-            formattedWith: .sortedKeys, context: SettingsGraphContext(sessionDirectory: sessionDirectory))
-    }
+  /// Runs one GraphQL document for the folder of one session, or for no
+  /// session.
+  ///
+  /// ``SettingsTool`` calls this with its session folder. Then a field with
+  /// no `cwd` reads or writes the levels of that folder, and a field whose
+  /// `cwd` names a different folder is refused
+  /// (``SettingsGraphContext/workingDirectory(given:)``).
+  ///
+  /// - Parameters:
+  ///   - query: The GraphQL document.
+  ///   - variables: The values of the variables of the document.
+  ///   - operationName: The operation of the document to run, or `nil`.
+  ///   - sessionDirectory: The absolute path of the session folder, or
+  ///     `nil` for a call of the endpoint, where a field with no `cwd`
+  ///     works on the user level only.
+  /// - Returns: The GraphQL response as JSON text.
+  /// - Throws: A fault that is not a GraphQL error.
+  func execute(
+    query: String, variables: [String: Map], operationName: String?, sessionDirectory: String?
+  ) async throws -> String {
+    try await api.respond(
+      to: query, variables: variables, operationName: operationName, rules: Self.rules,
+      formattedWith: .sortedKeys, context: SettingsGraphContext(sessionDirectory: sessionDirectory))
+  }
 
-    /// Starts one GraphQL subscription.
-    ///
-    /// - Parameters:
-    ///   - query: The subscription document.
-    ///   - variables: The values of the variables of the document.
-    ///   - operationName: The operation of the document to run, or `nil`.
-    ///   - viewer: The client that makes the call, or `nil` for the agent.
-    /// - Returns: The GraphQL response of each event as JSON text.
-    /// - Throws: A fault that is not a GraphQL error.
-    public func subscribe(
-        query: String, variables: [String: Map], operationName: String?, viewer _: GraphQLViewer?
-    ) async throws -> AsyncThrowingStream<String, Error> {
-        try await api.subscribe(
-            to: query, variables: variables, operationName: operationName, rules: Self.rules,
-            formattedWith: .sortedKeys, context: SettingsGraphContext(sessionDirectory: nil))
-    }
+  /// Starts one GraphQL subscription.
+  ///
+  /// - Parameters:
+  ///   - query: The subscription document.
+  ///   - variables: The values of the variables of the document.
+  ///   - operationName: The operation of the document to run, or `nil`.
+  ///   - viewer: The client that makes the call, or `nil` for the agent.
+  /// - Returns: The GraphQL response of each event as JSON text.
+  /// - Throws: A fault that is not a GraphQL error.
+  public func subscribe(
+    query: String, variables: [String: Map], operationName: String?, viewer _: GraphQLViewer?
+  ) async throws -> AsyncThrowingStream<String, Error> {
+    try await api.subscribe(
+      to: query, variables: variables, operationName: operationName, rules: Self.rules,
+      formattedWith: .sortedKeys, context: SettingsGraphContext(sessionDirectory: nil))
+  }
 }

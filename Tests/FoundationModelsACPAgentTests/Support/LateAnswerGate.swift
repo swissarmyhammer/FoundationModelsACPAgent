@@ -14,45 +14,45 @@
 /// finds that defect too. The test opens the gate at its end, so no probe
 /// stays suspended after the test.
 actor LateAnswerGate {
-    /// The state of the gate.
-    private enum State {
-        /// The gate is closed. The payload holds each wait that is suspended.
-        case closed(waiters: [CheckedContinuation<Void, Never>])
+  /// The state of the gate.
+  private enum State {
+    /// The gate is closed. The payload holds each wait that is suspended.
+    case closed(waiters: [CheckedContinuation<Void, Never>])
 
-        /// The gate is open, and each wait returns at once.
-        case open
+    /// The gate is open, and each wait returns at once.
+    case open
+  }
+
+  /// The state of the gate. It starts closed, with no wait.
+  private var state = State.closed(waiters: [])
+
+  /// Waits until the gate is open. Returns at once when it is open.
+  func wait() async {
+    guard case .closed = state else { return }
+    await withCheckedContinuation { continuation in
+      addWaiter(continuation)
     }
+  }
 
-    /// The state of the gate. It starts closed, with no wait.
-    private var state = State.closed(waiters: [])
-
-    /// Waits until the gate is open. Returns at once when it is open.
-    func wait() async {
-        guard case .closed = state else { return }
-        await withCheckedContinuation { continuation in
-            addWaiter(continuation)
-        }
+  /// Opens the gate, and resumes each wait that is suspended. A call when
+  /// the gate is open does nothing.
+  func open() {
+    guard case .closed(let waiters) = state else { return }
+    state = .open
+    for waiter in waiters {
+      waiter.resume()
     }
+  }
 
-    /// Opens the gate, and resumes each wait that is suspended. A call when
-    /// the gate is open does nothing.
-    func open() {
-        guard case .closed(let waiters) = state else { return }
-        state = .open
-        for waiter in waiters {
-            waiter.resume()
-        }
+  /// Records one wait that is suspended, or resumes it at once when the
+  /// gate is open.
+  ///
+  /// - Parameter continuation: The continuation of the wait.
+  private func addWaiter(_ continuation: CheckedContinuation<Void, Never>) {
+    guard case .closed(let waiters) = state else {
+      continuation.resume()
+      return
     }
-
-    /// Records one wait that is suspended, or resumes it at once when the
-    /// gate is open.
-    ///
-    /// - Parameter continuation: The continuation of the wait.
-    private func addWaiter(_ continuation: CheckedContinuation<Void, Never>) {
-        guard case .closed(let waiters) = state else {
-            continuation.resume()
-            return
-        }
-        state = .closed(waiters: waiters + [continuation])
-    }
+    state = .closed(waiters: waiters + [continuation])
+  }
 }

@@ -16,961 +16,964 @@ import Testing
 /// directory and the environment, so no test touches the real home
 /// directory.
 @Suite struct ConfigurationLoaderTests {
-    /// The dotfolder name every fixture stack is built for.
-    static let agentName = "testagent"
+  /// The dotfolder name every fixture stack is built for.
+  static let agentName = "testagent"
 
-    /// A throwaway two-layer directory tree. The OS reclaims the temp
-    /// directory.
-    struct Fixture {
-        /// The temp root that holds every other directory.
-        let root: URL
-        /// The session working directory; the project layer roots under it.
-        let workingDirectory: URL
-        /// The injected user layer root.
-        let userDirectory: URL
-        /// The project layer root, `<workingDirectory>/.<name>/`.
-        let projectDirectory: URL
+  /// A throwaway two-layer directory tree. The OS reclaims the temp
+  /// directory.
+  struct Fixture {
+    /// The temp root that holds every other directory.
+    let root: URL
+    /// The session working directory; the project layer roots under it.
+    let workingDirectory: URL
+    /// The injected user layer root.
+    let userDirectory: URL
+    /// The project layer root, `<workingDirectory>/.<name>/`.
+    let projectDirectory: URL
 
-        init() {
-            root = FileManager.default.temporaryDirectory
-                .appendingPathComponent(
-                    "ConfigurationLoaderTests-\(UUID().uuidString)", isDirectory: true)
-            workingDirectory = root.appendingPathComponent("workspace", isDirectory: true)
-            userDirectory = root.appendingPathComponent("user", isDirectory: true)
-            projectDirectory = workingDirectory.appendingPathComponent(
-                ".\(ConfigurationLoaderTests.agentName)", isDirectory: true)
-            try! FileManager.default.createDirectory(
-                at: userDirectory, withIntermediateDirectories: true)
-            try! FileManager.default.createDirectory(
-                at: projectDirectory, withIntermediateDirectories: true)
-        }
-
-        /// Writes `contents` as `config.yaml` inside `directory`.
-        func writeConfig(_ contents: String, in directory: URL) {
-            try! FileManager.default.createDirectory(
-                at: directory, withIntermediateDirectories: true)
-            let fileURL = directory.appendingPathComponent(ConfigurationLoader.configFileName)
-            try! contents.write(to: fileURL, atomically: true, encoding: .utf8)
-        }
-
-        /// A loader over this fixture, with the user directory as the synced
-        /// root of a custom home.
-        ///
-        /// - Parameter secretStore: The store that gives the value of each
-        ///   secret reference. The default is an empty in-memory store, so
-        ///   no load touches the real Keychain.
-        func makeLoader(secretStore: any SecretStore = InMemorySecretStore()) throws -> ConfigurationLoader {
-            try ConfigurationLoader(
-                name: DotfolderName(ConfigurationLoaderTests.agentName),
-                workingDirectory: workingDirectory,
-                home: AgentHomeFixture.make(label: "ConfigurationLoaderTests", synced: userDirectory),
-                environment: [:],
-                secretStore: secretStore)
-        }
-
-        /// Writes `contents` as the project-layer `config.yaml` and loads
-        /// the stack — the one-call path the codec suites decode through.
-        ///
-        /// - Parameters:
-        ///   - contents: The project `config.yaml`.
-        ///   - secretStore: The store that gives the value of each secret
-        ///     reference. The default is an empty in-memory store.
-        func loadProjectConfig(
-            _ contents: String, secretStore: any SecretStore = InMemorySecretStore()
-        ) throws -> LoadedConfiguration {
-            writeConfig(contents, in: projectDirectory)
-            return try makeLoader(secretStore: secretStore).load()
-        }
+    init() {
+      root = FileManager.default.temporaryDirectory
+        .appendingPathComponent(
+          "ConfigurationLoaderTests-\(UUID().uuidString)", isDirectory: true)
+      workingDirectory = root.appendingPathComponent("workspace", isDirectory: true)
+      userDirectory = root.appendingPathComponent("user", isDirectory: true)
+      projectDirectory = workingDirectory.appendingPathComponent(
+        ".\(ConfigurationLoaderTests.agentName)", isDirectory: true)
+      try! FileManager.default.createDirectory(
+        at: userDirectory, withIntermediateDirectories: true)
+      try! FileManager.default.createDirectory(
+        at: projectDirectory, withIntermediateDirectories: true)
     }
 
-    // MARK: - Defaults and layering
-
-    /// With no config files, the loaded configuration is the builtin
-    /// configuration of the loader and there is no warning.
-    @Test func noFilesGiveTheInCodeDefaults() throws {
-        let fixture = Fixture()
-        let loader = try fixture.makeLoader()
-
-        let loaded = try loader.load()
-
-        #expect(loaded.configuration == loader.builtinConfiguration)
-        #expect(loaded.warnings.isEmpty)
+    /// Writes `contents` as `config.yaml` inside `directory`.
+    func writeConfig(_ contents: String, in directory: URL) {
+      try! FileManager.default.createDirectory(
+        at: directory, withIntermediateDirectories: true)
+      let fileURL = directory.appendingPathComponent(ConfigurationLoader.configFileName)
+      try! contents.write(to: fileURL, atomically: true, encoding: .utf8)
     }
 
-    /// The builtin configuration of a loader is the in-code default with
-    /// each default that the dotfolder name gives: the files tools exclude
-    /// the dotfolder `.<name>/`, and no other value changes.
-    @Test func theBuiltinConfigurationExcludesTheDotfolderFromTheFilesTools() throws {
-        var expected = AgentConfiguration()
-        expected.tools.files = .enabled(FilesToolOptions(exclude: [".\(Self.agentName)/"]))
-
-        #expect(try Fixture().makeLoader().builtinConfiguration == expected)
-    }
-
-    /// The in-code default values: recording is `full` and
-    /// transcripts are project-local.
-    @Test func inCodeDefaultsRecordFullTranscriptsInTheProject() {
-        let configuration = AgentConfiguration()
-
-        #expect(configuration.recording.level == .full)
-        #expect(configuration.transcripts.location == .project)
-        #expect(configuration.profile.name == nil)
-        #expect(!configuration.profile.standard.isEmpty)
-        #expect(!configuration.profile.flash.isEmpty)
-        #expect(!configuration.profile.embedding.isEmpty)
-    }
-
-    /// A project-layer key overrides the same user-layer key. A user-layer
-    /// key the project does not name survives: the merge is at key level.
-    @Test func projectKeyOverridesUserKeyAtKeyLevel() throws {
-        let fixture = Fixture()
-        fixture.writeConfig(
-            """
-            recording:
-              level: off
-            transcripts:
-              location: home
-            """, in: fixture.userDirectory)
-        fixture.writeConfig(
-            """
-            recording:
-              level: full
-            """, in: fixture.projectDirectory)
-
-        let loaded = try fixture.makeLoader().load()
-
-        #expect(loaded.configuration.recording.level == .full)
-        #expect(loaded.configuration.transcripts.location == .home)
-        #expect(loaded.warnings.isEmpty)
-    }
-
-    // MARK: - The builtin default models
-
-    /// The empty stack — no `config.yaml` in any layer — gives the three
-    /// model references of cli-plan.md §7 exactly. This is what a person
-    /// gets on a first run with no configuration, so a wrong id here stops
-    /// that run.
-    @Test func theEmptyStackGivesTheThreeDefaultModels() throws {
-        let fixture = Fixture()
-
-        let profile = try fixture.makeLoader().load().configuration.profile
-
-        #expect(profile.standard.map(\.stringValue) == [Self.defaultStandardModel])
-        #expect(profile.flash.map(\.stringValue) == [Self.defaultFlashModel])
-        #expect(profile.embedding.map(\.stringValue) == [Self.defaultEmbeddingModel])
-    }
-
-    /// The `standard` default decodes with MTP (multi-token prediction): its
-    /// target names the MTP head of the same build as its drafter. Router
-    /// loads a drafter only when the profile names it, so a default with no
-    /// drafter decodes plain. The `flash` and `embedding` defaults name no
-    /// drafter.
-    @Test func theStandardDefaultNamesItsMTPDrafter() throws {
-        let fixture = Fixture()
-
-        let profile = try fixture.makeLoader().load().configuration.profile
-
-        #expect(profile.standard.map { $0.drafter?.stringValue } == [Self.defaultStandardDrafter])
-        #expect(profile.flash.allSatisfy { $0.drafter == nil })
-        #expect(profile.embedding.allSatisfy { $0.drafter == nil })
-    }
-
-    /// No default TARGET names an MTP (multi-token prediction) repository.
-    /// An MTP head is a drafter and not a model: it goes in `drafter:` of a
-    /// reference, and the target is the plain build. This test keeps a later
-    /// edit from naming the head as the model by accident.
+    /// A loader over this fixture, with the user directory as the synced
+    /// root of a custom home.
     ///
-    /// A Hugging Face repository id keeps its case, and the marker is usually
-    /// upper case. But the case is the publisher's choice, not a rule, so the
-    /// match ignores case: a lower-case `mtp` names the same draft head.
-    @Test(arguments: ConfigurationLoaderTests.defaultModelReferences)
-    func noDefaultModelNamesAnMTPRepository(reference: FoundationModelsExtras.ModelRef) {
-        #expect(!Self.namesMultiTokenPredictionRepository(reference.stringValue))
-    }
-
-    /// The MTP check reads the marker as a word of the id, wherever the word
-    /// stands, and it reads no bare `mtp` inside a word.
-    ///
-    /// The test above runs the check over the builtin defaults, and no default
-    /// holds the marker. That test thus cannot show that the check finds a
-    /// marker, or that the check accepts an id it must accept. This test shows
-    /// both answers, over each position the marker word can take.
-    @Test(arguments: ConfigurationLoaderTests.multiTokenPredictionExamples)
-    func theMTPCheckReadsTheMarkerAsAWordOfTheId(
-        identifier: String, namesADraftHead: Bool
-    ) {
-        #expect(Self.namesMultiTokenPredictionRepository(identifier) == namesADraftHead)
-    }
-
-    /// Tells if `identifier` names a multi-token-prediction repository.
-    ///
-    /// One rule reads the marker: `MTP` is a word of the id. A word opens at
-    /// the start of the id, after a hyphen, or after the owner separator; it
-    /// closes at the end of the id or before a hyphen. The rule holds wherever
-    /// the word stands — at the start of the name, in the middle, at the end,
-    /// as the whole name, and in an id that has no owner separator.
-    ///
-    /// The rule keeps the marker a word, thus a bare `mtp` inside a word, as in
-    /// `Qwen3-mtprime-4bit`, does not match, and the check accepts an id it
-    /// must accept. The owner separator opens a word but does not close one,
-    /// thus an owner whose whole name is `mtp` names a publisher, not a draft
-    /// head.
-    ///
-    /// The case is the publisher's choice, not a rule, thus the match ignores
-    /// case.
-    ///
-    /// - Parameter identifier: The model id to read.
-    /// - Returns: `true` when the id names a draft head.
-    private static func namesMultiTokenPredictionRepository(_ identifier: String) -> Bool {
-        var searchStart = identifier.startIndex
-
-        while let marker = identifier.range(
-            of: multiTokenPredictionMarker,
-            options: .caseInsensitive,
-            range: searchStart..<identifier.endIndex)
-        {
-            if isAWord(marker, ofIdentifier: identifier) { return true }
-            searchStart = identifier.index(after: marker.lowerBound)
-        }
-
-        return false
-    }
-
-    /// Tells if `range` covers a whole word of the model id `identifier`.
-    ///
-    /// - Parameters:
-    ///   - range: The part of the id to read.
-    ///   - identifier: The model id that holds `range`.
-    /// - Returns: `true` when a word opener or the start of the id stands
-    ///   before `range`, and a word separator or the end of the id stands
-    ///   after it.
-    private static func isAWord(
-        _ range: Range<String.Index>, ofIdentifier identifier: String
-    ) -> Bool {
-        let opensAWord =
-            range.lowerBound == identifier.startIndex
-            || modelIdentifierWordOpeners.contains(
-                identifier[identifier.index(before: range.lowerBound)])
-        let closesAWord =
-            range.upperBound == identifier.endIndex
-            || identifier[range.upperBound] == modelIdentifierWordSeparator
-
-        return opensAWord && closesAWord
-    }
-
-    /// Each default id has the shape `owner/name`: two parts, each one not
-    /// empty, and no space in the id. This is the cheap half of the doctor's
-    /// model check, and it is available now.
-    @Test(arguments: ConfigurationLoaderTests.defaultModelReferences)
-    func everyDefaultModelIdHasTheOwnerNameShape(reference: FoundationModelsExtras.ModelRef) {
-        let identifier = reference.stringValue
-
-        let parts = identifier.split(
-            separator: Self.modelOwnerSeparator, omittingEmptySubsequences: false)
-        let holdsWhitespace = identifier.contains(where: \.isWhitespace)
-
-        #expect(parts.count == Self.modelIdentifierPartCount)
-        #expect(parts.allSatisfy { !$0.isEmpty })
-        #expect(!holdsWhitespace)
-    }
-
-    /// The `standard` slot default of the builtin configuration.
-    private static let defaultStandardModel = "mlx-community/Qwen3.8-27B-4bit"
-
-    /// The MTP drafter of the `standard` slot default.
-    private static let defaultStandardDrafter = "mlx-community/Qwen3.8-27B-MTP-4bit"
-
-    /// The `flash` slot default of the builtin configuration.
-    private static let defaultFlashModel = "mlx-community/Qwen3-4B-4bit"
-
-    /// The `embedding` slot default of the builtin configuration.
-    private static let defaultEmbeddingModel = "erjigit17/embeddinggemma-300m-ane-coreml"
-
-    /// Every model reference the builtin defaults name, over the three slots.
-    private static var defaultModelReferences: [ModelRef] {
-        let profile = AgentConfiguration().profile
-        return profile.standard + profile.flash + profile.embedding
-    }
-
-    /// The word that marks a multi-token-prediction repository.
-    private static let multiTokenPredictionMarker = "MTP"
-
-    /// Model ids the MTP check reads, and the answer each one must get.
-    ///
-    /// The first ten hold the marker as a word, and they cover each position
-    /// the word can take, in upper case and in lower case: in the middle of the
-    /// name, at the end of the id, at the start of the name, as the whole name,
-    /// and at the start of an id that has no owner separator. `mtprime/MTP-4bit`
-    /// holds the letters twice, and only the second holding is a word, thus it
-    /// shows that the check reads the id to its end.
-    ///
-    /// The last seven hold no marker word, and each half of the rule is
-    /// necessary to keep them out. `Qwen3-mtprime-4bit` holds a bare `mtp`
-    /// inside a word and `mtprime-4bit` starts with those letters, thus a rule
-    /// that does not close the word admits them. `Qwen3-Xmtp-4bit` ends a word
-    /// with those letters, thus a rule that does not open the word admits it.
-    /// In `mtp/Qwen3-30B-4bit` and `MTP/Qwen3-30B-4bit` the whole owner is the
-    /// marker. The owner separator opens a word, but it does not close one,
-    /// thus these two ids name a publisher and not a draft head. A rule that
-    /// closes a word at the owner separator too is symmetrical, and it admits
-    /// them. That change is one character, and it makes the check reject a
-    /// publisher it must accept. Both cases of the owner stand here, because
-    /// the check ignores case, thus each case must get the same answer.
-    /// The two builtin defaults beside them are ids the check reads every run.
-    private static let multiTokenPredictionExamples: [(String, Bool)] = [
-        ("mlx-community/Qwen3-30B-A3B-MTP-4bit", true),
-        ("mlx-community/Qwen3-30B-A3B-mtp-4bit", true),
-        ("mlx-community/Qwen3.5-9B-MTP", true),
-        ("mlx-community/Qwen3.5-9B-mtp", true),
-        ("mlx-community/MTP-Qwen3-30B-4bit", true),
-        ("mlx-community/mtp-Qwen3-30B-4bit", true),
-        ("mlx-community/MTP", true),
-        ("mlx-community/mtp", true),
-        ("MTP-Qwen3-4bit", true),
-        ("mtprime/MTP-4bit", true),
-        ("mlx-community/Qwen3-mtprime-4bit", false),
-        ("mlx-community/mtprime-4bit", false),
-        ("mlx-community/Qwen3-Xmtp-4bit", false),
-        ("mtp/Qwen3-30B-4bit", false),
-        ("MTP/Qwen3-30B-4bit", false),
-        (defaultStandardModel, false),
-        (defaultEmbeddingModel, false),
-    ]
-
-    /// The separator between the owner and the name of a model id.
-    private static let modelOwnerSeparator: Character = "/"
-
-    /// The separator between the words of a model name.
-    private static let modelIdentifierWordSeparator: Character = "-"
-
-    /// The characters that open a word of a model id. The owner separator opens
-    /// the name, thus the first word of the name stands after it.
-    private static let modelIdentifierWordOpeners: Set<Character> = [
-        modelIdentifierWordSeparator, modelOwnerSeparator,
-    ]
-
-    /// The count of parts an `owner/name` model id has.
-    private static let modelIdentifierPartCount = 2
-
-    // MARK: - The theme
-
-    /// With no file, the theme is `system`.
-    @Test func theThemeDefaultsToSystem() throws {
-        let loaded = try Fixture().makeLoader().load()
-
-        #expect(loaded.configuration.theme == .system)
-    }
-
-    /// `theme` is a top-level string. It gives no unknown-section warning,
-    /// and the source map names the layer that set it.
-    @Test func aProjectThemeLoadsAsATopLevelString() throws {
-        let loaded = try Fixture().loadProjectConfig("theme: dark\n")
-
-        #expect(loaded.configuration.theme == .dark)
-        #expect(loaded.warnings.isEmpty)
-        #expect(loaded.sources["theme"] == .project)
-    }
-
-    /// A choice reads in any case, because a person sees `System`, `Light`
-    /// and `Dark` in a menu.
-    @Test(arguments: [("System", AgentTheme.system), ("LIGHT", .light), ("Dark", .dark)])
-    func aThemeReadsInAnyCase(text: String, theme: AgentTheme) throws {
-        let loaded = try Fixture().loadProjectConfig("theme: \(text)\n")
-
-        #expect(loaded.configuration.theme == theme)
-    }
-
-    /// A value that is not a choice is an error that names each choice.
-    @Test func anUnknownThemeIsAnErrorThatNamesTheChoices() throws {
-        let fixture = Fixture()
-        fixture.writeConfig("theme: blue\n", in: fixture.projectDirectory)
-
-        let error = #expect(throws: (any Error).self) {
-            try fixture.makeLoader().load()
-        }
-
-        let message = String(describing: error)
-        #expect(message.contains("blue"))
-        for theme in AgentTheme.allCases {
-            #expect(message.contains(theme.rawValue))
-        }
-    }
-
-    /// `theme` is one string, so a mapping body is an error.
-    @Test func aThemeMappingIsAnError() throws {
-        let fixture = Fixture()
-        fixture.writeConfig("theme:\n  name: dark\n", in: fixture.projectDirectory)
-
-        #expect(throws: (any Error).self) {
-            try fixture.makeLoader().load()
-        }
-    }
-
-    // MARK: - The per-key source map
-
-    /// The source map names the layer that set each key, by dotted key
-    /// path: the project layer wins the key both layers set, the user
-    /// layer keeps the key only it set, and a key no layer set is absent,
-    /// which is the builtin default (cli-plan.md §5.11).
-    @Test func sourceMapNamesTheLayerThatSetEachKey() throws {
-        let fixture = Fixture()
-        fixture.writeConfig(
-            """
-            recording:
-              level: off
-            transcripts:
-              location: home
-            """, in: fixture.userDirectory)
-        fixture.writeConfig(
-            """
-            recording:
-              level: full
-            """, in: fixture.projectDirectory)
-
-        let loaded = try fixture.makeLoader().load()
-
-        #expect(loaded.sources["recording.level"] == .project)
-        #expect(loaded.sources["transcripts.location"] == .user)
-        #expect(loaded.sources["compaction.trigger"] == nil)
-        #expect(loaded.sources["profile"] == nil)
-    }
-
-    /// Every `DotfolderStack.Source` has its own layer name, the
-    /// marketplace layer included, so a report can name the layer a key
-    /// came from without a fallback.
-    @Test(arguments: [
-        (DotfolderStack.Source.defaults, ConfigurationLayerName.defaults),
-        (DotfolderStack.Source.user, ConfigurationLayerName.user),
-        (DotfolderStack.Source.project, ConfigurationLayerName.project),
-        (DotfolderStack.Source.marketplace, ConfigurationLayerName.marketplace),
-    ])
-    func eachSourceNamesItsOwnLayer(source: DotfolderStack.Source, name: ConfigurationLayerName) {
-        #expect(ConfigurationLayerName(source) == name)
-    }
-
-    /// With no file in any layer the source map is empty: every key is
-    /// builtin.
-    @Test func noFilesGiveAnEmptySourceMap() throws {
-        let fixture = Fixture()
-
-        let loaded = try fixture.makeLoader().load()
-
-        #expect(loaded.sources.isEmpty)
-    }
-
-    /// Two loaders with different working directories resolve different
-    /// project layers, so two sessions in two repos see their own config.
-    @Test func differentWorkingDirectoriesSeeDifferentProjectLayers() throws {
-        let first = Fixture()
-        let second = Fixture()
-        first.writeConfig("recording:\n  level: off\n", in: first.projectDirectory)
-        second.writeConfig("transcripts:\n  location: home\n", in: second.projectDirectory)
-
-        let firstLoaded = try first.makeLoader().load()
-        let secondLoaded = try second.makeLoader().load()
-
-        #expect(firstLoaded.configuration.recording.level == .off)
-        #expect(firstLoaded.configuration.transcripts.location == .project)
-        #expect(secondLoaded.configuration.recording.level == .full)
-        #expect(secondLoaded.configuration.transcripts.location == .home)
-    }
-
-    // MARK: - The user layer location
-
-    /// The loader of the XDG home of `environment`, over `fixture`.
-    ///
-    /// - Parameters:
-    ///   - fixture: The tree whose working directory roots the project layer.
-    ///   - environment: The environment of the XDG home and of the stack.
-    /// - Returns: The loader.
-    /// - Throws: `DotfolderNameError`.
-    private static func makeXDGLoader(
-        over fixture: Fixture, environment: [String: String]
-    ) throws -> ConfigurationLoader {
-        let name = try DotfolderName(agentName)
-        return ConfigurationLoader(
-            name: name,
-            workingDirectory: fixture.workingDirectory,
-            home: .makeXDG(name: name, environment: environment),
-            environment: environment)
-    }
-
-    /// With the XDG home, an absolute `$XDG_CONFIG_HOME` moves the user
-    /// layer to `$XDG_CONFIG_HOME/<name>/`, and a file there loads.
-    @Test func absoluteXDGConfigHomeIsHonored() throws {
-        let fixture = Fixture()
-        let xdgHome = fixture.root.appendingPathComponent("xdg", isDirectory: true)
-        let xdgUserDirectory = xdgHome.appendingPathComponent(Self.agentName, isDirectory: true)
-        fixture.writeConfig("recording:\n  level: off\n", in: xdgUserDirectory)
-        let loader = try Self.makeXDGLoader(over: fixture, environment: ["XDG_CONFIG_HOME": xdgHome.path])
-
-        let loaded = try loader.load()
-
-        #expect(Self.userLayerPath(of: loader) == xdgUserDirectory.path)
-        #expect(loaded.configuration.recording.level == .off)
-    }
-
-    /// With the XDG home, a relative `$XDG_CONFIG_HOME` is invalid and
-    /// ignored, and an unset one is absent: both give `~/.config/<name>/`.
-    @Test(arguments: [["XDG_CONFIG_HOME": "relative/config"], [:]])
-    func relativeOrUnsetXDGConfigHomeFallsBackToHomeConfig(environment: [String: String])
-        throws
+    /// - Parameter secretStore: The store that gives the value of each
+    ///   secret reference. The default is an empty in-memory store, so
+    ///   no load touches the real Keychain.
+    func makeLoader(secretStore: any SecretStore = InMemorySecretStore()) throws
+      -> ConfigurationLoader
     {
-        let fixture = Fixture()
-        let loader = try Self.makeXDGLoader(over: fixture, environment: environment)
-        let expected = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config", isDirectory: true)
-            .appendingPathComponent(Self.agentName, isDirectory: true)
-
-        #expect(Self.userLayerPath(of: loader) == expected.path)
+      try ConfigurationLoader(
+        name: DotfolderName(ConfigurationLoaderTests.agentName),
+        workingDirectory: workingDirectory,
+        home: AgentHomeFixture.make(label: "ConfigurationLoaderTests", synced: userDirectory),
+        environment: [:],
+        secretStore: secretStore)
     }
 
-    /// The project layer is `<workingDirectory>/.<name>/`, with the dot.
-    @Test func projectLayerIsTheDottedNameUnderTheWorkingDirectory() throws {
-        let fixture = Fixture()
-
-        let loader = try fixture.makeLoader()
-
-        let projectLayer = loader.stack.layers.first { $0.source == .project }
-        #expect(projectLayer?.root.path == fixture.projectDirectory.path)
-        #expect(loader.stack.layers.map(\.source) == [.user, .project])
-    }
-
-    // MARK: - Schema errors and warnings
-
-    /// `recording.level` accepts only `off` and `full`. Any other value is an
-    /// error whose message names the two valid ones.
-    @Test func metadataRecordingLevelIsRejectedNamingTheValidLevels() throws {
-        let fixture = Fixture()
-        fixture.writeConfig("recording:\n  level: metadata\n", in: fixture.projectDirectory)
-
-        let error = #expect(throws: (any Error).self) {
-            try fixture.makeLoader().load()
-        }
-
-        let message = String(describing: error)
-        #expect(message.contains("metadata"))
-        #expect(message.contains("off"))
-        #expect(message.contains("full"))
-    }
-
-    /// A `permissions:` section is unknown at the top level: it gives a
-    /// warning, not an error, and the rest still decodes to the defaults.
-    @Test func permissionsSectionGivesTheUnknownSectionWarning() throws {
-        let fixture = Fixture()
-        fixture.writeConfig(
-            """
-            permissions:
-              allow:
-                - "git status"
-            """, in: fixture.projectDirectory)
-
-        let loader = try fixture.makeLoader()
-        let loaded = try loader.load()
-
-        #expect(loaded.configuration == loader.builtinConfiguration)
-        #expect(loaded.warnings == [.unknownSection(name: "permissions")])
-        #expect(loaded.warnings[0].description.contains("permissions"))
-    }
-
-    // MARK: - The tools that are always on
-
-    /// One `tools:` entry that tries to turn off a tool that is always on,
-    /// and the tool key that the warning names.
-    struct AlwaysOnEntry: Sendable, CustomTestStringConvertible {
-        /// The entry under `tools:`, with no indent on its first line.
-        let entry: String
-
-        /// The key of the tool under `tools:`.
-        let tool: String
-
-        /// The name of the case in the test report.
-        var testDescription: String { entry }
-    }
-
-    /// Each entry that tries to turn off the skills tool or the `agents`
-    /// tool.
-    static let alwaysOnOffEntries = [
-        AlwaysOnEntry(entry: "skills: false", tool: "skills"),
-        AlwaysOnEntry(entry: "agents: false", tool: "agents"),
-        AlwaysOnEntry(entry: "agents:\n    enabled: false", tool: "agents"),
-    ]
-
-    /// An entry that tries to turn off a tool that is always on loads. It
-    /// gives one `cannotDisable` warning that names the tool, and the
-    /// configuration is the builtin configuration.
-    @Test(arguments: alwaysOnOffEntries)
-    func anEntryThatTurnsOffAnAlwaysOnToolGivesTheCannotDisableWarning(
-        entry: AlwaysOnEntry
-    ) throws {
-        let fixture = Fixture()
-        fixture.writeConfig("tools:\n  \(entry.entry)\n", in: fixture.projectDirectory)
-        let loader = try fixture.makeLoader()
-
-        let loaded = try loader.load()
-
-        #expect(loaded.warnings == [.cannotDisable(section: entry.tool)])
-        #expect(loaded.warnings[0].description.contains("tools.\(entry.tool)"))
-        #expect(loaded.configuration == loader.builtinConfiguration)
-    }
-
-    /// An entry that keeps an always-on tool on, and an empty marketplace
-    /// list, give no warning.
-    @Test(arguments: [
-        "skills: true", "skills:\n    marketplaces: []", "agents: true",
-        "agents:\n    enabled: true",
-    ])
-    func anEntryThatKeepsAnAlwaysOnToolOnGivesNoWarning(entry: String) throws {
-        let loaded = try Fixture().loadProjectConfig("tools:\n  \(entry)\n")
-
-        #expect(loaded.warnings.isEmpty)
-    }
-
-    /// A `cannotDisable` warning writes one `warning` record, with the
-    /// dotted tool section in its metadata.
-    @Test func theCannotDisableWarningWritesOneWarningWithTheToolSectionInMetadata() async throws {
-        let fixture = Fixture()
-        fixture.writeConfig("tools:\n  skills: false\n", in: fixture.projectDirectory)
-
-        let records = try await TelemetryCapture.run(forbidding: []) { context in
-            _ = try fixture.makeLoader().load()
-            return context.logRecords
-        }
-
-        let sectionKey = ACPAgentTelemetry.LogMetadataKey.configSection
-        let sectionRecords = records.filter { $0.metadata[sectionKey] != nil }
-        #expect(sectionRecords.count == 1)
-        let record = try #require(sectionRecords.first)
-        #expect(record.level == .warning)
-        #expect(record.metadata[sectionKey] == .string("tools.skills"))
-    }
-
-    // MARK: - The warning log record
-
-    /// The label of each logger of the configuration loader.
-    private static let configurationLoggerLabel = "FoundationModelsACPAgent.Configuration"
-
-    /// The value inside the unknown section of the log case. A configuration
-    /// value can be a secret, so no record may hold it.
-    private static let unknownSectionValue = "configuration-loader-unknown-section-value"
-
-    /// An unknown section writes one `warning` record. The section name is in
-    /// the metadata of the record, and no record holds the value in the
-    /// section.
-    @Test func anUnknownSectionWritesOneWarningWithTheSectionNameInMetadata() async throws {
-        let fixture = Fixture()
-        fixture.writeConfig(
-            """
-            permissions:
-              allow:
-                - "\(Self.unknownSectionValue)"
-            """, in: fixture.projectDirectory)
-
-        let records = try await TelemetryCapture.run(forbidding: [Self.unknownSectionValue]) {
-            context in
-            _ = try fixture.makeLoader().load()
-            return context.logRecords
-        }
-
-        let sectionKey = ACPAgentTelemetry.LogMetadataKey.configSection
-        let sectionRecords = records.filter { $0.metadata[sectionKey] != nil }
-        #expect(sectionRecords.count == 1)
-        let record = try #require(sectionRecords.first)
-        #expect(record.level == .warning)
-        #expect(record.metadata[sectionKey] == .string("permissions"))
-    }
-
-    /// The logger of the configuration loader has the module label and the
-    /// category of the configuration.
-    @Test func configurationLoggerHasTheModuleLabel() {
-        #expect(ACPAgentTelemetry.logger(.configuration).label == Self.configurationLoggerLabel)
-    }
-
-    /// An unknown key inside a known section is an error that names the
-    /// section and the key.
-    @Test func unknownKeyInsideKnownSectionIsAnError() throws {
-        let fixture = Fixture()
-        fixture.writeConfig("recording:\n  levle: full\n", in: fixture.userDirectory)
-
-        #expect(throws: ConfigurationError.unknownKey(section: "recording", key: "levle")) {
-            try fixture.makeLoader().load()
-        }
-    }
-
-    /// A document whose root is not a mapping cannot hold sections.
-    @Test func nonMappingDocumentIsAnError() throws {
-        let fixture = Fixture()
-        fixture.writeConfig("- just\n- a\n- list\n", in: fixture.projectDirectory)
-
-        #expect(throws: ConfigurationError.documentNotAMapping) {
-            try fixture.makeLoader().load()
-        }
-    }
-
-    /// The `tools` and `sandbox` sections decode their bodies through the
-    /// codec: a `shell: false` disables the tool and
-    /// an `extraWritePaths` entry lands in the sandbox section.
-    @Test func toolsAndSandboxBodiesDecodeThroughTheCodec() throws {
-        let fixture = Fixture()
-
-        let loaded = try fixture.loadProjectConfig(
-            """
-            tools:
-              shell: false
-            sandbox:
-              extraWritePaths:
-                - /tmp/cache
-            """)
-
-        #expect(loaded.configuration.tools.shell == .disabled)
-        #expect(loaded.configuration.sandbox.extraWritePaths == ["/tmp/cache"])
-        #expect(loaded.warnings.isEmpty)
-    }
-
-    // MARK: - Section values
-
-    /// `transcripts.location` reads `project`, `home`, or an absolute path.
-    @Test func transcriptLocationReadsTheThreeForms() throws {
-        let fixture = Fixture()
-        fixture.writeConfig(
-            "transcripts:\n  location: /var/transcripts\n", in: fixture.projectDirectory)
-
-        let loaded = try fixture.makeLoader().load()
-
-        #expect(
-            loaded.configuration.transcripts.location
-                == .path(URL(fileURLWithPath: "/var/transcripts", isDirectory: true)))
-    }
-
-    /// A relative `transcripts.location` is none of the three forms.
-    @Test func relativeTranscriptLocationIsRejected() throws {
-        let fixture = Fixture()
-        fixture.writeConfig("transcripts:\n  location: nearby\n", in: fixture.projectDirectory)
-
-        let error = #expect(throws: (any Error).self) {
-            try fixture.makeLoader().load()
-        }
-
-        let message = String(describing: error)
-        #expect(message.contains("nearby"))
-        #expect(message.contains("project"))
-        #expect(message.contains("home"))
-    }
-
-    /// The `profile` and `compaction` sections decode their keys, and a key
-    /// that is not set keeps its default.
-    @Test func profileAndCompactionSectionsDecode() throws {
-        let fixture = Fixture()
-        fixture.writeConfig(
-            """
-            profile:
-              name: pair
-              standard:
-                - org/model-a
-                - org/model-b
-            compaction:
-              trigger: \(Self.configuredTrigger)
-              toolOutputLimit: \(Self.configuredToolOutputLimit)
-            """, in: fixture.projectDirectory)
-
-        let loaded = try fixture.makeLoader().load()
-        let defaults = AgentConfiguration()
-
-        #expect(loaded.configuration.profile.name == "pair")
-        #expect(loaded.configuration.profile.standard == ["org/model-a", "org/model-b"])
-        #expect(loaded.configuration.profile.flash == defaults.profile.flash)
-        #expect(loaded.configuration.compaction.trigger == Self.configuredTrigger)
-        #expect(loaded.configuration.compaction.target == defaults.compaction.target)
-        #expect(loaded.configuration.compaction.toolOutputLimit == Self.configuredToolOutputLimit)
-        #expect(loaded.configuration.compaction.hardCeiling == nil)
-    }
-
-    /// The `repetition` section decodes its keys into Router's
-    /// `RepetitionDetection`, and a key that is not set keeps Router's
-    /// default.
-    @Test func theRepetitionSectionDecodesAndKeepsRouterDefaults() throws {
-        let fixture = Fixture()
-
-        let loaded = try fixture.loadProjectConfig(
-            """
-            repetition:
-              isEnabled: false
-              windowTokens: \(Self.configuredWindowTokens)
-            """)
-
-        let detection = loaded.configuration.repetition.detection
-        #expect(!detection.isEnabled)
-        #expect(detection.windowTokens == Self.configuredWindowTokens)
-        #expect(detection.minimumLineLength == RepetitionDetection.defaultMinimumLineLength)
-        #expect(detection.recoveriesPerAnswer == RepetitionDetection.defaultRecoveriesPerAnswer)
-        #expect(detection.passTokenLimit == RepetitionDetection.defaultPassTokenLimit)
-    }
-
-    /// The line-shape and reasoning keys of the `repetition` section decode
-    /// into Router's `RepetitionDetection` (task ^7fsfw7y).
-    @Test func theLineShapeAndReasoningKeysDecodeIntoTheDetection() throws {
-        let loaded = try Fixture().loadProjectConfig(
-            """
-            repetition:
-              comparesLineShapes: false
-              shortLineRepeatThreshold: \(Self.configuredShortLineRepeatThreshold)
-              reasoningTokenLimit: \(Self.configuredReasoningTokenLimit)
-            """)
-
-        let detection = loaded.configuration.repetition.detection
-        #expect(!detection.comparesLineShapes)
-        #expect(detection.shortLineRepeatThreshold == Self.configuredShortLineRepeatThreshold)
-        #expect(detection.reasoningTokenLimit == Self.configuredReasoningTokenLimit)
-    }
-
-    /// A `repetition` section without the line-shape and reasoning keys keeps
-    /// Router's default for each of them. An absent `reasoningTokenLimit` is
-    /// Router's limit, not "no limit".
-    @Test func absentLineShapeAndReasoningKeysKeepRouterDefaults() throws {
-        let loaded = try Fixture().loadProjectConfig(
-            """
-            repetition:
-              windowTokens: \(Self.configuredWindowTokens)
-            """)
-
-        let detection = loaded.configuration.repetition.detection
-        #expect(detection.comparesLineShapes == RepetitionDetection.defaultComparesLineShapes)
-        #expect(
-            detection.shortLineRepeatThreshold == RepetitionDetection.defaultShortLineRepeatThreshold)
-        #expect(detection.reasoningTokenLimit == RepetitionDetection.defaultReasoningTokenLimit)
-    }
-
-    /// `repetition.reasoningTokenLimit: null` gives a detection with no
-    /// reasoning token limit.
-    @Test func aNullReasoningTokenLimitGivesNoLimit() throws {
-        let loaded = try Fixture().loadProjectConfig(
-            """
-            repetition:
-              reasoningTokenLimit: null
-            """)
-
-        #expect(loaded.configuration.repetition.detection.reasoningTokenLimit == nil)
-    }
-
-    /// `repetition.identicalToolCallLimit` decodes into Router's
-    /// `RepetitionDetection` (Router task ^8eq31j0).
-    @Test func theIdenticalToolCallLimitDecodesIntoTheDetection() throws {
-        let loaded = try Fixture().loadProjectConfig(
-            """
-            repetition:
-              identicalToolCallLimit: \(Self.configuredIdenticalToolCallLimit)
-            """)
-
-        #expect(
-            loaded.configuration.repetition.detection.identicalToolCallLimit
-                == Self.configuredIdenticalToolCallLimit)
-    }
-
-    /// An absent `identicalToolCallLimit` keeps Router's default limit, and a
-    /// `null` gives no limit.
-    @Test func anAbsentIdenticalToolCallLimitKeepsTheDefaultAndNullGivesNoLimit() throws {
-        let absent = try Fixture().loadProjectConfig(
-            """
-            repetition:
-              windowTokens: \(Self.configuredWindowTokens)
-            """)
-        let null = try Fixture().loadProjectConfig(
-            """
-            repetition:
-              identicalToolCallLimit: null
-            """)
-
-        #expect(
-            absent.configuration.repetition.detection.identicalToolCallLimit
-                == RepetitionDetection.defaultIdenticalToolCallLimit)
-        #expect(null.configuration.repetition.detection.identicalToolCallLimit == nil)
-    }
-
-    /// With no `repetition` section, the detection is Router's default one.
-    @Test func anAbsentRepetitionSectionGivesRouterDefaultDetection() throws {
-        let loaded = try Fixture().makeLoader().load()
-
-        #expect(loaded.configuration.repetition.detection == RepetitionDetection())
-    }
-
-    /// A key in the `repetition` section that Router does not name is an
-    /// error, as in each other checked section.
-    @Test func anUnknownRepetitionKeyIsAnError() throws {
-        let fixture = Fixture()
-        fixture.writeConfig("repetition:\n  windowSize: 10\n", in: fixture.projectDirectory)
-
-        #expect(throws: ConfigurationError.unknownKey(section: "repetition", key: "windowSize")) {
-            try fixture.makeLoader().load()
-        }
-    }
-
-    /// A project `config.yaml` that names a model for each of the three slots
-    /// wins over each builtin default (cli-plan.md §7).
+    /// Writes `contents` as the project-layer `config.yaml` and loads
+    /// the stack — the one-call path the codec suites decode through.
     ///
-    /// The section test above writes the `standard` slot alone, thus it shows
-    /// the override for one slot of three. This test writes all three slots and
-    /// reads all three values back, thus each default is shown to lose.
-    @Test func eachProfileSlotInTheProjectConfigWinsOverItsDefault() throws {
-        let fixture = Fixture()
+    /// - Parameters:
+    ///   - contents: The project `config.yaml`.
+    ///   - secretStore: The store that gives the value of each secret
+    ///     reference. The default is an empty in-memory store.
+    func loadProjectConfig(
+      _ contents: String, secretStore: any SecretStore = InMemorySecretStore()
+    ) throws -> LoadedConfiguration {
+      writeConfig(contents, in: projectDirectory)
+      return try makeLoader(secretStore: secretStore).load()
+    }
+  }
 
-        let loaded = try fixture.loadProjectConfig(
-            """
-            profile:
-              standard:
-                - \(Self.configuredStandardModel)
-              flash:
-                - \(Self.configuredFlashModel)
-              embedding:
-                - \(Self.configuredEmbeddingModel)
-            """)
+  // MARK: - Defaults and layering
 
-        let profile = loaded.configuration.profile
-        let defaults = AgentConfiguration().profile
-        #expect(profile.standard.map(\.stringValue) == [Self.configuredStandardModel])
-        #expect(profile.flash.map(\.stringValue) == [Self.configuredFlashModel])
-        #expect(profile.embedding.map(\.stringValue) == [Self.configuredEmbeddingModel])
-        #expect(profile.standard != defaults.standard)
-        #expect(profile.flash != defaults.flash)
-        #expect(profile.embedding != defaults.embedding)
+  /// With no config files, the loaded configuration is the builtin
+  /// configuration of the loader and there is no warning.
+  @Test func noFilesGiveTheInCodeDefaults() throws {
+    let fixture = Fixture()
+    let loader = try fixture.makeLoader()
+
+    let loaded = try loader.load()
+
+    #expect(loaded.configuration == loader.builtinConfiguration)
+    #expect(loaded.warnings.isEmpty)
+  }
+
+  /// The builtin configuration of a loader is the in-code default with
+  /// each default that the dotfolder name gives: the files tools exclude
+  /// the dotfolder `.<name>/`, and no other value changes.
+  @Test func theBuiltinConfigurationExcludesTheDotfolderFromTheFilesTools() throws {
+    var expected = AgentConfiguration()
+    expected.tools.files = .enabled(FilesToolOptions(exclude: [".\(Self.agentName)/"]))
+
+    #expect(try Fixture().makeLoader().builtinConfiguration == expected)
+  }
+
+  /// The in-code default values: recording is `full` and
+  /// transcripts are project-local.
+  @Test func inCodeDefaultsRecordFullTranscriptsInTheProject() {
+    let configuration = AgentConfiguration()
+
+    #expect(configuration.recording.level == .full)
+    #expect(configuration.transcripts.location == .project)
+    #expect(configuration.profile.name == nil)
+    #expect(!configuration.profile.standard.isEmpty)
+    #expect(!configuration.profile.flash.isEmpty)
+    #expect(!configuration.profile.embedding.isEmpty)
+  }
+
+  /// A project-layer key overrides the same user-layer key. A user-layer
+  /// key the project does not name survives: the merge is at key level.
+  @Test func projectKeyOverridesUserKeyAtKeyLevel() throws {
+    let fixture = Fixture()
+    fixture.writeConfig(
+      """
+      recording:
+        level: off
+      transcripts:
+        location: home
+      """, in: fixture.userDirectory)
+    fixture.writeConfig(
+      """
+      recording:
+        level: full
+      """, in: fixture.projectDirectory)
+
+    let loaded = try fixture.makeLoader().load()
+
+    #expect(loaded.configuration.recording.level == .full)
+    #expect(loaded.configuration.transcripts.location == .home)
+    #expect(loaded.warnings.isEmpty)
+  }
+
+  // MARK: - The builtin default models
+
+  /// The empty stack — no `config.yaml` in any layer — gives the three
+  /// model references of cli-plan.md §7 exactly. This is what a person
+  /// gets on a first run with no configuration, so a wrong id here stops
+  /// that run.
+  @Test func theEmptyStackGivesTheThreeDefaultModels() throws {
+    let fixture = Fixture()
+
+    let profile = try fixture.makeLoader().load().configuration.profile
+
+    #expect(profile.standard.map(\.stringValue) == [Self.defaultStandardModel])
+    #expect(profile.flash.map(\.stringValue) == [Self.defaultFlashModel])
+    #expect(profile.embedding.map(\.stringValue) == [Self.defaultEmbeddingModel])
+  }
+
+  /// The `standard` default decodes with MTP (multi-token prediction): its
+  /// target names the MTP head of the same build as its drafter. Router
+  /// loads a drafter only when the profile names it, so a default with no
+  /// drafter decodes plain. The `flash` and `embedding` defaults name no
+  /// drafter.
+  @Test func theStandardDefaultNamesItsMTPDrafter() throws {
+    let fixture = Fixture()
+
+    let profile = try fixture.makeLoader().load().configuration.profile
+
+    #expect(profile.standard.map { $0.drafter?.stringValue } == [Self.defaultStandardDrafter])
+    #expect(profile.flash.allSatisfy { $0.drafter == nil })
+    #expect(profile.embedding.allSatisfy { $0.drafter == nil })
+  }
+
+  /// No default TARGET names an MTP (multi-token prediction) repository.
+  /// An MTP head is a drafter and not a model: it goes in `drafter:` of a
+  /// reference, and the target is the plain build. This test keeps a later
+  /// edit from naming the head as the model by accident.
+  ///
+  /// A Hugging Face repository id keeps its case, and the marker is usually
+  /// upper case. But the case is the publisher's choice, not a rule, so the
+  /// match ignores case: a lower-case `mtp` names the same draft head.
+  @Test(arguments: ConfigurationLoaderTests.defaultModelReferences)
+  func noDefaultModelNamesAnMTPRepository(reference: FoundationModelsExtras.ModelRef) {
+    #expect(!Self.namesMultiTokenPredictionRepository(reference.stringValue))
+  }
+
+  /// The MTP check reads the marker as a word of the id, wherever the word
+  /// stands, and it reads no bare `mtp` inside a word.
+  ///
+  /// The test above runs the check over the builtin defaults, and no default
+  /// holds the marker. That test thus cannot show that the check finds a
+  /// marker, or that the check accepts an id it must accept. This test shows
+  /// both answers, over each position the marker word can take.
+  @Test(arguments: ConfigurationLoaderTests.multiTokenPredictionExamples)
+  func theMTPCheckReadsTheMarkerAsAWordOfTheId(
+    identifier: String, namesADraftHead: Bool
+  ) {
+    #expect(Self.namesMultiTokenPredictionRepository(identifier) == namesADraftHead)
+  }
+
+  /// Tells if `identifier` names a multi-token-prediction repository.
+  ///
+  /// One rule reads the marker: `MTP` is a word of the id. A word opens at
+  /// the start of the id, after a hyphen, or after the owner separator; it
+  /// closes at the end of the id or before a hyphen. The rule holds wherever
+  /// the word stands — at the start of the name, in the middle, at the end,
+  /// as the whole name, and in an id that has no owner separator.
+  ///
+  /// The rule keeps the marker a word, thus a bare `mtp` inside a word, as in
+  /// `Qwen3-mtprime-4bit`, does not match, and the check accepts an id it
+  /// must accept. The owner separator opens a word but does not close one,
+  /// thus an owner whose whole name is `mtp` names a publisher, not a draft
+  /// head.
+  ///
+  /// The case is the publisher's choice, not a rule, thus the match ignores
+  /// case.
+  ///
+  /// - Parameter identifier: The model id to read.
+  /// - Returns: `true` when the id names a draft head.
+  private static func namesMultiTokenPredictionRepository(_ identifier: String) -> Bool {
+    var searchStart = identifier.startIndex
+
+    while let marker = identifier.range(
+      of: multiTokenPredictionMarker,
+      options: .caseInsensitive,
+      range: searchStart..<identifier.endIndex)
+    {
+      if isAWord(marker, ofIdentifier: identifier) { return true }
+      searchStart = identifier.index(after: marker.lowerBound)
     }
 
-    /// The `compaction.trigger` the section test writes; it differs from the
-    /// default so the decode is observable.
-    private static let configuredTrigger = 0.7
+    return false
+  }
 
-    /// The `compaction.toolOutputLimit` the section test writes.
-    private static let configuredToolOutputLimit = 4000
+  /// Tells if `range` covers a whole word of the model id `identifier`.
+  ///
+  /// - Parameters:
+  ///   - range: The part of the id to read.
+  ///   - identifier: The model id that holds `range`.
+  /// - Returns: `true` when a word opener or the start of the id stands
+  ///   before `range`, and a word separator or the end of the id stands
+  ///   after it.
+  private static func isAWord(
+    _ range: Range<String.Index>, ofIdentifier identifier: String
+  ) -> Bool {
+    let opensAWord =
+      range.lowerBound == identifier.startIndex
+      || modelIdentifierWordOpeners.contains(
+        identifier[identifier.index(before: range.lowerBound)])
+    let closesAWord =
+      range.upperBound == identifier.endIndex
+      || identifier[range.upperBound] == modelIdentifierWordSeparator
 
-    /// The `repetition.windowTokens` the section test writes. It differs
-    /// from Router's default, thus the decode is observable.
-    private static let configuredWindowTokens = 512
+    return opensAWord && closesAWord
+  }
 
-    /// The `repetition.shortLineRepeatThreshold` the line-shape test writes.
-    /// It differs from Router's default, thus the decode is observable.
-    private static let configuredShortLineRepeatThreshold = 3
+  /// Each default id has the shape `owner/name`: two parts, each one not
+  /// empty, and no space in the id. This is the cheap half of the doctor's
+  /// model check, and it is available now.
+  @Test(arguments: ConfigurationLoaderTests.defaultModelReferences)
+  func everyDefaultModelIdHasTheOwnerNameShape(reference: FoundationModelsExtras.ModelRef) {
+    let identifier = reference.stringValue
 
-    /// The `repetition.reasoningTokenLimit` the line-shape test writes. It
-    /// differs from Router's default, thus the decode is observable.
-    private static let configuredReasoningTokenLimit = 4096
+    let parts = identifier.split(
+      separator: Self.modelOwnerSeparator, omittingEmptySubsequences: false)
+    let holdsWhitespace = identifier.contains(where: \.isWhitespace)
 
-    /// The `repetition.identicalToolCallLimit` the tool-call test writes. It
-    /// differs from Router's default, thus the decode is observable.
-    private static let configuredIdenticalToolCallLimit = 5
+    #expect(parts.count == Self.modelIdentifierPartCount)
+    #expect(parts.allSatisfy { !$0.isEmpty })
+    #expect(!holdsWhitespace)
+  }
 
-    /// The `profile.standard` model the override test writes. It differs from
-    /// the default, thus the override is observable.
-    private static let configuredStandardModel = "org/standard-override"
+  /// The `standard` slot default of the builtin configuration.
+  private static let defaultStandardModel = "mlx-community/Qwen3.8-27B-4bit"
 
-    /// The `profile.flash` model the override test writes.
-    private static let configuredFlashModel = "org/flash-override"
+  /// The MTP drafter of the `standard` slot default.
+  private static let defaultStandardDrafter = "mlx-community/Qwen3.8-27B-MTP-4bit"
 
-    /// The `profile.embedding` model the override test writes.
-    private static let configuredEmbeddingModel = "org/embedding-override"
+  /// The `flash` slot default of the builtin configuration.
+  private static let defaultFlashModel = "mlx-community/Qwen3-4B-4bit"
 
-    // MARK: - Helpers
+  /// The `embedding` slot default of the builtin configuration.
+  private static let defaultEmbeddingModel = "erjigit17/embeddinggemma-300m-ane-coreml"
 
-    /// The path of `loader`'s user layer root.
-    private static func userLayerPath(of loader: ConfigurationLoader) -> String? {
-        loader.stack.layers.first { $0.source == .user }?.root.path
+  /// Every model reference the builtin defaults name, over the three slots.
+  private static var defaultModelReferences: [ModelRef] {
+    let profile = AgentConfiguration().profile
+    return profile.standard + profile.flash + profile.embedding
+  }
+
+  /// The word that marks a multi-token-prediction repository.
+  private static let multiTokenPredictionMarker = "MTP"
+
+  /// Model ids the MTP check reads, and the answer each one must get.
+  ///
+  /// The first ten hold the marker as a word, and they cover each position
+  /// the word can take, in upper case and in lower case: in the middle of the
+  /// name, at the end of the id, at the start of the name, as the whole name,
+  /// and at the start of an id that has no owner separator. `mtprime/MTP-4bit`
+  /// holds the letters twice, and only the second holding is a word, thus it
+  /// shows that the check reads the id to its end.
+  ///
+  /// The last seven hold no marker word, and each half of the rule is
+  /// necessary to keep them out. `Qwen3-mtprime-4bit` holds a bare `mtp`
+  /// inside a word and `mtprime-4bit` starts with those letters, thus a rule
+  /// that does not close the word admits them. `Qwen3-Xmtp-4bit` ends a word
+  /// with those letters, thus a rule that does not open the word admits it.
+  /// In `mtp/Qwen3-30B-4bit` and `MTP/Qwen3-30B-4bit` the whole owner is the
+  /// marker. The owner separator opens a word, but it does not close one,
+  /// thus these two ids name a publisher and not a draft head. A rule that
+  /// closes a word at the owner separator too is symmetrical, and it admits
+  /// them. That change is one character, and it makes the check reject a
+  /// publisher it must accept. Both cases of the owner stand here, because
+  /// the check ignores case, thus each case must get the same answer.
+  /// The two builtin defaults beside them are ids the check reads every run.
+  private static let multiTokenPredictionExamples: [(String, Bool)] = [
+    ("mlx-community/Qwen3-30B-A3B-MTP-4bit", true),
+    ("mlx-community/Qwen3-30B-A3B-mtp-4bit", true),
+    ("mlx-community/Qwen3.5-9B-MTP", true),
+    ("mlx-community/Qwen3.5-9B-mtp", true),
+    ("mlx-community/MTP-Qwen3-30B-4bit", true),
+    ("mlx-community/mtp-Qwen3-30B-4bit", true),
+    ("mlx-community/MTP", true),
+    ("mlx-community/mtp", true),
+    ("MTP-Qwen3-4bit", true),
+    ("mtprime/MTP-4bit", true),
+    ("mlx-community/Qwen3-mtprime-4bit", false),
+    ("mlx-community/mtprime-4bit", false),
+    ("mlx-community/Qwen3-Xmtp-4bit", false),
+    ("mtp/Qwen3-30B-4bit", false),
+    ("MTP/Qwen3-30B-4bit", false),
+    (defaultStandardModel, false),
+    (defaultEmbeddingModel, false),
+  ]
+
+  /// The separator between the owner and the name of a model id.
+  private static let modelOwnerSeparator: Character = "/"
+
+  /// The separator between the words of a model name.
+  private static let modelIdentifierWordSeparator: Character = "-"
+
+  /// The characters that open a word of a model id. The owner separator opens
+  /// the name, thus the first word of the name stands after it.
+  private static let modelIdentifierWordOpeners: Set<Character> = [
+    modelIdentifierWordSeparator, modelOwnerSeparator,
+  ]
+
+  /// The count of parts an `owner/name` model id has.
+  private static let modelIdentifierPartCount = 2
+
+  // MARK: - The theme
+
+  /// With no file, the theme is `system`.
+  @Test func theThemeDefaultsToSystem() throws {
+    let loaded = try Fixture().makeLoader().load()
+
+    #expect(loaded.configuration.theme == .system)
+  }
+
+  /// `theme` is a top-level string. It gives no unknown-section warning,
+  /// and the source map names the layer that set it.
+  @Test func aProjectThemeLoadsAsATopLevelString() throws {
+    let loaded = try Fixture().loadProjectConfig("theme: dark\n")
+
+    #expect(loaded.configuration.theme == .dark)
+    #expect(loaded.warnings.isEmpty)
+    #expect(loaded.sources["theme"] == .project)
+  }
+
+  /// A choice reads in any case, because a person sees `System`, `Light`
+  /// and `Dark` in a menu.
+  @Test(arguments: [("System", AgentTheme.system), ("LIGHT", .light), ("Dark", .dark)])
+  func aThemeReadsInAnyCase(text: String, theme: AgentTheme) throws {
+    let loaded = try Fixture().loadProjectConfig("theme: \(text)\n")
+
+    #expect(loaded.configuration.theme == theme)
+  }
+
+  /// A value that is not a choice is an error that names each choice.
+  @Test func anUnknownThemeIsAnErrorThatNamesTheChoices() throws {
+    let fixture = Fixture()
+    fixture.writeConfig("theme: blue\n", in: fixture.projectDirectory)
+
+    let error = #expect(throws: (any Error).self) {
+      try fixture.makeLoader().load()
     }
+
+    let message = String(describing: error)
+    #expect(message.contains("blue"))
+    for theme in AgentTheme.allCases {
+      #expect(message.contains(theme.rawValue))
+    }
+  }
+
+  /// `theme` is one string, so a mapping body is an error.
+  @Test func aThemeMappingIsAnError() throws {
+    let fixture = Fixture()
+    fixture.writeConfig("theme:\n  name: dark\n", in: fixture.projectDirectory)
+
+    #expect(throws: (any Error).self) {
+      try fixture.makeLoader().load()
+    }
+  }
+
+  // MARK: - The per-key source map
+
+  /// The source map names the layer that set each key, by dotted key
+  /// path: the project layer wins the key both layers set, the user
+  /// layer keeps the key only it set, and a key no layer set is absent,
+  /// which is the builtin default (cli-plan.md §5.11).
+  @Test func sourceMapNamesTheLayerThatSetEachKey() throws {
+    let fixture = Fixture()
+    fixture.writeConfig(
+      """
+      recording:
+        level: off
+      transcripts:
+        location: home
+      """, in: fixture.userDirectory)
+    fixture.writeConfig(
+      """
+      recording:
+        level: full
+      """, in: fixture.projectDirectory)
+
+    let loaded = try fixture.makeLoader().load()
+
+    #expect(loaded.sources["recording.level"] == .project)
+    #expect(loaded.sources["transcripts.location"] == .user)
+    #expect(loaded.sources["compaction.trigger"] == nil)
+    #expect(loaded.sources["profile"] == nil)
+  }
+
+  /// Every `DotfolderStack.Source` has its own layer name, the
+  /// marketplace layer included, so a report can name the layer a key
+  /// came from without a fallback.
+  @Test(arguments: [
+    (DotfolderStack.Source.defaults, ConfigurationLayerName.defaults),
+    (DotfolderStack.Source.user, ConfigurationLayerName.user),
+    (DotfolderStack.Source.project, ConfigurationLayerName.project),
+    (DotfolderStack.Source.marketplace, ConfigurationLayerName.marketplace),
+  ])
+  func eachSourceNamesItsOwnLayer(source: DotfolderStack.Source, name: ConfigurationLayerName) {
+    #expect(ConfigurationLayerName(source) == name)
+  }
+
+  /// With no file in any layer the source map is empty: every key is
+  /// builtin.
+  @Test func noFilesGiveAnEmptySourceMap() throws {
+    let fixture = Fixture()
+
+    let loaded = try fixture.makeLoader().load()
+
+    #expect(loaded.sources.isEmpty)
+  }
+
+  /// Two loaders with different working directories resolve different
+  /// project layers, so two sessions in two repos see their own config.
+  @Test func differentWorkingDirectoriesSeeDifferentProjectLayers() throws {
+    let first = Fixture()
+    let second = Fixture()
+    first.writeConfig("recording:\n  level: off\n", in: first.projectDirectory)
+    second.writeConfig("transcripts:\n  location: home\n", in: second.projectDirectory)
+
+    let firstLoaded = try first.makeLoader().load()
+    let secondLoaded = try second.makeLoader().load()
+
+    #expect(firstLoaded.configuration.recording.level == .off)
+    #expect(firstLoaded.configuration.transcripts.location == .project)
+    #expect(secondLoaded.configuration.recording.level == .full)
+    #expect(secondLoaded.configuration.transcripts.location == .home)
+  }
+
+  // MARK: - The user layer location
+
+  /// The loader of the XDG home of `environment`, over `fixture`.
+  ///
+  /// - Parameters:
+  ///   - fixture: The tree whose working directory roots the project layer.
+  ///   - environment: The environment of the XDG home and of the stack.
+  /// - Returns: The loader.
+  /// - Throws: `DotfolderNameError`.
+  private static func makeXDGLoader(
+    over fixture: Fixture, environment: [String: String]
+  ) throws -> ConfigurationLoader {
+    let name = try DotfolderName(agentName)
+    return ConfigurationLoader(
+      name: name,
+      workingDirectory: fixture.workingDirectory,
+      home: .makeXDG(name: name, environment: environment),
+      environment: environment)
+  }
+
+  /// With the XDG home, an absolute `$XDG_CONFIG_HOME` moves the user
+  /// layer to `$XDG_CONFIG_HOME/<name>/`, and a file there loads.
+  @Test func absoluteXDGConfigHomeIsHonored() throws {
+    let fixture = Fixture()
+    let xdgHome = fixture.root.appendingPathComponent("xdg", isDirectory: true)
+    let xdgUserDirectory = xdgHome.appendingPathComponent(Self.agentName, isDirectory: true)
+    fixture.writeConfig("recording:\n  level: off\n", in: xdgUserDirectory)
+    let loader = try Self.makeXDGLoader(
+      over: fixture, environment: ["XDG_CONFIG_HOME": xdgHome.path])
+
+    let loaded = try loader.load()
+
+    #expect(Self.userLayerPath(of: loader) == xdgUserDirectory.path)
+    #expect(loaded.configuration.recording.level == .off)
+  }
+
+  /// With the XDG home, a relative `$XDG_CONFIG_HOME` is invalid and
+  /// ignored, and an unset one is absent: both give `~/.config/<name>/`.
+  @Test(arguments: [["XDG_CONFIG_HOME": "relative/config"], [:]])
+  func relativeOrUnsetXDGConfigHomeFallsBackToHomeConfig(environment: [String: String])
+    throws
+  {
+    let fixture = Fixture()
+    let loader = try Self.makeXDGLoader(over: fixture, environment: environment)
+    let expected = FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent(".config", isDirectory: true)
+      .appendingPathComponent(Self.agentName, isDirectory: true)
+
+    #expect(Self.userLayerPath(of: loader) == expected.path)
+  }
+
+  /// The project layer is `<workingDirectory>/.<name>/`, with the dot.
+  @Test func projectLayerIsTheDottedNameUnderTheWorkingDirectory() throws {
+    let fixture = Fixture()
+
+    let loader = try fixture.makeLoader()
+
+    let projectLayer = loader.stack.layers.first { $0.source == .project }
+    #expect(projectLayer?.root.path == fixture.projectDirectory.path)
+    #expect(loader.stack.layers.map(\.source) == [.user, .project])
+  }
+
+  // MARK: - Schema errors and warnings
+
+  /// `recording.level` accepts only `off` and `full`. Any other value is an
+  /// error whose message names the two valid ones.
+  @Test func metadataRecordingLevelIsRejectedNamingTheValidLevels() throws {
+    let fixture = Fixture()
+    fixture.writeConfig("recording:\n  level: metadata\n", in: fixture.projectDirectory)
+
+    let error = #expect(throws: (any Error).self) {
+      try fixture.makeLoader().load()
+    }
+
+    let message = String(describing: error)
+    #expect(message.contains("metadata"))
+    #expect(message.contains("off"))
+    #expect(message.contains("full"))
+  }
+
+  /// A `permissions:` section is unknown at the top level: it gives a
+  /// warning, not an error, and the rest still decodes to the defaults.
+  @Test func permissionsSectionGivesTheUnknownSectionWarning() throws {
+    let fixture = Fixture()
+    fixture.writeConfig(
+      """
+      permissions:
+        allow:
+          - "git status"
+      """, in: fixture.projectDirectory)
+
+    let loader = try fixture.makeLoader()
+    let loaded = try loader.load()
+
+    #expect(loaded.configuration == loader.builtinConfiguration)
+    #expect(loaded.warnings == [.unknownSection(name: "permissions")])
+    #expect(loaded.warnings[0].description.contains("permissions"))
+  }
+
+  // MARK: - The tools that are always on
+
+  /// One `tools:` entry that tries to turn off a tool that is always on,
+  /// and the tool key that the warning names.
+  struct AlwaysOnEntry: Sendable, CustomTestStringConvertible {
+    /// The entry under `tools:`, with no indent on its first line.
+    let entry: String
+
+    /// The key of the tool under `tools:`.
+    let tool: String
+
+    /// The name of the case in the test report.
+    var testDescription: String { entry }
+  }
+
+  /// Each entry that tries to turn off the skills tool or the `agents`
+  /// tool.
+  static let alwaysOnOffEntries = [
+    AlwaysOnEntry(entry: "skills: false", tool: "skills"),
+    AlwaysOnEntry(entry: "agents: false", tool: "agents"),
+    AlwaysOnEntry(entry: "agents:\n    enabled: false", tool: "agents"),
+  ]
+
+  /// An entry that tries to turn off a tool that is always on loads. It
+  /// gives one `cannotDisable` warning that names the tool, and the
+  /// configuration is the builtin configuration.
+  @Test(arguments: alwaysOnOffEntries)
+  func anEntryThatTurnsOffAnAlwaysOnToolGivesTheCannotDisableWarning(
+    entry: AlwaysOnEntry
+  ) throws {
+    let fixture = Fixture()
+    fixture.writeConfig("tools:\n  \(entry.entry)\n", in: fixture.projectDirectory)
+    let loader = try fixture.makeLoader()
+
+    let loaded = try loader.load()
+
+    #expect(loaded.warnings == [.cannotDisable(section: entry.tool)])
+    #expect(loaded.warnings[0].description.contains("tools.\(entry.tool)"))
+    #expect(loaded.configuration == loader.builtinConfiguration)
+  }
+
+  /// An entry that keeps an always-on tool on, and an empty marketplace
+  /// list, give no warning.
+  @Test(arguments: [
+    "skills: true", "skills:\n    marketplaces: []", "agents: true",
+    "agents:\n    enabled: true",
+  ])
+  func anEntryThatKeepsAnAlwaysOnToolOnGivesNoWarning(entry: String) throws {
+    let loaded = try Fixture().loadProjectConfig("tools:\n  \(entry)\n")
+
+    #expect(loaded.warnings.isEmpty)
+  }
+
+  /// A `cannotDisable` warning writes one `warning` record, with the
+  /// dotted tool section in its metadata.
+  @Test func theCannotDisableWarningWritesOneWarningWithTheToolSectionInMetadata() async throws {
+    let fixture = Fixture()
+    fixture.writeConfig("tools:\n  skills: false\n", in: fixture.projectDirectory)
+
+    let records = try await TelemetryCapture.run(forbidding: []) { context in
+      _ = try fixture.makeLoader().load()
+      return context.logRecords
+    }
+
+    let sectionKey = ACPAgentTelemetry.LogMetadataKey.configSection
+    let sectionRecords = records.filter { $0.metadata[sectionKey] != nil }
+    #expect(sectionRecords.count == 1)
+    let record = try #require(sectionRecords.first)
+    #expect(record.level == .warning)
+    #expect(record.metadata[sectionKey] == .string("tools.skills"))
+  }
+
+  // MARK: - The warning log record
+
+  /// The label of each logger of the configuration loader.
+  private static let configurationLoggerLabel = "FoundationModelsACPAgent.Configuration"
+
+  /// The value inside the unknown section of the log case. A configuration
+  /// value can be a secret, so no record may hold it.
+  private static let unknownSectionValue = "configuration-loader-unknown-section-value"
+
+  /// An unknown section writes one `warning` record. The section name is in
+  /// the metadata of the record, and no record holds the value in the
+  /// section.
+  @Test func anUnknownSectionWritesOneWarningWithTheSectionNameInMetadata() async throws {
+    let fixture = Fixture()
+    fixture.writeConfig(
+      """
+      permissions:
+        allow:
+          - "\(Self.unknownSectionValue)"
+      """, in: fixture.projectDirectory)
+
+    let records = try await TelemetryCapture.run(forbidding: [Self.unknownSectionValue]) {
+      context in
+      _ = try fixture.makeLoader().load()
+      return context.logRecords
+    }
+
+    let sectionKey = ACPAgentTelemetry.LogMetadataKey.configSection
+    let sectionRecords = records.filter { $0.metadata[sectionKey] != nil }
+    #expect(sectionRecords.count == 1)
+    let record = try #require(sectionRecords.first)
+    #expect(record.level == .warning)
+    #expect(record.metadata[sectionKey] == .string("permissions"))
+  }
+
+  /// The logger of the configuration loader has the module label and the
+  /// category of the configuration.
+  @Test func configurationLoggerHasTheModuleLabel() {
+    #expect(ACPAgentTelemetry.logger(.configuration).label == Self.configurationLoggerLabel)
+  }
+
+  /// An unknown key inside a known section is an error that names the
+  /// section and the key.
+  @Test func unknownKeyInsideKnownSectionIsAnError() throws {
+    let fixture = Fixture()
+    fixture.writeConfig("recording:\n  levle: full\n", in: fixture.userDirectory)
+
+    #expect(throws: ConfigurationError.unknownKey(section: "recording", key: "levle")) {
+      try fixture.makeLoader().load()
+    }
+  }
+
+  /// A document whose root is not a mapping cannot hold sections.
+  @Test func nonMappingDocumentIsAnError() throws {
+    let fixture = Fixture()
+    fixture.writeConfig("- just\n- a\n- list\n", in: fixture.projectDirectory)
+
+    #expect(throws: ConfigurationError.documentNotAMapping) {
+      try fixture.makeLoader().load()
+    }
+  }
+
+  /// The `tools` and `sandbox` sections decode their bodies through the
+  /// codec: a `shell: false` disables the tool and
+  /// an `extraWritePaths` entry lands in the sandbox section.
+  @Test func toolsAndSandboxBodiesDecodeThroughTheCodec() throws {
+    let fixture = Fixture()
+
+    let loaded = try fixture.loadProjectConfig(
+      """
+      tools:
+        shell: false
+      sandbox:
+        extraWritePaths:
+          - /tmp/cache
+      """)
+
+    #expect(loaded.configuration.tools.shell == .disabled)
+    #expect(loaded.configuration.sandbox.extraWritePaths == ["/tmp/cache"])
+    #expect(loaded.warnings.isEmpty)
+  }
+
+  // MARK: - Section values
+
+  /// `transcripts.location` reads `project`, `home`, or an absolute path.
+  @Test func transcriptLocationReadsTheThreeForms() throws {
+    let fixture = Fixture()
+    fixture.writeConfig(
+      "transcripts:\n  location: /var/transcripts\n", in: fixture.projectDirectory)
+
+    let loaded = try fixture.makeLoader().load()
+
+    #expect(
+      loaded.configuration.transcripts.location
+        == .path(URL(fileURLWithPath: "/var/transcripts", isDirectory: true)))
+  }
+
+  /// A relative `transcripts.location` is none of the three forms.
+  @Test func relativeTranscriptLocationIsRejected() throws {
+    let fixture = Fixture()
+    fixture.writeConfig("transcripts:\n  location: nearby\n", in: fixture.projectDirectory)
+
+    let error = #expect(throws: (any Error).self) {
+      try fixture.makeLoader().load()
+    }
+
+    let message = String(describing: error)
+    #expect(message.contains("nearby"))
+    #expect(message.contains("project"))
+    #expect(message.contains("home"))
+  }
+
+  /// The `profile` and `compaction` sections decode their keys, and a key
+  /// that is not set keeps its default.
+  @Test func profileAndCompactionSectionsDecode() throws {
+    let fixture = Fixture()
+    fixture.writeConfig(
+      """
+      profile:
+        name: pair
+        standard:
+          - org/model-a
+          - org/model-b
+      compaction:
+        trigger: \(Self.configuredTrigger)
+        toolOutputLimit: \(Self.configuredToolOutputLimit)
+      """, in: fixture.projectDirectory)
+
+    let loaded = try fixture.makeLoader().load()
+    let defaults = AgentConfiguration()
+
+    #expect(loaded.configuration.profile.name == "pair")
+    #expect(loaded.configuration.profile.standard == ["org/model-a", "org/model-b"])
+    #expect(loaded.configuration.profile.flash == defaults.profile.flash)
+    #expect(loaded.configuration.compaction.trigger == Self.configuredTrigger)
+    #expect(loaded.configuration.compaction.target == defaults.compaction.target)
+    #expect(loaded.configuration.compaction.toolOutputLimit == Self.configuredToolOutputLimit)
+    #expect(loaded.configuration.compaction.hardCeiling == nil)
+  }
+
+  /// The `repetition` section decodes its keys into Router's
+  /// `RepetitionDetection`, and a key that is not set keeps Router's
+  /// default.
+  @Test func theRepetitionSectionDecodesAndKeepsRouterDefaults() throws {
+    let fixture = Fixture()
+
+    let loaded = try fixture.loadProjectConfig(
+      """
+      repetition:
+        isEnabled: false
+        windowTokens: \(Self.configuredWindowTokens)
+      """)
+
+    let detection = loaded.configuration.repetition.detection
+    #expect(!detection.isEnabled)
+    #expect(detection.windowTokens == Self.configuredWindowTokens)
+    #expect(detection.minimumLineLength == RepetitionDetection.defaultMinimumLineLength)
+    #expect(detection.recoveriesPerAnswer == RepetitionDetection.defaultRecoveriesPerAnswer)
+    #expect(detection.passTokenLimit == RepetitionDetection.defaultPassTokenLimit)
+  }
+
+  /// The line-shape and reasoning keys of the `repetition` section decode
+  /// into Router's `RepetitionDetection` (task ^7fsfw7y).
+  @Test func theLineShapeAndReasoningKeysDecodeIntoTheDetection() throws {
+    let loaded = try Fixture().loadProjectConfig(
+      """
+      repetition:
+        comparesLineShapes: false
+        shortLineRepeatThreshold: \(Self.configuredShortLineRepeatThreshold)
+        reasoningTokenLimit: \(Self.configuredReasoningTokenLimit)
+      """)
+
+    let detection = loaded.configuration.repetition.detection
+    #expect(!detection.comparesLineShapes)
+    #expect(detection.shortLineRepeatThreshold == Self.configuredShortLineRepeatThreshold)
+    #expect(detection.reasoningTokenLimit == Self.configuredReasoningTokenLimit)
+  }
+
+  /// A `repetition` section without the line-shape and reasoning keys keeps
+  /// Router's default for each of them. An absent `reasoningTokenLimit` is
+  /// Router's limit, not "no limit".
+  @Test func absentLineShapeAndReasoningKeysKeepRouterDefaults() throws {
+    let loaded = try Fixture().loadProjectConfig(
+      """
+      repetition:
+        windowTokens: \(Self.configuredWindowTokens)
+      """)
+
+    let detection = loaded.configuration.repetition.detection
+    #expect(detection.comparesLineShapes == RepetitionDetection.defaultComparesLineShapes)
+    #expect(
+      detection.shortLineRepeatThreshold == RepetitionDetection.defaultShortLineRepeatThreshold)
+    #expect(detection.reasoningTokenLimit == RepetitionDetection.defaultReasoningTokenLimit)
+  }
+
+  /// `repetition.reasoningTokenLimit: null` gives a detection with no
+  /// reasoning token limit.
+  @Test func aNullReasoningTokenLimitGivesNoLimit() throws {
+    let loaded = try Fixture().loadProjectConfig(
+      """
+      repetition:
+        reasoningTokenLimit: null
+      """)
+
+    #expect(loaded.configuration.repetition.detection.reasoningTokenLimit == nil)
+  }
+
+  /// `repetition.identicalToolCallLimit` decodes into Router's
+  /// `RepetitionDetection` (Router task ^8eq31j0).
+  @Test func theIdenticalToolCallLimitDecodesIntoTheDetection() throws {
+    let loaded = try Fixture().loadProjectConfig(
+      """
+      repetition:
+        identicalToolCallLimit: \(Self.configuredIdenticalToolCallLimit)
+      """)
+
+    #expect(
+      loaded.configuration.repetition.detection.identicalToolCallLimit
+        == Self.configuredIdenticalToolCallLimit)
+  }
+
+  /// An absent `identicalToolCallLimit` keeps Router's default limit, and a
+  /// `null` gives no limit.
+  @Test func anAbsentIdenticalToolCallLimitKeepsTheDefaultAndNullGivesNoLimit() throws {
+    let absent = try Fixture().loadProjectConfig(
+      """
+      repetition:
+        windowTokens: \(Self.configuredWindowTokens)
+      """)
+    let null = try Fixture().loadProjectConfig(
+      """
+      repetition:
+        identicalToolCallLimit: null
+      """)
+
+    #expect(
+      absent.configuration.repetition.detection.identicalToolCallLimit
+        == RepetitionDetection.defaultIdenticalToolCallLimit)
+    #expect(null.configuration.repetition.detection.identicalToolCallLimit == nil)
+  }
+
+  /// With no `repetition` section, the detection is Router's default one.
+  @Test func anAbsentRepetitionSectionGivesRouterDefaultDetection() throws {
+    let loaded = try Fixture().makeLoader().load()
+
+    #expect(loaded.configuration.repetition.detection == RepetitionDetection())
+  }
+
+  /// A key in the `repetition` section that Router does not name is an
+  /// error, as in each other checked section.
+  @Test func anUnknownRepetitionKeyIsAnError() throws {
+    let fixture = Fixture()
+    fixture.writeConfig("repetition:\n  windowSize: 10\n", in: fixture.projectDirectory)
+
+    #expect(throws: ConfigurationError.unknownKey(section: "repetition", key: "windowSize")) {
+      try fixture.makeLoader().load()
+    }
+  }
+
+  /// A project `config.yaml` that names a model for each of the three slots
+  /// wins over each builtin default (cli-plan.md §7).
+  ///
+  /// The section test above writes the `standard` slot alone, thus it shows
+  /// the override for one slot of three. This test writes all three slots and
+  /// reads all three values back, thus each default is shown to lose.
+  @Test func eachProfileSlotInTheProjectConfigWinsOverItsDefault() throws {
+    let fixture = Fixture()
+
+    let loaded = try fixture.loadProjectConfig(
+      """
+      profile:
+        standard:
+          - \(Self.configuredStandardModel)
+        flash:
+          - \(Self.configuredFlashModel)
+        embedding:
+          - \(Self.configuredEmbeddingModel)
+      """)
+
+    let profile = loaded.configuration.profile
+    let defaults = AgentConfiguration().profile
+    #expect(profile.standard.map(\.stringValue) == [Self.configuredStandardModel])
+    #expect(profile.flash.map(\.stringValue) == [Self.configuredFlashModel])
+    #expect(profile.embedding.map(\.stringValue) == [Self.configuredEmbeddingModel])
+    #expect(profile.standard != defaults.standard)
+    #expect(profile.flash != defaults.flash)
+    #expect(profile.embedding != defaults.embedding)
+  }
+
+  /// The `compaction.trigger` the section test writes; it differs from the
+  /// default so the decode is observable.
+  private static let configuredTrigger = 0.7
+
+  /// The `compaction.toolOutputLimit` the section test writes.
+  private static let configuredToolOutputLimit = 4000
+
+  /// The `repetition.windowTokens` the section test writes. It differs
+  /// from Router's default, thus the decode is observable.
+  private static let configuredWindowTokens = 512
+
+  /// The `repetition.shortLineRepeatThreshold` the line-shape test writes.
+  /// It differs from Router's default, thus the decode is observable.
+  private static let configuredShortLineRepeatThreshold = 3
+
+  /// The `repetition.reasoningTokenLimit` the line-shape test writes. It
+  /// differs from Router's default, thus the decode is observable.
+  private static let configuredReasoningTokenLimit = 4096
+
+  /// The `repetition.identicalToolCallLimit` the tool-call test writes. It
+  /// differs from Router's default, thus the decode is observable.
+  private static let configuredIdenticalToolCallLimit = 5
+
+  /// The `profile.standard` model the override test writes. It differs from
+  /// the default, thus the override is observable.
+  private static let configuredStandardModel = "org/standard-override"
+
+  /// The `profile.flash` model the override test writes.
+  private static let configuredFlashModel = "org/flash-override"
+
+  /// The `profile.embedding` model the override test writes.
+  private static let configuredEmbeddingModel = "org/embedding-override"
+
+  // MARK: - Helpers
+
+  /// The path of `loader`'s user layer root.
+  private static func userLayerPath(of loader: ConfigurationLoader) -> String? {
+    loader.stack.layers.first { $0.source == .user }?.root.path
+  }
 }

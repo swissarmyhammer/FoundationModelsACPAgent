@@ -26,104 +26,105 @@ import FoundationModelsExtras
 /// The home always gives the user layer, thus no stack derives a folder of
 /// the home directory or of `XDG_CONFIG_HOME` on its own.
 public struct SettingsFolders: Sendable {
-    /// A kind of settings. Each kind has its own stack.
-    public enum Kind: Sendable {
-        /// `config.yaml` and `Instructions.md`, under the dotfolder name of
-        /// the host.
-        case configuration
+  /// A kind of settings. Each kind has its own stack.
+  public enum Kind: Sendable {
+    /// `config.yaml` and `Instructions.md`, under the dotfolder name of
+    /// the host.
+    case configuration
 
-        /// The skills, under the dotfolder name `skills`.
-        case skills
+    /// The skills, under the dotfolder name `skills`.
+    case skills
 
-        /// The agents, under the dotfolder name `agents`.
-        case agents
+    /// The agents, under the dotfolder name `agents`.
+    case agents
 
-        /// The rules, under the dotfolder name `rules`. FoundationModelsRules
-        /// reads no stack yet, thus only the folders are set here.
-        case rules
+    /// The rules, under the dotfolder name `rules`. FoundationModelsRules
+    /// reads no stack yet, thus only the folders are set here.
+    case rules
+  }
+
+  /// The folder in the synced root of a custom home that holds the skills.
+  public static let skillsFolderName = "_skills"
+
+  /// The folder in the synced root of a custom home that holds the rules.
+  public static let rulesFolderName = "_rules"
+
+  /// The dotfolder name of the rules stack.
+  public static let rulesDotfolderName = "rules"
+
+  /// The dotfolder name of the host: the dotfolder name of the
+  /// configuration stack.
+  public let name: DotfolderName
+
+  /// The home of the host, which gives the user layer of each stack.
+  public let home: AgentHome
+
+  /// The environment that each stack reads its defaults layer from.
+  public let environment: [String: String]
+
+  /// Makes the settings folders of a host.
+  ///
+  /// - Parameters:
+  ///   - name: The dotfolder name of the host.
+  ///   - home: The home of the host, which gives the user layer of each
+  ///     stack.
+  ///   - environment: The environment that each stack reads its defaults
+  ///     layer from.
+  public init(name: DotfolderName, home: AgentHome, environment: [String: String]) {
+    self.name = name
+    self.home = home
+    self.environment = environment
+  }
+
+  /// The stack of `kind` for one working directory, lowest precedence
+  /// first: the defaults layer, the user layer, the project layer.
+  ///
+  /// Making the stack reads no file.
+  ///
+  /// - Parameters:
+  ///   - kind: The kind of settings.
+  ///   - workingDirectory: The working directory of the session. The
+  ///     project layer is `<workingDirectory>/.<dotfolder name>/`.
+  /// - Returns: The stack.
+  public func stack(for kind: Kind, workingDirectory: URL) -> DotfolderStack {
+    let dotfolder = dotfolderName(of: kind)
+    return DotfolderStack(
+      name: dotfolder, workingDirectory: workingDirectory,
+      userDirectory: home.userLayerRoot(
+        dotfolder: dotfolder, folderInRoot: Self.folderInRoot(of: kind)),
+      environment: environment)
+  }
+
+  /// The dotfolder name of the stack of `kind`.
+  ///
+  /// - Parameter kind: The kind of settings.
+  /// - Returns: The bare dotfolder name, with no leading dot.
+  public func dotfolderName(of kind: Kind) -> String {
+    switch kind {
+    case .configuration:
+      name.rawValue
+    case .skills:
+      ToolCatalog.skillsDotfolderName
+    case .agents:
+      ToolCatalog.agentsDotfolderName
+    case .rules:
+      Self.rulesDotfolderName
     }
+  }
 
-    /// The folder in the synced root of a custom home that holds the skills.
-    public static let skillsFolderName = "_skills"
-
-    /// The folder in the synced root of a custom home that holds the rules.
-    public static let rulesFolderName = "_rules"
-
-    /// The dotfolder name of the rules stack.
-    public static let rulesDotfolderName = "rules"
-
-    /// The dotfolder name of the host: the dotfolder name of the
-    /// configuration stack.
-    public let name: DotfolderName
-
-    /// The home of the host, which gives the user layer of each stack.
-    public let home: AgentHome
-
-    /// The environment that each stack reads its defaults layer from.
-    public let environment: [String: String]
-
-    /// Makes the settings folders of a host.
-    ///
-    /// - Parameters:
-    ///   - name: The dotfolder name of the host.
-    ///   - home: The home of the host, which gives the user layer of each
-    ///     stack.
-    ///   - environment: The environment that each stack reads its defaults
-    ///     layer from.
-    public init(name: DotfolderName, home: AgentHome, environment: [String: String]) {
-        self.name = name
-        self.home = home
-        self.environment = environment
+  /// The folder of the user layer of `kind` in the synced root of a custom
+  /// home.
+  ///
+  /// - Parameter kind: The kind of settings.
+  /// - Returns: The folder name, or `nil` for the synced root itself.
+  private static func folderInRoot(of kind: Kind) -> String? {
+    switch kind {
+    case .configuration, .agents:
+      nil
+    case .skills:
+      skillsFolderName
+    case .rules:
+      rulesFolderName
     }
-
-    /// The stack of `kind` for one working directory, lowest precedence
-    /// first: the defaults layer, the user layer, the project layer.
-    ///
-    /// Making the stack reads no file.
-    ///
-    /// - Parameters:
-    ///   - kind: The kind of settings.
-    ///   - workingDirectory: The working directory of the session. The
-    ///     project layer is `<workingDirectory>/.<dotfolder name>/`.
-    /// - Returns: The stack.
-    public func stack(for kind: Kind, workingDirectory: URL) -> DotfolderStack {
-        let dotfolder = dotfolderName(of: kind)
-        return DotfolderStack(
-            name: dotfolder, workingDirectory: workingDirectory,
-            userDirectory: home.userLayerRoot(dotfolder: dotfolder, folderInRoot: Self.folderInRoot(of: kind)),
-            environment: environment)
-    }
-
-    /// The dotfolder name of the stack of `kind`.
-    ///
-    /// - Parameter kind: The kind of settings.
-    /// - Returns: The bare dotfolder name, with no leading dot.
-    public func dotfolderName(of kind: Kind) -> String {
-        switch kind {
-        case .configuration:
-            name.rawValue
-        case .skills:
-            ToolCatalog.skillsDotfolderName
-        case .agents:
-            ToolCatalog.agentsDotfolderName
-        case .rules:
-            Self.rulesDotfolderName
-        }
-    }
-
-    /// The folder of the user layer of `kind` in the synced root of a custom
-    /// home.
-    ///
-    /// - Parameter kind: The kind of settings.
-    /// - Returns: The folder name, or `nil` for the synced root itself.
-    private static func folderInRoot(of kind: Kind) -> String? {
-        switch kind {
-        case .configuration, .agents:
-            nil
-        case .skills:
-            skillsFolderName
-        case .rules:
-            rulesFolderName
-        }
-    }
+  }
 }

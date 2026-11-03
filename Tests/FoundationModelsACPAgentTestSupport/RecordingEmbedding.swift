@@ -21,27 +21,27 @@ import Synchronization
 /// share one recording. The batches are guarded by a `Mutex`, so the
 /// `Sendable` conformance stays compiler-checked.
 public final class RecordingEmbeddingContainer: LoadedEmbeddingContainer {
-    /// The container every embed is answered through.
-    private let wrapped: any LoadedEmbeddingContainer
+  /// The container every embed is answered through.
+  private let wrapped: any LoadedEmbeddingContainer
 
-    /// Every batch of texts received, in call order.
-    private let received = Mutex<[[String]]>([])
+  /// Every batch of texts received, in call order.
+  private let received = Mutex<[[String]]>([])
 
-    /// Creates a recording container over `wrapped`.
-    ///
-    /// - Parameter wrapped: The container that answers each embed.
-    public init(wrapping wrapped: any LoadedEmbeddingContainer) {
-        self.wrapped = wrapped
-    }
+  /// Creates a recording container over `wrapped`.
+  ///
+  /// - Parameter wrapped: The container that answers each embed.
+  public init(wrapping wrapped: any LoadedEmbeddingContainer) {
+    self.wrapped = wrapped
+  }
 
-    /// Every batch of texts this container was asked to embed, in call
-    /// order: one element per `embed(texts:)` call.
-    public var batches: [[String]] {
-        received.withLock { $0 }
-    }
+  /// Every batch of texts this container was asked to embed, in call
+  /// order: one element per `embed(texts:)` call.
+  public var batches: [[String]] {
+    received.withLock { $0 }
+  }
 
-    public func embed(texts: [String]) async throws -> [[Float]] {
-        received.withLock { $0.append(texts) }
-        return try await wrapped.embed(texts: texts)
-    }
+  public func embed(texts: [String]) async throws -> [[Float]] {
+    received.withLock { $0.append(texts) }
+    return try await wrapped.embed(texts: texts)
+  }
 }

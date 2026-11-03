@@ -21,8 +21,8 @@ import FoundationModelsACPAgent
 /// - Returns: The recording root.
 /// - Throws: `DotfolderNameError` when `name` is refused.
 public func projectRecordingRoot(of workspace: URL, dotfolderName name: String) throws -> URL {
-    TranscriptLocation.project.recordingRoot(
-        workingDirectory: workspace,
-        name: try DotfolderName(name),
-        userDirectory: workspace)
+  TranscriptLocation.project.recordingRoot(
+    workingDirectory: workspace,
+    name: try DotfolderName(name),
+    userDirectory: workspace)
 }

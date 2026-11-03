@@ -59,6 +59,29 @@ comments:
   id: 01m6h0g2fs4a0m7e33famss193
   text: 'Fix of the finding on ConnectionTable owner(of:in:). The nestedUnder map and the hand-written walk are gone. ConnectionTable now holds the one SessionTree (init(tree:)) and reads the parent links from it. owner(of:) takes the session and its ancestors from the tree and gives the first owner record. path(forSession:) uses the same lookup. recordNested and forgetNested are removed: SessionBuild links and removes in the tree only, and the agent sessionTree is now connections.tree, so one copy of the links exists. The table has no "if child" branch. New tests in Tests/FoundationModelsACPAgentTests/ConnectionTableTreeTests.swift: a child linked in the tree has the owner of its parent, a take of the parent reaches the child, an unlinked child and a stranger have no owner. They failed to compile before the fix (no tree). Root swift test: 1319 tests in 145 suites passed, 1 known issue (HarnessSmokeTests, not related).'
   timestamp: 2026-11-03T15:29:58.265125+00:00
+- actor: wballard
+  id: 01m6hhjzwa6tqkjgz8jcs6rv6m
+  text: |-
+    IMPLEMENTATION NOTE (step 1).
+
+    What was built:
+    - SessionBuild.swift: one function, registerSession(_:sessionId:parent:build:). The root calls it with parent nil (from activateSession). A nested session calls it through registerNestedSession(_:parent:). The function builds the state ledger, the projector (with the elicitation relay), the history sink and the ActiveSession entry. It has no "if child" branch: the parent link, the owner record and the gate come from the parent argument.
+    - SessionTree.swift: ancestors(of:) (root first), children(of:), parent(of:), link, remove. Typed errors: selfParent, cycle, secondParent. A Mutex holds the links.
+    - SessionAnnouncementGate.swift: a gate that starts open for a root and closed for a nested session. The history sink always writes the retained history, and it posts only when the gate is open. The announce task opens it.
+    - ConnectionTable: recordNested(_:under:) and forgetNested(_:). A nested session has no owner record. It takes the owner of its parent each time the owner is read, so a take of the parent and the close of the connection reach it with no extra step. This is the "record with the owner of the parent" rule, and nothing is left to release.
+    - retireSession(_:) removes a nested session (teardown, link, owner, entry). tearDownSession retires the children of the session it closes.
+
+    Which fields a nested session BORROWS from its parent: configuration, instructions, workingDirectory, additionalRoots, surface (and so the tools, the shell output stream, the shell identity, the MCP servers), commands (the registry), userPresence, isReplayOnly, selectedSlot, announcedConfigOptions.
+    Which fields it OWNS: session (its own Router session), transcriptDirectory, stateLedger, projector (with its relay and its own RunCallJoinTable), retainedHistory, announcement (gate), openPrompts, parentSessionId, children, titleRecorded (true: the Router owns the record of a sub-agent).
+    The root-only steps stay in activateSession: recordPlacement, shell identity bind, command registry, publishAvailableCommands, startTerminalProjection, reportMCPServerStatus. A nested session borrows their results. If the nested session did them, they would run twice on the same surface (the shell identity would point to the child, and two loops would read one shell stream).
+    The projector of a nested session has its own join table, because projector.stop() calls closeProjection() on the table, and that would seal the runs that the parent waits for.
+
+    A nested session never shuts down the surface of its parent: ActiveSession.ownsSurface is true only without a parent. tearDownSession, markSessionClosed (shell stream finish), the GraphQL tunnel endpoint list and tunnelEndpoint(named:sessionId:viewer:) read it. A tunnel call that names a nested session gets NOT_FOUND. The active_sessions gauge counts only sessions with no parent.
+
+    Observer feed (item 3 of the task): the observer in AgentsComposition.swift is made for the surface, so it has no access to the agent, and the live Router session of a child is not public (AgentRun.heldSession is internal, RouterSessionDirectory.session(id:) is not on the Router main). registerNestedSession takes a real Router session. So no production caller exists in this step: the caller that has the live session is the step 2 work (Router card 01M6GJJKPTESHZGW7N2AAY83G3) and the announce task. The tests make the child Router session with makeSession(agentSpawn:), as closingASessionClosesItsDescendants does. Nothing new goes on the wire.
+
+    Test harness change: ScriptedPromptFixture.close() skips a session that the table no longer holds, because the close of a root session retires its nested sessions.
+  timestamp: 2026-11-03T20:28:39.690714+00:00
 position_column: done
 position_ordinal: ffff9780
 title: Register a nested sub-agent as an ordinary ACP session with a parent link (shared session build)

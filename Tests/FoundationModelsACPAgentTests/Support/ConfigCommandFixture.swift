@@ -9,89 +9,89 @@ import FoundationModelsACPAgentTestSupport
 /// so no test touches the real home directory. The dotfolder name is the
 /// one the CLI composes with, because the subcommands take no name.
 struct ConfigCommandFixture {
-    /// The environment variable that roots the user configuration layer.
-    static let configHomeVariable = "XDG_CONFIG_HOME"
+  /// The environment variable that roots the user configuration layer.
+  static let configHomeVariable = "XDG_CONFIG_HOME"
 
-    /// The working directory; the project layer roots under it.
-    let workspace: URL
+  /// The working directory; the project layer roots under it.
+  let workspace: URL
 
-    /// The injected `XDG_CONFIG_HOME` root; the user layer roots under it.
-    let configHome: URL
+  /// The injected `XDG_CONFIG_HOME` root; the user layer roots under it.
+  let configHome: URL
 
-    /// Makes the two directories under `/private/tmp`.
-    ///
-    /// - Parameter label: The prefix that names the calling suite.
-    init(label: String) {
-        workspace = makeResolvedDirectory(label: "\(label)-repo")
-        configHome = makeResolvedDirectory(label: "\(label)-config")
-    }
+  /// Makes the two directories under `/private/tmp`.
+  ///
+  /// - Parameter label: The prefix that names the calling suite.
+  init(label: String) {
+    workspace = makeResolvedDirectory(label: "\(label)-repo")
+    configHome = makeResolvedDirectory(label: "\(label)-config")
+  }
 
-    /// The environment the subcommands read: the config home, and nothing
-    /// else.
-    var environment: [String: String] {
-        [Self.configHomeVariable: configHome.path]
-    }
+  /// The environment the subcommands read: the config home, and nothing
+  /// else.
+  var environment: [String: String] {
+    [Self.configHomeVariable: configHome.path]
+  }
 
-    /// Makes the environment a composing subcommand reads, rooted at
-    /// ``configHome``. `ComposedPromptFixture.makeStubEnvironment(configHome:)`
-    /// makes it, so one helper holds the stub model switch (cli-plan.md §9)
-    /// and the defaults layer of `StubAgentDefaultsLayer`. Thus no weights
-    /// load, and a session starts no code context and fetches no skills
-    /// marketplace, so no network is touched.
-    ///
-    /// - Returns: The environment.
-    /// - Throws: The write error of the defaults layer.
-    func makeStubEnvironment() throws -> [String: String] {
-        try ComposedPromptFixture.makeStubEnvironment(configHome: configHome)
-    }
+  /// Makes the environment a composing subcommand reads, rooted at
+  /// ``configHome``. `ComposedPromptFixture.makeStubEnvironment(configHome:)`
+  /// makes it, so one helper holds the stub model switch (cli-plan.md §9)
+  /// and the defaults layer of `StubAgentDefaultsLayer`. Thus no weights
+  /// load, and a session starts no code context and fetches no skills
+  /// marketplace, so no network is touched.
+  ///
+  /// - Returns: The environment.
+  /// - Throws: The write error of the defaults layer.
+  func makeStubEnvironment() throws -> [String: String] {
+    try ComposedPromptFixture.makeStubEnvironment(configHome: configHome)
+  }
 
-    /// The user layer root, `<configHome>/<name>/`.
-    var userDirectory: URL {
-        configHome.appendingPathComponent(AgentComposition.dotfolderName, isDirectory: true)
-    }
+  /// The user layer root, `<configHome>/<name>/`.
+  var userDirectory: URL {
+    configHome.appendingPathComponent(AgentComposition.dotfolderName, isDirectory: true)
+  }
 
-    /// The project layer root, `<workspace>/.<name>/`.
-    var projectDirectory: URL {
-        workspace.appendingPathComponent(".\(AgentComposition.dotfolderName)", isDirectory: true)
-    }
+  /// The project layer root, `<workspace>/.<name>/`.
+  var projectDirectory: URL {
+    workspace.appendingPathComponent(".\(AgentComposition.dotfolderName)", isDirectory: true)
+  }
 
-    /// The `config.yaml` path inside one layer root.
-    ///
-    /// The `config` subcommands and the `/config export` slash command
-    /// all write that one file name, so one helper names it for every
-    /// suite that reads what they wrote.
-    ///
-    /// - Parameter directory: The layer root.
-    /// - Returns: The file URL.
-    static func configURL(in directory: URL) -> URL {
-        directory.appendingPathComponent(ConfigurationLoader.configFileName)
-    }
+  /// The `config.yaml` path inside one layer root.
+  ///
+  /// The `config` subcommands and the `/config export` slash command
+  /// all write that one file name, so one helper names it for every
+  /// suite that reads what they wrote.
+  ///
+  /// - Parameter directory: The layer root.
+  /// - Returns: The file URL.
+  static func configURL(in directory: URL) -> URL {
+    directory.appendingPathComponent(ConfigurationLoader.configFileName)
+  }
 
-    /// Writes `yaml` as the project layer's `config.yaml`.
-    ///
-    /// - Parameter yaml: The file content.
-    /// - Throws: The directory-creation or write error.
-    func writeProjectConfig(_ yaml: String) throws {
-        try ConfigFileFixture.write(yaml, in: projectDirectory)
-    }
+  /// Writes `yaml` as the project layer's `config.yaml`.
+  ///
+  /// - Parameter yaml: The file content.
+  /// - Throws: The directory-creation or write error.
+  func writeProjectConfig(_ yaml: String) throws {
+    try ConfigFileFixture.write(yaml, in: projectDirectory)
+  }
 
-    /// Writes `yaml` as the user layer's `config.yaml`.
-    ///
-    /// - Parameter yaml: The file content.
-    /// - Throws: The directory-creation or write error.
-    func writeUserConfig(_ yaml: String) throws {
-        try ConfigFileFixture.write(yaml, in: userDirectory)
-    }
+  /// Writes `yaml` as the user layer's `config.yaml`.
+  ///
+  /// - Parameter yaml: The file content.
+  /// - Throws: The directory-creation or write error.
+  func writeUserConfig(_ yaml: String) throws {
+    try ConfigFileFixture.write(yaml, in: userDirectory)
+  }
 
-    /// Writes a project `config.yaml` that sets `compaction.trigger`.
-    ///
-    /// The key is inert: it changes no model and no tool, so a resolved
-    /// value names exactly one project layer and nothing else. A test
-    /// that must say WHICH stack a load read writes this key.
-    ///
-    /// - Parameter trigger: The value to write.
-    /// - Throws: The directory-creation or write error.
-    func writeProjectCompactionTrigger(_ trigger: Double) throws {
-        try writeProjectConfig("compaction:\n  trigger: \(trigger)\n")
-    }
+  /// Writes a project `config.yaml` that sets `compaction.trigger`.
+  ///
+  /// The key is inert: it changes no model and no tool, so a resolved
+  /// value names exactly one project layer and nothing else. A test
+  /// that must say WHICH stack a load read writes this key.
+  ///
+  /// - Parameter trigger: The value to write.
+  /// - Throws: The directory-creation or write error.
+  func writeProjectCompactionTrigger(_ trigger: Double) throws {
+    try writeProjectConfig("compaction:\n  trigger: \(trigger)\n")
+  }
 }

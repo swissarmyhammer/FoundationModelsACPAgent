@@ -11,146 +11,146 @@ import Testing
 /// loader, the composition says so, and two runs of one prompt through
 /// it give byte-identical text.
 @Suite(.closesHarnesses) struct AgentCompositionTests {
-    // MARK: - Constants
+  // MARK: - Constants
 
-    /// The prompt of the two runs. The echo model answers with the prompt
-    /// it received, so the answer text carries it.
-    private static let promptText = "echo this back"
+  /// The prompt of the two runs. The echo model answers with the prompt
+  /// it received, so the answer text carries it.
+  private static let promptText = "echo this back"
 
-    /// The environment that selects the stub model, and nothing else.
-    private static let stubEnvironment = [
-        AgentComposition.stubModelVariable: AgentComposition.stubModelEnabledValue
-    ]
+  /// The environment that selects the stub model, and nothing else.
+  private static let stubEnvironment = [
+    AgentComposition.stubModelVariable: AgentComposition.stubModelEnabledValue
+  ]
 
-    // MARK: - The switch
+  // MARK: - The switch
 
-    /// The variable at its enabled value selects the stub; an absent
-    /// variable, and any other value, select the live loader.
-    @Test func theVariableSelectsTheStubModel() {
-        #expect(AgentComposition.modelSource(environment: Self.stubEnvironment) == .stub)
-        #expect(AgentComposition.modelSource(environment: [:]) == .live)
-        #expect(
-            AgentComposition.modelSource(environment: [AgentComposition.stubModelVariable: "0"])
-                == .live)
-    }
+  /// The variable at its enabled value selects the stub; an absent
+  /// variable, and any other value, select the live loader.
+  @Test func theVariableSelectsTheStubModel() {
+    #expect(AgentComposition.modelSource(environment: Self.stubEnvironment) == .stub)
+    #expect(AgentComposition.modelSource(environment: [:]) == .live)
+    #expect(
+      AgentComposition.modelSource(environment: [AgentComposition.stubModelVariable: "0"])
+        == .live)
+  }
 
-    /// The dotfolder name is the one the tier-3 fixture writes its user
-    /// configuration under, and it is a valid name.
-    @Test func theDotfolderNameIsValid() throws {
-        let name = try DotfolderName(AgentComposition.dotfolderName)
+  /// The dotfolder name is the one the tier-3 fixture writes its user
+  /// configuration under, and it is a valid name.
+  @Test func theDotfolderNameIsValid() throws {
+    let name = try DotfolderName(AgentComposition.dotfolderName)
 
-        #expect(name.rawValue == "acp-agent")
-    }
+    #expect(name.rawValue == "acp-agent")
+  }
 
-    // MARK: - The secret store
+  // MARK: - The secret store
 
-    /// The CLI gives the agent the login Keychain, under the service
-    /// `acp-agent` (task ^y5zy1hz).
-    @Test func theCompositionGivesTheLoginKeychainOfTheCLI() async throws {
-        let configHome = makeResolvedDirectory(label: "AgentCompositionTests-secrets-config")
-        let workspace = makeResolvedDirectory(label: "AgentCompositionTests-secrets-repo")
-        let environment = try ComposedPromptFixture.makeStubEnvironment(configHome: configHome)
+  /// The CLI gives the agent the login Keychain, under the service
+  /// `acp-agent` (task ^y5zy1hz).
+  @Test func theCompositionGivesTheLoginKeychainOfTheCLI() async throws {
+    let configHome = makeResolvedDirectory(label: "AgentCompositionTests-secrets-config")
+    let workspace = makeResolvedDirectory(label: "AgentCompositionTests-secrets-repo")
+    let environment = try ComposedPromptFixture.makeStubEnvironment(configHome: configHome)
 
-        let composed = try await AgentComposition.compose(
-            workingDirectory: workspace, environment: environment)
+    let composed = try await AgentComposition.compose(
+      workingDirectory: workspace, environment: environment)
 
-        #expect(
-            composed.agent.secretStore as? KeychainSecretStore
-                == KeychainSecretStore(service: "acp-agent", synchronizable: false))
-    }
+    #expect(
+      composed.agent.secretStore as? KeychainSecretStore
+        == KeychainSecretStore(service: "acp-agent", synchronizable: false))
+  }
 
-    // MARK: - The stub composition
+  // MARK: - The stub composition
 
-    /// With the stub selected the composition returns the echo model, and
-    /// two runs of one prompt give byte-identical text that carries the
-    /// prompt. No weights load and no network is touched, and the test waits
-    /// on no clock.
-    @Test
-    func theStubCompositionEchoesByteIdenticalText() async throws {
-        let configHome = makeResolvedDirectory(label: "AgentCompositionTests-config")
-        let workspace = makeResolvedDirectory(label: "AgentCompositionTests-repo")
-        let environment = try ComposedPromptFixture.makeStubEnvironment(configHome: configHome)
+  /// With the stub selected the composition returns the echo model, and
+  /// two runs of one prompt give byte-identical text that carries the
+  /// prompt. No weights load and no network is touched, and the test waits
+  /// on no clock.
+  @Test
+  func theStubCompositionEchoesByteIdenticalText() async throws {
+    let configHome = makeResolvedDirectory(label: "AgentCompositionTests-config")
+    let workspace = makeResolvedDirectory(label: "AgentCompositionTests-repo")
+    let environment = try ComposedPromptFixture.makeStubEnvironment(configHome: configHome)
 
-        let first = try await ComposedPromptFixture.answerText(
-            environment: environment, workspace: workspace, prompt: Self.promptText)
-        let second = try await ComposedPromptFixture.answerText(
-            environment: environment, workspace: workspace, prompt: Self.promptText)
+    let first = try await ComposedPromptFixture.answerText(
+      environment: environment, workspace: workspace, prompt: Self.promptText)
+    let second = try await ComposedPromptFixture.answerText(
+      environment: environment, workspace: workspace, prompt: Self.promptText)
 
-        #expect(!first.isEmpty)
-        #expect(first.contains(Self.promptText))
-        #expect(first == second)
-    }
+    #expect(!first.isEmpty)
+    #expect(first.contains(Self.promptText))
+    #expect(first == second)
+  }
 
-    // MARK: - The recorder of the composed router
+  // MARK: - The recorder of the composed router
 
-    /// One prompt of the composed agent writes
-    /// `<recording root>/<sessionId>/transcript.jsonl`, and the file holds
-    /// the events of that prompt.
-    ///
-    /// The composition is the only shipped call site that builds the
-    /// router, so it is the only place that can enable the recorder. With
-    /// no recordings directory the router holds the no-op sink, every
-    /// event goes nowhere, and `--resume` has nothing to read.
-    ///
-    /// The assertion reads the recorded file. It never reads the
-    /// `index.md` of the session folder: Router writes that record on a
-    /// path that never touches the recorder, so it stays correct while
-    /// every event drops.
-    @Test
-    func theComposedPromptRecordsTheSessionTranscript() async throws {
-        let configHome = makeResolvedDirectory(label: "AgentCompositionTests-record-config")
-        let workspace = makeResolvedDirectory(label: "AgentCompositionTests-record-repo")
-        let environment = try ComposedPromptFixture.makeStubEnvironment(configHome: configHome)
+  /// One prompt of the composed agent writes
+  /// `<recording root>/<sessionId>/transcript.jsonl`, and the file holds
+  /// the events of that prompt.
+  ///
+  /// The composition is the only shipped call site that builds the
+  /// router, so it is the only place that can enable the recorder. With
+  /// no recordings directory the router holds the no-op sink, every
+  /// event goes nowhere, and `--resume` has nothing to read.
+  ///
+  /// The assertion reads the recorded file. It never reads the
+  /// `index.md` of the session folder: Router writes that record on a
+  /// path that never touches the recorder, so it stays correct while
+  /// every event drops.
+  @Test
+  func theComposedPromptRecordsTheSessionTranscript() async throws {
+    let configHome = makeResolvedDirectory(label: "AgentCompositionTests-record-config")
+    let workspace = makeResolvedDirectory(label: "AgentCompositionTests-record-repo")
+    let environment = try ComposedPromptFixture.makeStubEnvironment(configHome: configHome)
 
-        let outcome = try await ComposedPromptFixture.run(
-            environment: environment, workspace: workspace, prompt: Self.promptText)
+    let outcome = try await ComposedPromptFixture.run(
+      environment: environment, workspace: workspace, prompt: Self.promptText)
 
-        let root = try Self.recordingRoot(of: workspace)
-        let file = RecordedTranscriptFile.fileURL(
-            under: root, sessionId: outcome.sessionId.rawValue)
-        #expect(
-            FileManager.default.fileExists(atPath: file.path),
-            "no transcript stands at \(file.path)")
-        let lines = try RecordedTranscriptFile.lines(under: root, sessionId: outcome.sessionId)
-        #expect(!lines.isEmpty)
-        #expect(lines.contains { $0.kind == TranscriptEvent.Kind.session.rawValue })
-    }
+    let root = try Self.recordingRoot(of: workspace)
+    let file = RecordedTranscriptFile.fileURL(
+      under: root, sessionId: outcome.sessionId.rawValue)
+    #expect(
+      FileManager.default.fileExists(atPath: file.path),
+      "no transcript stands at \(file.path)")
+    let lines = try RecordedTranscriptFile.lines(under: root, sessionId: outcome.sessionId)
+    #expect(!lines.isEmpty)
+    #expect(lines.contains { $0.kind == TranscriptEvent.Kind.session.rawValue })
+  }
 
-    /// The router the composition built records: a session of its resident
-    /// profile writes a transcript under the root it was given.
-    ///
-    /// This case names the cause and not only the symptom. It goes around
-    /// the agent's own session pipeline and drives the resolved profile
-    /// itself, so a pass says the recorder of the composed router writes,
-    /// and a failure says the router holds the no-op sink.
-    @Test
-    func theComposedRouterRecordsThroughItsResidentProfile() async throws {
-        let configHome = makeResolvedDirectory(label: "AgentCompositionTests-router-config")
-        let workspace = makeResolvedDirectory(label: "AgentCompositionTests-router-repo")
-        let environment = try ComposedPromptFixture.makeStubEnvironment(configHome: configHome)
-        let composed = try await AgentComposition.compose(
-            workingDirectory: workspace, environment: environment)
-        let root = try Self.recordingRoot(of: workspace)
+  /// The router the composition built records: a session of its resident
+  /// profile writes a transcript under the root it was given.
+  ///
+  /// This case names the cause and not only the symptom. It goes around
+  /// the agent's own session pipeline and drives the resolved profile
+  /// itself, so a pass says the recorder of the composed router writes,
+  /// and a failure says the router holds the no-op sink.
+  @Test
+  func theComposedRouterRecordsThroughItsResidentProfile() async throws {
+    let configHome = makeResolvedDirectory(label: "AgentCompositionTests-router-config")
+    let workspace = makeResolvedDirectory(label: "AgentCompositionTests-router-repo")
+    let environment = try ComposedPromptFixture.makeStubEnvironment(configHome: configHome)
+    let composed = try await AgentComposition.compose(
+      workingDirectory: workspace, environment: environment)
+    let root = try Self.recordingRoot(of: workspace)
 
-        let session = composed.agent.residentProfile.standard.makeSession(
-            workingDirectory: workspace, recordingRoot: root)
-        _ = try await session.respond(to: Self.promptText)
-        await session.close()
+    let session = composed.agent.residentProfile.standard.makeSession(
+      workingDirectory: workspace, recordingRoot: root)
+    _ = try await session.respond(to: Self.promptText)
+    await session.close()
 
-        let file = RecordedTranscriptFile.fileURL(
-            under: root, sessionId: session.id.description)
-        #expect(
-            FileManager.default.fileExists(atPath: file.path),
-            "the composed router recorded nothing at \(file.path)")
-    }
+    let file = RecordedTranscriptFile.fileURL(
+      under: root, sessionId: session.id.description)
+    #expect(
+      FileManager.default.fileExists(atPath: file.path),
+      "the composed router recorded nothing at \(file.path)")
+  }
 
-    /// The recording root of `workspace` under the CLI's own dotfolder
-    /// name, which is the default `project` location: `<cwd>/.<name>/transcripts/`.
-    ///
-    /// - Parameter workspace: The session working directory.
-    /// - Returns: The recording root.
-    private static func recordingRoot(of workspace: URL) throws -> URL {
-        try projectRecordingRoot(
-            of: workspace, dotfolderName: AgentComposition.dotfolderName)
-    }
+  /// The recording root of `workspace` under the CLI's own dotfolder
+  /// name, which is the default `project` location: `<cwd>/.<name>/transcripts/`.
+  ///
+  /// - Parameter workspace: The session working directory.
+  /// - Returns: The recording root.
+  private static func recordingRoot(of workspace: URL) throws -> URL {
+    try projectRecordingRoot(
+      of: workspace, dotfolderName: AgentComposition.dotfolderName)
+  }
 }

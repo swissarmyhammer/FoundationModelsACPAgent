@@ -3,97 +3,97 @@ import Foundation
 import FoundationModelsACP
 
 extension AcpAgentCommand {
-    /// `acp-agent acp`: serve ACP on stdin and stdout (cli-plan.md §5.3).
-    /// In this mode stdin is the wire (§5.5), and it is never read for a
-    /// prompt.
-    ///
-    /// The shape is full duplex on purpose: the connection's
-    /// read loop serves every request while the agent streams mid-prompt
-    /// `session/update` notifications on the same pipe. A program written
-    /// as a read-one-request-then-write-one-response loop deadlocks on the
-    /// first mid-prompt update — never write that shape.
-    ///
-    /// stdout is sacred: only ndJSON frames go there. Logs go to stderr.
-    /// Shell children never inherit stdout — the shell capability captures
-    /// their output — and the tier-3 stdio contract test proves both MUSTs
-    /// across this real process boundary.
-    ///
-    /// There is no `--cwd` here (§5.10). The client gives the working
-    /// directory with each `session/new`, and a flag would fight the
-    /// protocol: one process serves many sessions in many repositories,
-    /// and each session loads its own project layer from its own `cwd`.
-    struct Acp: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(
-            commandName: "acp", abstract: "Serve ACP on stdin and stdout.")
+  /// `acp-agent acp`: serve ACP on stdin and stdout (cli-plan.md §5.3).
+  /// In this mode stdin is the wire (§5.5), and it is never read for a
+  /// prompt.
+  ///
+  /// The shape is full duplex on purpose: the connection's
+  /// read loop serves every request while the agent streams mid-prompt
+  /// `session/update` notifications on the same pipe. A program written
+  /// as a read-one-request-then-write-one-response loop deadlocks on the
+  /// first mid-prompt update — never write that shape.
+  ///
+  /// stdout is sacred: only ndJSON frames go there. Logs go to stderr.
+  /// Shell children never inherit stdout — the shell capability captures
+  /// their output — and the tier-3 stdio contract test proves both MUSTs
+  /// across this real process boundary.
+  ///
+  /// There is no `--cwd` here (§5.10). The client gives the working
+  /// directory with each `session/new`, and a flag would fight the
+  /// protocol: one process serves many sessions in many repositories,
+  /// and each session loads its own project layer from its own `cwd`.
+  struct Acp: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+      commandName: "acp", abstract: "Serve ACP on stdin and stdout.")
 
-        /// The `--telemetry-file` option: a file that gets each log record
-        /// at `debug` and up, each span when it ends, and each metric
-        /// recording, as JSON lines. stderr keeps its `warning` records.
-        ///
-        /// ``AcpAgentCommand/main()`` reads it after the parse and before
-        /// ``run()``, because the telemetry bootstrap must come before the
-        /// first log record — see ``TelemetryBootstrap/bootstrap(telemetryFile:)``.
-        @Option(
-            name: .customLong("telemetry-file"),
-            help: ArgumentHelp(
-                "Append each log record (debug and up), each span and each metric to this file as JSON lines.",
-                valueName: "path"))
-        var telemetryFile: String?
+    /// The `--telemetry-file` option: a file that gets each log record
+    /// at `debug` and up, each span when it ends, and each metric
+    /// recording, as JSON lines. stderr keeps its `warning` records.
+    ///
+    /// ``AcpAgentCommand/main()`` reads it after the parse and before
+    /// ``run()``, because the telemetry bootstrap must come before the
+    /// first log record — see ``TelemetryBootstrap/bootstrap(telemetryFile:)``.
+    @Option(
+      name: .customLong("telemetry-file"),
+      help: ArgumentHelp(
+        "Append each log record (debug and up), each span and each metric to this file as JSON lines.",
+        valueName: "path"))
+    var telemetryFile: String?
 
-        /// The `--home` option, which roots the user layer.
-        @OptionGroup var homeOptions: HomeOptions
+    /// The `--home` option, which roots the user layer.
+    @OptionGroup var homeOptions: HomeOptions
 
-        mutating func run() async throws {
-            let environment = homeOptions.environment(over: ProcessInfo.processInfo.environment)
-            // Construction resolves the configured profile to a resident
-            // profile, which the agent holds for the life of the process.
-            // A resolution failure is fatal here, before the wire opens,
-            // and its reason goes to stderr — never to stdout. This is the
-            // first of the two loads of §5.10, and the only one keyed by
-            // the process working directory.
-            // The download of §5.9 is interruptible here too: the first
-            // `Ctrl-C` cancels the composition and the process exits 4,
-            // leaving the partly downloaded model in the Hugging Face cache.
-            // A `SIGTERM` here cancels the composition too, and the thrown
-            // exit code takes the failure path of `main()`.
-            let composed: AgentComposition.Composed
-            do {
-                composed = try await InterruptibleComposition.run(
-                    interruptedBy: InterruptHandler.onSIGINT,
-                    terminatedBy: TerminationHandler.onSIGTERM
-                ) {
-                    try await AgentComposition.compose(
-                        workingDirectory: AgentComposition.processWorkingDirectory,
-                        environment: environment)
-                }
-            } catch is CompositionInterrupted {
-                throw AgentExitCode.cancelled.parserError
-            }
-            // The wrapper is what makes the stdin end observable; see
-            // `InboundEndTransport`. Underneath it stands the same
-            // `StdioTransport` `.stdio` vends, so the wire is unchanged.
-            let transport = InboundEndTransport(wrapping: StdioTransport())
-            // `.standardError` keeps every log line off the wire. The ACP
-            // framing rule is that the agent writes only ACP frames to stdout.
-            let connection = await composed.serve(over: transport, logger: .standardError)
-            // The client owns the lifecycle: it closes
-            // stdin, and there is no teardown handshake to wait for. So
-            // the process stands here for as long as the client speaks,
-            // and ends when the client stops. A process manager can end it
-            // earlier with `SIGTERM`: the connection closes, and the thrown
-            // exit code takes the failure path of `main()`. The client sends no
-            // `session/close` before it closes stdin. A closed connection
-            // only frees its sessions (ACPA-5d), so the process closes each
-            // open session itself after the close, and waits for that, so
-            // the history is written before the exit.
-            try await TerminationHandler.serve(
-                untilInboundEnd: { await transport.waitForInboundEnd() },
-                closing: {
-                    await connection.close()
-                    await composed.waitForConnectionTeardown()
-                    await composed.closeOpenSessions()
-                },
-                watchedBy: TerminationHandler.onSIGTERM)
+    mutating func run() async throws {
+      let environment = homeOptions.environment(over: ProcessInfo.processInfo.environment)
+      // Construction resolves the configured profile to a resident
+      // profile, which the agent holds for the life of the process.
+      // A resolution failure is fatal here, before the wire opens,
+      // and its reason goes to stderr — never to stdout. This is the
+      // first of the two loads of §5.10, and the only one keyed by
+      // the process working directory.
+      // The download of §5.9 is interruptible here too: the first
+      // `Ctrl-C` cancels the composition and the process exits 4,
+      // leaving the partly downloaded model in the Hugging Face cache.
+      // A `SIGTERM` here cancels the composition too, and the thrown
+      // exit code takes the failure path of `main()`.
+      let composed: AgentComposition.Composed
+      do {
+        composed = try await InterruptibleComposition.run(
+          interruptedBy: InterruptHandler.onSIGINT,
+          terminatedBy: TerminationHandler.onSIGTERM
+        ) {
+          try await AgentComposition.compose(
+            workingDirectory: AgentComposition.processWorkingDirectory,
+            environment: environment)
         }
+      } catch is CompositionInterrupted {
+        throw AgentExitCode.cancelled.parserError
+      }
+      // The wrapper is what makes the stdin end observable; see
+      // `InboundEndTransport`. Underneath it stands the same
+      // `StdioTransport` `.stdio` vends, so the wire is unchanged.
+      let transport = InboundEndTransport(wrapping: StdioTransport())
+      // `.standardError` keeps every log line off the wire. The ACP
+      // framing rule is that the agent writes only ACP frames to stdout.
+      let connection = await composed.serve(over: transport, logger: .standardError)
+      // The client owns the lifecycle: it closes
+      // stdin, and there is no teardown handshake to wait for. So
+      // the process stands here for as long as the client speaks,
+      // and ends when the client stops. A process manager can end it
+      // earlier with `SIGTERM`: the connection closes, and the thrown
+      // exit code takes the failure path of `main()`. The client sends no
+      // `session/close` before it closes stdin. A closed connection
+      // only frees its sessions (ACPA-5d), so the process closes each
+      // open session itself after the close, and waits for that, so
+      // the history is written before the exit.
+      try await TerminationHandler.serve(
+        untilInboundEnd: { await transport.waitForInboundEnd() },
+        closing: {
+          await connection.close()
+          await composed.waitForConnectionTeardown()
+          await composed.closeOpenSessions()
+        },
+        watchedBy: TerminationHandler.onSIGTERM)
     }
+  }
 }

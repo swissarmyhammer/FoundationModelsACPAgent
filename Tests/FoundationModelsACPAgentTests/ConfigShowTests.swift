@@ -11,484 +11,486 @@ import Testing
 /// as JSON under `--json`, `--cwd`, and the warnings on stderr. Each test
 /// parses the real arguments and builds the report in process.
 struct ConfigShowTests {
-    // MARK: - Constants
+  // MARK: - Constants
 
-    /// The suffix the annotation of a key no layer set carries.
-    private static let builtinAnnotation = "# builtin"
+  /// The suffix the annotation of a key no layer set carries.
+  private static let builtinAnnotation = "# builtin"
 
-    /// A project `config.yaml` that sets one key.
-    private static let recordingOffYAML = "recording:\n  level: off\n"
+  /// A project `config.yaml` that sets one key.
+  private static let recordingOffYAML = "recording:\n  level: off\n"
 
-    /// The number of keys ``recordingOffYAML`` sets: the section key, and
-    /// the value key under it.
-    private static let recordingOffKeyCount = 2
+  /// The number of keys ``recordingOffYAML`` sets: the section key, and
+  /// the value key under it.
+  private static let recordingOffKeyCount = 2
 
-    /// A user `config.yaml` that turns the web tool off.
-    private static let webOffYAML = "tools:\n  web: false\n"
+  /// A user `config.yaml` that turns the web tool off.
+  private static let webOffYAML = "tools:\n  web: false\n"
 
-    /// The number of keys ``webOffYAML`` sets: the section key, and the
-    /// tool key under it.
-    private static let webOffKeyCount = 2
+  /// The number of keys ``webOffYAML`` sets: the section key, and the
+  /// tool key under it.
+  private static let webOffKeyCount = 2
 
-    /// The `compaction.trigger` a fixture sets; it differs from the
-    /// default so the value is observable in both output forms.
-    private static let configuredTrigger = 0.7
+  /// The `compaction.trigger` a fixture sets; it differs from the
+  /// default so the value is observable in both output forms.
+  private static let configuredTrigger = 0.7
 
-    /// A project `config.yaml` that sets `compaction.trigger`.
-    private static let triggerYAML = "compaction:\n  trigger: \(configuredTrigger)\n"
+  /// A project `config.yaml` that sets `compaction.trigger`.
+  private static let triggerYAML = "compaction:\n  trigger: \(configuredTrigger)\n"
 
-    /// A project `config.yaml` with an unknown section, which the loader
-    /// reports as a warning.
-    private static let permissionsYAML = "permissions:\n  allow: []\n"
+  /// A project `config.yaml` with an unknown section, which the loader
+  /// reports as a warning.
+  private static let permissionsYAML = "permissions:\n  allow: []\n"
 
-    /// A project `config.yaml` that turns the reasoning token limit off.
-    private static let noReasoningLimitYAML = "repetition:\n  reasoningTokenLimit: null\n"
+  /// A project `config.yaml` that turns the reasoning token limit off.
+  private static let noReasoningLimitYAML = "repetition:\n  reasoningTokenLimit: null\n"
 
-    /// The API key value that ``webKeyYAML`` sets.
-    private static let webKeyValue = "show-configured-key"
+  /// The API key value that ``webKeyYAML`` sets.
+  private static let webKeyValue = "show-configured-key"
 
-    /// A project `config.yaml` that sets a Tavily key.
-    private static let webKeyYAML = "tools:\n  web:\n    apiKeys:\n      tavily: \(webKeyValue)\n"
+  /// A project `config.yaml` that sets a Tavily key.
+  private static let webKeyYAML = "tools:\n  web:\n    apiKeys:\n      tavily: \(webKeyValue)\n"
 
-    /// The reference name that ``webReferenceYAML`` names.
-    private static let webReferenceName = "show-tavily-key"
+  /// The reference name that ``webReferenceYAML`` names.
+  private static let webReferenceName = "show-tavily-key"
 
-    /// A project `config.yaml` that sets the Tavily key as a `keychain:`
-    /// reference.
-    private static let webReferenceYAML =
-        "tools:\n  web:\n    apiKeys:\n      tavily: keychain:\(webReferenceName)\n"
+  /// A project `config.yaml` that sets the Tavily key as a `keychain:`
+  /// reference.
+  private static let webReferenceYAML =
+    "tools:\n  web:\n    apiKeys:\n      tavily: keychain:\(webReferenceName)\n"
 
-    /// The reference name of the MCP header token.
-    private static let mcpReferenceName = "show-mcp-token"
+  /// The reference name of the MCP header token.
+  private static let mcpReferenceName = "show-mcp-token"
 
-    /// The value that the store gives for ``mcpReferenceName``.
-    private static let mcpReferenceValue = "show-mcp-secret-value-6a20f9"
+  /// The value that the store gives for ``mcpReferenceName``.
+  private static let mcpReferenceValue = "show-mcp-secret-value-6a20f9"
 
-    /// A literal MCP header value.
-    private static let mcpLiteralHeaderValue = "show-mcp-literal-header-4b71c3"
+  /// A literal MCP header value.
+  private static let mcpLiteralHeaderValue = "show-mcp-literal-header-4b71c3"
 
-    /// A project `config.yaml` with one http MCP server: one header is a
-    /// `keychain:` reference and one header is a literal.
-    private static let mcpSecretsYAML = """
-        tools:
-          mcp:
-            - name: remote
-              url: https://example.test/mcp
-              headers:
-                Authorization: keychain:\(mcpReferenceName)
-                X-Api-Key: \(mcpLiteralHeaderValue)
-        """
+  /// A project `config.yaml` with one http MCP server: one header is a
+  /// `keychain:` reference and one header is a literal.
+  private static let mcpSecretsYAML = """
+    tools:
+      mcp:
+        - name: remote
+          url: https://example.test/mcp
+          headers:
+            Authorization: keychain:\(mcpReferenceName)
+            X-Api-Key: \(mcpLiteralHeaderValue)
+    """
 
-    /// The document `--json --source` writes.
-    private struct AnnotatedDocument: Decodable {
-        let configuration: AgentConfiguration
-        let sources: [String: String]
-    }
+  /// The document `--json --source` writes.
+  private struct AnnotatedDocument: Decodable {
+    let configuration: AgentConfiguration
+    let sources: [String: String]
+  }
 
-    // MARK: - Helpers
+  // MARK: - Helpers
 
-    /// Parses `config show` with `arguments` and builds its report over
-    /// `fixture`'s environment.
-    ///
-    /// - Parameters:
-    ///   - arguments: The arguments after `config show`.
-    ///   - fixture: The two-layer tree the report reads.
-    ///   - extraEnvironment: Variables added to `fixture`'s environment,
-    ///     such as an API key of a search provider.
-    ///   - secretStore: The store that gives the value of each secret
-    ///     reference. The default is an empty in-memory store, so no report
-    ///     touches the real Keychain.
-    /// - Returns: The report.
-    /// - Throws: The parse or load error.
-    private static func report(
-        _ arguments: [String], in fixture: ConfigCommandFixture,
-        extraEnvironment: [String: String] = [:],
-        secretStore: any SecretStore = InMemorySecretStore()
-    ) throws -> CommandReport {
-        let show = try #require(
-            try AcpAgentCommand.parseAsRoot(
-                ["config", "show", "--cwd", fixture.workspace.path] + arguments)
-                as? AcpAgentCommand.Config.Show)
-        return try show.report(
-            environment: fixture.environment.merging(extraEnvironment) { _, extra in extra },
-            secretStore: secretStore)
-    }
+  /// Parses `config show` with `arguments` and builds its report over
+  /// `fixture`'s environment.
+  ///
+  /// - Parameters:
+  ///   - arguments: The arguments after `config show`.
+  ///   - fixture: The two-layer tree the report reads.
+  ///   - extraEnvironment: Variables added to `fixture`'s environment,
+  ///     such as an API key of a search provider.
+  ///   - secretStore: The store that gives the value of each secret
+  ///     reference. The default is an empty in-memory store, so no report
+  ///     touches the real Keychain.
+  /// - Returns: The report.
+  /// - Throws: The parse or load error.
+  private static func report(
+    _ arguments: [String], in fixture: ConfigCommandFixture,
+    extraEnvironment: [String: String] = [:],
+    secretStore: any SecretStore = InMemorySecretStore()
+  ) throws -> CommandReport {
+    let show = try #require(
+      try AcpAgentCommand.parseAsRoot(
+        ["config", "show", "--cwd", fixture.workspace.path] + arguments)
+        as? AcpAgentCommand.Config.Show)
+    return try show.report(
+      environment: fixture.environment.merging(extraEnvironment) { _, extra in extra },
+      secretStore: secretStore)
+  }
 
-    /// The lines of `text` that carry a mapping key: not a comment, not a
-    /// sequence item, and not blank. A sequence item is the `-` line and each
-    /// line under it with a larger indent, for example the keys of one
-    /// `tools.skills.marketplaces` entry. The annotation of a list is on the
-    /// key of the list, thus no line of an item carries one.
-    ///
-    /// - Parameter text: The YAML report.
-    /// - Returns: The key lines, in document order.
-    private static func keyLines(in text: String) -> [String] {
-        let lines = text.split(separator: "\n").map(String.init)
-        let indents = lines.map { line in line.prefix { $0 == " " }.count }
-        let trimmed = lines.map { $0.trimmingCharacters(in: .whitespaces) }
-        let opensItem = trimmed.map { $0.hasPrefix("-") }
-        let isItemLine = lines.indices.map { index in
-            opensItem[index]
-                || lines.indices[..<index].contains { open in
-                    opensItem[open] && isAncestor(open, of: index, indents: indents)
-                }
+  /// The lines of `text` that carry a mapping key: not a comment, not a
+  /// sequence item, and not blank. A sequence item is the `-` line and each
+  /// line under it with a larger indent, for example the keys of one
+  /// `tools.skills.marketplaces` entry. The annotation of a list is on the
+  /// key of the list, thus no line of an item carries one.
+  ///
+  /// - Parameter text: The YAML report.
+  /// - Returns: The key lines, in document order.
+  private static func keyLines(in text: String) -> [String] {
+    let lines = text.split(separator: "\n").map(String.init)
+    let indents = lines.map { line in line.prefix { $0 == " " }.count }
+    let trimmed = lines.map { $0.trimmingCharacters(in: .whitespaces) }
+    let opensItem = trimmed.map { $0.hasPrefix("-") }
+    let isItemLine = lines.indices.map { index in
+      opensItem[index]
+        || lines.indices[..<index].contains { open in
+          opensItem[open] && isAncestor(open, of: index, indents: indents)
         }
-        return lines.indices
-            .filter { !isItemLine[$0] && !trimmed[$0].isEmpty && !trimmed[$0].hasPrefix("#") }
-            .map { lines[$0] }
     }
-
-    /// Tells if the line at `ancestor` holds the line at `index` in its
-    /// block: the ancestor has a smaller indent than the line, and each line
-    /// between the two has a larger indent than the ancestor.
-    ///
-    /// - Parameters:
-    ///   - ancestor: The index of the possible ancestor line.
-    ///   - index: The index of the line. It is larger than `ancestor`.
-    ///   - indents: The indent of each line of the text.
-    /// - Returns: `true` when the line is in the block of the ancestor.
-    private static func isAncestor(_ ancestor: Int, of index: Int, indents: [Int]) -> Bool {
-        indents[ancestor] < indents[index]
-            && indents[(ancestor + 1)..<index].allSatisfy { $0 > indents[ancestor] }
-    }
-
-    // MARK: - The merged tree
-
-    /// With no file in any layer the report is the builtin configuration,
-    /// on stdout, with nothing on stderr.
-    @Test func noFilesShowTheBuiltinConfiguration() throws {
-        let fixture = ConfigCommandFixture(label: "ConfigShowTests-builtin")
-
-        let report = try Self.report([], in: fixture)
-
-        #expect(report.standardOutput.contains("profile:"))
-        #expect(report.standardOutput.contains("recording:"))
-        #expect(report.standardOutput.contains("level: \"full\""))
-        #expect(report.standardErrorLines.isEmpty)
-    }
-
-    /// With no file in any layer, the report shows the `repetition` section
-    /// with Router's default value for each key, so a person can see and
-    /// edit the settings of the repetition detector.
-    @Test func noFilesShowTheRepetitionSectionWithRouterDefaults() throws {
-        let fixture = ConfigCommandFixture(label: "ConfigShowTests-repetition")
-
-        let report = try Self.report([], in: fixture)
-
-        #expect(report.standardOutput.contains("repetition:"))
-        #expect(report.standardOutput.contains("isEnabled: \(RepetitionDetection.defaultIsEnabled)"))
-        #expect(report.standardOutput.contains("windowTokens: \(RepetitionDetection.defaultWindowTokens)"))
-        #expect(
-            report.standardOutput.contains(
-                "minimumLineLength: \(RepetitionDetection.defaultMinimumLineLength)"))
-        #expect(
-            report.standardOutput.contains(
-                "recoveriesPerAnswer: \(RepetitionDetection.defaultRecoveriesPerAnswer)"))
-        #expect(
-            report.standardOutput.contains("passTokenLimit: \(RepetitionDetection.defaultPassTokenLimit)"))
-    }
-
-    /// With no file in any layer, the report shows the line-shape and
-    /// reasoning keys of the `repetition` section with Router's default value
-    /// for each one (task ^7fsfw7y).
-    @Test func noFilesShowTheLineShapeAndReasoningKeysWithRouterDefaults() throws {
-        let fixture = ConfigCommandFixture(label: "ConfigShowTests-repetition-reasoning")
-
-        let report = try Self.report([], in: fixture)
-
-        #expect(
-            report.standardOutput.contains(
-                "comparesLineShapes: \(RepetitionDetection.defaultComparesLineShapes)"))
-        #expect(
-            report.standardOutput.contains(
-                "shortLineRepeatThreshold: \(RepetitionDetection.defaultShortLineRepeatThreshold)"))
-        #expect(
-            report.standardOutput.contains(
-                "reasoningTokenLimit: \(RepetitionDetection.defaultReasoningTokenLimit)"))
-        #expect(
-            report.standardOutput.contains(
-                "identicalToolCallLimit: \(RepetitionDetection.defaultIdenticalToolCallLimit)"))
-    }
-
-    /// With no file in any layer, the report shows `tools.files.exclude`
-    /// with its default: the dotfolder of the CLI, which holds the
-    /// transcripts that the search verbs skip.
-    @Test func noFilesShowTheFilesExcludeDefault() throws {
-        let fixture = ConfigCommandFixture(label: "ConfigShowTests-files-exclude")
-
-        let report = try Self.report([], in: fixture)
-
-        #expect(
-            report.standardOutput.contains(
-                "    exclude:\n      - \".\(AgentComposition.dotfolderName)/\"\n"))
-    }
-
-    /// A `repetition.reasoningTokenLimit: null` shows as `null`, the value
-    /// that loads back as "no limit", and not as Router's default limit.
-    @Test func aNullReasoningTokenLimitShowsAsNull() throws {
-        let fixture = ConfigCommandFixture(label: "ConfigShowTests-reasoning-null")
-        try fixture.writeProjectConfig(Self.noReasoningLimitYAML)
-
-        let report = try Self.report([], in: fixture)
-
-        #expect(report.standardOutput.contains("reasoningTokenLimit: null"))
-        #expect(
-            !report.standardOutput.contains(
-                "reasoningTokenLimit: \(RepetitionDetection.defaultReasoningTokenLimit)"))
-    }
-
-    /// The report is the merged configuration: a project key shows its
-    /// value, not the default.
-    @Test func aProjectKeyShowsItsMergedValue() throws {
-        let fixture = ConfigCommandFixture(label: "ConfigShowTests-merged")
-        try fixture.writeProjectConfig(Self.recordingOffYAML)
-
-        let report = try Self.report([], in: fixture)
-
-        #expect(report.standardOutput.contains("level: \"off\""))
-        #expect(!report.standardOutput.contains("level: \"full\""))
-    }
-
-    /// `--cwd` selects the project layer: two workspaces with different
-    /// files give different reports.
-    @Test func cwdSelectsTheProjectLayer() throws {
-        let first = ConfigCommandFixture(label: "ConfigShowTests-cwd-first")
-        let second = ConfigCommandFixture(label: "ConfigShowTests-cwd-second")
-        try first.writeProjectConfig(Self.recordingOffYAML)
-        try second.writeProjectConfig(Self.triggerYAML)
-
-        let firstReport = try Self.report([], in: first)
-        let secondReport = try Self.report([], in: second)
-
-        #expect(firstReport.standardOutput.contains("level: \"off\""))
-        #expect(!firstReport.standardOutput.contains("trigger: \(Self.configuredTrigger)"))
-        #expect(secondReport.standardOutput.contains("trigger: \(Self.configuredTrigger)"))
-        #expect(secondReport.standardOutput.contains("level: \"full\""))
-    }
-
-    // MARK: - --source
-
-    /// With no file in any layer, every key reports `builtin`.
-    @Test func withNoFileEveryKeyReportsBuiltin() throws {
-        let fixture = ConfigCommandFixture(label: "ConfigShowTests-source-builtin")
-
-        let report = try Self.report(["--source"], in: fixture)
-
-        let keyLines = Self.keyLines(in: report.standardOutput)
-        #expect(!keyLines.isEmpty)
-        #expect(keyLines.allSatisfy { $0.hasSuffix(Self.builtinAnnotation) })
-    }
-
-    /// With a project file that sets one key, that key reports `project`
-    /// and the others `builtin`. The section the key sits in reports
-    /// `project` too: the project layer introduced it.
-    @Test func aProjectKeyReportsProjectAndTheOthersBuiltin() throws {
-        let fixture = ConfigCommandFixture(label: "ConfigShowTests-source-project")
-        try fixture.writeProjectConfig(Self.recordingOffYAML)
-
-        let report = try Self.report(["--source"], in: fixture)
-
-        let keyLines = Self.keyLines(in: report.standardOutput)
-        let projectLines = keyLines.filter { $0.hasSuffix("# project") }
-        let builtinLines = keyLines.filter { $0.hasSuffix(Self.builtinAnnotation) }
-        #expect(projectLines.count == Self.recordingOffKeyCount)
-        #expect(projectLines.contains { $0.hasPrefix("recording:") })
-        #expect(projectLines.contains { $0.contains("level: \"off\"") })
-        #expect(builtinLines.count == keyLines.count - Self.recordingOffKeyCount)
-        #expect(!report.standardOutput.contains("# user"))
-    }
-
-    /// A user key reports `user`, and a project key that overrides a user
-    /// key reports `project`.
-    @Test func aUserKeyReportsUserAndAnOverrideReportsProject() throws {
-        let fixture = ConfigCommandFixture(label: "ConfigShowTests-source-user")
-        try fixture.writeUserConfig("recording:\n  level: off\ntranscripts:\n  location: home\n")
-        try fixture.writeProjectConfig("recording:\n  level: full\n")
-
-        let report = try Self.report(["--source"], in: fixture)
-
-        let keyLines = Self.keyLines(in: report.standardOutput)
-        #expect(keyLines.contains { $0.contains("level: \"full\"") && $0.hasSuffix("# project") })
-        #expect(keyLines.contains { $0.contains("location: \"home\"") && $0.hasSuffix("# user") })
-    }
-
-    /// A user `tools.web: false` reports `user` for that key and for its
-    /// section, and each other key reports `builtin`: layer 1, the builtin
-    /// file, sets no source.
-    @Test func aUserToolKeyReportsUserAndTheOtherToolKeysBuiltin() throws {
-        let fixture = ConfigCommandFixture(label: "ConfigShowTests-source-tools")
-        try fixture.writeUserConfig(Self.webOffYAML)
-
-        let report = try Self.report(["--source"], in: fixture)
-
-        let keyLines = Self.keyLines(in: report.standardOutput)
-        let userLines = keyLines.filter { $0.hasSuffix("# user") }
-        let builtinLines = keyLines.filter { $0.hasSuffix(Self.builtinAnnotation) }
-        #expect(userLines.count == Self.webOffKeyCount)
-        #expect(userLines.contains { $0.contains("web: false") })
-        #expect(builtinLines.count == keyLines.count - Self.webOffKeyCount)
-    }
-
-    /// Without `--source` no key carries an annotation.
-    @Test func withoutSourceNoKeyIsAnnotated() throws {
-        let fixture = ConfigCommandFixture(label: "ConfigShowTests-no-source")
-        try fixture.writeProjectConfig(Self.recordingOffYAML)
-
-        let report = try Self.report([], in: fixture)
-
-        #expect(!report.standardOutput.contains("# project"))
-        #expect(!report.standardOutput.contains(Self.builtinAnnotation))
-    }
-
-    // MARK: - --json
-
-    /// `--json` parses as JSON and holds the same values as the YAML
-    /// output: the JSON decodes to the configuration the YAML reloads to.
-    @Test func jsonDecodesToTheSameValuesAsTheYAML() throws {
-        let fixture = ConfigCommandFixture(label: "ConfigShowTests-json")
-        try fixture.writeProjectConfig(Self.triggerYAML)
-        let reloadFixture = ConfigCommandFixture(label: "ConfigShowTests-json-reload")
-
-        let jsonReport = try Self.report(["--json"], in: fixture)
-        let yamlReport = try Self.report([], in: fixture)
-
-        let decoded = try JSONDecoder().decode(
-            AgentConfiguration.self, from: Data(jsonReport.standardOutput.utf8))
-        try reloadFixture.writeProjectConfig(yamlReport.standardOutput)
-        let reloaded = try ConfigurationLoader(
-            name: DotfolderName(AgentComposition.dotfolderName),
-            workingDirectory: reloadFixture.workspace,
-            home: try AgentComposition.home(environment: reloadFixture.environment),
-            environment: reloadFixture.environment
-        ).load()
-        #expect(decoded == reloaded.configuration)
-        #expect(decoded.compaction.trigger == Self.configuredTrigger)
-        #expect(jsonReport.standardErrorLines.isEmpty)
-    }
-
-    /// `--json --source` holds the tree under `configuration` and the
-    /// layer of every key under `sources`.
-    @Test func jsonWithSourceHoldsTheTreeAndTheSources() throws {
-        let fixture = ConfigCommandFixture(label: "ConfigShowTests-json-source")
-        try fixture.writeProjectConfig(Self.recordingOffYAML)
-
-        let report = try Self.report(["--json", "--source"], in: fixture)
-
-        let document = try JSONDecoder().decode(
-            AnnotatedDocument.self, from: Data(report.standardOutput.utf8))
-        #expect(document.configuration.recording.level == .off)
-        #expect(document.sources["recording.level"] == "project")
-        #expect(document.sources["recording"] == "project")
-        #expect(document.sources["compaction.trigger"] == "builtin")
-        #expect(document.sources["tools.shell"] == "builtin")
-    }
-
-    // MARK: - The web keys
-
-    /// A configured API key never shows: neither the YAML nor the JSON
-    /// holds the value.
-    @Test(arguments: [[], ["--json"], ["--source"]])
-    func aConfiguredAPIKeyNeverShows(arguments: [String]) throws {
-        let fixture = ConfigCommandFixture(label: "ConfigShowTests-web-key")
-        try fixture.writeProjectConfig(Self.webKeyYAML)
-
-        let report = try Self.report(arguments, in: fixture)
-
-        #expect(!report.standardOutput.contains(Self.webKeyValue))
-        #expect(report.standardOutput.contains(ConfiguredSecret.redactedForm))
-    }
-
-    /// A `keychain:` reference shows as its reference in the YAML, the JSON
-    /// and the annotated report, and the value that the store gives never
-    /// shows.
-    @Test(arguments: [[], ["--json"], ["--source"]])
-    func aSecretReferenceShowsAsItsReference(arguments: [String]) throws {
-        let fixture = ConfigCommandFixture(label: "ConfigShowTests-web-reference")
-        try fixture.writeProjectConfig(Self.webReferenceYAML)
-
-        let report = try Self.report(
-            arguments, in: fixture,
-            secretStore: InMemorySecretStore([Self.webReferenceName: Self.webKeyValue]))
-
-        #expect(report.standardOutput.contains("keychain:\(Self.webReferenceName)"))
-        #expect(!report.standardOutput.contains(Self.webKeyValue))
-        #expect(report.standardErrorLines.isEmpty)
-    }
-
-    // MARK: - The mcp secrets
-
-    /// An MCP header reference shows as its reference, and a literal header
-    /// is redacted, in the YAML, the JSON and the annotated report. No value
-    /// shows.
-    @Test(arguments: [[], ["--json"], ["--source"]])
-    func anMCPHeaderShowsAsItsReferenceOrRedacted(arguments: [String]) throws {
-        let fixture = ConfigCommandFixture(label: "ConfigShowTests-mcp-secrets")
-        try fixture.writeProjectConfig(Self.mcpSecretsYAML)
-
-        let report = try Self.report(
-            arguments, in: fixture,
-            secretStore: InMemorySecretStore([Self.mcpReferenceName: Self.mcpReferenceValue]))
-
-        #expect(report.standardOutput.contains("keychain:\(Self.mcpReferenceName)"))
-        #expect(report.standardOutput.contains(ConfiguredSecret.redactedForm))
-        #expect(!report.standardOutput.contains(Self.mcpReferenceValue))
-        #expect(!report.standardOutput.contains(Self.mcpLiteralHeaderValue))
-        #expect(report.standardErrorLines.isEmpty)
-    }
-
-    /// The YAML report names the search providers in force, in order, and
-    /// the provider of a configured key is first.
-    @Test func theReportNamesTheProvidersInForce() throws {
-        let fixture = ConfigCommandFixture(label: "ConfigShowTests-web-providers")
-        try fixture.writeProjectConfig(Self.webKeyYAML)
-
-        let report = try Self.report([], in: fixture)
-
-        #expect(report.standardOutput.contains("tavily, duckDuckGoHTML, braveHTML"))
-    }
-
-    /// A key in the environment changes the providers in force, and the
-    /// report never shows its value.
-    @Test func anEnvironmentKeyChangesTheProvidersAndNeverShows() throws {
-        let fixture = ConfigCommandFixture(label: "ConfigShowTests-web-environment")
-        let environmentKey = "show-environment-key"
-
-        let report = try Self.report(
-            [], in: fixture, extraEnvironment: ["EXA_API_KEY": environmentKey])
-
-        #expect(report.standardOutput.contains("exa, duckDuckGoHTML, braveHTML"))
-        #expect(!report.standardOutput.contains(environmentKey))
-    }
-
-    // MARK: - stderr
-
-    /// A configuration warning goes to stderr, and never to stdout.
-    @Test func aWarningGoesToStderrAndNeverToStdout() throws {
-        let fixture = ConfigCommandFixture(label: "ConfigShowTests-warning")
-        try fixture.writeProjectConfig(Self.permissionsYAML)
-
-        let report = try Self.report([], in: fixture)
-
-        #expect(report.standardErrorLines.count == 1)
-        #expect(report.standardErrorLines.first?.contains("permissions") == true)
-        #expect(!report.standardOutput.contains("permissions"))
-        #expect(report.standardOutput.contains("profile:"))
-    }
-
-    // MARK: - The parse
-
-    /// The flags parse onto `Show`, and default off.
-    @Test func theFlagsParseAndDefaultOff() throws {
-        let bare = try #require(
-            try AcpAgentCommand.parseAsRoot(["config", "show"]) as? AcpAgentCommand.Config.Show)
-        let flagged = try #require(
-            try AcpAgentCommand.parseAsRoot(["config", "show", "--source", "--json"])
-                as? AcpAgentCommand.Config.Show)
-
-        #expect(!bare.annotatesSource)
-        #expect(!bare.asJSON)
-        #expect(bare.workingDirectoryOptions.workingDirectory == nil)
-        #expect(flagged.annotatesSource)
-        #expect(flagged.asJSON)
-    }
+    return lines.indices
+      .filter { !isItemLine[$0] && !trimmed[$0].isEmpty && !trimmed[$0].hasPrefix("#") }
+      .map { lines[$0] }
+  }
+
+  /// Tells if the line at `ancestor` holds the line at `index` in its
+  /// block: the ancestor has a smaller indent than the line, and each line
+  /// between the two has a larger indent than the ancestor.
+  ///
+  /// - Parameters:
+  ///   - ancestor: The index of the possible ancestor line.
+  ///   - index: The index of the line. It is larger than `ancestor`.
+  ///   - indents: The indent of each line of the text.
+  /// - Returns: `true` when the line is in the block of the ancestor.
+  private static func isAncestor(_ ancestor: Int, of index: Int, indents: [Int]) -> Bool {
+    indents[ancestor] < indents[index]
+      && indents[(ancestor + 1)..<index].allSatisfy { $0 > indents[ancestor] }
+  }
+
+  // MARK: - The merged tree
+
+  /// With no file in any layer the report is the builtin configuration,
+  /// on stdout, with nothing on stderr.
+  @Test func noFilesShowTheBuiltinConfiguration() throws {
+    let fixture = ConfigCommandFixture(label: "ConfigShowTests-builtin")
+
+    let report = try Self.report([], in: fixture)
+
+    #expect(report.standardOutput.contains("profile:"))
+    #expect(report.standardOutput.contains("recording:"))
+    #expect(report.standardOutput.contains("level: \"full\""))
+    #expect(report.standardErrorLines.isEmpty)
+  }
+
+  /// With no file in any layer, the report shows the `repetition` section
+  /// with Router's default value for each key, so a person can see and
+  /// edit the settings of the repetition detector.
+  @Test func noFilesShowTheRepetitionSectionWithRouterDefaults() throws {
+    let fixture = ConfigCommandFixture(label: "ConfigShowTests-repetition")
+
+    let report = try Self.report([], in: fixture)
+
+    #expect(report.standardOutput.contains("repetition:"))
+    #expect(report.standardOutput.contains("isEnabled: \(RepetitionDetection.defaultIsEnabled)"))
+    #expect(
+      report.standardOutput.contains("windowTokens: \(RepetitionDetection.defaultWindowTokens)"))
+    #expect(
+      report.standardOutput.contains(
+        "minimumLineLength: \(RepetitionDetection.defaultMinimumLineLength)"))
+    #expect(
+      report.standardOutput.contains(
+        "recoveriesPerAnswer: \(RepetitionDetection.defaultRecoveriesPerAnswer)"))
+    #expect(
+      report.standardOutput.contains("passTokenLimit: \(RepetitionDetection.defaultPassTokenLimit)")
+    )
+  }
+
+  /// With no file in any layer, the report shows the line-shape and
+  /// reasoning keys of the `repetition` section with Router's default value
+  /// for each one (task ^7fsfw7y).
+  @Test func noFilesShowTheLineShapeAndReasoningKeysWithRouterDefaults() throws {
+    let fixture = ConfigCommandFixture(label: "ConfigShowTests-repetition-reasoning")
+
+    let report = try Self.report([], in: fixture)
+
+    #expect(
+      report.standardOutput.contains(
+        "comparesLineShapes: \(RepetitionDetection.defaultComparesLineShapes)"))
+    #expect(
+      report.standardOutput.contains(
+        "shortLineRepeatThreshold: \(RepetitionDetection.defaultShortLineRepeatThreshold)"))
+    #expect(
+      report.standardOutput.contains(
+        "reasoningTokenLimit: \(RepetitionDetection.defaultReasoningTokenLimit)"))
+    #expect(
+      report.standardOutput.contains(
+        "identicalToolCallLimit: \(RepetitionDetection.defaultIdenticalToolCallLimit)"))
+  }
+
+  /// With no file in any layer, the report shows `tools.files.exclude`
+  /// with its default: the dotfolder of the CLI, which holds the
+  /// transcripts that the search verbs skip.
+  @Test func noFilesShowTheFilesExcludeDefault() throws {
+    let fixture = ConfigCommandFixture(label: "ConfigShowTests-files-exclude")
+
+    let report = try Self.report([], in: fixture)
+
+    #expect(
+      report.standardOutput.contains(
+        "    exclude:\n      - \".\(AgentComposition.dotfolderName)/\"\n"))
+  }
+
+  /// A `repetition.reasoningTokenLimit: null` shows as `null`, the value
+  /// that loads back as "no limit", and not as Router's default limit.
+  @Test func aNullReasoningTokenLimitShowsAsNull() throws {
+    let fixture = ConfigCommandFixture(label: "ConfigShowTests-reasoning-null")
+    try fixture.writeProjectConfig(Self.noReasoningLimitYAML)
+
+    let report = try Self.report([], in: fixture)
+
+    #expect(report.standardOutput.contains("reasoningTokenLimit: null"))
+    #expect(
+      !report.standardOutput.contains(
+        "reasoningTokenLimit: \(RepetitionDetection.defaultReasoningTokenLimit)"))
+  }
+
+  /// The report is the merged configuration: a project key shows its
+  /// value, not the default.
+  @Test func aProjectKeyShowsItsMergedValue() throws {
+    let fixture = ConfigCommandFixture(label: "ConfigShowTests-merged")
+    try fixture.writeProjectConfig(Self.recordingOffYAML)
+
+    let report = try Self.report([], in: fixture)
+
+    #expect(report.standardOutput.contains("level: \"off\""))
+    #expect(!report.standardOutput.contains("level: \"full\""))
+  }
+
+  /// `--cwd` selects the project layer: two workspaces with different
+  /// files give different reports.
+  @Test func cwdSelectsTheProjectLayer() throws {
+    let first = ConfigCommandFixture(label: "ConfigShowTests-cwd-first")
+    let second = ConfigCommandFixture(label: "ConfigShowTests-cwd-second")
+    try first.writeProjectConfig(Self.recordingOffYAML)
+    try second.writeProjectConfig(Self.triggerYAML)
+
+    let firstReport = try Self.report([], in: first)
+    let secondReport = try Self.report([], in: second)
+
+    #expect(firstReport.standardOutput.contains("level: \"off\""))
+    #expect(!firstReport.standardOutput.contains("trigger: \(Self.configuredTrigger)"))
+    #expect(secondReport.standardOutput.contains("trigger: \(Self.configuredTrigger)"))
+    #expect(secondReport.standardOutput.contains("level: \"full\""))
+  }
+
+  // MARK: - --source
+
+  /// With no file in any layer, every key reports `builtin`.
+  @Test func withNoFileEveryKeyReportsBuiltin() throws {
+    let fixture = ConfigCommandFixture(label: "ConfigShowTests-source-builtin")
+
+    let report = try Self.report(["--source"], in: fixture)
+
+    let keyLines = Self.keyLines(in: report.standardOutput)
+    #expect(!keyLines.isEmpty)
+    #expect(keyLines.allSatisfy { $0.hasSuffix(Self.builtinAnnotation) })
+  }
+
+  /// With a project file that sets one key, that key reports `project`
+  /// and the others `builtin`. The section the key sits in reports
+  /// `project` too: the project layer introduced it.
+  @Test func aProjectKeyReportsProjectAndTheOthersBuiltin() throws {
+    let fixture = ConfigCommandFixture(label: "ConfigShowTests-source-project")
+    try fixture.writeProjectConfig(Self.recordingOffYAML)
+
+    let report = try Self.report(["--source"], in: fixture)
+
+    let keyLines = Self.keyLines(in: report.standardOutput)
+    let projectLines = keyLines.filter { $0.hasSuffix("# project") }
+    let builtinLines = keyLines.filter { $0.hasSuffix(Self.builtinAnnotation) }
+    #expect(projectLines.count == Self.recordingOffKeyCount)
+    #expect(projectLines.contains { $0.hasPrefix("recording:") })
+    #expect(projectLines.contains { $0.contains("level: \"off\"") })
+    #expect(builtinLines.count == keyLines.count - Self.recordingOffKeyCount)
+    #expect(!report.standardOutput.contains("# user"))
+  }
+
+  /// A user key reports `user`, and a project key that overrides a user
+  /// key reports `project`.
+  @Test func aUserKeyReportsUserAndAnOverrideReportsProject() throws {
+    let fixture = ConfigCommandFixture(label: "ConfigShowTests-source-user")
+    try fixture.writeUserConfig("recording:\n  level: off\ntranscripts:\n  location: home\n")
+    try fixture.writeProjectConfig("recording:\n  level: full\n")
+
+    let report = try Self.report(["--source"], in: fixture)
+
+    let keyLines = Self.keyLines(in: report.standardOutput)
+    #expect(keyLines.contains { $0.contains("level: \"full\"") && $0.hasSuffix("# project") })
+    #expect(keyLines.contains { $0.contains("location: \"home\"") && $0.hasSuffix("# user") })
+  }
+
+  /// A user `tools.web: false` reports `user` for that key and for its
+  /// section, and each other key reports `builtin`: layer 1, the builtin
+  /// file, sets no source.
+  @Test func aUserToolKeyReportsUserAndTheOtherToolKeysBuiltin() throws {
+    let fixture = ConfigCommandFixture(label: "ConfigShowTests-source-tools")
+    try fixture.writeUserConfig(Self.webOffYAML)
+
+    let report = try Self.report(["--source"], in: fixture)
+
+    let keyLines = Self.keyLines(in: report.standardOutput)
+    let userLines = keyLines.filter { $0.hasSuffix("# user") }
+    let builtinLines = keyLines.filter { $0.hasSuffix(Self.builtinAnnotation) }
+    #expect(userLines.count == Self.webOffKeyCount)
+    #expect(userLines.contains { $0.contains("web: false") })
+    #expect(builtinLines.count == keyLines.count - Self.webOffKeyCount)
+  }
+
+  /// Without `--source` no key carries an annotation.
+  @Test func withoutSourceNoKeyIsAnnotated() throws {
+    let fixture = ConfigCommandFixture(label: "ConfigShowTests-no-source")
+    try fixture.writeProjectConfig(Self.recordingOffYAML)
+
+    let report = try Self.report([], in: fixture)
+
+    #expect(!report.standardOutput.contains("# project"))
+    #expect(!report.standardOutput.contains(Self.builtinAnnotation))
+  }
+
+  // MARK: - --json
+
+  /// `--json` parses as JSON and holds the same values as the YAML
+  /// output: the JSON decodes to the configuration the YAML reloads to.
+  @Test func jsonDecodesToTheSameValuesAsTheYAML() throws {
+    let fixture = ConfigCommandFixture(label: "ConfigShowTests-json")
+    try fixture.writeProjectConfig(Self.triggerYAML)
+    let reloadFixture = ConfigCommandFixture(label: "ConfigShowTests-json-reload")
+
+    let jsonReport = try Self.report(["--json"], in: fixture)
+    let yamlReport = try Self.report([], in: fixture)
+
+    let decoded = try JSONDecoder().decode(
+      AgentConfiguration.self, from: Data(jsonReport.standardOutput.utf8))
+    try reloadFixture.writeProjectConfig(yamlReport.standardOutput)
+    let reloaded = try ConfigurationLoader(
+      name: DotfolderName(AgentComposition.dotfolderName),
+      workingDirectory: reloadFixture.workspace,
+      home: try AgentComposition.home(environment: reloadFixture.environment),
+      environment: reloadFixture.environment
+    ).load()
+    #expect(decoded == reloaded.configuration)
+    #expect(decoded.compaction.trigger == Self.configuredTrigger)
+    #expect(jsonReport.standardErrorLines.isEmpty)
+  }
+
+  /// `--json --source` holds the tree under `configuration` and the
+  /// layer of every key under `sources`.
+  @Test func jsonWithSourceHoldsTheTreeAndTheSources() throws {
+    let fixture = ConfigCommandFixture(label: "ConfigShowTests-json-source")
+    try fixture.writeProjectConfig(Self.recordingOffYAML)
+
+    let report = try Self.report(["--json", "--source"], in: fixture)
+
+    let document = try JSONDecoder().decode(
+      AnnotatedDocument.self, from: Data(report.standardOutput.utf8))
+    #expect(document.configuration.recording.level == .off)
+    #expect(document.sources["recording.level"] == "project")
+    #expect(document.sources["recording"] == "project")
+    #expect(document.sources["compaction.trigger"] == "builtin")
+    #expect(document.sources["tools.shell"] == "builtin")
+  }
+
+  // MARK: - The web keys
+
+  /// A configured API key never shows: neither the YAML nor the JSON
+  /// holds the value.
+  @Test(arguments: [[], ["--json"], ["--source"]])
+  func aConfiguredAPIKeyNeverShows(arguments: [String]) throws {
+    let fixture = ConfigCommandFixture(label: "ConfigShowTests-web-key")
+    try fixture.writeProjectConfig(Self.webKeyYAML)
+
+    let report = try Self.report(arguments, in: fixture)
+
+    #expect(!report.standardOutput.contains(Self.webKeyValue))
+    #expect(report.standardOutput.contains(ConfiguredSecret.redactedForm))
+  }
+
+  /// A `keychain:` reference shows as its reference in the YAML, the JSON
+  /// and the annotated report, and the value that the store gives never
+  /// shows.
+  @Test(arguments: [[], ["--json"], ["--source"]])
+  func aSecretReferenceShowsAsItsReference(arguments: [String]) throws {
+    let fixture = ConfigCommandFixture(label: "ConfigShowTests-web-reference")
+    try fixture.writeProjectConfig(Self.webReferenceYAML)
+
+    let report = try Self.report(
+      arguments, in: fixture,
+      secretStore: InMemorySecretStore([Self.webReferenceName: Self.webKeyValue]))
+
+    #expect(report.standardOutput.contains("keychain:\(Self.webReferenceName)"))
+    #expect(!report.standardOutput.contains(Self.webKeyValue))
+    #expect(report.standardErrorLines.isEmpty)
+  }
+
+  // MARK: - The mcp secrets
+
+  /// An MCP header reference shows as its reference, and a literal header
+  /// is redacted, in the YAML, the JSON and the annotated report. No value
+  /// shows.
+  @Test(arguments: [[], ["--json"], ["--source"]])
+  func anMCPHeaderShowsAsItsReferenceOrRedacted(arguments: [String]) throws {
+    let fixture = ConfigCommandFixture(label: "ConfigShowTests-mcp-secrets")
+    try fixture.writeProjectConfig(Self.mcpSecretsYAML)
+
+    let report = try Self.report(
+      arguments, in: fixture,
+      secretStore: InMemorySecretStore([Self.mcpReferenceName: Self.mcpReferenceValue]))
+
+    #expect(report.standardOutput.contains("keychain:\(Self.mcpReferenceName)"))
+    #expect(report.standardOutput.contains(ConfiguredSecret.redactedForm))
+    #expect(!report.standardOutput.contains(Self.mcpReferenceValue))
+    #expect(!report.standardOutput.contains(Self.mcpLiteralHeaderValue))
+    #expect(report.standardErrorLines.isEmpty)
+  }
+
+  /// The YAML report names the search providers in force, in order, and
+  /// the provider of a configured key is first.
+  @Test func theReportNamesTheProvidersInForce() throws {
+    let fixture = ConfigCommandFixture(label: "ConfigShowTests-web-providers")
+    try fixture.writeProjectConfig(Self.webKeyYAML)
+
+    let report = try Self.report([], in: fixture)
+
+    #expect(report.standardOutput.contains("tavily, duckDuckGoHTML, braveHTML"))
+  }
+
+  /// A key in the environment changes the providers in force, and the
+  /// report never shows its value.
+  @Test func anEnvironmentKeyChangesTheProvidersAndNeverShows() throws {
+    let fixture = ConfigCommandFixture(label: "ConfigShowTests-web-environment")
+    let environmentKey = "show-environment-key"
+
+    let report = try Self.report(
+      [], in: fixture, extraEnvironment: ["EXA_API_KEY": environmentKey])
+
+    #expect(report.standardOutput.contains("exa, duckDuckGoHTML, braveHTML"))
+    #expect(!report.standardOutput.contains(environmentKey))
+  }
+
+  // MARK: - stderr
+
+  /// A configuration warning goes to stderr, and never to stdout.
+  @Test func aWarningGoesToStderrAndNeverToStdout() throws {
+    let fixture = ConfigCommandFixture(label: "ConfigShowTests-warning")
+    try fixture.writeProjectConfig(Self.permissionsYAML)
+
+    let report = try Self.report([], in: fixture)
+
+    #expect(report.standardErrorLines.count == 1)
+    #expect(report.standardErrorLines.first?.contains("permissions") == true)
+    #expect(!report.standardOutput.contains("permissions"))
+    #expect(report.standardOutput.contains("profile:"))
+  }
+
+  // MARK: - The parse
+
+  /// The flags parse onto `Show`, and default off.
+  @Test func theFlagsParseAndDefaultOff() throws {
+    let bare = try #require(
+      try AcpAgentCommand.parseAsRoot(["config", "show"]) as? AcpAgentCommand.Config.Show)
+    let flagged = try #require(
+      try AcpAgentCommand.parseAsRoot(["config", "show", "--source", "--json"])
+        as? AcpAgentCommand.Config.Show)
+
+    #expect(!bare.annotatesSource)
+    #expect(!bare.asJSON)
+    #expect(bare.workingDirectoryOptions.workingDirectory == nil)
+    #expect(flagged.annotatesSource)
+    #expect(flagged.asJSON)
+  }
 }

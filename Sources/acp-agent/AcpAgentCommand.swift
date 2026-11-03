@@ -21,106 +21,106 @@ import Foundation
 /// contract states.
 @main
 struct AcpAgentCommand: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(
-        commandName: "acp-agent",
-        abstract: "A headless coding agent over local models, and an ACP server.",
-        version: AgentComposition.version,
-        subcommands: [Run.self, Acp.self, Config.self, Instructions.self, Doctor.self, Snapshots.self],
-        defaultSubcommand: Run.self)
+  static let configuration = CommandConfiguration(
+    commandName: "acp-agent",
+    abstract: "A headless coding agent over local models, and an ACP server.",
+    version: AgentComposition.version,
+    subcommands: [Run.self, Acp.self, Config.self, Instructions.self, Doctor.self, Snapshots.self],
+    defaultSubcommand: Run.self)
 
-    /// How the process ends after `parseAsRoot` or `run()` throws: the
-    /// exit code, and whether the message goes to stderr (a failure) or to
-    /// stdout (`--help` and `--version`, which exit 0).
-    struct ExitOutcome: Equatable {
-        /// The process exit code.
-        let code: Int32
+  /// How the process ends after `parseAsRoot` or `run()` throws: the
+  /// exit code, and whether the message goes to stderr (a failure) or to
+  /// stdout (`--help` and `--version`, which exit 0).
+  struct ExitOutcome: Equatable {
+    /// The process exit code.
+    let code: Int32
 
-        /// `true` when the message is an error and belongs on stderr;
-        /// `false` when the message is the requested output, on stdout.
-        let writesToStandardError: Bool
+    /// `true` when the message is an error and belongs on stderr;
+    /// `false` when the message is the requested output, on stdout.
+    let writesToStandardError: Bool
 
-        /// The outcome of one row of the ``AgentExitCode`` table: its
-        /// code, and stderr for every row but 0.
-        ///
-        /// - Parameter code: The row of the table.
-        init(_ code: AgentExitCode) {
-            self.init(code: code.rawValue, writesToStandardError: code != .success)
-        }
-
-        /// The outcome of a code the ArgumentParser library chose.
-        ///
-        /// - Parameters:
-        ///   - code: The process exit code.
-        ///   - writesToStandardError: Whether the message is an error.
-        init(code: Int32, writesToStandardError: Bool) {
-            self.code = code
-            self.writesToStandardError = writesToStandardError
-        }
+    /// The outcome of one row of the ``AgentExitCode`` table: its
+    /// code, and stderr for every row but 0.
+    ///
+    /// - Parameter code: The row of the table.
+    init(_ code: AgentExitCode) {
+      self.init(code: code.rawValue, writesToStandardError: code != .success)
     }
 
-    /// Maps a thrown error to its exit outcome (cli-plan.md §5.8).
+    /// The outcome of a code the ArgumentParser library chose.
     ///
-    /// Every code the CLI itself chooses is a row of ``AgentExitCode``,
-    /// and a subcommand hands one over as a thrown `ExitCode`, which the
-    /// library's `exitCode(for:)` gives back unchanged. The one code this
-    /// mapping has to correct is ArgumentParser's own usage failure.
-    ///
-    /// - Parameter error: The error `parseAsRoot` or `run()` threw.
-    /// - Returns: A usage error exits ``AgentExitCode/usage`` with its
-    ///   message on stderr; a clean exit (`--help`, `--version`) exits 0
-    ///   with its text on stdout; any other error keeps the library's
-    ///   code, on stderr.
-    static func exitOutcome(for error: any Error) -> ExitOutcome {
-        let code = exitCode(for: error)
-        guard code != .validationFailure else {
-            return ExitOutcome(.usage)
-        }
-        return ExitOutcome(code: code.rawValue, writesToStandardError: !code.isSuccess)
+    /// - Parameters:
+    ///   - code: The process exit code.
+    ///   - writesToStandardError: Whether the message is an error.
+    init(code: Int32, writesToStandardError: Bool) {
+      self.code = code
+      self.writesToStandardError = writesToStandardError
     }
+  }
 
-    /// The program entry: parse, run, and exit by ``exitOutcome(for:)``.
-    ///
-    /// The library's own `main()` is not used because it exits a usage
-    /// error with `EX_USAGE`. The help text, the version text and the
-    /// error rendering stay the library's: ``exitAfterFailure(_:)`` writes
-    /// `fullMessage(for:)`, and only the stream and the code are this
-    /// type's.
-    ///
-    /// The step after the parse bootstraps the telemetry backend
-    /// (``TelemetryBootstrap/bootstrap(telemetryFile:)``), before the process
-    /// can write a log record: the parse writes none, and the `acp`
-    /// `--telemetry-file` option must be known before the bootstrap. A parse
-    /// failure, `--help` and `--version` exit with no bootstrap, because
-    /// they write no log record. This is the only call site: the unit test
-    /// target links this target, and a test process must not bootstrap
-    /// logging.
-    static func main() async {
-        do {
-            var command = try parseAsRoot()
-            try TelemetryBootstrap.bootstrap(telemetryFile: (command as? Acp)?.telemetryFile)
-            if var asyncCommand = command as? any AsyncParsableCommand {
-                try await asyncCommand.run()
-            } else {
-                try command.run()
-            }
-        } catch {
-            exitAfterFailure(error)
-        }
+  /// Maps a thrown error to its exit outcome (cli-plan.md §5.8).
+  ///
+  /// Every code the CLI itself chooses is a row of ``AgentExitCode``,
+  /// and a subcommand hands one over as a thrown `ExitCode`, which the
+  /// library's `exitCode(for:)` gives back unchanged. The one code this
+  /// mapping has to correct is ArgumentParser's own usage failure.
+  ///
+  /// - Parameter error: The error `parseAsRoot` or `run()` threw.
+  /// - Returns: A usage error exits ``AgentExitCode/usage`` with its
+  ///   message on stderr; a clean exit (`--help`, `--version`) exits 0
+  ///   with its text on stdout; any other error keeps the library's
+  ///   code, on stderr.
+  static func exitOutcome(for error: any Error) -> ExitOutcome {
+    let code = exitCode(for: error)
+    guard code != .validationFailure else {
+      return ExitOutcome(.usage)
     }
+    return ExitOutcome(code: code.rawValue, writesToStandardError: !code.isSuccess)
+  }
 
-    /// Exits the process for `error` by its ``exitOutcome(for:)``: the
-    /// library's message on the stream the outcome names, then the
-    /// outcome's code. An empty message writes nothing, as the library's
-    /// `exit(withError:)` does.
-    ///
-    /// - Parameter error: The error `parseAsRoot` or `run()` threw.
-    private static func exitAfterFailure(_ error: any Error) -> Never {
-        let outcome = exitOutcome(for: error)
-        let message = fullMessage(for: error)
-        if !message.isEmpty {
-            let stream: FileHandle = outcome.writesToStandardError ? .standardError : .standardOutput
-            stream.write(Data((message + "\n").utf8))
-        }
-        Darwin.exit(outcome.code)
+  /// The program entry: parse, run, and exit by ``exitOutcome(for:)``.
+  ///
+  /// The library's own `main()` is not used because it exits a usage
+  /// error with `EX_USAGE`. The help text, the version text and the
+  /// error rendering stay the library's: ``exitAfterFailure(_:)`` writes
+  /// `fullMessage(for:)`, and only the stream and the code are this
+  /// type's.
+  ///
+  /// The step after the parse bootstraps the telemetry backend
+  /// (``TelemetryBootstrap/bootstrap(telemetryFile:)``), before the process
+  /// can write a log record: the parse writes none, and the `acp`
+  /// `--telemetry-file` option must be known before the bootstrap. A parse
+  /// failure, `--help` and `--version` exit with no bootstrap, because
+  /// they write no log record. This is the only call site: the unit test
+  /// target links this target, and a test process must not bootstrap
+  /// logging.
+  static func main() async {
+    do {
+      var command = try parseAsRoot()
+      try TelemetryBootstrap.bootstrap(telemetryFile: (command as? Acp)?.telemetryFile)
+      if var asyncCommand = command as? any AsyncParsableCommand {
+        try await asyncCommand.run()
+      } else {
+        try command.run()
+      }
+    } catch {
+      exitAfterFailure(error)
     }
+  }
+
+  /// Exits the process for `error` by its ``exitOutcome(for:)``: the
+  /// library's message on the stream the outcome names, then the
+  /// outcome's code. An empty message writes nothing, as the library's
+  /// `exit(withError:)` does.
+  ///
+  /// - Parameter error: The error `parseAsRoot` or `run()` threw.
+  private static func exitAfterFailure(_ error: any Error) -> Never {
+    let outcome = exitOutcome(for: error)
+    let message = fullMessage(for: error)
+    if !message.isEmpty {
+      let stream: FileHandle = outcome.writesToStandardError ? .standardError : .standardOutput
+      stream.write(Data((message + "\n").utf8))
+    }
+    Darwin.exit(outcome.code)
+  }
 }

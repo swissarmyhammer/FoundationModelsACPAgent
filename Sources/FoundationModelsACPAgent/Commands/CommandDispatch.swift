@@ -7,91 +7,91 @@ import Tracing
 /// name, the raw argument text, and the content
 /// blocks that came with the command.
 struct ParsedCommand: Sendable {
-    /// The bare command name, no leading slash.
-    let name: String
+  /// The bare command name, no leading slash.
+  let name: String
 
-    /// The raw text after `/name `, leading whitespace dropped.
-    let arguments: String
+  /// The raw text after `/name `, leading whitespace dropped.
+  let arguments: String
 
-    /// The content blocks after the command's text block. They carry
-    /// into a prompt-style or `.rendered` prompt; an `.action` command
-    /// refuses them, because it makes no model call.
-    let attachments: [ContentBlock]
+  /// The content blocks after the command's text block. They carry
+  /// into a prompt-style or `.rendered` prompt; an `.action` command
+  /// refuses them, because it makes no model call.
+  let attachments: [ContentBlock]
 }
 
 /// The dispatch mechanics of the prompt owner: the
 /// leading-slash parse, the `.prompt` template expansion, and the model
 /// prompt assembly.
 enum CommandDispatch {
-    /// The one-character prefix that marks a command.
-    static let commandPrefix = "/"
+  /// The one-character prefix that marks a command.
+  static let commandPrefix = "/"
 
-    /// The template-context key that carries the raw argument text into
-    /// a `.prompt` expansion.
-    static let argumentsTemplateKey = "arguments"
+  /// The template-context key that carries the raw argument text into
+  /// a `.prompt` expansion.
+  static let argumentsTemplateKey = "arguments"
 
-    /// Parses a leading `/name` from the prompt blocks.
-    ///
-    /// The command must be the first block, must be text, and must
-    /// start with ``commandPrefix`` followed by at least one non-space
-    /// character. A lone slash is not a command; a literal leading
-    /// slash is the frontend's escaping problem.
-    ///
-    /// - Parameter blocks: The request's content blocks.
-    /// - Returns: The parsed command, or `nil` when the prompt is not a
-    ///   command.
-    static func parseCommand(blocks: [ContentBlock]) -> ParsedCommand? {
-        guard let first = blocks.first, case .text(let content) = first,
-            content.text.hasPrefix(commandPrefix)
-        else {
-            return nil
-        }
-        let afterSlash = content.text.dropFirst(commandPrefix.count)
-        let name = afterSlash.prefix { !$0.isWhitespace }
-        guard !name.isEmpty else { return nil }
-        let arguments = afterSlash.dropFirst(name.count).drop(while: \.isWhitespace)
-        return ParsedCommand(
-            name: String(name),
-            arguments: String(arguments),
-            attachments: Array(blocks.dropFirst()))
+  /// Parses a leading `/name` from the prompt blocks.
+  ///
+  /// The command must be the first block, must be text, and must
+  /// start with ``commandPrefix`` followed by at least one non-space
+  /// character. A lone slash is not a command; a literal leading
+  /// slash is the frontend's escaping problem.
+  ///
+  /// - Parameter blocks: The request's content blocks.
+  /// - Returns: The parsed command, or `nil` when the prompt is not a
+  ///   command.
+  static func parseCommand(blocks: [ContentBlock]) -> ParsedCommand? {
+    guard let first = blocks.first, case .text(let content) = first,
+      content.text.hasPrefix(commandPrefix)
+    else {
+      return nil
     }
+    let afterSlash = content.text.dropFirst(commandPrefix.count)
+    let name = afterSlash.prefix { !$0.isWhitespace }
+    guard !name.isEmpty else { return nil }
+    let arguments = afterSlash.dropFirst(name.count).drop(while: \.isWhitespace)
+    return ParsedCommand(
+      name: String(name),
+      arguments: String(arguments),
+      attachments: Array(blocks.dropFirst()))
+  }
 
-    /// Expands a `.prompt` template through the harness template engine
-    /// into the model text of the prompt. The template is
-    /// data-sourced, so it renders untrusted, with the raw argument
-    /// text under ``argumentsTemplateKey``.
-    ///
-    /// - Parameters:
-    ///   - template: The command's template text.
-    ///   - command: The parsed command carrying the arguments.
-    /// - Returns: The expanded text.
-    /// - Throws: `TemplateEngineError` when the render fails.
-    static func expand(template: String, command: ParsedCommand) throws -> String {
-        var context = TemplateContext()
-        context.set(key: argumentsTemplateKey, to: .string(command.arguments))
-        return try TemplateEngine(partials: nil).render(template, context: context, trust: .untrusted)
-    }
+  /// Expands a `.prompt` template through the harness template engine
+  /// into the model text of the prompt. The template is
+  /// data-sourced, so it renders untrusted, with the raw argument
+  /// text under ``argumentsTemplateKey``.
+  ///
+  /// - Parameters:
+  ///   - template: The command's template text.
+  ///   - command: The parsed command carrying the arguments.
+  /// - Returns: The expanded text.
+  /// - Throws: `TemplateEngineError` when the render fails.
+  static func expand(template: String, command: ParsedCommand) throws -> String {
+    var context = TemplateContext()
+    context.set(key: argumentsTemplateKey, to: .string(command.arguments))
+    return try TemplateEngine(partials: nil).render(template, context: context, trust: .untrusted)
+  }
 
-    /// Assembles the model prompt of an expanded command prompt: the
-    /// expanded text first, then the text of each attached text block,
-    /// newline-joined — the attachments carry into the expanded prompt
-    /// so the agent does not drop a file that the user attached.
-    /// Non-text attachments ride in the echoed blocks,
-    /// the same way they do for a plain prompt.
-    ///
-    /// - Parameters:
-    ///   - expandedText: The expanded or rendered command text.
-    ///   - attachments: The blocks after the command's text block.
-    /// - Returns: The model prompt.
-    static func modelPrompt(expandedText: String, attachments: [ContentBlock]) -> String {
-        let trailingTexts = attachments.compactMap { block in
-            if case .text(let content) = block {
-                return content.text
-            }
-            return nil
-        }
-        return ([expandedText] + trailingTexts).joined(separator: "\n")
+  /// Assembles the model prompt of an expanded command prompt: the
+  /// expanded text first, then the text of each attached text block,
+  /// newline-joined — the attachments carry into the expanded prompt
+  /// so the agent does not drop a file that the user attached.
+  /// Non-text attachments ride in the echoed blocks,
+  /// the same way they do for a plain prompt.
+  ///
+  /// - Parameters:
+  ///   - expandedText: The expanded or rendered command text.
+  ///   - attachments: The blocks after the command's text block.
+  /// - Returns: The model prompt.
+  static func modelPrompt(expandedText: String, attachments: [ContentBlock]) -> String {
+    let trailingTexts = attachments.compactMap { block in
+      if case .text(let content) = block {
+        return content.text
+      }
+      return nil
     }
+    return ([expandedText] + trailingTexts).joined(separator: "\n")
+  }
 }
 
 // MARK: - The .action prompt
@@ -101,269 +101,271 @@ enum CommandDispatch {
 /// there are no transcript entries beyond what the action records. Each
 /// update goes through the command sink of the ``SessionProjector``.
 struct ActionCommandExecution: Sendable {
-    /// The prompt-state owner of the session.
-    let promptState: PromptStateOwner
+  /// The prompt-state owner of the session.
+  let promptState: PromptStateOwner
 
-    /// The sink every update of this prompt goes to.
-    let send: SessionUpdateSink
+  /// The sink every update of this prompt goes to.
+  let send: SessionUpdateSink
 
-    /// The action closure of the command's body.
-    let action: @Sendable (SlashCommand.Invocation) -> AsyncThrowingStream<String, Error>
+  /// The action closure of the command's body.
+  let action: @Sendable (SlashCommand.Invocation) -> AsyncThrowingStream<String, Error>
 
-    /// The invocation the action runs with.
-    let invocation: SlashCommand.Invocation
+  /// The invocation the action runs with.
+  let invocation: SlashCommand.Invocation
 
-    /// Runs the prompt: `running`, the streamed chunks, and one `idle` with
-    /// the stop reason. The `user_message` echo went out before this work.
-    /// A stream error is classified the same way a model prompt's error
-    /// is.
-    func run() async {
-        await promptState.promptDidStart()
-        let messageId = ACPEventTranslator.makeMessageId()
-        var stop = PromptStop.completed
-        do {
-            for try await text in action(invocation) {
-                await send(
-                    .agentMessageChunk(
-                        ContentChunk(content: .text(TextContent(text: text)), messageId: messageId)))
-            }
-        } catch {
-            stop = PromptExecution.classify(error)
-        }
-        if await promptState.cancelRequested {
-            stop = .cancelled
-        }
-        await promptState.promptDidEnd(stop: stop)
+  /// Runs the prompt: `running`, the streamed chunks, and one `idle` with
+  /// the stop reason. The `user_message` echo went out before this work.
+  /// A stream error is classified the same way a model prompt's error
+  /// is.
+  func run() async {
+    await promptState.promptDidStart()
+    let messageId = ACPEventTranslator.makeMessageId()
+    var stop = PromptStop.completed
+    do {
+      for try await text in action(invocation) {
+        await send(
+          .agentMessageChunk(
+            ContentChunk(content: .text(TextContent(text: text)), messageId: messageId)))
+      }
+    } catch {
+      stop = PromptExecution.classify(error)
     }
+    if await promptState.cancelRequested {
+      stop = .cancelled
+    }
+    await promptState.promptDidEnd(stop: stop)
+  }
 }
 
 // MARK: - The command refusals
 
 extension RequestError {
-    /// The reason an `.action` command with attachments reports: the
-    /// action sends nothing to the model, so the attachments have no place
-    /// to go, and silence would discard them.
-    private static let actionAttachmentsReason =
-        "an action command sends nothing to the model, so attached content has no place to go; send the attachments without the command"
+  /// The reason an `.action` command with attachments reports: the
+  /// action sends nothing to the model, so the attachments have no place
+  /// to go, and silence would discard them.
+  private static let actionAttachmentsReason =
+    "an action command sends nothing to the model, so attached content has no place to go; send the attachments without the command"
 
-    /// The unknown-command refusal: invalid params with
-    /// the name and the near-miss suggestions in `data`. It never sends
-    /// the prompt to the model.
-    ///
-    /// - Parameters:
-    ///   - name: The unknown command name.
-    ///   - suggestions: The nearest command names, nearest first.
-    /// - Returns: The typed invalid-params error.
-    static func unknownCommand(name: String, suggestions: [String]) -> RequestError {
-        let nearest = suggestions.map { "/\($0)" }.joined(separator: ", ")
-        let message =
-            suggestions.isEmpty
-            ? "unknown command /\(name)"
-            : "unknown command /\(name); the nearest is \(nearest)"
-        return RequestError(
-            code: .invalidParams,
-            message: message,
-            data: .object([
-                "command": .string(name),
-                "suggestions": .array(suggestions.map { .string($0) }),
-            ]))
-    }
+  /// The unknown-command refusal: invalid params with
+  /// the name and the near-miss suggestions in `data`. It never sends
+  /// the prompt to the model.
+  ///
+  /// - Parameters:
+  ///   - name: The unknown command name.
+  ///   - suggestions: The nearest command names, nearest first.
+  /// - Returns: The typed invalid-params error.
+  static func unknownCommand(name: String, suggestions: [String]) -> RequestError {
+    let nearest = suggestions.map { "/\($0)" }.joined(separator: ", ")
+    let message =
+      suggestions.isEmpty
+      ? "unknown command /\(name)"
+      : "unknown command /\(name); the nearest is \(nearest)"
+    return RequestError(
+      code: .invalidParams,
+      message: message,
+      data: .object([
+        "command": .string(name),
+        "suggestions": .array(suggestions.map { .string($0) }),
+      ]))
+  }
 
-    /// The `.action`-with-attachments refusal: invalid
-    /// params with the reason in `data`.
-    ///
-    /// - Parameter name: The action command's name.
-    /// - Returns: The typed invalid-params error.
-    static func actionCommandAttachments(name: String) -> RequestError {
-        RequestError(
-            code: .invalidParams,
-            message: "/\(name) is an action command and cannot take attachments",
-            data: .object([
-                "command": .string(name),
-                "reason": .string(actionAttachmentsReason),
-            ]))
-    }
+  /// The `.action`-with-attachments refusal: invalid
+  /// params with the reason in `data`.
+  ///
+  /// - Parameter name: The action command's name.
+  /// - Returns: The typed invalid-params error.
+  static func actionCommandAttachments(name: String) -> RequestError {
+    RequestError(
+      code: .invalidParams,
+      message: "/\(name) is an action command and cannot take attachments",
+      data: .object([
+        "command": .string(name),
+        "reason": .string(actionAttachmentsReason),
+      ]))
+  }
 
-    /// The command-expansion failure: a `.prompt` template that does
-    /// not render, or a `.rendered` closure that throws. The error
-    /// reaches the caller instead of becoming silently wrong model
-    /// input.
-    ///
-    /// - Parameters:
-    ///   - name: The command's name.
-    ///   - underlying: The render error.
-    /// - Returns: The typed internal error.
-    static func commandExpansionFailed(name: String, underlying: any Error) -> RequestError {
-        RequestError(
-            code: .internalError,
-            message: "/\(name) failed to expand",
-            data: .object([
-                "command": .string(name),
-                "detail": .string(String(describing: underlying)),
-            ]))
-    }
+  /// The command-expansion failure: a `.prompt` template that does
+  /// not render, or a `.rendered` closure that throws. The error
+  /// reaches the caller instead of becoming silently wrong model
+  /// input.
+  ///
+  /// - Parameters:
+  ///   - name: The command's name.
+  ///   - underlying: The render error.
+  /// - Returns: The typed internal error.
+  static func commandExpansionFailed(name: String, underlying: any Error) -> RequestError {
+    RequestError(
+      code: .internalError,
+      message: "/\(name) failed to expand",
+      data: .object([
+        "command": .string(name),
+        "detail": .string(String(describing: underlying)),
+      ]))
+  }
 }
 
 // MARK: - Dispatch at the prompt owner
 
 extension RoutedACPAgent {
-    /// Dispatches one parsed command before anything touches the
-    /// session: a `.prompt` template expands through
-    /// the harness engine, a `.rendered` closure is called — preferred
-    /// wherever a provider offers it — and both feed a normal recorded
-    /// model prompt; an `.action` streams its text with no model call. An
-    /// unknown name refuses with near-miss suggestions.
-    ///
-    /// The dispatch runs in one command span (``AgentTracing``), a child of
-    /// the prompt span. The span covers the registry lookup, the refusals,
-    /// the template expansion and the render. It carries the command name
-    /// and, for a registered command, its ``CommandKind``. It never carries
-    /// the argument text or the expanded text. A refusal gives the span the
-    /// error status and the type of the error, never the description of the
-    /// error. The work after the response is scheduled after the span ends,
-    /// in the context of the prompt span, so each Router submission span of
-    /// the prompt stays a child of the prompt span. A command prompt names
-    /// its user message as a plain prompt does (ACP schema-v2.0.0-alpha.7):
-    /// the echo of the command text goes out first, after the response.
-    ///
-    /// The dispatch also adds one to the `commands` counter
-    /// (``AgentMetrics``), with the kind of the command and the outcome: `ok`,
-    /// or `refused` for a refusal. The counter never carries the command
-    /// name.
-    ///
-    /// - Parameters:
-    ///   - command: The parsed command.
-    ///   - params: The prompt request the command arrived in.
-    ///   - entry: The session's table entry.
-    ///   - connection: The bound connection to notify through.
-    /// - Returns: The response that names the user message, and the
-    ///   prompt-state owner of the command prompt.
-    /// - Throws: `unknownCommand`, `actionCommandAttachments`, or
-    ///   `commandExpansionFailed`.
-    func dispatchCommand(
-        _ command: ParsedCommand,
-        params: PromptRequest,
-        entry: ActiveSession,
-        connection: AgentSideConnection
-    ) async throws -> (PromptResponse, PromptStateOwner) {
-        let kind = await entry.commands.kind(ofCommandNamed: command.name)
-        let work: CommandWork
-        do {
-            work = try await AgentTracing.withSpan(ACPAgentTelemetry.SpanName.command) { span in
-                span.attributes[ACPAgentTelemetry.AttributeKey.commandName] = command.name
-                guard let registered = await entry.commands.command(named: command.name) else {
-                    throw RequestError.unknownCommand(
-                        name: command.name,
-                        suggestions: await entry.commands.nearMisses(to: command.name))
-                }
-                span.attributes[ACPAgentTelemetry.AttributeKey.commandKind] = kind?.rawValue
-                return try await resolveCommand(
-                    registered, command: command, params: params, entry: entry, connection: connection)
-            }
-        } catch {
-            AgentMetrics.recordCommand(kind: kind, outcome: .refused)
-            throw error
+  /// Dispatches one parsed command before anything touches the
+  /// session: a `.prompt` template expands through
+  /// the harness engine, a `.rendered` closure is called — preferred
+  /// wherever a provider offers it — and both feed a normal recorded
+  /// model prompt; an `.action` streams its text with no model call. An
+  /// unknown name refuses with near-miss suggestions.
+  ///
+  /// The dispatch runs in one command span (``AgentTracing``), a child of
+  /// the prompt span. The span covers the registry lookup, the refusals,
+  /// the template expansion and the render. It carries the command name
+  /// and, for a registered command, its ``CommandKind``. It never carries
+  /// the argument text or the expanded text. A refusal gives the span the
+  /// error status and the type of the error, never the description of the
+  /// error. The work after the response is scheduled after the span ends,
+  /// in the context of the prompt span, so each Router submission span of
+  /// the prompt stays a child of the prompt span. A command prompt names
+  /// its user message as a plain prompt does (ACP schema-v2.0.0-alpha.7):
+  /// the echo of the command text goes out first, after the response.
+  ///
+  /// The dispatch also adds one to the `commands` counter
+  /// (``AgentMetrics``), with the kind of the command and the outcome: `ok`,
+  /// or `refused` for a refusal. The counter never carries the command
+  /// name.
+  ///
+  /// - Parameters:
+  ///   - command: The parsed command.
+  ///   - params: The prompt request the command arrived in.
+  ///   - entry: The session's table entry.
+  ///   - connection: The bound connection to notify through.
+  /// - Returns: The response that names the user message, and the
+  ///   prompt-state owner of the command prompt.
+  /// - Throws: `unknownCommand`, `actionCommandAttachments`, or
+  ///   `commandExpansionFailed`.
+  func dispatchCommand(
+    _ command: ParsedCommand,
+    params: PromptRequest,
+    entry: ActiveSession,
+    connection: AgentSideConnection
+  ) async throws -> (PromptResponse, PromptStateOwner) {
+    let kind = await entry.commands.kind(ofCommandNamed: command.name)
+    let work: CommandWork
+    do {
+      work = try await AgentTracing.withSpan(ACPAgentTelemetry.SpanName.command) { span in
+        span.attributes[ACPAgentTelemetry.AttributeKey.commandName] = command.name
+        guard let registered = await entry.commands.command(named: command.name) else {
+          throw RequestError.unknownCommand(
+            name: command.name,
+            suggestions: await entry.commands.nearMisses(to: command.name))
         }
-        AgentMetrics.recordCommand(kind: kind, outcome: .ok)
-        switch work {
-        case .action(let execution):
-            let sessionId = params.sessionId
-            let messageId = insertUserMessage(params, through: connection)
-            let owner = execution.promptState
-            connection.afterRespondingInCurrentInstrumentationContext {
-                await execution.run()
-                await self.promptFinished(owner, sessionId: sessionId)
-            }
-            return (PromptResponse(messageId: messageId), owner)
-        case .modelPrompt(let text, let owner, let send):
-            let response = scheduleModelPrompt(
-                overridePrompt: text,
-                params: params, entry: entry, connection: connection, owner: owner, send: send)
-            return (response, owner)
-        }
+        span.attributes[ACPAgentTelemetry.AttributeKey.commandKind] = kind?.rawValue
+        return try await resolveCommand(
+          registered, command: command, params: params, entry: entry, connection: connection)
+      }
+    } catch {
+      AgentMetrics.recordCommand(kind: kind, outcome: .refused)
+      throw error
     }
+    AgentMetrics.recordCommand(kind: kind, outcome: .ok)
+    switch work {
+    case .action(let execution):
+      let sessionId = params.sessionId
+      let messageId = insertUserMessage(params, through: connection)
+      let owner = execution.promptState
+      connection.afterRespondingInCurrentInstrumentationContext {
+        await execution.run()
+        await self.promptFinished(owner, sessionId: sessionId)
+      }
+      return (PromptResponse(messageId: messageId), owner)
+    case .modelPrompt(let text, let owner, let send):
+      let response = scheduleModelPrompt(
+        overridePrompt: text,
+        params: params, entry: entry, connection: connection, owner: owner, send: send)
+      return (response, owner)
+    }
+  }
 
-    /// Resolves one registered command into the work that runs after the
-    /// response: the refusal checks, the template expansion or the
-    /// render, and the record of the prompt in flight.
-    ///
-    /// - Parameters:
-    ///   - registered: The registered command that the name selected.
-    ///   - command: The parsed command.
-    ///   - params: The prompt request the command arrived in.
-    ///   - entry: The session's table entry.
-    ///   - connection: The bound connection to notify through.
-    /// - Returns: The work of the command.
-    /// - Throws: `actionCommandAttachments` or `commandExpansionFailed`.
-    private func resolveCommand(
-        _ registered: SlashCommand,
-        command: ParsedCommand,
-        params: PromptRequest,
-        entry: ActiveSession,
-        connection: AgentSideConnection
-    ) async throws -> CommandWork {
-        switch registered.body {
-        case .action(let action):
-            guard command.attachments.isEmpty else {
-                throw RequestError.actionCommandAttachments(name: command.name)
-            }
-            // The updates of an action go through the projector, so they keep
-            // their order with the events of the session (elicitation-plan
-            // task 1).
-            return .action(
-                ActionCommandExecution(
-                    promptState: beginPrompt(params: params),
-                    send: entry.projector.commandSink,
-                    action: action,
-                    invocation: SlashCommand.Invocation(
-                        arguments: command.arguments,
-                        workingDirectory: entry.workingDirectory)))
-        case .prompt(let template):
-            let expandedText: String
-            do {
-                expandedText = try CommandDispatch.expand(template: template, command: command)
-            } catch {
-                throw RequestError.commandExpansionFailed(name: command.name, underlying: error)
-            }
-            return .modelPrompt(
-                text: CommandDispatch.modelPrompt(expandedText: expandedText, attachments: command.attachments),
-                owner: beginPrompt(params: params),
-                send: historySink(for: params.sessionId))
-        case .rendered(let render):
-            // Record the prompt in flight before the async render, so a
-            // cancel or a close during the render reaches it.
-            let owner = beginPrompt(params: params)
-            let send = historySink(for: params.sessionId)
-            let renderedText: String
-            do {
-                renderedText = try await render(
-                    SlashCommand.Invocation(
-                        arguments: command.arguments,
-                        workingDirectory: entry.workingDirectory))
-            } catch {
-                await promptFinished(owner, sessionId: params.sessionId)
-                throw RequestError.commandExpansionFailed(name: command.name, underlying: error)
-            }
-            return .modelPrompt(
-                text: CommandDispatch.modelPrompt(expandedText: renderedText, attachments: command.attachments),
-                owner: owner, send: send)
-        }
+  /// Resolves one registered command into the work that runs after the
+  /// response: the refusal checks, the template expansion or the
+  /// render, and the record of the prompt in flight.
+  ///
+  /// - Parameters:
+  ///   - registered: The registered command that the name selected.
+  ///   - command: The parsed command.
+  ///   - params: The prompt request the command arrived in.
+  ///   - entry: The session's table entry.
+  ///   - connection: The bound connection to notify through.
+  /// - Returns: The work of the command.
+  /// - Throws: `actionCommandAttachments` or `commandExpansionFailed`.
+  private func resolveCommand(
+    _ registered: SlashCommand,
+    command: ParsedCommand,
+    params: PromptRequest,
+    entry: ActiveSession,
+    connection: AgentSideConnection
+  ) async throws -> CommandWork {
+    switch registered.body {
+    case .action(let action):
+      guard command.attachments.isEmpty else {
+        throw RequestError.actionCommandAttachments(name: command.name)
+      }
+      // The updates of an action go through the projector, so they keep
+      // their order with the events of the session (elicitation-plan
+      // task 1).
+      return .action(
+        ActionCommandExecution(
+          promptState: beginPrompt(params: params),
+          send: entry.projector.commandSink,
+          action: action,
+          invocation: SlashCommand.Invocation(
+            arguments: command.arguments,
+            workingDirectory: entry.workingDirectory)))
+    case .prompt(let template):
+      let expandedText: String
+      do {
+        expandedText = try CommandDispatch.expand(template: template, command: command)
+      } catch {
+        throw RequestError.commandExpansionFailed(name: command.name, underlying: error)
+      }
+      return .modelPrompt(
+        text: CommandDispatch.modelPrompt(
+          expandedText: expandedText, attachments: command.attachments),
+        owner: beginPrompt(params: params),
+        send: historySink(for: params.sessionId))
+    case .rendered(let render):
+      // Record the prompt in flight before the async render, so a
+      // cancel or a close during the render reaches it.
+      let owner = beginPrompt(params: params)
+      let send = historySink(for: params.sessionId)
+      let renderedText: String
+      do {
+        renderedText = try await render(
+          SlashCommand.Invocation(
+            arguments: command.arguments,
+            workingDirectory: entry.workingDirectory))
+      } catch {
+        await promptFinished(owner, sessionId: params.sessionId)
+        throw RequestError.commandExpansionFailed(name: command.name, underlying: error)
+      }
+      return .modelPrompt(
+        text: CommandDispatch.modelPrompt(
+          expandedText: renderedText, attachments: command.attachments),
+        owner: owner, send: send)
     }
+  }
 }
 
 /// The work of one resolved command prompt: what runs after the response.
 /// The prompt is already in the list of open prompts of the session.
 private enum CommandWork: Sendable {
-    /// An `.action` command: its closure streams the text, with no model
-    /// call.
-    case action(ActionCommandExecution)
+  /// An `.action` command: its closure streams the text, with no model
+  /// call.
+  case action(ActionCommandExecution)
 
-    /// A `.prompt` or `.rendered` command: a normal recorded model prompt
-    /// over the expanded or rendered text.
-    ///
-    /// - Parameters:
-    ///   - text: The model prompt.
-    ///   - owner: The prompt-state owner of the prompt in flight.
-    ///   - send: The sink every update of the prompt goes to.
-    case modelPrompt(text: String, owner: PromptStateOwner, send: SessionUpdateSink)
+  /// A `.prompt` or `.rendered` command: a normal recorded model prompt
+  /// over the expanded or rendered text.
+  ///
+  /// - Parameters:
+  ///   - text: The model prompt.
+  ///   - owner: The prompt-state owner of the prompt in flight.
+  ///   - send: The sink every update of the prompt goes to.
+  case modelPrompt(text: String, owner: PromptStateOwner, send: SessionUpdateSink)
 }

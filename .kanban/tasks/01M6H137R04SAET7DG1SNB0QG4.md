@@ -21,8 +21,20 @@ comments:
 
     Tests: Tests/FoundationModelsACPAgentTests/RequiresActionStateTests.swift (ledger transitions, answer that resumes work, work that already ended, a real question reaching the client, a relayed copy sends nothing). ElicitationRelayTests (form, URL, cancel) and PromptFollowUpTests assert the new sequence.
   timestamp: 2026-11-03T16:06:37.578242+00:00
-position_column: review
-position_ordinal: '8280'
+- actor: claude-code
+  id: 01m6hpzqgdah6238q3fnsr7t75
+  text: |-
+    ### implement - no-change
+    - evidence: 0 files changed. The card has no "## Review Findings" section and no open review item in the comments. All 3 acceptance criteria and the tests are checked. The work (userWaitStarted, userWaitEnded, RequiresActionStateTests.swift) is already in commit 4d4524d and earlier.
+    - next: the card is in doing. Run /review again.
+
+    step: implement
+    outcome: no-change
+    evidence: 0 files changed; 0 open findings; 0 unchecked criteria
+    task: ^snb0qg4
+  timestamp: 2026-11-03T22:02:59.981432+00:00
+position_column: doing
+position_ordinal: '80'
 title: Live state updates send requires_action while a question waits for the user, and leave it when the question ends
 ---
 ## What

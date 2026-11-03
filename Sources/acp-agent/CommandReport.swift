@@ -6,16 +6,16 @@ import Foundation
 /// and writes it in one place, so a test reads the value and never the
 /// process streams.
 struct CommandReport {
-    /// The report text, newline-terminated.
-    let standardOutput: String
+  /// The report text, newline-terminated.
+  let standardOutput: String
 
-    /// The warning lines for stderr, one message each, in load order.
-    let standardErrorLines: [String]
+  /// The warning lines for stderr, one message each, in load order.
+  let standardErrorLines: [String]
 
-    /// Writes the report: the text to stdout, and each warning on its own
-    /// stderr line.
-    func write() {
-        FileHandle.standardOutput.write(Data(standardOutput.utf8))
-        FileHandle.standardError.write(Data(standardErrorLines.map { $0 + "\n" }.joined().utf8))
-    }
+  /// Writes the report: the text to stdout, and each warning on its own
+  /// stderr line.
+  func write() {
+    FileHandle.standardOutput.write(Data(standardOutput.utf8))
+    FileHandle.standardError.write(Data(standardErrorLines.map { $0 + "\n" }.joined().utf8))
+  }
 }

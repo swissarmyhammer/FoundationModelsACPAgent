@@ -18,46 +18,46 @@ import Foundation
 /// close when the capture goes, and the descriptors are then another
 /// file's.
 final class TerminalCapture {
-    /// The size of one read from the pipe, in bytes.
-    ///
-    /// A whole render is a few hundred bytes, so one read normally takes
-    /// everything; the drain loop covers the rest.
-    private static let readChunkSize = 4096
+  /// The size of one read from the pipe, in bytes.
+  ///
+  /// A whole render is a few hundred bytes, so one read normally takes
+  /// everything; the drain loop covers the rest.
+  private static let readChunkSize = 4096
 
-    /// The pipe the renderer draws into.
-    private let pipe = Pipe()
+  /// The pipe the renderer draws into.
+  private let pipe = Pipe()
 
-    /// The handle to hand to ``TerminalRenderer/init(destination:isTerminal:)``.
-    let destination: FileHandle
+  /// The handle to hand to ``TerminalRenderer/init(destination:isTerminal:)``.
+  let destination: FileHandle
 
-    /// Creates a capture over a fresh pipe whose read end never blocks.
-    init() {
-        destination = pipe.fileHandleForWriting
-        let readDescriptor = pipe.fileHandleForReading.fileDescriptor
-        let flags = fcntl(readDescriptor, F_GETFL)
-        _ = fcntl(readDescriptor, F_SETFL, flags | O_NONBLOCK)
+  /// Creates a capture over a fresh pipe whose read end never blocks.
+  init() {
+    destination = pipe.fileHandleForWriting
+    let readDescriptor = pipe.fileHandleForReading.fileDescriptor
+    let flags = fcntl(readDescriptor, F_GETFL)
+    _ = fcntl(readDescriptor, F_SETFL, flags | O_NONBLOCK)
+  }
+
+  /// Every byte on the pipe now, in write order.
+  ///
+  /// - Returns: The bytes, empty when nothing was drawn.
+  func bytes() -> Data {
+    let readDescriptor = pipe.fileHandleForReading.fileDescriptor
+    var captured = Data()
+    var buffer = [UInt8](repeating: 0, count: Self.readChunkSize)
+    while true {
+      let count = buffer.withUnsafeMutableBytes { raw in
+        Darwin.read(readDescriptor, raw.baseAddress, Self.readChunkSize)
+      }
+      guard count > 0 else { return captured }
+      captured.append(contentsOf: buffer[0..<count])
     }
+  }
 
-    /// Every byte on the pipe now, in write order.
-    ///
-    /// - Returns: The bytes, empty when nothing was drawn.
-    func bytes() -> Data {
-        let readDescriptor = pipe.fileHandleForReading.fileDescriptor
-        var captured = Data()
-        var buffer = [UInt8](repeating: 0, count: Self.readChunkSize)
-        while true {
-            let count = buffer.withUnsafeMutableBytes { raw in
-                Darwin.read(readDescriptor, raw.baseAddress, Self.readChunkSize)
-            }
-            guard count > 0 else { return captured }
-            captured.append(contentsOf: buffer[0..<count])
-        }
-    }
-
-    /// ``bytes()`` decoded as UTF-8.
-    ///
-    /// - Returns: The captured text, empty when nothing was drawn.
-    func text() -> String {
-        String(decoding: bytes(), as: UTF8.self)
-    }
+  /// ``bytes()`` decoded as UTF-8.
+  ///
+  /// - Returns: The captured text, empty when nothing was drawn.
+  func text() -> String {
+    String(decoding: bytes(), as: UTF8.self)
+  }
 }

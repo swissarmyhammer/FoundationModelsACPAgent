@@ -17,152 +17,155 @@ import Testing
 /// SWE-bench transcript of django__django-13964, where the window is 262144
 /// tokens.
 @Suite struct ContextUsageReportTests {
-    // MARK: - Constants
+  // MARK: - Constants
 
-    /// The context window of the session, in tokens.
-    private static let windowTokens = 262_144
+  /// The context window of the session, in tokens.
+  private static let windowTokens = 262_144
 
-    /// The fed tokens of the call that filled the context most.
-    private static let peakCallTokensIn = 120_000
+  /// The fed tokens of the call that filled the context most.
+  private static let peakCallTokensIn = 120_000
 
-    /// The generated tokens of the call that filled the context most.
-    private static let peakCallTokensOut = 1_072
+  /// The generated tokens of the call that filled the context most.
+  private static let peakCallTokensOut = 1_072
 
-    /// The fed tokens of the last call of the prompt.
-    private static let lastCallTokensIn = 50_193
+  /// The fed tokens of the last call of the prompt.
+  private static let lastCallTokensIn = 50_193
 
-    /// The generated tokens of the last call of the prompt.
-    private static let lastCallTokensOut = 80
+  /// The generated tokens of the last call of the prompt.
+  private static let lastCallTokensOut = 80
 
-    /// The fed tokens of the prompt, summed over every call.
-    private static let summedTokensIn = 1_233_016
+  /// The fed tokens of the prompt, summed over every call.
+  private static let summedTokensIn = 1_233_016
 
-    /// The generated tokens of the prompt, summed over every call.
-    private static let summedTokensOut = 45_956
+  /// The generated tokens of the prompt, summed over every call.
+  private static let summedTokensOut = 45_956
 
-    // MARK: - Fixtures
+  // MARK: - Fixtures
 
-    /// Makes the usage event of one generation call, with the fill that
-    /// Router gives it: the fed and generated tokens over the window.
-    ///
-    /// - Parameters:
-    ///   - tokensIn: The fed tokens of the call.
-    ///   - tokensOut: The generated tokens of the call.
-    /// - Returns: The event.
-    private static func makeGenerationCall(tokensIn: Int, tokensOut: Int) -> SessionEvent {
-        .generationCall(
-            GenerationCallUsage(
-                tokensIn: tokensIn, tokensOut: tokensOut, finishReason: .completed, entryKind: .toolCall,
-                contextFill: Double(tokensIn + tokensOut) / Double(windowTokens)))
+  /// Makes the usage event of one generation call, with the fill that
+  /// Router gives it: the fed and generated tokens over the window.
+  ///
+  /// - Parameters:
+  ///   - tokensIn: The fed tokens of the call.
+  ///   - tokensOut: The generated tokens of the call.
+  /// - Returns: The event.
+  private static func makeGenerationCall(tokensIn: Int, tokensOut: Int) -> SessionEvent {
+    .generationCall(
+      GenerationCallUsage(
+        tokensIn: tokensIn, tokensOut: tokensOut, finishReason: .completed, entryKind: .toolCall,
+        contextFill: Double(tokensIn + tokensOut) / Double(windowTokens)))
+  }
+
+  /// The two calls of the scripted prompt: first the call that filled the
+  /// context most, then a smaller last call.
+  private static var peakThenLastCall: [SessionEvent] {
+    [
+      makeGenerationCall(tokensIn: peakCallTokensIn, tokensOut: peakCallTokensOut),
+      makeGenerationCall(tokensIn: lastCallTokensIn, tokensOut: lastCallTokensOut),
+    ]
+  }
+
+  /// Makes the end of the one submission of the scripted prompt. Its usage
+  /// sums the tokens of all calls, and its fill is the context that the
+  /// last call left.
+  ///
+  /// - Parameter finishReason: Why the submission stopped.
+  /// - Returns: The event.
+  private static func makeSummedSubmissionEnd(finishReason: FinishReason) -> SessionEvent {
+    makeSubmissionEnded(
+      TokenUsage(
+        tokensIn: summedTokensIn, tokensOut: summedTokensOut,
+        contextFill: Double(lastCallTokensIn + lastCallTokensOut) / Double(windowTokens),
+        finishReason: finishReason))
+  }
+
+  /// Drives a prompt that ends at the reasoning token limit, and returns
+  /// the one `error` record of the cut prompt.
+  ///
+  /// - Parameter calls: The generation call events before the end.
+  /// - Returns: The record of the cut prompt.
+  private static func cutRecord(after calls: [SessionEvent]) async throws
+    -> TelemetryCapture.LogRecord
+  {
+    let events = calls + [makeSummedSubmissionEnd(finishReason: .reasoningTokenLimit)]
+    let records = try await TelemetryCapture.run(forbidding: []) { context in
+      _ = await SyntheticPrompt.drive(events)
+      return context.logRecords
     }
+    let cut = records.filter { $0.level == .error }
+    #expect(cut.count == 1)
+    return try #require(cut.first)
+  }
 
-    /// The two calls of the scripted prompt: first the call that filled the
-    /// context most, then a smaller last call.
-    private static var peakThenLastCall: [SessionEvent] {
-        [
-            makeGenerationCall(tokensIn: peakCallTokensIn, tokensOut: peakCallTokensOut),
-            makeGenerationCall(tokensIn: lastCallTokensIn, tokensOut: lastCallTokensOut),
-        ]
-    }
+  /// Drives a prompt that ends by itself, and returns its usage updates.
+  ///
+  /// - Parameter calls: The generation call events before the end.
+  /// - Returns: The usage updates the prompt sent, in order.
+  private static func usageUpdates(after calls: [SessionEvent]) async -> [UsageUpdate] {
+    await SyntheticPrompt.sentUpdates(calls + [makeSummedSubmissionEnd(finishReason: .completed)])
+      .compactMap(usageReport(of:))
+  }
 
-    /// Makes the end of the one submission of the scripted prompt. Its usage
-    /// sums the tokens of all calls, and its fill is the context that the
-    /// last call left.
-    ///
-    /// - Parameter finishReason: Why the submission stopped.
-    /// - Returns: The event.
-    private static func makeSummedSubmissionEnd(finishReason: FinishReason) -> SessionEvent {
-        makeSubmissionEnded(
-            TokenUsage(
-                tokensIn: summedTokensIn, tokensOut: summedTokensOut,
-                contextFill: Double(lastCallTokensIn + lastCallTokensOut) / Double(windowTokens),
-                finishReason: finishReason))
-    }
+  // MARK: - The record of a cut prompt
 
-    /// Drives a prompt that ends at the reasoning token limit, and returns
-    /// the one `error` record of the cut prompt.
-    ///
-    /// - Parameter calls: The generation call events before the end.
-    /// - Returns: The record of the cut prompt.
-    private static func cutRecord(after calls: [SessionEvent]) async throws -> TelemetryCapture.LogRecord {
-        let events = calls + [makeSummedSubmissionEnd(finishReason: .reasoningTokenLimit)]
-        let records = try await TelemetryCapture.run(forbidding: []) { context in
-            _ = await SyntheticPrompt.drive(events)
-            return context.logRecords
-        }
-        let cut = records.filter { $0.level == .error }
-        #expect(cut.count == 1)
-        return try #require(cut.first)
-    }
+  /// The record gives the fill of the last generation call, not the fill
+  /// of the call that filled the context most.
+  @Test func theCutRecordGivesTheFillOfTheLastGenerationCall() async throws {
+    let record = try await Self.cutRecord(after: Self.peakThenLastCall)
 
-    /// Drives a prompt that ends by itself, and returns its usage updates.
-    ///
-    /// - Parameter calls: The generation call events before the end.
-    /// - Returns: The usage updates the prompt sent, in order.
-    private static func usageUpdates(after calls: [SessionEvent]) async -> [UsageUpdate] {
-        await SyntheticPrompt.sentUpdates(calls + [makeSummedSubmissionEnd(finishReason: .completed)])
-            .compactMap(usageReport(of:))
-    }
+    #expect(record.metadata[ACPAgentTelemetry.LogMetadataKey.lastCallContextFill] == "0.192")
+  }
 
-    // MARK: - The record of a cut prompt
+  /// The record gives the peak fill of the prompt: the largest fill of
+  /// all its generation calls.
+  @Test func theCutRecordGivesThePeakFillOfThePrompt() async throws {
+    let record = try await Self.cutRecord(after: Self.peakThenLastCall)
 
-    /// The record gives the fill of the last generation call, not the fill
-    /// of the call that filled the context most.
-    @Test func theCutRecordGivesTheFillOfTheLastGenerationCall() async throws {
-        let record = try await Self.cutRecord(after: Self.peakThenLastCall)
+    #expect(record.metadata[ACPAgentTelemetry.LogMetadataKey.peakContextFill] == "0.462")
+  }
 
-        #expect(record.metadata[ACPAgentTelemetry.LogMetadataKey.lastCallContextFill] == "0.192")
-    }
+  /// The record gives the context window that the generation calls
+  /// measure: the context of one call divided by its fill.
+  @Test func theCutRecordGivesTheContextWindowThatTheCallsMeasure() async throws {
+    let record = try await Self.cutRecord(after: Self.peakThenLastCall)
 
-    /// The record gives the peak fill of the prompt: the largest fill of
-    /// all its generation calls.
-    @Test func theCutRecordGivesThePeakFillOfThePrompt() async throws {
-        let record = try await Self.cutRecord(after: Self.peakThenLastCall)
+    #expect(
+      record.metadata[ACPAgentTelemetry.LogMetadataKey.contextTokens] == "\(Self.windowTokens)")
+  }
 
-        #expect(record.metadata[ACPAgentTelemetry.LogMetadataKey.peakContextFill] == "0.462")
-    }
+  /// With no generation call report, the record does not know the fills
+  /// or the window, and says so.
+  @Test func theCutRecordSaysUnknownWhenNoGenerationCallWasReported() async throws {
+    let record = try await Self.cutRecord(after: [])
+    let keys = ACPAgentTelemetry.LogMetadataKey.self
 
-    /// The record gives the context window that the generation calls
-    /// measure: the context of one call divided by its fill.
-    @Test func theCutRecordGivesTheContextWindowThatTheCallsMeasure() async throws {
-        let record = try await Self.cutRecord(after: Self.peakThenLastCall)
+    #expect(record.metadata[keys.lastCallContextFill] == "unknown")
+    #expect(record.metadata[keys.peakContextFill] == "unknown")
+    #expect(record.metadata[keys.contextTokens] == "unknown")
+  }
 
-        #expect(record.metadata[ACPAgentTelemetry.LogMetadataKey.contextTokens] == "\(Self.windowTokens)")
-    }
+  // MARK: - The usage update
 
-    /// With no generation call report, the record does not know the fills
-    /// or the window, and says so.
-    @Test func theCutRecordSaysUnknownWhenNoGenerationCallWasReported() async throws {
-        let record = try await Self.cutRecord(after: [])
-        let keys = ACPAgentTelemetry.LogMetadataKey.self
+  /// The `size` of the meter is the context window that the generation
+  /// calls measure, not the summed tokens divided by a fill.
+  @Test func theUsageUpdateSizeIsTheContextWindow() async throws {
+    let usage = try #require(await Self.usageUpdates(after: Self.peakThenLastCall).first)
 
-        #expect(record.metadata[keys.lastCallContextFill] == "unknown")
-        #expect(record.metadata[keys.peakContextFill] == "unknown")
-        #expect(record.metadata[keys.contextTokens] == "unknown")
-    }
+    #expect(usage.size == Self.windowTokens)
+  }
 
-    // MARK: - The usage update
+  /// The `used` of the meter is the context that the prompt left, which is
+  /// the fill of the last submission over the window, not the sum of the
+  /// fed tokens of all calls.
+  @Test func theUsageUpdateUsedIsTheContextThatThePromptLeft() async throws {
+    let usage = try #require(await Self.usageUpdates(after: Self.peakThenLastCall).first)
 
-    /// The `size` of the meter is the context window that the generation
-    /// calls measure, not the summed tokens divided by a fill.
-    @Test func theUsageUpdateSizeIsTheContextWindow() async throws {
-        let usage = try #require(await Self.usageUpdates(after: Self.peakThenLastCall).first)
+    #expect(usage.used == Self.lastCallTokensIn + Self.lastCallTokensOut)
+  }
 
-        #expect(usage.size == Self.windowTokens)
-    }
-
-    /// The `used` of the meter is the context that the prompt left, which is
-    /// the fill of the last submission over the window, not the sum of the
-    /// fed tokens of all calls.
-    @Test func theUsageUpdateUsedIsTheContextThatThePromptLeft() async throws {
-        let usage = try #require(await Self.usageUpdates(after: Self.peakThenLastCall).first)
-
-        #expect(usage.used == Self.lastCallTokensIn + Self.lastCallTokensOut)
-    }
-
-    /// With no generation call report, the prompt does not know the window,
-    /// so it sends no meter.
-    @Test func aPromptWithNoGenerationCallReportSendsNoUsageUpdate() async {
-        #expect(await Self.usageUpdates(after: []).isEmpty)
-    }
+  /// With no generation call report, the prompt does not know the window,
+  /// so it sends no meter.
+  @Test func aPromptWithNoGenerationCallReportSendsNoUsageUpdate() async {
+    #expect(await Self.usageUpdates(after: []).isEmpty)
+  }
 }

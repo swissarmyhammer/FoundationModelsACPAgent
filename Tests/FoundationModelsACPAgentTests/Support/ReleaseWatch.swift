@@ -27,36 +27,36 @@ import FoundationModelsExtras
 /// session entry of the agent went, and the agent holds its session
 /// entries until it goes.
 final class AgentReleaseSentinel: SlashCommandProviding {
-    /// Whether the provider was released, with its waits. The test keeps
-    /// this value; the provider only sets it.
-    private let released: WatchedValue<Bool>
+  /// Whether the provider was released, with its waits. The test keeps
+  /// this value; the provider only sets it.
+  private let released: WatchedValue<Bool>
 
-    /// Makes a sentinel that sets `released` in its deinit.
-    ///
-    /// - Parameter released: The value the deinit sets to `true`.
-    init(settingOnRelease released: WatchedValue<Bool>) {
-        self.released = released
-    }
+  /// Makes a sentinel that sets `released` in its deinit.
+  ///
+  /// - Parameter released: The value the deinit sets to `true`.
+  init(settingOnRelease released: WatchedValue<Bool>) {
+    self.released = released
+  }
 
-    deinit {
-        released.update { $0 = true }
-    }
+  deinit {
+    released.update { $0 = true }
+  }
 
-    func commands(workingDirectory: URL) async -> [SlashCommand] {
-        []
-    }
+  func commands(workingDirectory: URL) async -> [SlashCommand] {
+    []
+  }
 
-    var commandUpdates: AsyncStream<[SlashCommand]>? {
-        nil
-    }
+  var commandUpdates: AsyncStream<[SlashCommand]>? {
+    nil
+  }
 
-    /// Makes a sentinel and the value its release sets.
-    ///
-    /// - Returns: The sentinel to register, and the value the test waits on.
-    static func make() -> (sentinel: AgentReleaseSentinel, released: WatchedValue<Bool>) {
-        let released = WatchedValue(false)
-        return (AgentReleaseSentinel(settingOnRelease: released), released)
-    }
+  /// Makes a sentinel and the value its release sets.
+  ///
+  /// - Returns: The sentinel to register, and the value the test waits on.
+  static func make() -> (sentinel: AgentReleaseSentinel, released: WatchedValue<Bool>) {
+    let released = WatchedValue(false)
+    return (AgentReleaseSentinel(settingOnRelease: released), released)
+  }
 }
 
 /// The wait for the release of the Router sessions of a scripted model.
@@ -68,12 +68,12 @@ final class AgentReleaseSentinel: SlashCommandProviding {
 /// session a new backend and releases the old one. A test that uses this
 /// wait thus also expects that no compaction ran on the session.
 enum RouterSessionReleaseWatch {
-    /// Waits until no scripted backend of `lifetimes` is alive.
-    ///
-    /// - Parameter lifetimes: The count of the scripted backends.
-    /// - Throws: ``ConditionWaitCancelled`` when the test is cancelled
-    ///   first.
-    static func waitForRelease(of lifetimes: BackendLifetimes) async throws {
-        try await lifetimes.wait(for: "each scripted backend is released") { $0 == 0 }
-    }
+  /// Waits until no scripted backend of `lifetimes` is alive.
+  ///
+  /// - Parameter lifetimes: The count of the scripted backends.
+  /// - Throws: ``ConditionWaitCancelled`` when the test is cancelled
+  ///   first.
+  static func waitForRelease(of lifetimes: BackendLifetimes) async throws {
+    try await lifetimes.wait(for: "each scripted backend is released") { $0 == 0 }
+  }
 }

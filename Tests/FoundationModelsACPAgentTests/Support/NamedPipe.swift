@@ -8,54 +8,55 @@ import Testing
 /// closes it. The test is that writer, thus the test decides when the shell
 /// run settles.
 enum NamedPipe {
-    /// The permissions of each pipe: read and write for the owner.
-    private static let permissions: mode_t = 0o600
+  /// The permissions of each pipe: read and write for the owner.
+  private static let permissions: mode_t = 0o600
 
-    /// Makes a new working directory that holds one named pipe.
-    ///
-    /// - Parameters:
-    ///   - name: The file name of the pipe.
-    ///   - label: The directory label of the calling suite.
-    /// - Returns: The directory.
-    /// - Throws: When the named pipe cannot be made.
-    static func makeDirectory(holding name: String, label: String) throws -> URL {
-        let directory = makeResolvedDirectory(label: label)
-        let pipe = directory.appendingPathComponent(name)
-        try #require(mkfifo(pipe.path, permissions) == 0, "mkfifo failed with errno \(errno)")
-        return directory
-    }
+  /// Makes a new working directory that holds one named pipe.
+  ///
+  /// - Parameters:
+  ///   - name: The file name of the pipe.
+  ///   - label: The directory label of the calling suite.
+  /// - Returns: The directory.
+  /// - Throws: When the named pipe cannot be made.
+  static func makeDirectory(holding name: String, label: String) throws -> URL {
+    let directory = makeResolvedDirectory(label: label)
+    let pipe = directory.appendingPathComponent(name)
+    try #require(mkfifo(pipe.path, permissions) == 0, "mkfifo failed with errno \(errno)")
+    return directory
+  }
 
-    /// Writes `text` into the pipe at `pipe` after a reader opened it, and
-    /// then closes the write end. The reader thus reads `text` and then the
-    /// end of the stream.
-    ///
-    /// A write end that opens with no `O_NONBLOCK` blocks in the kernel until
-    /// a reader holds the pipe open. Thus the text never goes into a pipe
-    /// that no reader holds, where the close of the last writer would
-    /// discard it, and the wait uses no clock and no poll. The open blocks a
-    /// thread, so it runs on a thread of its own and not on the cooperative
-    /// pool.
-    ///
-    /// - Parameters:
-    ///   - text: The text to write.
-    ///   - pipe: The named pipe.
-    /// - Throws: When the open or the write fails.
-    static func write(_ text: String, toPipeAt pipe: URL) async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
-            let writer = Thread {
-                let descriptor = open(pipe.path, O_WRONLY)
-                guard descriptor >= 0 else {
-                    continuation.resume(throwing: POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO))
-                    return
-                }
-                let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
-                continuation.resume(
-                    with: Result {
-                        try handle.write(contentsOf: Data(text.utf8))
-                        try handle.close()
-                    })
-            }
-            writer.start()
+  /// Writes `text` into the pipe at `pipe` after a reader opened it, and
+  /// then closes the write end. The reader thus reads `text` and then the
+  /// end of the stream.
+  ///
+  /// A write end that opens with no `O_NONBLOCK` blocks in the kernel until
+  /// a reader holds the pipe open. Thus the text never goes into a pipe
+  /// that no reader holds, where the close of the last writer would
+  /// discard it, and the wait uses no clock and no poll. The open blocks a
+  /// thread, so it runs on a thread of its own and not on the cooperative
+  /// pool.
+  ///
+  /// - Parameters:
+  ///   - text: The text to write.
+  ///   - pipe: The named pipe.
+  /// - Throws: When the open or the write fails.
+  static func write(_ text: String, toPipeAt pipe: URL) async throws {
+    try await withCheckedThrowingContinuation {
+      (continuation: CheckedContinuation<Void, any Error>) in
+      let writer = Thread {
+        let descriptor = open(pipe.path, O_WRONLY)
+        guard descriptor >= 0 else {
+          continuation.resume(throwing: POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO))
+          return
         }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        continuation.resume(
+          with: Result {
+            try handle.write(contentsOf: Data(text.utf8))
+            try handle.close()
+          })
+      }
+      writer.start()
     }
+  }
 }

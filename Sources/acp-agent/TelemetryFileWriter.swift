@@ -24,144 +24,149 @@ import Synchronization
 /// escaped, the format that the bench harness reads. A number that JSON
 /// cannot hold writes as its text, see ``conforming(_:)``.
 final class TelemetryFileWriter: Sendable {
-    /// Why the telemetry file cannot be written.
-    struct OpenError: Error, CustomStringConvertible {
-        /// The path of the file.
-        let path: String
+  /// Why the telemetry file cannot be written.
+  struct OpenError: Error, CustomStringConvertible {
+    /// The path of the file.
+    let path: String
 
-        /// The `errno` value of the failed check.
-        let code: Int32
+    /// The `errno` value of the failed check.
+    let code: Int32
 
-        /// The path and the system reason, for the usage error of the CLI.
-        var description: String {
-            "cannot open the telemetry file \(path): \(String(cString: strerror(code)))"
-        }
+    /// The path and the system reason, for the usage error of the CLI.
+    var description: String {
+      "cannot open the telemetry file \(path): \(String(cString: strerror(code)))"
     }
+  }
 
-    /// The access that the file needs: write.
-    private static let fileAccess = W_OK
+  /// The access that the file needs: write.
+  private static let fileAccess = W_OK
 
-    /// The access that the folder of a new file needs: write, to make the
-    /// file, and search, to reach it.
-    private static let folderAccess = W_OK | X_OK
+  /// The access that the folder of a new file needs: write, to make the
+  /// file, and search, to reach it.
+  private static let folderAccess = W_OK | X_OK
 
-    /// The folder of a path that names no folder: the current folder.
-    private static let currentFolder = "."
+  /// The folder of a path that names no folder: the current folder.
+  private static let currentFolder = "."
 
-    /// The text of a positive infinity, which JSON has no number for. The
-    /// Extras tokens-per-second recorder divides by the model time, so a
-    /// call with no model time records an infinity.
-    private static let positiveInfinityText = "Infinity"
+  /// The text of a positive infinity, which JSON has no number for. The
+  /// Extras tokens-per-second recorder divides by the model time, so a
+  /// call with no model time records an infinity.
+  private static let positiveInfinityText = "Infinity"
 
-    /// The text of a negative infinity.
-    private static let negativeInfinityText = "-Infinity"
+  /// The text of a negative infinity.
+  private static let negativeInfinityText = "-Infinity"
 
-    /// The text of a value that is not a number.
-    private static let notANumberText = "NaN"
+  /// The text of a value that is not a number.
+  private static let notANumberText = "NaN"
 
-    /// The file.
-    private let file: JSONLFile
+  /// The file.
+  private let file: JSONLFile
 
-    /// Whether a dropped record already went to stderr.
-    private let hasReportedFailure = Atomic<Bool>(false)
+  /// Whether a dropped record already went to stderr.
+  private let hasReportedFailure = Atomic<Bool>(false)
 
-    /// Checks that the file at `path` can be written, and makes the writer.
-    /// It opens nothing: the first record makes the file when it is absent.
-    ///
-    /// - Parameter path: The path of the telemetry file.
-    /// - Throws: ``OpenError`` when the path names a folder, when the file is
-    ///   not writable, or when the file is absent and its folder is absent
-    ///   or not writable.
-    init(path: String) throws {
-        try Self.checkWritable(path)
-        file = JSONLFile(url: URL(filePath: path))
+  /// Checks that the file at `path` can be written, and makes the writer.
+  /// It opens nothing: the first record makes the file when it is absent.
+  ///
+  /// - Parameter path: The path of the telemetry file.
+  /// - Throws: ``OpenError`` when the path names a folder, when the file is
+  ///   not writable, or when the file is absent and its folder is absent
+  ///   or not writable.
+  init(path: String) throws {
+    try Self.checkWritable(path)
+    file = JSONLFile(url: URL(filePath: path))
+  }
+
+  /// Appends `record` as one line.
+  ///
+  /// A record that cannot be written is dropped, and the first such failure
+  /// goes to stderr one time: the telemetry file must never stop the
+  /// agent, and a log record about the failure would come back to this
+  /// writer.
+  ///
+  /// - Parameter record: The JSON object of the record.
+  func write(_ record: [String: JSONValue]) {
+    do {
+      try file.append(record.mapValues(Self.conforming))
+    } catch {
+      reportFailure(error)
     }
+  }
 
-    /// Appends `record` as one line.
-    ///
-    /// A record that cannot be written is dropped, and the first such failure
-    /// goes to stderr one time: the telemetry file must never stop the
-    /// agent, and a log record about the failure would come back to this
-    /// writer.
-    ///
-    /// - Parameter record: The JSON object of the record.
-    func write(_ record: [String: JSONValue]) {
-        do {
-            try file.append(record.mapValues(Self.conforming))
-        } catch {
-            reportFailure(error)
-        }
+  /// Gives `value` with each number that JSON cannot hold, at any depth,
+  /// replaced by its text: `Infinity`, `-Infinity` or `NaN`.
+  ///
+  /// - Parameter value: A JSON value of a record.
+  /// - Returns: The value with finite numbers only.
+  private static func conforming(_ value: JSONValue) -> JSONValue {
+    switch value {
+    case .number(let number) where number.isNaN:
+      return .string(notANumberText)
+    case .number(let number) where number.isInfinite:
+      return .string(number > 0 ? positiveInfinityText : negativeInfinityText)
+    case .array(let values):
+      return .array(values.map(conforming))
+    case .object(let members):
+      return .object(members.mapValues(conforming))
+    case .null, .bool, .number, .string:
+      return value
     }
+  }
 
-    /// Gives `value` with each number that JSON cannot hold, at any depth,
-    /// replaced by its text: `Infinity`, `-Infinity` or `NaN`.
-    ///
-    /// - Parameter value: A JSON value of a record.
-    /// - Returns: The value with finite numbers only.
-    private static func conforming(_ value: JSONValue) -> JSONValue {
-        switch value {
-        case .number(let number) where number.isNaN:
-            return .string(notANumberText)
-        case .number(let number) where number.isInfinite:
-            return .string(number > 0 ? positiveInfinityText : negativeInfinityText)
-        case .array(let values):
-            return .array(values.map(conforming))
-        case .object(let members):
-            return .object(members.mapValues(conforming))
-        case .null, .bool, .number, .string:
-            return value
-        }
-    }
+  /// Writes the reason of a dropped record to stderr, the first time only.
+  ///
+  /// - Parameter error: Why the record was dropped.
+  private func reportFailure(_ error: JSONLFileError) {
+    guard
+      hasReportedFailure.compareExchange(expected: false, desired: true, ordering: .relaxed)
+        .exchanged
+    else { return }
+    FileHandle.standardError.write(
+      Data("acp-agent: the telemetry file dropped a record: \(error)\n".utf8))
+  }
 
-    /// Writes the reason of a dropped record to stderr, the first time only.
-    ///
-    /// - Parameter error: Why the record was dropped.
-    private func reportFailure(_ error: JSONLFileError) {
-        guard hasReportedFailure.compareExchange(expected: false, desired: true, ordering: .relaxed).exchanged
-        else { return }
-        FileHandle.standardError.write(Data("acp-agent: the telemetry file dropped a record: \(error)\n".utf8))
+  /// Checks that a record can make or append to the file at `path`: the
+  /// path is not a folder, and the file is writable, or the file is absent
+  /// and its folder is writable.
+  ///
+  /// - Parameter path: The path of the telemetry file.
+  /// - Throws: ``OpenError`` with the `errno` value of the failed check.
+  private static func checkWritable(_ path: String) throws(OpenError) {
+    var status = stat()
+    guard stat(path, &status) == 0 else {
+      guard errno == ENOENT else {
+        throw OpenError(path: path, code: errno)
+      }
+      try requireAccess(folder(of: path), folderAccess, for: path)
+      return
     }
+    guard status.st_mode & S_IFMT != S_IFDIR else {
+      throw OpenError(path: path, code: EISDIR)
+    }
+    try requireAccess(path, fileAccess, for: path)
+  }
 
-    /// Checks that a record can make or append to the file at `path`: the
-    /// path is not a folder, and the file is writable, or the file is absent
-    /// and its folder is writable.
-    ///
-    /// - Parameter path: The path of the telemetry file.
-    /// - Throws: ``OpenError`` with the `errno` value of the failed check.
-    private static func checkWritable(_ path: String) throws(OpenError) {
-        var status = stat()
-        guard stat(path, &status) == 0 else {
-            guard errno == ENOENT else {
-                throw OpenError(path: path, code: errno)
-            }
-            try requireAccess(folder(of: path), folderAccess, for: path)
-            return
-        }
-        guard status.st_mode & S_IFMT != S_IFDIR else {
-            throw OpenError(path: path, code: EISDIR)
-        }
-        try requireAccess(path, fileAccess, for: path)
+  /// Checks `mode` access to `target` with `access(2)`.
+  ///
+  /// - Parameters:
+  ///   - target: The file or the folder.
+  ///   - mode: The access bits.
+  ///   - path: The path of the telemetry file, for the error.
+  /// - Throws: ``OpenError`` with the `errno` value of `access(2)`.
+  private static func requireAccess(_ target: String, _ mode: Int32, for path: String)
+    throws(OpenError)
+  {
+    guard access(target, mode) == 0 else {
+      throw OpenError(path: path, code: errno)
     }
+  }
 
-    /// Checks `mode` access to `target` with `access(2)`.
-    ///
-    /// - Parameters:
-    ///   - target: The file or the folder.
-    ///   - mode: The access bits.
-    ///   - path: The path of the telemetry file, for the error.
-    /// - Throws: ``OpenError`` with the `errno` value of `access(2)`.
-    private static func requireAccess(_ target: String, _ mode: Int32, for path: String) throws(OpenError) {
-        guard access(target, mode) == 0 else {
-            throw OpenError(path: path, code: errno)
-        }
-    }
-
-    /// The folder of `path`.
-    ///
-    /// - Parameter path: The path of the telemetry file.
-    /// - Returns: The folder, or the current folder when the path names none.
-    private static func folder(of path: String) -> String {
-        let folder = (path as NSString).deletingLastPathComponent
-        return folder.isEmpty ? currentFolder : folder
-    }
+  /// The folder of `path`.
+  ///
+  /// - Parameter path: The path of the telemetry file.
+  /// - Returns: The folder, or the current folder when the path names none.
+  private static func folder(of path: String) -> String {
+    let folder = (path as NSString).deletingLastPathComponent
+    return folder.isEmpty ? currentFolder : folder
+  }
 }

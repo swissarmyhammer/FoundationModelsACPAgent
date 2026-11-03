@@ -58,6 +58,12 @@ comments:
     (d) A restored run must not reuse the completion tokens of Multitool inner runs (status and cancel of an old token answer "no run under that handle"). The restored agents call keeps ITS OWN old token (that is the claim); inner shell and runCode tokens are not restored.
     (e) A crash can leave shell child processes and stdio MCP servers running; a Multitool card reaps them at store init.
   timestamp: 2026-11-03T18:57:52.616149+00:00
+- actor: wballard
+  id: 01m6hg2n9ebr8qw91w21tgghs4
+  text: |-
+    HOOKS REPORT ITEM (independent, 2026-11-03): FoundationModelsRouter Session/SessionHooks.swift near lines 172 to 175: when the parent is not open, the hook key of a sub-agent is the id of its parent. The ACP roots use the PROJECT key (Agent/AgentHooks.swift near 71 to 83, SessionResume.swift near 209). A child that is restored BEFORE its root, or whose root key is not passed, gets a different key, so a separate snapshot timeline for one work tree.
+    RULES FOR THIS TASK: (1) restore the ROOT session first, with its project hook key (hookSessionKey), and only then call the Agents restoreInterrupted facade, which restores caller-first, so every restored child finds its root open and gets the root key; (2) check how the host passes hookSessionKey (SessionSetup.swift near 1178, SessionResume.swift near 399) for restored children and fix it if a child can be restored without it; (3) write a test: after a cold resume, the hook key of the root, of a restored child and of a restored grandchild is the SAME project key, and the snapshot timeline is one; also the same test for the SnapshotSessionKeys record of each restored session; (4) SessionEnd at an orderly quit is sent for runs that are suspended (the Hooks session adds a reason: completed, suspended, released; the Router sets it): a snapshot or cleanup hook of this package must not treat a suspended SessionEnd as done; check AgentHooks.swift and the snapshot hooks for work on SessionEnd and test that a quit does not delete the timeline.
+  timestamp: 2026-11-03T20:02:15.982124+00:00
 depends_on:
 - 01M6GJPPXWKQJ9E6SK5WD0CWZ7
 - 01M6GM17VHZSWD4G2J27WTA3JT

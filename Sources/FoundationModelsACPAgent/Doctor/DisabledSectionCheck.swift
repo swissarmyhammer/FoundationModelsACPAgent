@@ -11,20 +11,20 @@ import FoundationModelsExtras
 ///
 /// The row passes. A tool a person turned off on purpose is not a fault.
 enum DisabledSectionCheck {
-    /// The word the row reports, so a person sees why the tool is absent
-    /// from the roster.
-    static let disabledWord = "disabled"
+  /// The word the row reports, so a person sees why the tool is absent
+  /// from the roster.
+  static let disabledWord = "disabled"
 
-    /// The finding of one section that is off.
-    ///
-    /// - Parameters:
-    ///   - name: What the finding is called in the report.
-    ///   - key: The dotted key path that turned the tool off.
-    ///   - category: The group the finding belongs to.
-    /// - Returns: A pass that says disabled.
-    static func check(name: String, key: String, category: String) -> HealthCheck {
-        .ok(
-            name: name, message: "\(key) is \(disabledWord), so this tool is not mounted",
-            category: category)
-    }
+  /// The finding of one section that is off.
+  ///
+  /// - Parameters:
+  ///   - name: What the finding is called in the report.
+  ///   - key: The dotted key path that turned the tool off.
+  ///   - category: The group the finding belongs to.
+  /// - Returns: A pass that says disabled.
+  static func check(name: String, key: String, category: String) -> HealthCheck {
+    .ok(
+      name: name, message: "\(key) is \(disabledWord), so this tool is not mounted",
+      category: category)
+  }
 }

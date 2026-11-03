@@ -21,208 +21,208 @@ import Testing
 /// spawned-binary suite of the nested package sends the real `SIGTERM` to a
 /// real `acp-agent`.
 struct TerminationHandlerTests {
-    // MARK: - Constants
+  // MARK: - Constants
 
-    /// The exit code a shell gives to a process that `SIGTERM` ended: 128
-    /// and the signal number 15.
-    private static let signalEndExitCode: Int32 = 143
+  /// The exit code a shell gives to a process that `SIGTERM` ended: 128
+  /// and the signal number 15.
+  private static let signalEndExitCode: Int32 = 143
 
-    /// The value the work of a window gives back when no `SIGTERM` arrives.
-    private static let workValue = "the work ended"
+  /// The value the work of a window gives back when no `SIGTERM` arrives.
+  private static let workValue = "the work ended"
 
-    /// The text the scripted model streams before it holds, so a prompt
-    /// that `SIGTERM` stopped has text that already arrived.
-    private static let arrivedText = "working"
+  /// The text the scripted model streams before it holds, so a prompt
+  /// that `SIGTERM` stopped has text that already arrived.
+  private static let arrivedText = "working"
 
-    /// The prompt of the prompt window case.
-    private static let promptText = "write a haiku"
+  /// The prompt of the prompt window case.
+  private static let promptText = "write a haiku"
 
-    // MARK: - Fixtures
+  // MARK: - Fixtures
 
-    /// Records whether the window disarmed its watch.
-    private final class DisarmFlag: Sendable {
-        /// `true` once the watch is disarmed.
-        private let flag = Mutex(false)
+  /// Records whether the window disarmed its watch.
+  private final class DisarmFlag: Sendable {
+    /// `true` once the watch is disarmed.
+    private let flag = Mutex(false)
 
-        /// Records the disarm.
-        func recordDisarm() {
-            flag.withLock { $0 = true }
-        }
-
-        /// `true` once the watch is disarmed.
-        var isDisarmed: Bool {
-            flag.withLock { $0 }
-        }
+    /// Records the disarm.
+    func recordDisarm() {
+      flag.withLock { $0 = true }
     }
 
-    /// A watch that reports one `SIGTERM` at once.
-    ///
-    /// - Parameter disarmed: Records the disarm of the watch.
-    /// - Returns: The installer of the watch.
-    private static func oneArrival(disarmed: DisarmFlag) -> TerminationHandler.Installer {
-        {
-            let arrivals = AsyncStream<Void> { continuation in
-                continuation.yield()
-                continuation.finish()
-            }
-            return TerminationWatch(arrivals: arrivals, disarm: { disarmed.recordDisarm() })
-        }
+    /// `true` once the watch is disarmed.
+    var isDisarmed: Bool {
+      flag.withLock { $0 }
+    }
+  }
+
+  /// A watch that reports one `SIGTERM` at once.
+  ///
+  /// - Parameter disarmed: Records the disarm of the watch.
+  /// - Returns: The installer of the watch.
+  private static func oneArrival(disarmed: DisarmFlag) -> TerminationHandler.Installer {
+    {
+      let arrivals = AsyncStream<Void> { continuation in
+        continuation.yield()
+        continuation.finish()
+      }
+      return TerminationWatch(arrivals: arrivals, disarm: { disarmed.recordDisarm() })
+    }
+  }
+
+  /// A watch that reports no `SIGTERM`: its stream stays open until the
+  /// window disarms the watch.
+  ///
+  /// - Parameter disarmed: Records the disarm of the watch.
+  /// - Returns: The installer of the watch.
+  private static func noArrival(disarmed: DisarmFlag) -> TerminationHandler.Installer {
+    {
+      let (arrivals, continuation) = AsyncStream<Void>.makeStream()
+      return TerminationWatch(
+        arrivals: arrivals,
+        disarm: {
+          disarmed.recordDisarm()
+          continuation.finish()
+        })
+    }
+  }
+
+  /// Makes an inbound end that never comes: the wait parks on a stream
+  /// that stays open until its task is cancelled.
+  ///
+  /// - Returns: The wait, and the continuation that the test finishes at
+  ///   its end.
+  private static func neverEndingInbound() -> (
+    wait: @Sendable () async -> Void, gate: AsyncStream<Never>.Continuation
+  ) {
+    let (stream, gate) = AsyncStream<Never>.makeStream()
+    return ({ for await _ in stream {} }, gate)
+  }
+
+  // MARK: - The serve window
+
+  /// A `SIGTERM` in the serve window closes the ACP connection, and then
+  /// the window throws the exit code of an end by a signal. The code goes
+  /// to the failure path of ``AcpAgentCommand/main()``.
+  @Test
+  func aTerminationClosesTheConnectionAndThrowsTheSignalEndCode() async throws {
+    let closes = CallCounter()
+    let disarmed = DisarmFlag()
+    let inbound = Self.neverEndingInbound()
+    defer { inbound.gate.finish() }
+
+    let thrown = await #expect(throws: ExitCode.self) {
+      try await TerminationHandler.serve(
+        untilInboundEnd: inbound.wait,
+        closing: { closes.record() },
+        watchedBy: Self.oneArrival(disarmed: disarmed))
     }
 
-    /// A watch that reports no `SIGTERM`: its stream stays open until the
-    /// window disarms the watch.
-    ///
-    /// - Parameter disarmed: Records the disarm of the watch.
-    /// - Returns: The installer of the watch.
-    private static func noArrival(disarmed: DisarmFlag) -> TerminationHandler.Installer {
-        {
-            let (arrivals, continuation) = AsyncStream<Void>.makeStream()
-            return TerminationWatch(
-                arrivals: arrivals,
-                disarm: {
-                    disarmed.recordDisarm()
-                    continuation.finish()
-                })
+    #expect(thrown?.rawValue == Self.signalEndExitCode)
+    #expect(closes.count == 1)
+    #expect(disarmed.isDisarmed)
+  }
+
+  /// The end of the inbound stream closes the ACP connection, and the
+  /// window returns: the process ends on the normal return of `main()`.
+  @Test
+  func anInboundEndClosesTheConnectionAndReturns() async throws {
+    let closes = CallCounter()
+    let disarmed = DisarmFlag()
+
+    try await TerminationHandler.serve(
+      untilInboundEnd: {},
+      closing: { closes.record() },
+      watchedBy: Self.noArrival(disarmed: disarmed))
+
+    #expect(closes.count == 1)
+    #expect(disarmed.isDisarmed)
+  }
+
+  // MARK: - A watched window
+
+  /// A `SIGTERM` in a watched window runs the stop of the window one time.
+  /// The work ends because of the stop, and then the window throws the exit
+  /// code of an end by a signal.
+  @Test
+  func aTerminationStopsTheWorkAndThrowsTheSignalEndCode() async throws {
+    let stops = CallCounter()
+    let disarmed = DisarmFlag()
+    let (stopped, stopGate) = AsyncStream<Never>.makeStream()
+
+    let thrown = await #expect(throws: ExitCode.self) {
+      try await TerminationHandler.run(
+        watchedBy: Self.oneArrival(disarmed: disarmed),
+        stoppingWith: {
+          stops.record()
+          stopGate.finish()
         }
+      ) {
+        for await _ in stopped {}
+      }
     }
 
-    /// Makes an inbound end that never comes: the wait parks on a stream
-    /// that stays open until its task is cancelled.
-    ///
-    /// - Returns: The wait, and the continuation that the test finishes at
-    ///   its end.
-    private static func neverEndingInbound() -> (
-        wait: @Sendable () async -> Void, gate: AsyncStream<Never>.Continuation
+    #expect(thrown?.rawValue == Self.signalEndExitCode)
+    #expect(stops.count == 1)
+    #expect(disarmed.isDisarmed)
+  }
+
+  /// With no `SIGTERM`, a watched window gives back the value of its work,
+  /// runs no stop, and disarms its watch.
+  @Test
+  func aWindowWithNoTerminationReturnsTheWorkValue() async throws {
+    let stops = CallCounter()
+    let disarmed = DisarmFlag()
+
+    let value = try await TerminationHandler.run(
+      watchedBy: Self.noArrival(disarmed: disarmed),
+      stoppingWith: { stops.record() }
     ) {
-        let (stream, gate) = AsyncStream<Never>.makeStream()
-        return ({ for await _ in stream {} }, gate)
+      Self.workValue
     }
 
-    // MARK: - The serve window
+    #expect(value == Self.workValue)
+    #expect(stops.count == 0)
+    #expect(disarmed.isDisarmed)
+  }
 
-    /// A `SIGTERM` in the serve window closes the ACP connection, and then
-    /// the window throws the exit code of an end by a signal. The code goes
-    /// to the failure path of ``AcpAgentCommand/main()``.
-    @Test
-    func aTerminationClosesTheConnectionAndThrowsTheSignalEndCode() async throws {
-        let closes = CallCounter()
-        let disarmed = DisarmFlag()
-        let inbound = Self.neverEndingInbound()
-        defer { inbound.gate.finish() }
+  // MARK: - The prompt window of `run`
 
-        let thrown = await #expect(throws: ExitCode.self) {
-            try await TerminationHandler.serve(
-                untilInboundEnd: inbound.wait,
-                closing: { closes.record() },
-                watchedBy: Self.oneArrival(disarmed: disarmed))
-        }
+  /// A `SIGTERM` during a `run` prompt sends `session/cancel`, as the first
+  /// `Ctrl-C` does, and the run throws the exit code of an end by a signal.
+  /// The text that already arrived stays on the answer descriptor.
+  ///
+  /// The scripted model streams one delta and then holds, so the prompt
+  /// ends for one reason only: a `session/cancel` reached the agent.
+  @Test
+  func aTerminationDuringThePromptCancelsItAndThrowsTheSignalEndCode() async throws {
+    let workspace = makeResolvedDirectory(label: "TerminationHandlerTests-prompt-repo")
+    let composed = try await CLICompositionFixture.scripted(
+      script: [.textDelta(Self.arrivedText), .hold], label: "TerminationHandlerTests-prompt")
+    let capture = try AnswerCapture(label: "TerminationHandlerTests-prompt-answer")
 
-        #expect(thrown?.rawValue == Self.signalEndExitCode)
-        #expect(closes.count == 1)
-        #expect(disarmed.isDisarmed)
+    let thrown = await #expect(throws: ExitCode.self) {
+      _ = try await RunPrompt.answer(
+        of: composed,
+        in: .new(workingDirectory: workspace),
+        prompt: Self.promptText,
+        into: capture.writer,
+        terminatedBy: ScriptedTerminationWatch.armed(
+          after: capture.waitUntilHolding(Self.arrivedText)))
     }
 
-    /// The end of the inbound stream closes the ACP connection, and the
-    /// window returns: the process ends on the normal return of `main()`.
-    @Test
-    func anInboundEndClosesTheConnectionAndReturns() async throws {
-        let closes = CallCounter()
-        let disarmed = DisarmFlag()
+    #expect(thrown?.rawValue == Self.signalEndExitCode)
+    #expect(try capture.text() == Self.arrivedText)
+  }
 
-        try await TerminationHandler.serve(
-            untilInboundEnd: {},
-            closing: { closes.record() },
-            watchedBy: Self.noArrival(disarmed: disarmed))
+  // MARK: - The exit code
 
-        #expect(closes.count == 1)
-        #expect(disarmed.isDisarmed)
-    }
+  /// The code of an end by `SIGTERM` is the shell's 143, and the exit
+  /// path of `main()` keeps it, with nothing on stdout.
+  @Test func theSignalEndCodeReachesTheExitOutcomeUnchanged() {
+    let outcome = AcpAgentCommand.exitOutcome(for: TerminationHandler.signalEnd)
 
-    // MARK: - A watched window
-
-    /// A `SIGTERM` in a watched window runs the stop of the window one time.
-    /// The work ends because of the stop, and then the window throws the exit
-    /// code of an end by a signal.
-    @Test
-    func aTerminationStopsTheWorkAndThrowsTheSignalEndCode() async throws {
-        let stops = CallCounter()
-        let disarmed = DisarmFlag()
-        let (stopped, stopGate) = AsyncStream<Never>.makeStream()
-
-        let thrown = await #expect(throws: ExitCode.self) {
-            try await TerminationHandler.run(
-                watchedBy: Self.oneArrival(disarmed: disarmed),
-                stoppingWith: {
-                    stops.record()
-                    stopGate.finish()
-                }
-            ) {
-                for await _ in stopped {}
-            }
-        }
-
-        #expect(thrown?.rawValue == Self.signalEndExitCode)
-        #expect(stops.count == 1)
-        #expect(disarmed.isDisarmed)
-    }
-
-    /// With no `SIGTERM`, a watched window gives back the value of its work,
-    /// runs no stop, and disarms its watch.
-    @Test
-    func aWindowWithNoTerminationReturnsTheWorkValue() async throws {
-        let stops = CallCounter()
-        let disarmed = DisarmFlag()
-
-        let value = try await TerminationHandler.run(
-            watchedBy: Self.noArrival(disarmed: disarmed),
-            stoppingWith: { stops.record() }
-        ) {
-            Self.workValue
-        }
-
-        #expect(value == Self.workValue)
-        #expect(stops.count == 0)
-        #expect(disarmed.isDisarmed)
-    }
-
-    // MARK: - The prompt window of `run`
-
-    /// A `SIGTERM` during a `run` prompt sends `session/cancel`, as the first
-    /// `Ctrl-C` does, and the run throws the exit code of an end by a signal.
-    /// The text that already arrived stays on the answer descriptor.
-    ///
-    /// The scripted model streams one delta and then holds, so the prompt
-    /// ends for one reason only: a `session/cancel` reached the agent.
-    @Test
-    func aTerminationDuringThePromptCancelsItAndThrowsTheSignalEndCode() async throws {
-        let workspace = makeResolvedDirectory(label: "TerminationHandlerTests-prompt-repo")
-        let composed = try await CLICompositionFixture.scripted(
-            script: [.textDelta(Self.arrivedText), .hold], label: "TerminationHandlerTests-prompt")
-        let capture = try AnswerCapture(label: "TerminationHandlerTests-prompt-answer")
-
-        let thrown = await #expect(throws: ExitCode.self) {
-            _ = try await RunPrompt.answer(
-                of: composed,
-                in: .new(workingDirectory: workspace),
-                prompt: Self.promptText,
-                into: capture.writer,
-                terminatedBy: ScriptedTerminationWatch.armed(
-                    after: capture.waitUntilHolding(Self.arrivedText)))
-        }
-
-        #expect(thrown?.rawValue == Self.signalEndExitCode)
-        #expect(try capture.text() == Self.arrivedText)
-    }
-
-    // MARK: - The exit code
-
-    /// The code of an end by `SIGTERM` is the shell's 143, and the exit
-    /// path of `main()` keeps it, with nothing on stdout.
-    @Test func theSignalEndCodeReachesTheExitOutcomeUnchanged() {
-        let outcome = AcpAgentCommand.exitOutcome(for: TerminationHandler.signalEnd)
-
-        #expect(
-            outcome
-                == AcpAgentCommand.ExitOutcome(code: Self.signalEndExitCode, writesToStandardError: true))
-    }
+    #expect(
+      outcome
+        == AcpAgentCommand.ExitOutcome(code: Self.signalEndExitCode, writesToStandardError: true))
+  }
 }

@@ -22,80 +22,82 @@ import FoundationModelsACPAgentTestSupport
 /// closes when the capture goes, and the descriptor is then another
 /// file's.
 final class AnswerCapture {
-    /// The name of the file inside the throwaway directory.
-    private static let fileName = "answer.txt"
+  /// The name of the file inside the throwaway directory.
+  private static let fileName = "answer.txt"
 
-    /// The file the writer writes to.
-    private let url: URL
+  /// The file the writer writes to.
+  private let url: URL
 
-    /// The open write handle, which owns the descriptor the writer
-    /// holds.
-    private let handle: FileHandle
+  /// The open write handle, which owns the descriptor the writer
+  /// holds.
+  private let handle: FileHandle
 
-    /// The writer the answer goes to.
-    let writer: AnswerWriter
+  /// The writer the answer goes to.
+  let writer: AnswerWriter
 
-    /// Creates a capture over a fresh file in a throwaway directory.
-    ///
-    /// - Parameter label: The directory label, so a leftover directory
-    ///   says where it came from.
-    /// - Throws: The file-creation or file-open error.
-    init(label: String) throws {
-        url = makeResolvedDirectory(label: label).appendingPathComponent(Self.fileName)
-        try Data().write(to: url)
-        handle = try FileHandle(forWritingTo: url)
-        writer = AnswerWriter(fileDescriptor: handle.fileDescriptor)
+  /// Creates a capture over a fresh file in a throwaway directory.
+  ///
+  /// - Parameter label: The directory label, so a leftover directory
+  ///   says where it came from.
+  /// - Throws: The file-creation or file-open error.
+  init(label: String) throws {
+    url = makeResolvedDirectory(label: label).appendingPathComponent(Self.fileName)
+    try Data().write(to: url)
+    handle = try FileHandle(forWritingTo: url)
+    writer = AnswerWriter(fileDescriptor: handle.fileDescriptor)
+  }
+
+  /// Every byte the writer produced so far, in write order.
+  ///
+  /// - Returns: The bytes.
+  /// - Throws: The read error.
+  func bytes() throws -> Data {
+    try Data(contentsOf: url)
+  }
+
+  /// ``bytes()`` decoded as UTF-8.
+  ///
+  /// - Returns: The captured text.
+  /// - Throws: The read error.
+  func text() throws -> String {
+    try Self.text(at: url)
+  }
+
+  /// A test of whether the capture holds exactly `text` so far.
+  ///
+  /// The test holds the file location and not the capture, so another
+  /// task may read what already arrived while the prompt still runs, and
+  /// the capture keeps its one owner. A case that must let a chunk
+  /// arrive before it acts waits on this fact, and never on a delay.
+  ///
+  /// - Parameter text: The text the capture must hold.
+  /// - Returns: The test. It reports `false` while the file holds
+  ///   anything else, and while the file cannot be read.
+  func holds(_ text: String) -> @Sendable () -> Bool {
+    let url = url
+    return { (try? Self.text(at: url)) == text }
+  }
+
+  /// Waits until the capture holds exactly `text`. Each write to the
+  /// capture file checks the text again (``FileWriteWatch``), so the wait
+  /// uses no clock and no poll.
+  ///
+  /// - Parameter text: The text the capture must hold.
+  /// - Returns: The wait, for a gate of a scripted watch.
+  func waitUntilHolding(_ text: String) -> @Sendable () async throws -> Void {
+    let url = url
+    let holds = holds(text)
+    return {
+      try await FileWriteWatch.wait(on: url, for: "the capture holds \(text)", until: holds)
     }
+  }
 
-    /// Every byte the writer produced so far, in write order.
-    ///
-    /// - Returns: The bytes.
-    /// - Throws: The read error.
-    func bytes() throws -> Data {
-        try Data(contentsOf: url)
-    }
-
-    /// ``bytes()`` decoded as UTF-8.
-    ///
-    /// - Returns: The captured text.
-    /// - Throws: The read error.
-    func text() throws -> String {
-        try Self.text(at: url)
-    }
-
-    /// A test of whether the capture holds exactly `text` so far.
-    ///
-    /// The test holds the file location and not the capture, so another
-    /// task may read what already arrived while the prompt still runs, and
-    /// the capture keeps its one owner. A case that must let a chunk
-    /// arrive before it acts waits on this fact, and never on a delay.
-    ///
-    /// - Parameter text: The text the capture must hold.
-    /// - Returns: The test. It reports `false` while the file holds
-    ///   anything else, and while the file cannot be read.
-    func holds(_ text: String) -> @Sendable () -> Bool {
-        let url = url
-        return { (try? Self.text(at: url)) == text }
-    }
-
-    /// Waits until the capture holds exactly `text`. Each write to the
-    /// capture file checks the text again (``FileWriteWatch``), so the wait
-    /// uses no clock and no poll.
-    ///
-    /// - Parameter text: The text the capture must hold.
-    /// - Returns: The wait, for a gate of a scripted watch.
-    func waitUntilHolding(_ text: String) -> @Sendable () async throws -> Void {
-        let url = url
-        let holds = holds(text)
-        return { try await FileWriteWatch.wait(on: url, for: "the capture holds \(text)", until: holds) }
-    }
-
-    /// The UTF-8 text of the capture file at `url`.
-    ///
-    /// - Parameter url: The capture file to read.
-    /// - Returns: The text.
-    /// - Throws: The read error.
-    private static func text(at url: URL) throws -> String {
-        String(decoding: try Data(contentsOf: url), as: UTF8.self)
-    }
+  /// The UTF-8 text of the capture file at `url`.
+  ///
+  /// - Parameter url: The capture file to read.
+  /// - Returns: The text.
+  /// - Throws: The read error.
+  private static func text(at url: URL) throws -> String {
+    String(decoding: try Data(contentsOf: url), as: UTF8.self)
+  }
 }

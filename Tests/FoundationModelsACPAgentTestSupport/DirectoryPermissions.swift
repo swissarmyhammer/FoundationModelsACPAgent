@@ -16,6 +16,6 @@ public let ownerOnlyPermissions = NSNumber(value: 0o700)
 ///   - directory: The directory to set them on.
 /// - Throws: The attribute-write error.
 public func setPermissions(_ permissions: NSNumber, of directory: URL) throws {
-    try FileManager.default.setAttributes(
-        [.posixPermissions: permissions], ofItemAtPath: directory.path)
+  try FileManager.default.setAttributes(
+    [.posixPermissions: permissions], ofItemAtPath: directory.path)
 }

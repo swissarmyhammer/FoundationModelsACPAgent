@@ -27,83 +27,83 @@ import Testing
 /// events through every generation surface — `streamResponse` included,
 /// which the prompt execution drives.
 final class ResumeStubBackend: LanguageModelSessionBackend {
-    /// The prefix of every reply, so a test matches the reply text.
-    static let replyPrefix = "echo: "
+  /// The prefix of every reply, so a test matches the reply text.
+  static let replyPrefix = "echo: "
 
-    /// The prefix of every reasoning entry.
-    static let reasoningPrefix = "thinking about "
+  /// The prefix of every reasoning entry.
+  static let reasoningPrefix = "thinking about "
 
-    /// The synthetic transcript so far, guarded for the sync
-    /// `transcriptEntries()` read against the async playback append.
-    private let entries: Mutex<[Transcript.Entry]>
+  /// The synthetic transcript so far, guarded for the sync
+  /// `transcriptEntries()` read against the async playback append.
+  private let entries: Mutex<[Transcript.Entry]>
 
-    /// Makes a backend seeded with `entries` — empty for a fresh session,
-    /// and the reconstructed transcript for a restored one.
-    ///
-    /// - Parameter entries: The seed transcript.
-    init(entries: [Transcript.Entry] = []) {
-        self.entries = Mutex(entries)
+  /// Makes a backend seeded with `entries` — empty for a fresh session,
+  /// and the reconstructed transcript for a restored one.
+  ///
+  /// - Parameter entries: The seed transcript.
+  init(entries: [Transcript.Entry] = []) {
+    self.entries = Mutex(entries)
+  }
+
+  func respond(to prompt: String, maxTokens: Int?) async throws -> String {
+    appendPass(prompt: prompt)
+  }
+
+  func respond(
+    to prompt: String, following grammar: Grammar, maxTokens: Int?
+  ) async throws -> String {
+    try await respond(to: prompt, maxTokens: maxTokens)
+  }
+
+  func streamResponse(to prompt: String, maxTokens: Int?) -> AsyncThrowingStream<String, Error> {
+    AsyncThrowingStream { continuation in
+      continuation.yield(appendPass(prompt: prompt))
+      continuation.finish()
     }
+  }
 
-    func respond(to prompt: String, maxTokens: Int?) async throws -> String {
-        appendPass(prompt: prompt)
-    }
+  func makeFork() -> any LanguageModelSessionBackend {
+    ResumeStubBackend(entries: entries.withLock { $0 })
+  }
 
-    func respond(
-        to prompt: String, following grammar: Grammar, maxTokens: Int?
-    ) async throws -> String {
-        try await respond(to: prompt, maxTokens: maxTokens)
-    }
+  func transcriptEntries() -> [Transcript.Entry] {
+    entries.withLock { $0 }
+  }
 
-    func streamResponse(to prompt: String, maxTokens: Int?) -> AsyncThrowingStream<String, Error> {
-        AsyncThrowingStream { continuation in
-            continuation.yield(appendPass(prompt: prompt))
-            continuation.finish()
-        }
-    }
+  func usageTokenCounts() -> (input: Int, output: Int)? {
+    (1, 1)
+  }
 
-    func makeFork() -> any LanguageModelSessionBackend {
-        ResumeStubBackend(entries: entries.withLock { $0 })
+  /// Appends the three SDK entries of one pass and returns the reply.
+  ///
+  /// - Parameter prompt: The prompt the pass answers.
+  /// - Returns: The reply text.
+  private func appendPass(prompt: String) -> String {
+    let reply = Self.replyPrefix + prompt
+    entries.withLock { current in
+      current.append(
+        .prompt(
+          Transcript.Prompt(segments: [
+            .text(Transcript.TextSegment(content: prompt))
+          ])))
+      current.append(
+        .reasoning(
+          Transcript.Reasoning(
+            id: UUID().uuidString,
+            segments: [
+              .text(
+                Transcript.TextSegment(
+                  content: Self.reasoningPrefix + prompt))
+            ],
+            signature: nil)))
+      current.append(
+        .response(
+          Transcript.Response(segments: [
+            .text(Transcript.TextSegment(content: reply))
+          ])))
     }
-
-    func transcriptEntries() -> [Transcript.Entry] {
-        entries.withLock { $0 }
-    }
-
-    func usageTokenCounts() -> (input: Int, output: Int)? {
-        (1, 1)
-    }
-
-    /// Appends the three SDK entries of one pass and returns the reply.
-    ///
-    /// - Parameter prompt: The prompt the pass answers.
-    /// - Returns: The reply text.
-    private func appendPass(prompt: String) -> String {
-        let reply = Self.replyPrefix + prompt
-        entries.withLock { current in
-            current.append(
-                .prompt(
-                    Transcript.Prompt(segments: [
-                        .text(Transcript.TextSegment(content: prompt))
-                    ])))
-            current.append(
-                .reasoning(
-                    Transcript.Reasoning(
-                        id: UUID().uuidString,
-                        segments: [
-                            .text(
-                                Transcript.TextSegment(
-                                    content: Self.reasoningPrefix + prompt))
-                        ],
-                        signature: nil)))
-            current.append(
-                .response(
-                    Transcript.Response(segments: [
-                        .text(Transcript.TextSegment(content: reply))
-                    ])))
-        }
-        return reply
-    }
+    return reply
+  }
 }
 
 /// A resident model container for the resume tests: it vends
@@ -112,295 +112,302 @@ final class ResumeStubBackend: LanguageModelSessionBackend {
 /// so a test asserts on what the restored model actually received —
 /// never on a property that merely holds a string.
 final class ResumeRecordingContainer: LoadedLLMContainer {
-    /// The counter of a model with no tokenizer: one token per character.
-    var tokenCounter: any TokenCounter { CharacterCountTokenCounter() }
+  /// The counter of a model with no tokenizer: one token per character.
+  var tokenCounter: any TokenCounter { CharacterCountTokenCounter() }
 
-    /// The observations one container accumulates.
-    private struct Observations {
-        /// How many backends this container was asked for.
-        var backendRequestCount = 0
-
-        /// Each transcript a restore handed to `makeSession(transcript:)`,
-        /// in arrival order.
-        var restoredTranscripts: [Transcript] = []
-    }
-
-    /// The guarded observations.
-    private let observations = Mutex(Observations())
-
+  /// The observations one container accumulates.
+  private struct Observations {
     /// How many backends this container was asked for.
-    var backendRequestCount: Int {
-        observations.withLock { $0.backendRequestCount }
-    }
+    var backendRequestCount = 0
 
-    /// Each transcript a restore handed to `makeSession(transcript:)`.
-    var restoredTranscripts: [Transcript] {
-        observations.withLock { $0.restoredTranscripts }
-    }
+    /// Each transcript a restore handed to `makeSession(transcript:)`,
+    /// in arrival order.
+    var restoredTranscripts: [Transcript] = []
+  }
 
-    func makeSession(instructions: String?) -> any LanguageModelSessionBackend {
-        makeFreshBackend()
-    }
+  /// The guarded observations.
+  private let observations = Mutex(Observations())
 
-    func makeSession(
-        instructions: String?, tools: [any Tool]
-    ) -> any LanguageModelSessionBackend {
-        makeFreshBackend()
-    }
+  /// How many backends this container was asked for.
+  var backendRequestCount: Int {
+    observations.withLock { $0.backendRequestCount }
+  }
 
-    func makeSession(transcript: Transcript) -> any LanguageModelSessionBackend {
-        makeRestoredBackend(transcript: transcript)
-    }
+  /// Each transcript a restore handed to `makeSession(transcript:)`.
+  var restoredTranscripts: [Transcript] {
+    observations.withLock { $0.restoredTranscripts }
+  }
 
-    func makeSession(
-        transcript: Transcript, tools: [any Tool]
-    ) -> any LanguageModelSessionBackend {
-        makeRestoredBackend(transcript: transcript)
-    }
+  func makeSession(instructions: String?) -> any LanguageModelSessionBackend {
+    makeFreshBackend()
+  }
 
-    /// Counts and vends one fresh backend.
-    private func makeFreshBackend() -> ResumeStubBackend {
-        observations.withLock { $0.backendRequestCount += 1 }
-        return ResumeStubBackend()
-    }
+  func makeSession(
+    instructions: String?, tools: [any Tool]
+  ) -> any LanguageModelSessionBackend {
+    makeFreshBackend()
+  }
 
-    /// Counts, records the received transcript, and vends one backend
-    /// seeded with it.
-    ///
-    /// - Parameter transcript: The transcript the restore handed over.
-    private func makeRestoredBackend(transcript: Transcript) -> ResumeStubBackend {
-        observations.withLock { state in
-            state.backendRequestCount += 1
-            state.restoredTranscripts.append(transcript)
-        }
-        return ResumeStubBackend(entries: Array(transcript))
+  func makeSession(transcript: Transcript) -> any LanguageModelSessionBackend {
+    makeRestoredBackend(transcript: transcript)
+  }
+
+  func makeSession(
+    transcript: Transcript, tools: [any Tool]
+  ) -> any LanguageModelSessionBackend {
+    makeRestoredBackend(transcript: transcript)
+  }
+
+  /// Counts and vends one fresh backend.
+  private func makeFreshBackend() -> ResumeStubBackend {
+    observations.withLock { $0.backendRequestCount += 1 }
+    return ResumeStubBackend()
+  }
+
+  /// Counts, records the received transcript, and vends one backend
+  /// seeded with it.
+  ///
+  /// - Parameter transcript: The transcript the restore handed over.
+  private func makeRestoredBackend(transcript: Transcript) -> ResumeStubBackend {
+    observations.withLock { state in
+      state.backendRequestCount += 1
+      state.restoredTranscripts.append(transcript)
     }
+    return ResumeStubBackend(entries: Array(transcript))
+  }
 }
 
 /// A tool the resume tests record by name only: the recorded roster keeps
 /// tool names, and the missing-tool report compares those names against
 /// the resumed roster, so the name is the whole point of this tool.
 struct RosterNameTool: FoundationModels.Tool {
-    /// The wire arguments; the tool reads nothing from them.
-    @Generable
-    struct Arguments {}
+  /// The wire arguments; the tool reads nothing from them.
+  @Generable
+  struct Arguments {}
 
-    /// The recorded roster name.
-    let name: String
+  /// The recorded roster name.
+  let name: String
 
-    let description = "a stub tool the resume tests record on the roster by name"
+  let description = "a stub tool the resume tests record on the roster by name"
 
-    func call(arguments: Arguments) async throws -> String {
-        name
-    }
+  func call(arguments: Arguments) async throws -> String {
+    name
+  }
 }
 
 /// One wired resume fixture: the recording container, the scripted-prompt
 /// harness around an agent whose sessions it backs, and the resolved
 /// project recording root.
 struct ResumeSessionFixture {
-    /// The wired scripted-prompt fixture.
-    let fixture: ScriptedPromptFixture
+  /// The wired scripted-prompt fixture.
+  let fixture: ScriptedPromptFixture
 
-    /// The container every session backend of the agent comes from.
-    let container: ResumeRecordingContainer
+  /// The container every session backend of the agent comes from.
+  let container: ResumeRecordingContainer
 
-    /// The schema name of the one segment that Router writes on a
-    /// `repeatedPartRemoval` event.
-    static let repeatedPartRemovalSchemaName = "FoundationModelsRouter.RepeatedPartRemovalSegment"
+  /// The schema name of the one segment that Router writes on a
+  /// `repeatedPartRemoval` event.
+  static let repeatedPartRemovalSchemaName = "FoundationModelsRouter.RepeatedPartRemovalSegment"
 
-    /// The start of the text Router records on a `repeatedPartRemoval` event.
-    static let repeatedPartRemovalText = "Repeated part removed from the render: "
+  /// The start of the text Router records on a `repeatedPartRemoval` event.
+  static let repeatedPartRemovalText = "Repeated part removed from the render: "
 
-    /// The number of idle updates the fixture has waited for so far.
-    /// Each ``runPrompt(_:)`` waits for one more.
-    private var completedPromptCount = 0
+  /// The number of idle updates the fixture has waited for so far.
+  /// Each ``runPrompt(_:)`` waits for one more.
+  private var completedPromptCount = 0
 
-    /// The default project recording root of the fixture's cwd:
-    /// `<cwd>/.<name>/transcripts/`.
-    var recordingRoot: URL {
-        get throws {
-            try Self.projectRecordingRoot(of: fixture.cwd)
-        }
+  /// The default project recording root of the fixture's cwd:
+  /// `<cwd>/.<name>/transcripts/`.
+  var recordingRoot: URL {
+    get throws {
+      try Self.projectRecordingRoot(of: fixture.cwd)
     }
+  }
 
-    /// Wires an agent over a fresh ``ResumeRecordingContainer``,
-    /// completes `initialize`, and opens one session.
-    ///
-    /// - Parameters:
-    ///   - label: The directory label of the calling test.
-    ///   - workingDirectory: The session working directory, or `nil` to
-    ///     make a fresh one.
-    ///   - projectConfigYAML: The project `config.yaml` to write before
-    ///     `session/new`, or `nil` for none.
-    ///   - additionalDirectories: The `session/new` additional roots, or
-    ///     `nil` for none.
-    ///   - mcpServers: The client MCP servers of `session/new`, or `nil`
-    ///     for none.
-    ///   - tapsWire: Whether the harness stands a `WireTap` on the client
-    ///     end, so a proof can read the order of the responses and the
-    ///     notifications.
-    /// - Returns: The fixture.
-    /// - Throws: Whatever the construction or the handshake throws.
-    static func make(
-        label: String,
-        workingDirectory: URL? = nil,
-        projectConfigYAML: String? = nil,
-        additionalDirectories: [AbsolutePath]? = nil,
-        mcpServers: [MCPServer]? = nil,
-        tapsWire: Bool = false
-    ) async throws -> ResumeSessionFixture {
-        let container = ResumeRecordingContainer()
-        var loader = StubModelLoader()
-        loader.makeLLMContainer = { _ in container }
-        let fixture = try await ScriptedPromptFixture.make(
-            loader: loader,
-            label: label,
-            workingDirectory: workingDirectory,
-            projectConfigYAML: projectConfigYAML,
-            mcpServers: mcpServers,
-            additionalDirectories: additionalDirectories,
-            tapsWire: tapsWire)
-        return ResumeSessionFixture(fixture: fixture, container: container)
-    }
+  /// Wires an agent over a fresh ``ResumeRecordingContainer``,
+  /// completes `initialize`, and opens one session.
+  ///
+  /// - Parameters:
+  ///   - label: The directory label of the calling test.
+  ///   - workingDirectory: The session working directory, or `nil` to
+  ///     make a fresh one.
+  ///   - projectConfigYAML: The project `config.yaml` to write before
+  ///     `session/new`, or `nil` for none.
+  ///   - additionalDirectories: The `session/new` additional roots, or
+  ///     `nil` for none.
+  ///   - mcpServers: The client MCP servers of `session/new`, or `nil`
+  ///     for none.
+  ///   - tapsWire: Whether the harness stands a `WireTap` on the client
+  ///     end, so a proof can read the order of the responses and the
+  ///     notifications.
+  /// - Returns: The fixture.
+  /// - Throws: Whatever the construction or the handshake throws.
+  static func make(
+    label: String,
+    workingDirectory: URL? = nil,
+    projectConfigYAML: String? = nil,
+    additionalDirectories: [AbsolutePath]? = nil,
+    mcpServers: [MCPServer]? = nil,
+    tapsWire: Bool = false
+  ) async throws -> ResumeSessionFixture {
+    let container = ResumeRecordingContainer()
+    var loader = StubModelLoader()
+    loader.makeLLMContainer = { _ in container }
+    let fixture = try await ScriptedPromptFixture.make(
+      loader: loader,
+      label: label,
+      workingDirectory: workingDirectory,
+      projectConfigYAML: projectConfigYAML,
+      mcpServers: mcpServers,
+      additionalDirectories: additionalDirectories,
+      tapsWire: tapsWire)
+    return ResumeSessionFixture(fixture: fixture, container: container)
+  }
 
-    /// The default project recording root of `cwd` for the harness
-    /// dotfolder name.
-    ///
-    /// - Parameter cwd: The session working directory.
-    /// - Returns: The resolved root.
-    /// - Throws: When the harness dotfolder name is refused.
-    static func projectRecordingRoot(of cwd: URL) throws -> URL {
-        try FoundationModelsACPAgentTestSupport.projectRecordingRoot(
-            of: cwd, dotfolderName: AgentClientHarness.dotfolderName)
-    }
+  /// The default project recording root of `cwd` for the harness
+  /// dotfolder name.
+  ///
+  /// - Parameter cwd: The session working directory.
+  /// - Returns: The resolved root.
+  /// - Throws: When the harness dotfolder name is refused.
+  static func projectRecordingRoot(of cwd: URL) throws -> URL {
+    try FoundationModelsACPAgentTestSupport.projectRecordingRoot(
+      of: cwd, dotfolderName: AgentClientHarness.dotfolderName)
+  }
 
-    /// Drives one prompt over the wire with
-    /// ``ScriptedPromptFixture/runPrompt(on:text:count:whileRunning:)``, and
-    /// waits until the session accepts the next prompt.
-    ///
-    /// - Parameter text: The prompt text.
-    /// - Returns: The prompt response, which names the user message.
-    /// - Throws: Whatever the wire call or the waits throw.
-    @discardableResult
-    mutating func runPrompt(_ text: String) async throws -> PromptResponse {
-        completedPromptCount += 1
-        return try await ScriptedPromptFixture.runPrompt(
-            on: fixture, text: text, count: completedPromptCount
-        ).response
-    }
+  /// Drives one prompt over the wire with
+  /// ``ScriptedPromptFixture/runPrompt(on:text:count:whileRunning:)``, and
+  /// waits until the session accepts the next prompt.
+  ///
+  /// - Parameter text: The prompt text.
+  /// - Returns: The prompt response, which names the user message.
+  /// - Throws: Whatever the wire call or the waits throw.
+  @discardableResult
+  mutating func runPrompt(_ text: String) async throws -> PromptResponse {
+    completedPromptCount += 1
+    return try await ScriptedPromptFixture.runPrompt(
+      on: fixture, text: text, count: completedPromptCount
+    ).response
+  }
 
-    /// Records one root session through the resident profile of the agent,
-    /// and not through the agent: the recording has a Router journal and no
-    /// retained history, as a session that an earlier build recorded.
-    ///
-    /// After the prompts, the session posts `events` to its outbox, as a run
-    /// of the session posts them, so the Router journal records them.
-    ///
-    /// - Parameters:
-    ///   - prompts: The prompts the session answers, in order.
-    ///   - events: The operation events the session posts after the
-    ///     prompts, in order. The default posts none.
-    /// - Returns: The id of the recorded session.
-    /// - Throws: Whatever the recording root or a prompt throws, or a
-    ///   failed requirement when the session is not a `RoutedSessionActor`
-    ///   and so has no outbox to post to.
-    func recordSessionOutsideTheAgent(
-        prompts: [String], posting events: [OperationEvent] = []
-    ) async throws -> SessionId {
-        let recorded = fixture.harness.agent.residentProfile.standard.makeSession(
-            instructions: "recorded instructions",
-            workingDirectory: fixture.cwd,
-            recordingRoot: try recordingRoot,
-            tools: [],
-            budget: nil,
-            compactionPrompt: .default)
-        for prompt in prompts {
-            _ = try await recorded.respond(to: prompt)
-        }
-        if !events.isEmpty {
-            let actor = try #require(recorded as? RoutedSessionActor)
-            for event in events {
-                await actor.outbox.post(event: event)
-            }
-        }
-        await recorded.close()
-        return SessionId(rawValue: recorded.id.description)
+  /// Records one root session through the resident profile of the agent,
+  /// and not through the agent: the recording has a Router journal and no
+  /// retained history, as a session that an earlier build recorded.
+  ///
+  /// After the prompts, the session posts `events` to its outbox, as a run
+  /// of the session posts them, so the Router journal records them.
+  ///
+  /// - Parameters:
+  ///   - prompts: The prompts the session answers, in order.
+  ///   - events: The operation events the session posts after the
+  ///     prompts, in order. The default posts none.
+  /// - Returns: The id of the recorded session.
+  /// - Throws: Whatever the recording root or a prompt throws, or a
+  ///   failed requirement when the session is not a `RoutedSessionActor`
+  ///   and so has no outbox to post to.
+  func recordSessionOutsideTheAgent(
+    prompts: [String], posting events: [OperationEvent] = []
+  ) async throws -> SessionId {
+    let recorded = fixture.harness.agent.residentProfile.standard.makeSession(
+      instructions: "recorded instructions",
+      workingDirectory: fixture.cwd,
+      recordingRoot: try recordingRoot,
+      tools: [],
+      budget: nil,
+      compactionPrompt: .default)
+    for prompt in prompts {
+      _ = try await recorded.respond(to: prompt)
     }
+    if !events.isEmpty {
+      let actor = try #require(recorded as? RoutedSessionActor)
+      for event in events {
+        await actor.outbox.post(event: event)
+      }
+    }
+    await recorded.close()
+    return SessionId(rawValue: recorded.id.description)
+  }
 
-    /// The recorded events of one session under `root`, in merged order.
-    ///
-    /// - Parameters:
-    ///   - root: The recording root to read.
-    ///   - sessionId: The session whose events to keep.
-    /// - Returns: The session's events.
-    /// - Throws: Whatever the merged read throws.
-    static func recordedEvents(
-        under root: URL, sessionId: SessionId
-    ) throws -> [TranscriptEvent] {
-        guard let id = ULID(ulidString: sessionId.rawValue) else {
-            return []
-        }
-        return try TranscriptEvent.merged(under: root).filter { $0.sessionId == id }
+  /// The recorded events of one session under `root`, in merged order.
+  ///
+  /// - Parameters:
+  ///   - root: The recording root to read.
+  ///   - sessionId: The session whose events to keep.
+  /// - Returns: The session's events.
+  /// - Throws: Whatever the merged read throws.
+  static func recordedEvents(
+    under root: URL, sessionId: SessionId
+  ) throws -> [TranscriptEvent] {
+    guard let id = ULID(ulidString: sessionId.rawValue) else {
+      return []
     }
+    return try TranscriptEvent.merged(under: root).filter { $0.sessionId == id }
+  }
 
-    /// Waits until the Router session of `sessionId` is idle, and then
-    /// expects that its recording holds at least `count` response events.
-    ///
-    /// When `awaitIdle()` returns `true`, the answer of each mail ended, and
-    /// the session actor awaited each journal append of those answers (the
-    /// pump ends its work only after the chain of the answer, and each
-    /// submission of the chain awaits its record). Thus the one read after
-    /// the wait sees each response, and the wait uses no clock and no poll.
-    ///
-    /// - Parameters:
-    ///   - root: The recording root to read.
-    ///   - sessionId: The session to watch.
-    ///   - count: The response-event count to expect.
-    ///   - agent: The agent that holds the session.
-    /// - Throws: When the agent has no session `sessionId`, or the read
-    ///   throws.
-    static func waitForRecordedResponses(
-        under root: URL, sessionId: SessionId, count: Int, agent: RoutedACPAgent,
-        sourceLocation: SourceLocation = #_sourceLocation
-    ) async throws {
-        try await waitForJournal(of: sessionId, in: agent, sourceLocation: sourceLocation)
-        let responses = try recordedEvents(under: root, sessionId: sessionId).count { $0.kind == .response }
-        #expect(responses >= count, "the recording holds \(responses) response event(s)", sourceLocation: sourceLocation)
+  /// Waits until the Router session of `sessionId` is idle, and then
+  /// expects that its recording holds at least `count` response events.
+  ///
+  /// When `awaitIdle()` returns `true`, the answer of each mail ended, and
+  /// the session actor awaited each journal append of those answers (the
+  /// pump ends its work only after the chain of the answer, and each
+  /// submission of the chain awaits its record). Thus the one read after
+  /// the wait sees each response, and the wait uses no clock and no poll.
+  ///
+  /// - Parameters:
+  ///   - root: The recording root to read.
+  ///   - sessionId: The session to watch.
+  ///   - count: The response-event count to expect.
+  ///   - agent: The agent that holds the session.
+  /// - Throws: When the agent has no session `sessionId`, or the read
+  ///   throws.
+  static func waitForRecordedResponses(
+    under root: URL, sessionId: SessionId, count: Int, agent: RoutedACPAgent,
+    sourceLocation: SourceLocation = #_sourceLocation
+  ) async throws {
+    try await waitForJournal(of: sessionId, in: agent, sourceLocation: sourceLocation)
+    let responses = try recordedEvents(under: root, sessionId: sessionId).count {
+      $0.kind == .response
     }
+    #expect(
+      responses >= count, "the recording holds \(responses) response event(s)",
+      sourceLocation: sourceLocation)
+  }
 
-    /// Waits until the Router session of `sessionId` is idle: then its
-    /// journal holds each event of each answer that ended. See
-    /// ``waitForRecordedResponses(under:sessionId:count:agent:sourceLocation:)``.
-    ///
-    /// - Parameters:
-    ///   - sessionId: The session to watch.
-    ///   - agent: The agent that holds the session.
-    /// - Throws: When the agent has no session `sessionId`.
-    static func waitForJournal(
-        of sessionId: SessionId, in agent: RoutedACPAgent,
-        sourceLocation: SourceLocation = #_sourceLocation
-    ) async throws {
-        let session = try #require(await agent.sessions[sessionId]?.session, sourceLocation: sourceLocation)
-        #expect(await session.awaitIdle(), "the session closed before it was idle", sourceLocation: sourceLocation)
-    }
+  /// Waits until the Router session of `sessionId` is idle: then its
+  /// journal holds each event of each answer that ended. See
+  /// ``waitForRecordedResponses(under:sessionId:count:agent:sourceLocation:)``.
+  ///
+  /// - Parameters:
+  ///   - sessionId: The session to watch.
+  ///   - agent: The agent that holds the session.
+  /// - Throws: When the agent has no session `sessionId`.
+  static func waitForJournal(
+    of sessionId: SessionId, in agent: RoutedACPAgent,
+    sourceLocation: SourceLocation = #_sourceLocation
+  ) async throws {
+    let session = try #require(
+      await agent.sessions[sessionId]?.session, sourceLocation: sourceLocation)
+    #expect(
+      await session.awaitIdle(), "the session closed before it was idle",
+      sourceLocation: sourceLocation)
+  }
 
-    /// The resume request for the fixture's own session and cwd.
-    ///
-    /// - Parameters:
-    ///   - cwd: The request cwd, or `nil` for the fixture's own.
-    ///   - additionalDirectories: The complete new root set, or `nil`.
-    ///   - replayFrom: The replay cursor, or `nil` for no replay.
-    /// - Returns: The request.
-    func makeResumeRequest(
-        cwd: URL? = nil,
-        additionalDirectories: [AbsolutePath]? = nil,
-        replayFrom: ReplayFrom? = nil
-    ) -> ResumeSessionRequest {
-        ResumeSessionRequest(
-            cwd: AbsolutePath(rawValue: (cwd ?? fixture.cwd).path),
-            sessionId: fixture.sessionId,
-            additionalDirectories: additionalDirectories,
-            replayFrom: replayFrom)
-    }
+  /// The resume request for the fixture's own session and cwd.
+  ///
+  /// - Parameters:
+  ///   - cwd: The request cwd, or `nil` for the fixture's own.
+  ///   - additionalDirectories: The complete new root set, or `nil`.
+  ///   - replayFrom: The replay cursor, or `nil` for no replay.
+  /// - Returns: The request.
+  func makeResumeRequest(
+    cwd: URL? = nil,
+    additionalDirectories: [AbsolutePath]? = nil,
+    replayFrom: ReplayFrom? = nil
+  ) -> ResumeSessionRequest {
+    ResumeSessionRequest(
+      cwd: AbsolutePath(rawValue: (cwd ?? fixture.cwd).path),
+      sessionId: fixture.sessionId,
+      additionalDirectories: additionalDirectories,
+      replayFrom: replayFrom)
+  }
 }

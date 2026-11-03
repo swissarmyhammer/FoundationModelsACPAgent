@@ -8,43 +8,43 @@ import Foundation
 /// So the load runs once, here, and its outcome travels as a value: the
 /// merged configuration, or the reason the load did not give one.
 public enum ConfigurationLoadOutcome: Sendable {
-    /// The load that succeeded, with its warnings and its per-key sources.
-    case loaded(LoadedConfiguration)
+  /// The load that succeeded, with its warnings and its per-key sources.
+  case loaded(LoadedConfiguration)
 
-    /// The reason the load did not succeed, as a person reads it.
-    case failed(reason: String)
+  /// The reason the load did not succeed, as a person reads it.
+  case failed(reason: String)
 
-    /// Loads `config.yaml` through `loader` and keeps what it gave.
-    ///
-    /// - Parameter loader: The loader of the stack to read.
-    public init(of loader: ConfigurationLoader) {
-        do {
-            self = .loaded(try loader.load())
-        } catch {
-            self = .failed(reason: String(describing: error))
-        }
+  /// Loads `config.yaml` through `loader` and keeps what it gave.
+  ///
+  /// - Parameter loader: The loader of the stack to read.
+  public init(of loader: ConfigurationLoader) {
+    do {
+      self = .loaded(try loader.load())
+    } catch {
+      self = .failed(reason: String(describing: error))
     }
+  }
 
-    /// The merged configuration, or the builtin defaults when the load
-    /// failed — because a component that must still report something reads
-    /// the same defaults the agent would run with.
-    public var configuration: AgentConfiguration {
-        switch self {
-        case .loaded(let loaded):
-            return loaded.configuration
-        case .failed:
-            return AgentConfiguration()
-        }
+  /// The merged configuration, or the builtin defaults when the load
+  /// failed — because a component that must still report something reads
+  /// the same defaults the agent would run with.
+  public var configuration: AgentConfiguration {
+    switch self {
+    case .loaded(let loaded):
+      return loaded.configuration
+    case .failed:
+      return AgentConfiguration()
     }
+  }
 
-    /// The warnings the load logged. A load that failed logged none: it
-    /// stopped at the schema failure.
-    public var warnings: [ConfigurationWarning] {
-        switch self {
-        case .loaded(let loaded):
-            return loaded.warnings
-        case .failed:
-            return []
-        }
+  /// The warnings the load logged. A load that failed logged none: it
+  /// stopped at the schema failure.
+  public var warnings: [ConfigurationWarning] {
+    switch self {
+    case .loaded(let loaded):
+      return loaded.warnings
+    case .failed:
+      return []
     }
+  }
 }

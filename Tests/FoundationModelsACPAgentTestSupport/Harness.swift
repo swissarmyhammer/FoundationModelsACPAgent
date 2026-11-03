@@ -6,20 +6,20 @@ import FoundationModelsExtras
 
 /// The instant type of ``HoldingClock``: an offset from the clock's epoch.
 struct HoldingInstant: InstantProtocol {
-    /// The offset from the clock's epoch.
-    let offset: Swift.Duration
+  /// The offset from the clock's epoch.
+  let offset: Swift.Duration
 
-    func advanced(by duration: Swift.Duration) -> HoldingInstant {
-        HoldingInstant(offset: offset + duration)
-    }
+  func advanced(by duration: Swift.Duration) -> HoldingInstant {
+    HoldingInstant(offset: offset + duration)
+  }
 
-    func duration(to other: HoldingInstant) -> Swift.Duration {
-        other.offset - offset
-    }
+  func duration(to other: HoldingInstant) -> Swift.Duration {
+    other.offset - offset
+  }
 
-    static func < (lhs: HoldingInstant, rhs: HoldingInstant) -> Bool {
-        lhs.offset < rhs.offset
-    }
+  static func < (lhs: HoldingInstant, rhs: HoldingInstant) -> Bool {
+    lhs.offset < rhs.offset
+  }
 }
 
 /// A clock that never fires: `now` stands still, and a sleep suspends
@@ -30,25 +30,25 @@ struct HoldingInstant: InstantProtocol {
 /// test drains the buffer with
 /// ``AgentClientHarness/flushPendingChunks()`` and never sleeps.
 struct HoldingClock: Clock {
-    var now: HoldingInstant { HoldingInstant(offset: .zero) }
+  var now: HoldingInstant { HoldingInstant(offset: .zero) }
 
-    var minimumResolution: Swift.Duration { .zero }
+  var minimumResolution: Swift.Duration { .zero }
 
-    /// Suspends until the surrounding task is cancelled. The deadline
-    /// never arrives on this clock.
-    ///
-    /// - Parameters:
-    ///   - deadline: Ignored; it never arrives.
-    ///   - tolerance: Ignored; nothing fires.
-    /// - Throws: `CancellationError` when the task is cancelled.
-    func sleep(until deadline: HoldingInstant, tolerance: Swift.Duration?) async throws {
-        // A stream that never yields: awaiting it suspends, and the
-        // task's cancellation ends the iteration.
-        let (stream, continuation) = AsyncStream<Never>.makeStream()
-        for await _ in stream {}
-        withExtendedLifetime(continuation) {}
-        try Task.checkCancellation()
-    }
+  /// Suspends until the surrounding task is cancelled. The deadline
+  /// never arrives on this clock.
+  ///
+  /// - Parameters:
+  ///   - deadline: Ignored; it never arrives.
+  ///   - tolerance: Ignored; nothing fires.
+  /// - Throws: `CancellationError` when the task is cancelled.
+  func sleep(until deadline: HoldingInstant, tolerance: Swift.Duration?) async throws {
+    // A stream that never yields: awaiting it suspends, and the
+    // task's cancellation ends the iteration.
+    let (stream, continuation) = AsyncStream<Never>.makeStream()
+    for await _ in stream {}
+    withExtendedLifetime(continuation) {}
+    try Task.checkCancellation()
+  }
 }
 
 /// One in-process wiring of `RoutedACPAgent` and the shipped client
@@ -72,335 +72,337 @@ struct HoldingClock: Clock {
 /// each permission request and each elicitation of that session at once,
 /// with the cancel answer of the spec.
 public struct AgentClientHarness: Sendable {
-    /// The dotfolder name the harness constructs the agent with. The
-    /// wire must never carry it: the dotfolder name is the private choice
-    /// of the user, and `initialize` reports the product name.
-    public static let dotfolderName = "coding"
+  /// The dotfolder name the harness constructs the agent with. The
+  /// wire must never carry it: the dotfolder name is the private choice
+  /// of the user, and `initialize` reports the product name.
+  public static let dotfolderName = "coding"
 
-    /// The number of seconds in ``coalescingCadence``. The name records
-    /// that the length is arbitrary: the ``HoldingClock`` never reaches
-    /// any deadline.
-    private static let inertCadenceSeconds = 60
+  /// The number of seconds in ``coalescingCadence``. The name records
+  /// that the length is arbitrary: the ``HoldingClock`` never reaches
+  /// any deadline.
+  private static let inertCadenceSeconds = 60
 
-    /// The coalescing cadence the harness client is created with. The
-    /// value is inert: the ``HoldingClock`` never reaches any deadline.
-    public static let coalescingCadence: Swift.Duration = .seconds(inertCadenceSeconds)
+  /// The coalescing cadence the harness client is created with. The
+  /// value is inert: the ``HoldingClock`` never reaches any deadline.
+  public static let coalescingCadence: Swift.Duration = .seconds(inertCadenceSeconds)
 
-    /// The agent under test.
-    public let agent: RoutedACPAgent
+  /// The agent under test.
+  public let agent: RoutedACPAgent
 
-    /// The observable connection model. Its session models are the
-    /// primary assertion surface.
-    public let client: ConnectionModel
+  /// The observable connection model. Its session models are the
+  /// primary assertion surface.
+  public let client: ConnectionModel
 
-    /// The client side of the wire, which drives the agent.
-    public let connection: ClientSideConnection
+  /// The client side of the wire, which drives the agent.
+  public let connection: ClientSideConnection
 
-    /// The agent side of the wire.
-    public let agentConnection: AgentSideConnection
+  /// The agent side of the wire.
+  public let agentConnection: AgentSideConnection
 
-    /// The `Agent` that the bind of ``agentConnection`` gave: it names the
-    /// connection of this harness on each call to ``agent``. A test that
-    /// calls the agent as this connection, with no wire, calls it here.
-    public let routedConnection: RoutedACPConnection
+  /// The `Agent` that the bind of ``agentConnection`` gave: it names the
+  /// connection of this harness on each call to ``agent``. A test that
+  /// calls the agent as this connection, with no wire, calls it here.
+  public let routedConnection: RoutedACPConnection
 
-    /// The recorder of the raw update sequence, or `nil` when the
-    /// harness was wired without one (``make(wire:)``).
-    public let collector: UpdateCollector?
+  /// The recorder of the raw update sequence, or `nil` when the
+  /// harness was wired without one (``make(wire:)``).
+  public let collector: UpdateCollector?
 
-    /// The recorder of the elicitation traffic, or `nil` when the
-    /// harness was wired without one (``make(wire:)``).
-    public let elicitations: ElicitationWireRecorder?
+  /// The recorder of the elicitation traffic, or `nil` when the
+  /// harness was wired without one (``make(wire:)``).
+  public let elicitations: ElicitationWireRecorder?
 
-    /// The recorder of the `_sah/graphql/*` notifications of the agent, or
-    /// `nil` when the harness was wired without one (``make(wire:)``).
-    public let graphQLNotifications: GraphQLTunnelRecorder?
+  /// The recorder of the `_sah/graphql/*` notifications of the agent, or
+  /// `nil` when the harness was wired without one (``make(wire:)``).
+  public let graphQLNotifications: GraphQLTunnelRecorder?
 
-    /// The tap on the client end of the wire, or `nil` when the harness
-    /// was wired without one.
-    ///
-    /// Only an order proof that spans a response and a notification
-    /// needs it, so it is off by default and every other
-    /// suite runs the untapped wire.
-    public let wireTap: WireTap?
+  /// The tap on the client end of the wire, or `nil` when the harness
+  /// was wired without one.
+  ///
+  /// Only an order proof that spans a response and a notification
+  /// needs it, so it is off by default and every other
+  /// suite runs the untapped wire.
+  public let wireTap: WireTap?
 
-    /// The tap on the agent end of the wire, or `nil` when the harness
-    /// was wired without one.
-    ///
-    /// Its lines are the ones the CLIENT sent, because a tap records the
-    /// incoming direction of the end it wraps. It is the only reading of
-    /// a client-to-agent notification: `session/cancel` carries no
-    /// response, so nothing else on the wire says it arrived.
-    public let agentWireTap: WireTap?
+  /// The tap on the agent end of the wire, or `nil` when the harness
+  /// was wired without one.
+  ///
+  /// Its lines are the ones the CLIENT sent, because a tap records the
+  /// incoming direction of the end it wraps. It is the only reading of
+  /// a client-to-agent notification: `session/cancel` carries no
+  /// response, so nothing else on the wire says it arrived.
+  public let agentWireTap: WireTap?
 
-    /// The transport pair the two connections run over. ``close()``
-    /// ends it after both connections are down.
-    public let wire: HarnessWire
+  /// The transport pair the two connections run over. ``close()``
+  /// ends it after both connections are down.
+  public let wire: HarnessWire
 
-    /// The close state that the copies of this harness share, so
-    /// ``close()`` runs one time (test rule T1, ``ClosesHarnessesTrait``).
-    public let lifetime = HarnessLifetime()
+  /// The close state that the copies of this harness share, so
+  /// ``close()`` runs one time (test rule T1, ``ClosesHarnessesTrait``).
+  public let lifetime = HarnessLifetime()
 
-    /// Gives `harness` to the ``HarnessRegistry`` of the test that runs
-    /// now, so the ``ClosesHarnessesTrait`` closes it also when the test
-    /// throws.
-    ///
-    /// - Parameter harness: The harness that a factory made.
-    /// - Returns: `harness`.
-    private static func registered(_ harness: AgentClientHarness) -> AgentClientHarness {
-        HarnessRegistry.current?.add(harness)
-        return harness
+  /// Gives `harness` to the ``HarnessRegistry`` of the test that runs
+  /// now, so the ``ClosesHarnessesTrait`` closes it also when the test
+  /// throws.
+  ///
+  /// - Parameter harness: The harness that a factory made.
+  /// - Returns: `harness`.
+  private static func registered(_ harness: AgentClientHarness) -> AgentClientHarness {
+    HarnessRegistry.current?.add(harness)
+    return harness
+  }
+
+  /// Makes an agent for ``dotfolderName`` through the shared
+  /// `makeStubAgent` factory, so the construction-time profile
+  /// resolution downloads nothing.
+  ///
+  /// - Returns: The agent.
+  /// - Throws: `DotfolderNameError` when ``dotfolderName`` is refused,
+  ///   or `ProfileResolutionError` when the stub resolution fails.
+  public static func makeAgent() async throws -> RoutedACPAgent {
+    try await makeStubAgent(
+      name: dotfolderName,
+      cacheDirectory: makeResolvedDirectory(label: "AgentClientHarness-cache"))
+  }
+
+  /// Makes a stub agent for ``dotfolderName`` over throwaway folders, with
+  /// no wire, and runs `initialize` so the order rule passes. The agent
+  /// records durably under a throwaway recordings root, thus a session
+  /// that it makes writes its session directory to disk.
+  ///
+  /// - Parameters:
+  ///   - label: The prefix that names the throwaway folders.
+  ///   - userDirectory: The injected user layer root, or `nil` (the
+  ///     default) for a new throwaway folder.
+  /// - Returns: The initialized agent.
+  /// - Throws: What the construction or the handshake throws.
+  public static func makeInitializedAgent(label: String, userDirectory: URL? = nil) async throws
+    -> RoutedACPAgent
+  {
+    let agent = try await makeStubAgent(
+      name: dotfolderName,
+      cacheDirectory: makeResolvedDirectory(label: "\(label)-cache"),
+      recordingsDirectory: makeResolvedDirectory(label: "\(label)-recordings"),
+      userDirectory: userDirectory ?? makeResolvedDirectory(label: "\(label)-user"))
+    _ = try await agent.initialize(makeInitializeRequest())
+    return agent
+  }
+
+  /// The `session/new` request for `cwd`, with no additional directories
+  /// and no client MCP servers.
+  ///
+  /// - Parameter cwd: The session working directory.
+  /// - Returns: The request.
+  public static func makeNewSessionRequest(cwd: URL) -> NewSessionRequest {
+    NewSessionRequest(cwd: AbsolutePath(rawValue: cwd.path))
+  }
+
+  /// The client's `initialize` request with the driver's own values.
+  ///
+  /// - Parameters:
+  ///   - protocolVersion: The latest version the client supports.
+  ///   - capabilities: The client's capabilities.
+  /// - Returns: The request.
+  public static func makeInitializeRequest(
+    protocolVersion: ProtocolVersion = ACPClient.supportedProtocolVersion,
+    capabilities: ClientCapabilities = ACPClient.advertisedCapabilities
+  ) -> InitializeRequest {
+    InitializeRequest(
+      info: Implementation(name: "test-driver", version: "1.0.0"),
+      protocolVersion: protocolVersion,
+      capabilities: capabilities)
+  }
+
+  /// The prompt request with one text block.
+  ///
+  /// It stands beside ``makeInitializeRequest(protocolVersion:capabilities:)``
+  /// because every driver of this harness — the in-process unit suites
+  /// and the integration package's spawned-binary suites alike — sends
+  /// its prompt through it.
+  ///
+  /// - Parameters:
+  ///   - sessionId: The session to prompt.
+  ///   - text: The text of the one block.
+  /// - Returns: The request.
+  public static func makePromptRequest(sessionId: SessionId, text: String) -> PromptRequest {
+    PromptRequest(prompt: [.text(TextContent(text: text))], sessionId: sessionId)
+  }
+
+  /// Wires a fresh agent and client over a transport pair, with the
+  /// model connected through `connect(over:)`.
+  ///
+  /// - Parameter wire: The transport pair to run over. The in-process
+  ///   pair by default.
+  /// - Returns: The connected harness, with no collector.
+  /// - Throws: `DotfolderNameError` when ``dotfolderName`` is refused.
+  public static func make(
+    wire: HarnessWire = .makeInMemory()
+  ) async throws -> AgentClientHarness {
+    let parts = await makeParts(
+      agent: try await makeAgent(), agentEnd: wire.agentEnd)
+    let connection = await parts.client.connect(over: wire.clientEnd)
+    return registered(
+      AgentClientHarness(
+        agent: parts.agent,
+        client: parts.client,
+        connection: connection,
+        agentConnection: parts.agentConnection,
+        routedConnection: parts.routedConnection,
+        collector: nil,
+        elicitations: nil,
+        graphQLNotifications: nil,
+        wireTap: nil,
+        agentWireTap: nil,
+        wire: wire))
+  }
+
+  /// Wires a fresh agent and client with a ``RecordingClient`` in
+  /// front of the router of the model, so a test can assert the raw
+  /// notification order on the collector and the final state on a
+  /// session model.
+  ///
+  /// - Parameter wire: The transport pair to run over. The in-process
+  ///   pair by default.
+  /// - Returns: The connected harness, with a collector.
+  /// - Throws: `DotfolderNameError` when ``dotfolderName`` is refused.
+  public static func makeRecording(
+    wire: HarnessWire = .makeInMemory()
+  ) async throws -> AgentClientHarness {
+    try await makeRecording(agent: makeAgent(), wire: wire)
+  }
+
+  /// Wires the given agent — for example one whose model plays a
+  /// script — with a ``RecordingClient`` in front of the router of the
+  /// model.
+  ///
+  /// The `client` closure of `ConnectionModel.connect(over:client:)`
+  /// puts the recorder in front of the router. The
+  /// recorder forwards each message to the router, so the router still
+  /// gives each permission request and each elicitation to its session
+  /// model.
+  ///
+  /// - Parameters:
+  ///   - agent: The agent under test.
+  ///   - tapsWire: Whether a ``WireTap`` stands on the client end, so
+  ///     a proof can read the raw line order. Off by default, because
+  ///     only the prompt order proof reads it.
+  ///   - tapsAgentWire: Whether a ``WireTap`` stands on the agent end,
+  ///     so a proof can read what the client sent. Off by default,
+  ///     because only the cli-plan.md §5.9 cancel proof reads it.
+  ///   - wire: The transport pair to run over. The in-process pair by
+  ///     default; a cli-plan.md §4 comparison passes the stdio pipes instead.
+  ///   - connectionInfo: The id and the credential that the agent end
+  ///     reports, as an HTTP connection does (ACPA-5b), or `nil` (the
+  ///     default) for none, as the in-process wire. The bind takes the
+  ///     trust of the connection from it: none gives `userDevice`, and a
+  ///     token that the agent does not list gives `external`.
+  /// - Returns: The connected harness, with a collector.
+  public static func makeRecording(
+    agent: RoutedACPAgent,
+    tapsWire: Bool = false,
+    tapsAgentWire: Bool = false,
+    wire: HarnessWire = .makeInMemory(),
+    connectionInfo: ACPConnectionInfo? = nil
+  ) async -> AgentClientHarness {
+    let agentWireTap = tapsAgentWire ? WireTap(tapping: wire.agentEnd) : nil
+    let tappedEnd: any ACPTransport = agentWireTap ?? wire.agentEnd
+    let agentEnd: any ACPTransport =
+      connectionInfo.map { CredentialTransport(wrapping: tappedEnd, reporting: $0) } ?? tappedEnd
+    let parts = await makeParts(agent: agent, agentEnd: agentEnd)
+    let collector = UpdateCollector()
+    let elicitations = ElicitationWireRecorder()
+    let graphQLNotifications = GraphQLTunnelRecorder()
+    let wireTap = tapsWire ? WireTap(tapping: wire.clientEnd) : nil
+    let clientEnd: any ACPTransport = wireTap ?? wire.clientEnd
+    let connection = await parts.client.connect(over: clientEnd) { router in
+      RecordingClient(
+        forwardingTo: router, collector: collector, elicitations: elicitations,
+        graphQLNotifications: graphQLNotifications)
     }
+    return registered(
+      AgentClientHarness(
+        agent: parts.agent,
+        client: parts.client,
+        connection: connection,
+        agentConnection: parts.agentConnection,
+        routedConnection: parts.routedConnection,
+        collector: collector,
+        elicitations: elicitations,
+        graphQLNotifications: graphQLNotifications,
+        wireTap: wireTap,
+        agentWireTap: agentWireTap,
+        wire: wire))
+  }
 
-    /// Makes an agent for ``dotfolderName`` through the shared
-    /// `makeStubAgent` factory, so the construction-time profile
-    /// resolution downloads nothing.
-    ///
-    /// - Returns: The agent.
-    /// - Throws: `DotfolderNameError` when ``dotfolderName`` is refused,
-    ///   or `ProfileResolutionError` when the stub resolution fails.
-    public static func makeAgent() async throws -> RoutedACPAgent {
-        try await makeStubAgent(
-            name: dotfolderName,
-            cacheDirectory: makeResolvedDirectory(label: "AgentClientHarness-cache"))
+  /// Flushes the coalescing buffer of each open session model, so a
+  /// test observes buffered text without sleeping for the cadence.
+  @MainActor
+  public func flushPendingChunks() {
+    for session in client.openSessions {
+      session.flushPendingChunks()
     }
+  }
 
-    /// Makes a stub agent for ``dotfolderName`` over throwaway folders, with
-    /// no wire, and runs `initialize` so the order rule passes. The agent
-    /// records durably under a throwaway recordings root, thus a session
-    /// that it makes writes its session directory to disk.
-    ///
-    /// - Parameters:
-    ///   - label: The prefix that names the throwaway folders.
-    ///   - userDirectory: The injected user layer root, or `nil` (the
-    ///     default) for a new throwaway folder.
-    /// - Returns: The initialized agent.
-    /// - Throws: What the construction or the handshake throws.
-    public static func makeInitializedAgent(label: String, userDirectory: URL? = nil) async throws -> RoutedACPAgent {
-        let agent = try await makeStubAgent(
-            name: dotfolderName,
-            cacheDirectory: makeResolvedDirectory(label: "\(label)-cache"),
-            recordingsDirectory: makeResolvedDirectory(label: "\(label)-recordings"),
-            userDirectory: userDirectory ?? makeResolvedDirectory(label: "\(label)-user"))
-        _ = try await agent.initialize(makeInitializeRequest())
-        return agent
+  /// Closes both ends of the wire, ends the tap, and releases the
+  /// transport pair. A pipe wire holds descriptors, so the release is
+  /// what gives them back.
+  ///
+  /// Then it waits until the agent tore down the connection of this
+  /// harness, which frees its sessions (ACPA-5d), and it closes each open
+  /// session that has no owner now
+  /// (``RoutedACPAgent/closeSessionsWithNoOwner()``). Thus the close ends
+  /// inside the test that made the sessions, and does not run beside a
+  /// later test. Another harness on the same agent keeps its own
+  /// connection and the sessions that it owns.
+  ///
+  /// The first call closes. Each later call, on this harness or on a
+  /// copy of it, does nothing (test rule T1).
+  public func close() async {
+    guard lifetime.markClosed() else {
+      return
     }
+    HarnessRegistry.current?.remove(lifetime)
+    await connection.close()
+    await agentConnection.close()
+    wireTap?.stop()
+    agentWireTap?.stop()
+    wire.close()
+    await agent.waitForTeardown(of: routedConnection.id)
+    await agent.closeSessionsWithNoOwner()
+  }
 
-    /// The `session/new` request for `cwd`, with no additional directories
-    /// and no client MCP servers.
-    ///
-    /// - Parameter cwd: The session working directory.
-    /// - Returns: The request.
-    public static func makeNewSessionRequest(cwd: URL) -> NewSessionRequest {
-        NewSessionRequest(cwd: AbsolutePath(rawValue: cwd.path))
+  /// The wiring every factory shares: the agent with its connection
+  /// over the wire's agent end, and the client over the holding clock.
+  /// The factory closure binds the connection into the agent, so a
+  /// prompt can send notifications through it.
+  ///
+  /// - Parameters:
+  ///   - agent: The agent under test.
+  ///   - agentEnd: The end the agent serves: the wire's own agent end,
+  ///     or a ``WireTap`` or a ``CredentialTransport`` around it.
+  /// - Returns: The agent with its connection and the `Agent` of that
+  ///   connection, and the client.
+  private static func makeParts(
+    agent: RoutedACPAgent, agentEnd: any ACPTransport
+  ) async -> (
+    agent: RoutedACPAgent,
+    agentConnection: AgentSideConnection,
+    routedConnection: RoutedACPConnection,
+    client: ConnectionModel
+  ) {
+    // The factory runs inside the construction of the connection, so
+    // the box holds the bind result when the construction returns.
+    let bound = WatchedValue<RoutedACPConnection?>(nil)
+    let agentConnection = await AgentSideConnection(stream: agentEnd) { connection in
+      let routed = agent.bind(connection: connection)
+      bound.update { $0 = routed }
+      return routed
     }
-
-    /// The client's `initialize` request with the driver's own values.
-    ///
-    /// - Parameters:
-    ///   - protocolVersion: The latest version the client supports.
-    ///   - capabilities: The client's capabilities.
-    /// - Returns: The request.
-    public static func makeInitializeRequest(
-        protocolVersion: ProtocolVersion = ACPClient.supportedProtocolVersion,
-        capabilities: ClientCapabilities = ACPClient.advertisedCapabilities
-    ) -> InitializeRequest {
-        InitializeRequest(
-            info: Implementation(name: "test-driver", version: "1.0.0"),
-            protocolVersion: protocolVersion,
-            capabilities: capabilities)
+    guard let routedConnection = bound.value else {
+      preconditionFailure("the factory of AgentSideConnection runs before its init returns")
     }
-
-    /// The prompt request with one text block.
-    ///
-    /// It stands beside ``makeInitializeRequest(protocolVersion:capabilities:)``
-    /// because every driver of this harness — the in-process unit suites
-    /// and the integration package's spawned-binary suites alike — sends
-    /// its prompt through it.
-    ///
-    /// - Parameters:
-    ///   - sessionId: The session to prompt.
-    ///   - text: The text of the one block.
-    /// - Returns: The request.
-    public static func makePromptRequest(sessionId: SessionId, text: String) -> PromptRequest {
-        PromptRequest(prompt: [.text(TextContent(text: text))], sessionId: sessionId)
-    }
-
-    /// Wires a fresh agent and client over a transport pair, with the
-    /// model connected through `connect(over:)`.
-    ///
-    /// - Parameter wire: The transport pair to run over. The in-process
-    ///   pair by default.
-    /// - Returns: The connected harness, with no collector.
-    /// - Throws: `DotfolderNameError` when ``dotfolderName`` is refused.
-    public static func make(
-        wire: HarnessWire = .makeInMemory()
-    ) async throws -> AgentClientHarness {
-        let parts = await makeParts(
-            agent: try await makeAgent(), agentEnd: wire.agentEnd)
-        let connection = await parts.client.connect(over: wire.clientEnd)
-        return registered(
-            AgentClientHarness(
-                agent: parts.agent,
-                client: parts.client,
-                connection: connection,
-                agentConnection: parts.agentConnection,
-                routedConnection: parts.routedConnection,
-                collector: nil,
-                elicitations: nil,
-                graphQLNotifications: nil,
-                wireTap: nil,
-                agentWireTap: nil,
-                wire: wire))
-    }
-
-    /// Wires a fresh agent and client with a ``RecordingClient`` in
-    /// front of the router of the model, so a test can assert the raw
-    /// notification order on the collector and the final state on a
-    /// session model.
-    ///
-    /// - Parameter wire: The transport pair to run over. The in-process
-    ///   pair by default.
-    /// - Returns: The connected harness, with a collector.
-    /// - Throws: `DotfolderNameError` when ``dotfolderName`` is refused.
-    public static func makeRecording(
-        wire: HarnessWire = .makeInMemory()
-    ) async throws -> AgentClientHarness {
-        try await makeRecording(agent: makeAgent(), wire: wire)
-    }
-
-    /// Wires the given agent — for example one whose model plays a
-    /// script — with a ``RecordingClient`` in front of the router of the
-    /// model.
-    ///
-    /// The `client` closure of `ConnectionModel.connect(over:client:)`
-    /// puts the recorder in front of the router. The
-    /// recorder forwards each message to the router, so the router still
-    /// gives each permission request and each elicitation to its session
-    /// model.
-    ///
-    /// - Parameters:
-    ///   - agent: The agent under test.
-    ///   - tapsWire: Whether a ``WireTap`` stands on the client end, so
-    ///     a proof can read the raw line order. Off by default, because
-    ///     only the prompt order proof reads it.
-    ///   - tapsAgentWire: Whether a ``WireTap`` stands on the agent end,
-    ///     so a proof can read what the client sent. Off by default,
-    ///     because only the cli-plan.md §5.9 cancel proof reads it.
-    ///   - wire: The transport pair to run over. The in-process pair by
-    ///     default; a cli-plan.md §4 comparison passes the stdio pipes instead.
-    ///   - connectionInfo: The id and the credential that the agent end
-    ///     reports, as an HTTP connection does (ACPA-5b), or `nil` (the
-    ///     default) for none, as the in-process wire. The bind takes the
-    ///     trust of the connection from it: none gives `userDevice`, and a
-    ///     token that the agent does not list gives `external`.
-    /// - Returns: The connected harness, with a collector.
-    public static func makeRecording(
-        agent: RoutedACPAgent,
-        tapsWire: Bool = false,
-        tapsAgentWire: Bool = false,
-        wire: HarnessWire = .makeInMemory(),
-        connectionInfo: ACPConnectionInfo? = nil
-    ) async -> AgentClientHarness {
-        let agentWireTap = tapsAgentWire ? WireTap(tapping: wire.agentEnd) : nil
-        let tappedEnd: any ACPTransport = agentWireTap ?? wire.agentEnd
-        let agentEnd: any ACPTransport =
-            connectionInfo.map { CredentialTransport(wrapping: tappedEnd, reporting: $0) } ?? tappedEnd
-        let parts = await makeParts(agent: agent, agentEnd: agentEnd)
-        let collector = UpdateCollector()
-        let elicitations = ElicitationWireRecorder()
-        let graphQLNotifications = GraphQLTunnelRecorder()
-        let wireTap = tapsWire ? WireTap(tapping: wire.clientEnd) : nil
-        let clientEnd: any ACPTransport = wireTap ?? wire.clientEnd
-        let connection = await parts.client.connect(over: clientEnd) { router in
-            RecordingClient(
-                forwardingTo: router, collector: collector, elicitations: elicitations,
-                graphQLNotifications: graphQLNotifications)
-        }
-        return registered(
-            AgentClientHarness(
-                agent: parts.agent,
-                client: parts.client,
-                connection: connection,
-                agentConnection: parts.agentConnection,
-                routedConnection: parts.routedConnection,
-                collector: collector,
-                elicitations: elicitations,
-                graphQLNotifications: graphQLNotifications,
-                wireTap: wireTap,
-                agentWireTap: agentWireTap,
-                wire: wire))
-    }
-
-    /// Flushes the coalescing buffer of each open session model, so a
-    /// test observes buffered text without sleeping for the cadence.
-    @MainActor
-    public func flushPendingChunks() {
-        for session in client.openSessions {
-            session.flushPendingChunks()
-        }
-    }
-
-    /// Closes both ends of the wire, ends the tap, and releases the
-    /// transport pair. A pipe wire holds descriptors, so the release is
-    /// what gives them back.
-    ///
-    /// Then it waits until the agent tore down the connection of this
-    /// harness, which frees its sessions (ACPA-5d), and it closes each open
-    /// session that has no owner now
-    /// (``RoutedACPAgent/closeSessionsWithNoOwner()``). Thus the close ends
-    /// inside the test that made the sessions, and does not run beside a
-    /// later test. Another harness on the same agent keeps its own
-    /// connection and the sessions that it owns.
-    ///
-    /// The first call closes. Each later call, on this harness or on a
-    /// copy of it, does nothing (test rule T1).
-    public func close() async {
-        guard lifetime.markClosed() else {
-            return
-        }
-        HarnessRegistry.current?.remove(lifetime)
-        await connection.close()
-        await agentConnection.close()
-        wireTap?.stop()
-        agentWireTap?.stop()
-        wire.close()
-        await agent.waitForTeardown(of: routedConnection.id)
-        await agent.closeSessionsWithNoOwner()
-    }
-
-    /// The wiring every factory shares: the agent with its connection
-    /// over the wire's agent end, and the client over the holding clock.
-    /// The factory closure binds the connection into the agent, so a
-    /// prompt can send notifications through it.
-    ///
-    /// - Parameters:
-    ///   - agent: The agent under test.
-    ///   - agentEnd: The end the agent serves: the wire's own agent end,
-    ///     or a ``WireTap`` or a ``CredentialTransport`` around it.
-    /// - Returns: The agent with its connection and the `Agent` of that
-    ///   connection, and the client.
-    private static func makeParts(
-        agent: RoutedACPAgent, agentEnd: any ACPTransport
-    ) async -> (
-        agent: RoutedACPAgent,
-        agentConnection: AgentSideConnection,
-        routedConnection: RoutedACPConnection,
-        client: ConnectionModel
-    ) {
-        // The factory runs inside the construction of the connection, so
-        // the box holds the bind result when the construction returns.
-        let bound = WatchedValue<RoutedACPConnection?>(nil)
-        let agentConnection = await AgentSideConnection(stream: agentEnd) { connection in
-            let routed = agent.bind(connection: connection)
-            bound.update { $0 = routed }
-            return routed
-        }
-        guard let routedConnection = bound.value else {
-            preconditionFailure("the factory of AgentSideConnection runs before its init returns")
-        }
-        let client = await ConnectionModel(
-            coalescingCadence: coalescingCadence, clock: HoldingClock())
-        return (agent, agentConnection, routedConnection, client)
-    }
+    let client = await ConnectionModel(
+      coalescingCadence: coalescingCadence, clock: HoldingClock())
+    return (agent, agentConnection, routedConnection, client)
+  }
 }

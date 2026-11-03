@@ -29,74 +29,74 @@ import Synchronization
 /// answer runs to its end. Each read blocks a thread in the kernel, so the
 /// reads run on a serial queue of their own and not on the cooperative pool.
 final class StubChunkGate: Sendable {
-    /// The state of the read end.
-    private struct State {
-        /// The read end, or `nil` before the first wait.
-        var descriptor: Int32?
+  /// The state of the read end.
+  private struct State {
+    /// The read end, or `nil` before the first wait.
+    var descriptor: Int32?
 
-        /// Whether the pipe reached its end, or could not be opened. Then
-        /// each wait returns at once.
-        var isEnded = false
+    /// Whether the pipe reached its end, or could not be opened. Then
+    /// each wait returns at once.
+    var isEnded = false
+  }
+
+  /// The path of the named pipe.
+  private let path: String
+
+  /// The queue of the blocking open and reads, in order.
+  private let queue = DispatchQueue(label: "StubChunkGate")
+
+  /// The state, under one lock.
+  private let state = Mutex(State())
+
+  /// Makes a gate over the named pipe at `path`.
+  ///
+  /// - Parameter path: The path of the named pipe.
+  init(path: String) {
+    self.path = path
+  }
+
+  deinit {
+    if let descriptor = state.withLock({ $0.descriptor }) {
+      close(descriptor)
     }
+  }
 
-    /// The path of the named pipe.
-    private let path: String
-
-    /// The queue of the blocking open and reads, in order.
-    private let queue = DispatchQueue(label: "StubChunkGate")
-
-    /// The state, under one lock.
-    private let state = Mutex(State())
-
-    /// Makes a gate over the named pipe at `path`.
-    ///
-    /// - Parameter path: The path of the named pipe.
-    init(path: String) {
-        self.path = path
+  /// Waits until the test lets the next chunk go out: one byte came, or
+  /// the pipe reached its end.
+  func waitForNextChunk() async {
+    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+      queue.async { [self] in
+        readOneByte()
+        continuation.resume()
+      }
     }
+  }
 
-    deinit {
-        if let descriptor = state.withLock({ $0.descriptor }) {
-            close(descriptor)
-        }
+  /// Opens the pipe at the first call, and reads one byte. Runs on
+  /// ``queue`` only.
+  private func readOneByte() {
+    let current = state.withLock { $0 }
+    guard !current.isEnded else { return }
+    let descriptor: Int32
+    if let opened = current.descriptor {
+      descriptor = opened
+    } else {
+      descriptor = open(path, O_RDONLY)
+      guard descriptor >= 0 else {
+        state.withLock { $0.isEnded = true }
+        return
+      }
+      state.withLock { $0.descriptor = descriptor }
     }
-
-    /// Waits until the test lets the next chunk go out: one byte came, or
-    /// the pipe reached its end.
-    func waitForNextChunk() async {
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            queue.async { [self] in
-                readOneByte()
-                continuation.resume()
-            }
-        }
+    var byte: UInt8 = 0
+    if read(descriptor, &byte, 1) <= 0 {
+      close(descriptor)
+      state.withLock { state in
+        state.descriptor = nil
+        state.isEnded = true
+      }
     }
-
-    /// Opens the pipe at the first call, and reads one byte. Runs on
-    /// ``queue`` only.
-    private func readOneByte() {
-        let current = state.withLock { $0 }
-        guard !current.isEnded else { return }
-        let descriptor: Int32
-        if let opened = current.descriptor {
-            descriptor = opened
-        } else {
-            descriptor = open(path, O_RDONLY)
-            guard descriptor >= 0 else {
-                state.withLock { $0.isEnded = true }
-                return
-            }
-            state.withLock { $0.descriptor = descriptor }
-        }
-        var byte: UInt8 = 0
-        if read(descriptor, &byte, 1) <= 0 {
-            close(descriptor)
-            state.withLock { state in
-                state.descriptor = nil
-                state.isEnded = true
-            }
-        }
-    }
+  }
 }
 
 /// A stub session backend that answers the prompt word by word, and waits
@@ -109,92 +109,92 @@ final class StubChunkGate: Sendable {
 /// A class, not a struct, because `LanguageModelSessionBackend` requires
 /// `AnyObject`.
 final class GatedEchoSessionBackend: LanguageModelSessionBackend {
-    /// The gate before each chunk.
-    private let gate: StubChunkGate
+  /// The gate before each chunk.
+  private let gate: StubChunkGate
 
-    /// The input and output token counts a gated prompt reports. The
-    /// values only satisfy the reader; nothing here counts tokens.
-    private static let reportedTokenCounts = (input: 1, output: 1)
+  /// The input and output token counts a gated prompt reports. The
+  /// values only satisfy the reader; nothing here counts tokens.
+  private static let reportedTokenCounts = (input: 1, output: 1)
 
-    /// Creates a backend that echoes each prompt one chunk at a time, after
-    /// `gate` lets each chunk go.
-    ///
-    /// - Parameter gate: The gate before each chunk.
-    init(gatedBy gate: StubChunkGate) {
-        self.gate = gate
+  /// Creates a backend that echoes each prompt one chunk at a time, after
+  /// `gate` lets each chunk go.
+  ///
+  /// - Parameter gate: The gate before each chunk.
+  init(gatedBy gate: StubChunkGate) {
+    self.gate = gate
+  }
+
+  func respond(to prompt: String, maxTokens: Int?) async throws -> String {
+    var answer = ""
+    for chunk in Self.chunks(of: prompt) {
+      await gate.waitForNextChunk()
+      try Task.checkCancellation()
+      answer += chunk
     }
+    return answer
+  }
 
-    func respond(to prompt: String, maxTokens: Int?) async throws -> String {
-        var answer = ""
-        for chunk in Self.chunks(of: prompt) {
-            await gate.waitForNextChunk()
-            try Task.checkCancellation()
-            answer += chunk
+  func respond(
+    to prompt: String, following grammar: Grammar, maxTokens: Int?
+  ) async throws -> String {
+    try await respond(to: prompt, maxTokens: maxTokens)
+  }
+
+  func streamResponse(
+    to prompt: String, maxTokens: Int?
+  ) -> AsyncThrowingStream<String, Error> {
+    let chunks = Self.chunks(of: prompt)
+    let gate = self.gate
+    return AsyncThrowingStream { continuation in
+      // The gating task is unstructured, so the consumer's own
+      // cancellation does not reach it. The stream's termination
+      // does, and a cancelled consumer terminates the stream, so
+      // this is what stops the chunks when the prompt is cancelled.
+      let gating = Task {
+        for chunk in chunks {
+          await gate.waitForNextChunk()
+          guard !Task.isCancelled else { return }
+          continuation.yield(chunk)
         }
-        return answer
+        continuation.finish()
+      }
+      continuation.onTermination = { _ in gating.cancel() }
     }
+  }
 
-    func respond(
-        to prompt: String, following grammar: Grammar, maxTokens: Int?
-    ) async throws -> String {
-        try await respond(to: prompt, maxTokens: maxTokens)
-    }
+  func makeFork() -> any LanguageModelSessionBackend {
+    GatedEchoSessionBackend(gatedBy: gate)
+  }
 
-    func streamResponse(
-        to prompt: String, maxTokens: Int?
-    ) -> AsyncThrowingStream<String, Error> {
-        let chunks = Self.chunks(of: prompt)
-        let gate = self.gate
-        return AsyncThrowingStream { continuation in
-            // The gating task is unstructured, so the consumer's own
-            // cancellation does not reach it. The stream's termination
-            // does, and a cancelled consumer terminates the stream, so
-            // this is what stops the chunks when the prompt is cancelled.
-            let gating = Task {
-                for chunk in chunks {
-                    await gate.waitForNextChunk()
-                    guard !Task.isCancelled else { return }
-                    continuation.yield(chunk)
-                }
-                continuation.finish()
-            }
-            continuation.onTermination = { _ in gating.cancel() }
-        }
-    }
+  func transcriptEntries() -> [Transcript.Entry] {
+    []
+  }
 
-    func makeFork() -> any LanguageModelSessionBackend {
-        GatedEchoSessionBackend(gatedBy: gate)
-    }
+  func usageTokenCounts() -> (input: Int, output: Int)? {
+    Self.reportedTokenCounts
+  }
 
-    func transcriptEntries() -> [Transcript.Entry] {
-        []
+  /// The chunks of `prompt`: one per word, each keeping its trailing
+  /// space, so the chunks joined equal the prompt byte for byte.
+  ///
+  /// - Parameter prompt: The text to cut.
+  /// - Returns: The chunks, in order. A prompt with no space is one
+  ///   chunk.
+  private static func chunks(of prompt: String) -> [String] {
+    var chunks: [String] = []
+    var current = ""
+    for character in prompt {
+      current.append(character)
+      if character == " " {
+        chunks.append(current)
+        current = ""
+      }
     }
-
-    func usageTokenCounts() -> (input: Int, output: Int)? {
-        Self.reportedTokenCounts
+    if !current.isEmpty {
+      chunks.append(current)
     }
-
-    /// The chunks of `prompt`: one per word, each keeping its trailing
-    /// space, so the chunks joined equal the prompt byte for byte.
-    ///
-    /// - Parameter prompt: The text to cut.
-    /// - Returns: The chunks, in order. A prompt with no space is one
-    ///   chunk.
-    private static func chunks(of prompt: String) -> [String] {
-        var chunks: [String] = []
-        var current = ""
-        for character in prompt {
-            current.append(character)
-            if character == " " {
-                chunks.append(current)
-                current = ""
-            }
-        }
-        if !current.isEmpty {
-            chunks.append(current)
-        }
-        return chunks
-    }
+    return chunks
+  }
 }
 
 /// A resident model that hands every session a ``GatedEchoSessionBackend``
@@ -204,29 +204,29 @@ final class GatedEchoSessionBackend: LanguageModelSessionBackend {
 /// `makeSession(instructions:tools:)` drops `tools` and forwards to
 /// `makeSession(instructions:)`.
 struct GatedEchoLLMContainer: LoadedLLMContainer {
-    /// The counter of a model with no tokenizer: one token per character.
-    var tokenCounter: any TokenCounter { CharacterCountTokenCounter() }
+  /// The counter of a model with no tokenizer: one token per character.
+  var tokenCounter: any TokenCounter { CharacterCountTokenCounter() }
 
-    /// The gate that each session's backend waits at before each chunk.
-    let gate: StubChunkGate
+  /// The gate that each session's backend waits at before each chunk.
+  let gate: StubChunkGate
 
-    func makeSession(instructions: String?) -> any LanguageModelSessionBackend {
-        GatedEchoSessionBackend(gatedBy: gate)
-    }
+  func makeSession(instructions: String?) -> any LanguageModelSessionBackend {
+    GatedEchoSessionBackend(gatedBy: gate)
+  }
 
-    func makeSession(
-        instructions: String?, tools: [any Tool]
-    ) -> any LanguageModelSessionBackend {
-        GatedEchoSessionBackend(gatedBy: gate)
-    }
+  func makeSession(
+    instructions: String?, tools: [any Tool]
+  ) -> any LanguageModelSessionBackend {
+    GatedEchoSessionBackend(gatedBy: gate)
+  }
 
-    func makeSession(transcript: Transcript) -> any LanguageModelSessionBackend {
-        GatedEchoSessionBackend(gatedBy: gate)
-    }
+  func makeSession(transcript: Transcript) -> any LanguageModelSessionBackend {
+    GatedEchoSessionBackend(gatedBy: gate)
+  }
 
-    func makeSession(
-        transcript: Transcript, tools: [any Tool]
-    ) -> any LanguageModelSessionBackend {
-        GatedEchoSessionBackend(gatedBy: gate)
-    }
+  func makeSession(
+    transcript: Transcript, tools: [any Tool]
+  ) -> any LanguageModelSessionBackend {
+    GatedEchoSessionBackend(gatedBy: gate)
+  }
 }

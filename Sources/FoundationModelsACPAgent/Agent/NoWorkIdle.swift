@@ -13,29 +13,30 @@ import FoundationModelsACP
 /// wait. The mark is not a turn: it tells the work state of the session, and
 /// not the end of one prompt.
 extension IdleStateUpdate {
-    /// The key of the mark in the `_meta` object of the `idle`.
-    public static let noWorkMetaKey = "noWork"
+  /// The key of the mark in the `_meta` object of the `idle`.
+  public static let noWorkMetaKey = "noWork"
 
-    /// This `idle` with the mark that the session has no work. The other
-    /// members of `_meta` stay.
-    ///
-    /// - Returns: The marked `idle`.
-    public func sayingNoWork() -> IdleStateUpdate {
-        var marked = self
-        var members: [String: JSONValue] = [:]
-        if case .object(let current)? = meta {
-            members = current
-        }
-        members[Self.noWorkMetaKey] = .bool(true)
-        marked.meta = .object(members)
-        return marked
+  /// This `idle` with the mark that the session has no work. The other
+  /// members of `_meta` stay.
+  ///
+  /// - Returns: The marked `idle`.
+  public func sayingNoWork() -> IdleStateUpdate {
+    var marked = self
+    var members: [String: JSONValue] = [:]
+    if case .object(let current)? = meta {
+      members = current
     }
+    members[Self.noWorkMetaKey] = .bool(true)
+    marked.meta = .object(members)
+    return marked
+  }
 
-    /// Whether this `idle` says that the session has no work.
-    public var saysNoWork: Bool {
-        guard case .object(let members)? = meta, case .bool(let noWork)? = members[Self.noWorkMetaKey] else {
-            return false
-        }
-        return noWork
+  /// Whether this `idle` says that the session has no work.
+  public var saysNoWork: Bool {
+    guard case .object(let members)? = meta, case .bool(let noWork)? = members[Self.noWorkMetaKey]
+    else {
+      return false
     }
+    return noWork
+  }
 }

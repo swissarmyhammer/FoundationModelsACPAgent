@@ -25,117 +25,119 @@ import FoundationModelsExtras
 /// The reason of a nonzero exit goes to stderr and never to stdout:
 /// stdout carries the answer bytes of the prompt, and nothing else (§5.6).
 enum AgentExitCode: Int32, CaseIterable, Sendable {
-    /// The prompt ended on `end_turn`, or a reporting subcommand ran.
-    case success = 0
+  /// The prompt ended on `end_turn`, or a reporting subcommand ran.
+  case success = 0
 
-    /// An error: configuration, spawn, protocol, or I/O. `doctor` found
-    /// an error.
-    case error = 1
+  /// An error: configuration, spawn, protocol, or I/O. `doctor` found
+  /// an error.
+  case error = 1
 
-    /// A usage error. ArgumentParser's own `validationFailure` is
-    /// `EX_USAGE`, which is not the code a script tests for, so
-    /// ``AcpAgentCommand/exitOutcome(for:)`` maps it here.
-    case usage = 2
+  /// A usage error. ArgumentParser's own `validationFailure` is
+  /// `EX_USAGE`, which is not the code a script tests for, so
+  /// ``AcpAgentCommand/exitOutcome(for:)`` maps it here.
+  case usage = 2
 
-    /// The prompt ended on `refusal`.
-    case refusal = 3
+  /// The prompt ended on `refusal`.
+  case refusal = 3
 
-    /// The prompt ended on `cancelled`, which is what a `Ctrl-C` gives
-    /// (§5.9).
-    case cancelled = 4
+  /// The prompt ended on `cancelled`, which is what a `Ctrl-C` gives
+  /// (§5.9).
+  case cancelled = 4
 
-    /// `doctor` found warnings, and no error. The code is 5 and not 2
-    /// because the Rust doctor's 2 for errors would collide with the
-    /// usage error above; see `doctor-plan.md` §5.
-    case doctorWarnings = 5
+  /// `doctor` found warnings, and no error. The code is 5 and not 2
+  /// because the Rust doctor's 2 for errors would collide with the
+  /// usage error above; see `doctor-plan.md` §5.
+  case doctorWarnings = 5
 
-    /// The session of a `run` paused its mail delivery before the own
-    /// prompt went idle (task ^t03jd5h). Router holds run results, and only
-    /// a next caller message carries them, which a headless run never sends.
-    /// So the run did not finish its work, and a script must not read it as
-    /// done. The run writes the reason on stderr
-    /// (``HeldMailNotice/standardErrorLine``).
-    case mailDeliveryPaused = 6
+  /// The session of a `run` paused its mail delivery before the own
+  /// prompt went idle (task ^t03jd5h). Router holds run results, and only
+  /// a next caller message carries them, which a headless run never sends.
+  /// So the run did not finish its work, and a script must not read it as
+  /// done. The run writes the reason on stderr
+  /// (``HeldMailNotice/standardErrorLine``).
+  case mailDeliveryPaused = 6
 
-    /// The error a subcommand throws so the process ends with this code.
-    ///
-    /// ArgumentParser renders a thrown `ExitCode` with an empty message,
-    /// so nothing is written to either stream: the code alone carries
-    /// the outcome, and whatever the subcommand already said stands.
-    var parserError: ExitCode {
-        ExitCode(rawValue)
+  /// The error a subcommand throws so the process ends with this code.
+  ///
+  /// ArgumentParser renders a thrown `ExitCode` with an empty message,
+  /// so nothing is written to either stream: the code alone carries
+  /// the outcome, and whatever the subcommand already said stands.
+  var parserError: ExitCode {
+    ExitCode(rawValue)
+  }
+
+  /// The exit code of a prompt that ended on `stopReason`.
+  ///
+  /// **The switch is total, and it declares no `default`.** A
+  /// `default` arm would answer every case the wire gains later, so a
+  /// new stop reason would exit 0 without a word. With no `default`
+  /// the compiler refuses this file — "switch must be exhaustive" —
+  /// and the build fails until somebody names the code of the new
+  /// reason. That is why the mapping is a switch and not a lookup: a
+  /// lookup compiles clean and answers nothing at run time.
+  ///
+  /// The `error` stop reason exits 1: the prompt failed. Each extension stop
+  /// reason of this agent (`_no_output`, `_stalled`, `_truncated`,
+  /// `_ended_in_reasoning`, `_repeated` and `_reasoning_limit`) arrives as
+  /// `.unknown` and exits 1 too: the prompt did not end with a finished
+  /// answer, and a script must not read it as one.
+  ///
+  /// - Parameter stopReason: The stop reason the prompt ended on.
+  init(stopReason: StopReason) {
+    self =
+      switch stopReason {
+      case .endTurn: .success
+      case .refusal: .refusal
+      case .cancelled: .cancelled
+      case .maxTokens: .error
+      case .maxTurnRequests: .error
+      case .error: .error
+      case .unknown: .error
+      }
+  }
+
+  /// The exit code of a finished `doctor` run (§5.12).
+  ///
+  /// **The switch is total, and it declares no `default`.** The three
+  /// codes are one mapping of the three health statuses, so a status
+  /// Extras gains later stops the build here until somebody names its
+  /// code.
+  ///
+  /// The codes match `DoctorReport.exitCode`, which states the same
+  /// three numbers in Extras. This table is where every exit path of
+  /// this binary reads them from, and ``DoctorCommandTests`` holds the
+  /// two side by side so they cannot drift.
+  ///
+  /// - Parameter report: The report the doctor run built.
+  init(doctor report: DoctorReport) {
+    self =
+      switch report.worstStatus {
+      case .ok: .success
+      case .error: .error
+      case .warning: .doctorWarnings
+      }
+  }
+
+  /// The exit code of a finished `run` prompt.
+  ///
+  /// A prompt with no stop reason exits ``error``: the wire ended before
+  /// an idle update arrived, so the prompt has no outcome to report, and
+  /// a script must not read that as a finished answer.
+  ///
+  /// A pause of the mail delivery wins over the stop reason
+  /// (``mailDeliveryPaused``): the own prompt can end `end_turn` while
+  /// Router still holds results of its runs.
+  ///
+  /// - Parameter result: The finished prompt.
+  init(prompt result: RunPromptResult) {
+    if result.mailPause != nil {
+      self = .mailDeliveryPaused
+      return
     }
-
-    /// The exit code of a prompt that ended on `stopReason`.
-    ///
-    /// **The switch is total, and it declares no `default`.** A
-    /// `default` arm would answer every case the wire gains later, so a
-    /// new stop reason would exit 0 without a word. With no `default`
-    /// the compiler refuses this file — "switch must be exhaustive" —
-    /// and the build fails until somebody names the code of the new
-    /// reason. That is why the mapping is a switch and not a lookup: a
-    /// lookup compiles clean and answers nothing at run time.
-    ///
-    /// The `error` stop reason exits 1: the prompt failed. Each extension stop
-    /// reason of this agent (`_no_output`, `_stalled`, `_truncated`,
-    /// `_ended_in_reasoning`, `_repeated` and `_reasoning_limit`) arrives as
-    /// `.unknown` and exits 1 too: the prompt did not end with a finished
-    /// answer, and a script must not read it as one.
-    ///
-    /// - Parameter stopReason: The stop reason the prompt ended on.
-    init(stopReason: StopReason) {
-        self = switch stopReason {
-        case .endTurn: .success
-        case .refusal: .refusal
-        case .cancelled: .cancelled
-        case .maxTokens: .error
-        case .maxTurnRequests: .error
-        case .error: .error
-        case .unknown: .error
-        }
+    guard let stopReason = result.stopReason else {
+      self = .error
+      return
     }
-
-    /// The exit code of a finished `doctor` run (§5.12).
-    ///
-    /// **The switch is total, and it declares no `default`.** The three
-    /// codes are one mapping of the three health statuses, so a status
-    /// Extras gains later stops the build here until somebody names its
-    /// code.
-    ///
-    /// The codes match `DoctorReport.exitCode`, which states the same
-    /// three numbers in Extras. This table is where every exit path of
-    /// this binary reads them from, and ``DoctorCommandTests`` holds the
-    /// two side by side so they cannot drift.
-    ///
-    /// - Parameter report: The report the doctor run built.
-    init(doctor report: DoctorReport) {
-        self = switch report.worstStatus {
-        case .ok: .success
-        case .error: .error
-        case .warning: .doctorWarnings
-        }
-    }
-
-    /// The exit code of a finished `run` prompt.
-    ///
-    /// A prompt with no stop reason exits ``error``: the wire ended before
-    /// an idle update arrived, so the prompt has no outcome to report, and
-    /// a script must not read that as a finished answer.
-    ///
-    /// A pause of the mail delivery wins over the stop reason
-    /// (``mailDeliveryPaused``): the own prompt can end `end_turn` while
-    /// Router still holds results of its runs.
-    ///
-    /// - Parameter result: The finished prompt.
-    init(prompt result: RunPromptResult) {
-        if result.mailPause != nil {
-            self = .mailDeliveryPaused
-            return
-        }
-        guard let stopReason = result.stopReason else {
-            self = .error
-            return
-        }
-        self.init(stopReason: stopReason)
-    }
+    self.init(stopReason: stopReason)
+  }
 }

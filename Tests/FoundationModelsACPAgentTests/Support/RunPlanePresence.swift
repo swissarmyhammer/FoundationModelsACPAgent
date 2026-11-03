@@ -11,5 +11,5 @@ import FoundationModelsExtras
 /// - Returns: The presence, or `nil` when `session` is not the Router
 ///   session actor.
 func runPlanePresence(of session: any RoutedSession) -> UserPresence? {
-    (session as? RoutedSessionActor)?.runPlane.userPresence
+  (session as? RoutedSessionActor)?.runPlane.userPresence
 }

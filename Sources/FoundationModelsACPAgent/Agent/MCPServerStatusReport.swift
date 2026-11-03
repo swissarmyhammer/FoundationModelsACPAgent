@@ -27,61 +27,61 @@ import FoundationModelsACP
 /// replay never hold it. No member holds a URL, a command argument, an `env`
 /// value, a `headers` value or the description of an error.
 enum MCPServerStatusReport {
-    /// The `sessionUpdate` value of the update.
-    static let updateKind = "_mcp_server_status"
+  /// The `sessionUpdate` value of the update.
+  static let updateKind = "_mcp_server_status"
 
-    /// The names of the members of the update.
-    enum MemberName {
-        /// The server name.
-        static let name = "name"
+  /// The names of the members of the update.
+  enum MemberName {
+    /// The server name.
+    static let name = "name"
 
-        /// The transport of the server.
-        static let transport = "transport"
+    /// The transport of the server.
+    static let transport = "transport"
 
-        /// The source of the entry of the server.
-        static let origin = "origin"
+    /// The source of the entry of the server.
+    static let origin = "origin"
 
-        /// The status of the server.
-        static let status = "status"
+    /// The status of the server.
+    static let status = "status"
 
-        /// Why the server is not connected.
-        static let reason = "reason"
-    }
+    /// Why the server is not connected.
+    static let reason = "reason"
+  }
 
-    /// The status of one server, as the `status` member gives it. The raw
-    /// value is the wire text.
-    enum Status: String {
-        /// The server connected and is ready.
-        case connected
+  /// The status of one server, as the `status` member gives it. The raw
+  /// value is the wire text.
+  enum Status: String {
+    /// The server connected and is ready.
+    case connected
 
-        /// The server is not connected. The update gives the reason.
-        case failed
+    /// The server is not connected. The update gives the reason.
+    case failed
 
-        /// The status of the result of a connect.
-        ///
-        /// - Parameter result: The result of the connect.
-        init(_ result: MCPComposition.ServerOutcome.Result) {
-            switch result {
-            case .connected: self = .connected
-            case .failed: self = .failed
-            }
-        }
-    }
-
-    /// The update that reports `outcome`.
+    /// The status of the result of a connect.
     ///
-    /// - Parameter outcome: The outcome of one server of the composition.
-    /// - Returns: The `_mcp_server_status` update.
-    static func update(for outcome: MCPComposition.ServerOutcome) -> SessionUpdate {
-        var members: [String: JSONValue] = [
-            MemberName.name: .string(outcome.name),
-            MemberName.origin: .string(outcome.origin.rawValue),
-            MemberName.status: .string(Status(outcome.result).rawValue),
-        ]
-        members[MemberName.transport] = outcome.transport.map { .string($0.wireName) }
-        if case .failed(let reason) = outcome.result {
-            members[MemberName.reason] = .string(reason.rawValue)
-        }
-        return .unknown(updateKind, .object(members))
+    /// - Parameter result: The result of the connect.
+    init(_ result: MCPComposition.ServerOutcome.Result) {
+      switch result {
+      case .connected: self = .connected
+      case .failed: self = .failed
+      }
     }
+  }
+
+  /// The update that reports `outcome`.
+  ///
+  /// - Parameter outcome: The outcome of one server of the composition.
+  /// - Returns: The `_mcp_server_status` update.
+  static func update(for outcome: MCPComposition.ServerOutcome) -> SessionUpdate {
+    var members: [String: JSONValue] = [
+      MemberName.name: .string(outcome.name),
+      MemberName.origin: .string(outcome.origin.rawValue),
+      MemberName.status: .string(Status(outcome.result).rawValue),
+    ]
+    members[MemberName.transport] = outcome.transport.map { .string($0.wireName) }
+    if case .failed(let reason) = outcome.result {
+      members[MemberName.reason] = .string(reason.rawValue)
+    }
+    return .unknown(updateKind, .object(members))
+  }
 }

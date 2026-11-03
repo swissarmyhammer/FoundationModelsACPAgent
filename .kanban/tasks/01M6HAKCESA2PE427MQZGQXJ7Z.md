@@ -1,8 +1,13 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '9380'
+comments:
+- actor: claude-code
+  id: 01m6hg08kekzdktm5cxs88cbpt
+  text: 'Router pushed both partial kinds: `TranscriptEvent.Kind.toolCallStarted` and `TranscriptEvent.Kind.promptStarted`. The host reader must map them like any other kind, with no special case. An unknown kind must not break the reader. A `promptStarted` entry has the joined message text and one mailDelivered record per mail. Work in the worktree `wt-transcript` from `origin/main`, and tell the coordinator before any push to `origin/main`. The card is still blocked by Extras card 01M6HAD7WQ56PXQZ5F4KAE59SS.'
+  timestamp: 2026-11-03T20:00:57.454998+00:00
+position_column: doing
+position_ordinal: '8180'
 title: Give ToolContext a session transcript reader from TranscriptStore
 ---
 ## What

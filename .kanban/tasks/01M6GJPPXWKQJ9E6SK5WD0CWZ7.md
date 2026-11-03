@@ -84,6 +84,16 @@ comments:
     (d) A restored run must not reuse the completion tokens of Multitool inner runs (status and cancel of an old token answer "no run under that handle"). The restored agents call keeps ITS OWN old token (that is the claim); inner shell and runCode tokens are not restored.
     (e) A crash can leave shell child processes and stdio MCP servers running; a Multitool card reaps them at store init.
   timestamp: 2026-11-03T18:57:52.153831+00:00
+- actor: wballard
+  id: 01m6hg2mtayfccyb85nd4rykbm
+  text: |-
+    HOOKS REPORT ITEM (independent, 2026-11-03): FoundationModelsRouter Session/SessionHooks.swift near lines 172 to 175: when the parent is not open, the hook key of a sub-agent is the id of its parent. The ACP roots use the PROJECT key (Agent/AgentHooks.swift near 71 to 83, SessionResume.swift near 209). A child that is restored BEFORE its root, or whose root key is not passed, gets a different key, so a separate snapshot timeline for one work tree.
+    RULES FOR THIS TASK: (1) restore the ROOT session first, with its project hook key (hookSessionKey), and only then call the Agents restoreInterrupted facade, which restores caller-first, so every restored child finds its root open and gets the root key; (2) check how the host passes hookSessionKey (SessionSetup.swift near 1178, SessionResume.swift near 399) for restored children and fix it if a child can be restored without it; (3) write a test: after a cold resume, the hook key of the root, of a restored child and of a restored grandchild is the SAME project key, and the snapshot timeline is one; also the same test for the SnapshotSessionKeys record of each restored session; (4) SessionEnd at an orderly quit is sent for runs that are suspended (the Hooks session adds a reason: completed, suspended, released; the Router sets it): a snapshot or cleanup hook of this package must not treat a suspended SessionEnd as done; check AgentHooks.swift and the snapshot hooks for work on SessionEnd and test that a quit does not delete the timeline.
+  timestamp: 2026-11-03T20:02:15.498730+00:00
+- actor: claude-code
+  id: 01m6hj6wv8kfpz8ms8kp1sja4j
+  text: 'MULTITOOL PUSHED (main 5a900fdb): MultiTool.currentRegistry is public (980dd817). Use it to build restored runs from the CURRENT registry. Also pass crashRecordDirectory to StdioServerProcess, else the reaping of stdio servers after a crash stays off (5a900fdb). The shell owner now comes from the ToolContext session id (746da544). Run swift package update before this task.'
+  timestamp: 2026-11-03T20:39:31.944615+00:00
 depends_on:
 - 01M6GH2K0VV6RWV5R6SN3HB9SV
 position_column: todo

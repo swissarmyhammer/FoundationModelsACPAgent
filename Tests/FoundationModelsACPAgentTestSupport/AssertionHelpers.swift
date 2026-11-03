@@ -5,87 +5,87 @@ import Testing
 /// The kind of one `SessionUpdate`, for filtering a collected sequence
 /// by discriminator instead of by full payload.
 public enum SessionUpdateKind: Sendable, Hashable {
-    case userMessageChunk
-    case userMessage
-    case agentMessageChunk
-    case agentMessage
-    case agentThoughtChunk
-    case agentThought
-    case stateUpdate
-    case toolCallContentChunk
-    case toolCallUpdate
-    case terminalUpdate
-    case terminalOutputChunk
-    case planUpdate
-    case availableCommandsUpdate
-    case configOptionUpdate
-    case sessionInfoUpdate
-    case usageUpdate
-    case notice
-    case compactionUpdate
-    case compactionSummaryChunk
-    case subagentUpdate
-    case sessionMessage
-    case sessionMessageChunk
-    case unknown
+  case userMessageChunk
+  case userMessage
+  case agentMessageChunk
+  case agentMessage
+  case agentThoughtChunk
+  case agentThought
+  case stateUpdate
+  case toolCallContentChunk
+  case toolCallUpdate
+  case terminalUpdate
+  case terminalOutputChunk
+  case planUpdate
+  case availableCommandsUpdate
+  case configOptionUpdate
+  case sessionInfoUpdate
+  case usageUpdate
+  case notice
+  case compactionUpdate
+  case compactionSummaryChunk
+  case subagentUpdate
+  case sessionMessage
+  case sessionMessageChunk
+  case unknown
 }
 
 extension AvailableCommand {
-    /// The slash command of this entry, or `nil` for an entry of a type that
-    /// this schema revision does not know.
-    public var command: Command? {
-        guard case .command(let command) = self else { return nil }
-        return command
-    }
+  /// The slash command of this entry, or `nil` for an entry of a type that
+  /// this schema revision does not know.
+  public var command: Command? {
+    guard case .command(let command) = self else { return nil }
+    return command
+  }
 
-    /// The name of the slash command, or `nil` for an entry of an unknown type.
-    public var commandName: String? { command?.name }
+  /// The name of the slash command, or `nil` for an entry of an unknown type.
+  public var commandName: String? { command?.name }
 }
 
 extension SessionUpdate {
-    /// The kind of this update.
-    ///
-    /// The switch is exhaustive with no `default` arm: the wire union
-    /// carries its own `unknown` case for an unlisted variant, and a new
-    /// listed case must be mapped here deliberately.
-    public var kind: SessionUpdateKind {
-        switch self {
-        case .userMessageChunk: .userMessageChunk
-        case .userMessage: .userMessage
-        case .agentMessageChunk: .agentMessageChunk
-        case .agentMessage: .agentMessage
-        case .agentThoughtChunk: .agentThoughtChunk
-        case .agentThought: .agentThought
-        case .stateUpdate: .stateUpdate
-        case .toolCallContentChunk: .toolCallContentChunk
-        case .toolCallUpdate: .toolCallUpdate
-        case .terminalUpdate: .terminalUpdate
-        case .terminalOutputChunk: .terminalOutputChunk
-        case .planUpdate: .planUpdate
-        case .availableCommandsUpdate: .availableCommandsUpdate
-        case .configOptionUpdate: .configOptionUpdate
-        case .sessionInfoUpdate: .sessionInfoUpdate
-        case .usageUpdate: .usageUpdate
-        case .notice: .notice
-        case .compactionUpdate: .compactionUpdate
-        case .compactionSummaryChunk: .compactionSummaryChunk
-        case .subagentUpdate: .subagentUpdate
-        case .sessionMessage: .sessionMessage
-        case .sessionMessageChunk: .sessionMessageChunk
-        case .unknown: .unknown
-        }
+  /// The kind of this update.
+  ///
+  /// The switch is exhaustive with no `default` arm: the wire union
+  /// carries its own `unknown` case for an unlisted variant, and a new
+  /// listed case must be mapped here deliberately.
+  public var kind: SessionUpdateKind {
+    switch self {
+    case .userMessageChunk: .userMessageChunk
+    case .userMessage: .userMessage
+    case .agentMessageChunk: .agentMessageChunk
+    case .agentMessage: .agentMessage
+    case .agentThoughtChunk: .agentThoughtChunk
+    case .agentThought: .agentThought
+    case .stateUpdate: .stateUpdate
+    case .toolCallContentChunk: .toolCallContentChunk
+    case .toolCallUpdate: .toolCallUpdate
+    case .terminalUpdate: .terminalUpdate
+    case .terminalOutputChunk: .terminalOutputChunk
+    case .planUpdate: .planUpdate
+    case .availableCommandsUpdate: .availableCommandsUpdate
+    case .configOptionUpdate: .configOptionUpdate
+    case .sessionInfoUpdate: .sessionInfoUpdate
+    case .usageUpdate: .usageUpdate
+    case .notice: .notice
+    case .compactionUpdate: .compactionUpdate
+    case .compactionSummaryChunk: .compactionSummaryChunk
+    case .subagentUpdate: .subagentUpdate
+    case .sessionMessage: .sessionMessage
+    case .sessionMessageChunk: .sessionMessageChunk
+    case .unknown: .unknown
     }
+  }
 }
 
 extension UpdateCollector {
-    /// The collected notifications whose update has `kind`, in arrival
-    /// order.
-    ///
-    /// - Parameter kind: The kind to keep.
-    /// - Returns: The matching notifications.
-    public func updates(ofKind kind: SessionUpdateKind) -> [UpdateSessionNotification] {
-        updates.filter { $0.update.kind == kind }
-    }
+  /// The collected notifications whose update has `kind`, in arrival
+  /// order.
+  ///
+  /// - Parameter kind: The kind to keep.
+  /// - Returns: The matching notifications.
+  public func updates(ofKind kind: SessionUpdateKind) -> [UpdateSessionNotification] {
+    updates.filter { $0.update.kind == kind }
+  }
 }
 
 /// The prompt updates of a collected sequence: every notification except
@@ -97,7 +97,7 @@ extension UpdateCollector {
 /// - Parameter updates: The collected notifications.
 /// - Returns: The notifications that belong to a prompt.
 public func promptUpdates(in updates: [UpdateSessionNotification]) -> [UpdateSessionNotification] {
-    updates.filter { $0.update.kind != .availableCommandsUpdate }
+  updates.filter { $0.update.kind != .availableCommandsUpdate }
 }
 
 /// Asserts that `expected` occurs within `sequence` in order, with gaps
@@ -109,21 +109,21 @@ public func promptUpdates(in updates: [UpdateSessionNotification]) -> [UpdateSes
 ///   - sequence: The full sequence to search.
 ///   - sourceLocation: The test line a failure is reported at.
 public func expectOrderedSubsequence<Element: Equatable>(
-    _ expected: [Element],
-    in sequence: [Element],
-    sourceLocation: SourceLocation = #_sourceLocation
+  _ expected: [Element],
+  in sequence: [Element],
+  sourceLocation: SourceLocation = #_sourceLocation
 ) {
-    var remaining = expected[...]
-    for element in sequence {
-        guard let next = remaining.first else { break }
-        if next == element {
-            remaining.removeFirst()
-        }
+  var remaining = expected[...]
+  for element in sequence {
+    guard let next = remaining.first else { break }
+    if next == element {
+      remaining.removeFirst()
     }
-    #expect(
-        remaining.isEmpty,
-        "expected \(expected) in order within \(sequence); not found from \(Array(remaining))",
-        sourceLocation: sourceLocation)
+  }
+  #expect(
+    remaining.isEmpty,
+    "expected \(expected) in order within \(sequence); not found from \(Array(remaining))",
+    sourceLocation: sourceLocation)
 }
 
 /// The JSON text of one encodable wire value, for a contains assertion
@@ -133,7 +133,7 @@ public func expectOrderedSubsequence<Element: Equatable>(
 /// - Returns: The JSON text.
 /// - Throws: The encoding error.
 public func encodedWireText(of value: some Encodable) throws -> String {
-    String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
+  String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
 }
 
 /// Reads one string field of a wire error's `data` object, so a refusal
@@ -145,12 +145,12 @@ public func encodedWireText(of value: some Encodable) throws -> String {
 ///   - error: The wire error.
 /// - Returns: The string value, or `nil` when absent.
 public func errorDataField(_ name: String, of error: RequestError) -> String? {
-    guard case .object(let fields) = error.data ?? .null,
-        case .string(let value) = fields[name] ?? .null
-    else {
-        return nil
-    }
-    return value
+  guard case .object(let fields) = error.data ?? .null,
+    case .string(let value) = fields[name] ?? .null
+  else {
+    return nil
+  }
+  return value
 }
 
 /// Reads the UTF-8 text of the file at `url` from disk.
@@ -164,5 +164,5 @@ public func errorDataField(_ name: String, of error: RequestError) -> String? {
 /// - Throws: The read error when the file does not exist or does not
 ///   decode as UTF-8.
 public func textOnDisk(at url: URL) throws -> String {
-    try String(contentsOf: url, encoding: .utf8)
+  try String(contentsOf: url, encoding: .utf8)
 }

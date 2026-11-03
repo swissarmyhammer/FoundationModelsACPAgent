@@ -27,21 +27,21 @@ import FoundationModelsACPAgent
 /// - Throws: `DotfolderNameError` when `name` is refused, the write error of
 ///   the defaults layer, or whatever the composition throws.
 public func composeStubAgent(
-    name: String,
-    label: String,
-    workspace: URL? = nil,
-    home: AgentHome? = nil,
-    secretStore: (any SecretStore)? = nil,
-    userDeviceTokens: Set<String> = [],
-    environment: [String: String] = [:]
+  name: String,
+  label: String,
+  workspace: URL? = nil,
+  home: AgentHome? = nil,
+  secretStore: (any SecretStore)? = nil,
+  userDeviceTokens: Set<String> = [],
+  environment: [String: String] = [:]
 ) async throws -> ComposedAgent {
-    let workspace = workspace ?? makeResolvedDirectory(label: "\(label)-repo")
-    return try await ComposedAgent.compose(
-        name: DotfolderName(name),
-        workingDirectory: workspace,
-        home: home ?? AgentHomeFixture.make(label: label),
-        environment: try StubAgentDefaultsLayer.makeEnvironment(name: name, base: environment),
-        modelSource: .stub,
-        secretStore: secretStore,
-        userDeviceTokens: userDeviceTokens)
+  let workspace = workspace ?? makeResolvedDirectory(label: "\(label)-repo")
+  return try await ComposedAgent.compose(
+    name: DotfolderName(name),
+    workingDirectory: workspace,
+    home: home ?? AgentHomeFixture.make(label: label),
+    environment: try StubAgentDefaultsLayer.makeEnvironment(name: name, base: environment),
+    modelSource: .stub,
+    secretStore: secretStore,
+    userDeviceTokens: userDeviceTokens)
 }

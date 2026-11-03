@@ -15,29 +15,29 @@ import FoundationModelsExtras
 /// lane: a linked `SlashCommandProviding` conformer, the only source
 /// that can construct an `.action` body.
 struct StubCommandProvider: SlashCommandProviding {
-    /// The fixed set that `commands(workingDirectory:)` returns.
-    let commandSet: [SlashCommand]
+  /// The fixed set that `commands(workingDirectory:)` returns.
+  let commandSet: [SlashCommand]
 
-    /// The pushed re-publications, or `nil` for a static provider.
-    let updates: AsyncStream<[SlashCommand]>?
+  /// The pushed re-publications, or `nil` for a static provider.
+  let updates: AsyncStream<[SlashCommand]>?
 
-    /// Creates a stub provider.
-    ///
-    /// - Parameters:
-    ///   - commandSet: The fixed set to return.
-    ///   - updates: The pushed re-publications. Defaults to `nil`.
-    init(commandSet: [SlashCommand], updates: AsyncStream<[SlashCommand]>? = nil) {
-        self.commandSet = commandSet
-        self.updates = updates
-    }
+  /// Creates a stub provider.
+  ///
+  /// - Parameters:
+  ///   - commandSet: The fixed set to return.
+  ///   - updates: The pushed re-publications. Defaults to `nil`.
+  init(commandSet: [SlashCommand], updates: AsyncStream<[SlashCommand]>? = nil) {
+    self.commandSet = commandSet
+    self.updates = updates
+  }
 
-    func commands(workingDirectory: URL) async -> [SlashCommand] {
-        commandSet
-    }
+  func commands(workingDirectory: URL) async -> [SlashCommand] {
+    commandSet
+  }
 
-    var commandUpdates: AsyncStream<[SlashCommand]>? {
-        updates
-    }
+  var commandUpdates: AsyncStream<[SlashCommand]>? {
+    updates
+  }
 }
 
 /// Makes an `.action` command that streams `output` as one text chunk.
@@ -47,15 +47,15 @@ struct StubCommandProvider: SlashCommandProviding {
 ///   - output: The one text chunk the action streams.
 /// - Returns: The command.
 func makeActionCommand(name: String, output: String) -> SlashCommand {
-    SlashCommand(
-        name: name,
-        description: "streams \(output)",
-        body: .action { _ in
-            AsyncThrowingStream { continuation in
-                continuation.yield(output)
-                continuation.finish()
-            }
-        })
+  SlashCommand(
+    name: name,
+    description: "streams \(output)",
+    body: .action { _ in
+      AsyncThrowingStream { continuation in
+        continuation.yield(output)
+        continuation.finish()
+      }
+    })
 }
 
 /// Makes a `.rendered` command that returns `prefix` followed by the
@@ -66,19 +66,19 @@ func makeActionCommand(name: String, output: String) -> SlashCommand {
 ///   - prefix: The text put before the arguments.
 /// - Returns: The command.
 func makeRenderedCommand(name: String, prefix: String) -> SlashCommand {
-    SlashCommand(
-        name: name,
-        description: "renders \(prefix)",
-        body: .rendered { invocation in
-            prefix + invocation.arguments
-        })
+  SlashCommand(
+    name: name,
+    description: "renders \(prefix)",
+    body: .rendered { invocation in
+      prefix + invocation.arguments
+    })
 }
 
 /// The refusal `writeSkillFixture` throws for a skill id that is not
 /// one plain path segment, so a traversal id can never escape `root`.
 struct SkillFixtureIDError: Error {
-    /// The refused id.
-    let id: String
+  /// The refused id.
+  let id: String
 }
 
 /// Writes `<id>/SKILL.md` under `root`, so a `SkillsRegistry` over
@@ -92,25 +92,25 @@ struct SkillFixtureIDError: Error {
 /// - Throws: `SkillFixtureIDError` when `id` is not one plain path
 ///   segment, or a file-system error when the write fails.
 func writeSkillFixture(id: String, markdown: String, under root: URL) throws {
-    guard !id.isEmpty, !id.contains("/"), !id.contains("..") else {
-        throw SkillFixtureIDError(id: id)
-    }
-    let skillDirectory = root.appendingPathComponent(id, isDirectory: true)
-    try FileManager.default.createDirectory(at: skillDirectory, withIntermediateDirectories: true)
-    try markdown.write(
-        to: skillDirectory.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
+  guard !id.isEmpty, !id.contains("/"), !id.contains("..") else {
+    throw SkillFixtureIDError(id: id)
+  }
+  let skillDirectory = root.appendingPathComponent(id, isDirectory: true)
+  try FileManager.default.createDirectory(at: skillDirectory, withIntermediateDirectories: true)
+  try markdown.write(
+    to: skillDirectory.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
 }
 
 /// The `SKILL.md` content of the `greet` fixture skill. The body keeps
 /// a `$1` token, so a rendered result proves that Skills' argument pass
 /// ran. A raw `.prompt(template:)` body would keep `$1` as literal text.
 let greetSkillMarkdown = """
-    ---
-    name: greet
-    description: Greets the second argument.
-    arguments:
-      - first
-      - second
-    ---
-    Hello $1.
-    """
+  ---
+  name: greet
+  description: Greets the second argument.
+  arguments:
+    - first
+    - second
+  ---
+  Hello $1.
+  """

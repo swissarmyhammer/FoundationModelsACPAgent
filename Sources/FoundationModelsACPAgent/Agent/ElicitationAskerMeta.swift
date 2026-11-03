@@ -20,28 +20,29 @@ import FoundationModelsExtras
 /// A key is present only when its value is not empty, and with no key the
 /// request has no `_meta`.
 enum ElicitationAskerMeta {
-    /// The key of the agent path.
-    static let agentPathKey = "agentPath"
+  /// The key of the agent path.
+  static let agentPathKey = "agentPath"
 
-    /// The key of the source.
-    static let sourceKey = "source"
+  /// The key of the source.
+  static let sourceKey = "source"
 
-    /// The `_meta` value that names who asks `request`.
-    ///
-    /// - Parameters:
-    ///   - request: The request the tool posted.
-    ///   - tool: The tool of the run that posted the question.
-    /// - Returns: The `_meta` object, or `nil` when there is no path and no
-    ///   source.
-    static func meta(for request: ElicitationRequest, tool: String) -> FoundationModelsACP.JSONValue? {
-        var members: [String: FoundationModelsACP.JSONValue] = [:]
-        if !request.agentPath.isEmpty {
-            members[agentPathKey] = .array(request.agentPath.map { .string($0) })
-        }
-        let source = request.source ?? tool
-        if !source.isEmpty {
-            members[sourceKey] = .string(source)
-        }
-        return members.isEmpty ? nil : .object(members)
+  /// The `_meta` value that names who asks `request`.
+  ///
+  /// - Parameters:
+  ///   - request: The request the tool posted.
+  ///   - tool: The tool of the run that posted the question.
+  /// - Returns: The `_meta` object, or `nil` when there is no path and no
+  ///   source.
+  static func meta(for request: ElicitationRequest, tool: String) -> FoundationModelsACP.JSONValue?
+  {
+    var members: [String: FoundationModelsACP.JSONValue] = [:]
+    if !request.agentPath.isEmpty {
+      members[agentPathKey] = .array(request.agentPath.map { .string($0) })
     }
+    let source = request.source ?? tool
+    if !source.isEmpty {
+      members[sourceKey] = .string(source)
+    }
+    return members.isEmpty ? nil : .object(members)
+  }
 }

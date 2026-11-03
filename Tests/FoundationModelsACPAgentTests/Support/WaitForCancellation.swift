@@ -8,16 +8,16 @@
 ///
 /// - Throws: `CancellationError`, always, when the task is cancelled.
 func waitForCancellation() async throws {
-    let cancelled = OneShot()
-    _ = await withTaskCancellationHandler {
-        await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-            cancelled.arm(continuation)
-            if Task.isCancelled {
-                cancelled.fire(true)
-            }
-        }
-    } onCancel: {
+  let cancelled = OneShot()
+  _ = await withTaskCancellationHandler {
+    await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+      cancelled.arm(continuation)
+      if Task.isCancelled {
         cancelled.fire(true)
+      }
     }
-    throw CancellationError()
+  } onCancel: {
+    cancelled.fire(true)
+  }
+  throw CancellationError()
 }

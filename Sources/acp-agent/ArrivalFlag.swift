@@ -7,17 +7,17 @@ import Synchronization
 /// because `Mutex` is noncopyable: the escaping closure of the watching task
 /// captures this reference, not the lock itself.
 final class ArrivalFlag: Sendable {
-    /// Whether an arrival was recorded, guarded for the reader against the
-    /// write of the watching task.
-    private let guardedRaised = Mutex(false)
+  /// Whether an arrival was recorded, guarded for the reader against the
+  /// write of the watching task.
+  private let guardedRaised = Mutex(false)
 
-    /// Records that a signal arrived.
-    func raise() {
-        guardedRaised.withLock { $0 = true }
-    }
+  /// Records that a signal arrived.
+  func raise() {
+    guardedRaised.withLock { $0 = true }
+  }
 
-    /// Whether a signal arrived.
-    var isRaised: Bool {
-        guardedRaised.withLock { $0 }
-    }
+  /// Whether a signal arrived.
+  var isRaised: Bool {
+    guardedRaised.withLock { $0 }
+  }
 }

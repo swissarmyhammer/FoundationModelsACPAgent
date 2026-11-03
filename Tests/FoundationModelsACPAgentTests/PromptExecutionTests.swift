@@ -12,1358 +12,1377 @@ import Testing
 /// order, the `user_message` echo, the prompt-state machine, the stop-reason
 /// mapping, and the title record.
 @Suite(.closesHarnesses) struct PromptExecutionTests {
-    // MARK: - Constants
+  // MARK: - Constants
 
-    /// The first prompt line. It becomes the session title.
-    private static let promptTitleLine = "Say hello to the tests"
+  /// The first prompt line. It becomes the session title.
+  private static let promptTitleLine = "Say hello to the tests"
 
-    /// The prompt text of the wire tests: two lines, so the cut to a
-    /// one-line title is observable.
-    private static let promptText = "Say hello to the tests\nwith a second line"
+  /// The prompt text of the wire tests: two lines, so the cut to a
+  /// one-line title is observable.
+  private static let promptText = "Say hello to the tests\nwith a second line"
 
-    // MARK: - Harness
-    //
-    // The wired fixture, the collector waits, and the sequence readers
-    // live in `Support/ScriptedPromptFixture.swift`, shared with
-    // `CancellationTests`.
+  // MARK: - Harness
+  //
+  // The wired fixture, the collector waits, and the sequence readers
+  // live in `Support/ScriptedPromptFixture.swift`, shared with
+  // `CancellationTests`.
 
-    /// Wires the shared fixture with this suite's directory label.
-    ///
-    /// - Parameter script: The steps the model plays on every pass.
-    /// - Returns: The fixture.
-    /// - Throws: Whatever the construction or the handshake throws.
-    private static func makeFixture(
-        script: [ScriptedPassStep]
-    ) async throws -> ScriptedPromptFixture {
-        try await ScriptedPromptFixture.make(script: script, label: "PromptExecutionTests")
+  /// Wires the shared fixture with this suite's directory label.
+  ///
+  /// - Parameter script: The steps the model plays on every pass.
+  /// - Returns: The fixture.
+  /// - Throws: Whatever the construction or the handshake throws.
+  private static func makeFixture(
+    script: [ScriptedPassStep]
+  ) async throws -> ScriptedPromptFixture {
+    try await ScriptedPromptFixture.make(script: script, label: "PromptExecutionTests")
+  }
+
+  /// The prompt request with one text block and this suite's default
+  /// two-line text.
+  ///
+  /// - Parameters:
+  ///   - sessionId: The session to prompt.
+  ///   - text: The text of the one block.
+  /// - Returns: The request.
+  private static func makePromptRequest(
+    sessionId: SessionId, text: String = promptText
+  ) -> PromptRequest {
+    AgentClientHarness.makePromptRequest(sessionId: sessionId, text: text)
+  }
+
+  /// The record of the fixture session, as the `index.md` of its session
+  /// folder holds it now.
+  ///
+  /// - Parameter fixture: The fixture whose session is open.
+  /// - Returns: The record.
+  /// - Throws: When the session is not in the agent's table, the read of
+  ///   the recording root fails, or the root holds no record of the
+  ///   session.
+  private static func sessionRecord(of fixture: ScriptedPromptFixture) async throws -> SessionRecord
+  {
+    let entry = try #require(await fixture.harness.agent.sessions[fixture.sessionId])
+    let records = try RouterSessionDirectory.recordedSessions(
+      in: entry.transcriptDirectory.deletingLastPathComponent())
+    return try #require(records.first { $0.sessionId.description == fixture.sessionId.rawValue })
+  }
+
+  /// Reads one string field of a wire error's `data` object.
+  ///
+  /// - Parameters:
+  ///   - name: The field name.
+  ///   - error: The wire error.
+  /// - Returns: The string value, or `nil` when absent.
+  private static func dataField(_ name: String, of error: RequestError) -> String? {
+    guard case .object(let fields) = error.data ?? .null,
+      case .string(let value) = fields[name] ?? .null
+    else {
+      return nil
     }
+    return value
+  }
 
-    /// The prompt request with one text block and this suite's default
-    /// two-line text.
-    ///
-    /// - Parameters:
-    ///   - sessionId: The session to prompt.
-    ///   - text: The text of the one block.
-    /// - Returns: The request.
-    private static func makePromptRequest(
-        sessionId: SessionId, text: String = promptText
-    ) -> PromptRequest {
-        AgentClientHarness.makePromptRequest(sessionId: sessionId, text: text)
+  // MARK: - The prompt order
+
+  /// A scripted prompt streams the acknowledge-then-notify order: the
+  /// `{}` response returns first, then the echo, the title info
+  /// update, `running`, the chunks, and one `idle` with
+  /// `end_turn`. The echo owns the message identity: the agent
+  /// chunks ride one different id.
+  @Test
+  func aScriptedPromptStreamsTheAcknowledgeThenNotifyOrder() async throws {
+    let fixture = try await Self.makeFixture(script: [
+      .textDelta("Hello "), .textDelta("there."), .endPass,
+    ])
+    _ = try await fixture.harness.connection.prompt(
+      Self.makePromptRequest(sessionId: fixture.sessionId))
+    let updates = promptUpdates(in: try await ScriptedPromptFixture.waitForIdle(fixture.collector))
+    await fixture.close()
+
+    #expect(
+      updates.map(\.update.kind) == [
+        .userMessage, .sessionInfoUpdate, .stateUpdate,
+        .agentMessageChunk, .agentMessageChunk, .stateUpdate,
+      ])
+    let echo = try #require(
+      userMessageEcho(of: updates.first?.update),
+      "expected the user_message echo first, got \(updates)")
+    #expect(echo.content == .value([.text(TextContent(text: Self.promptText))]))
+    #expect(!echo.messageId.rawValue.isEmpty)
+
+    let chunkIds = updates.compactMap { notification -> MessageId? in
+      if case .agentMessageChunk(let chunk) = notification.update {
+        return chunk.messageId
+      }
+      return nil
     }
+    #expect(Set(chunkIds).count == 1)
+    #expect(chunkIds.first != echo.messageId)
 
-    /// The record of the fixture session, as the `index.md` of its session
-    /// folder holds it now.
-    ///
-    /// - Parameter fixture: The fixture whose session is open.
-    /// - Returns: The record.
-    /// - Throws: When the session is not in the agent's table, the read of
-    ///   the recording root fails, or the root holds no record of the
-    ///   session.
-    private static func sessionRecord(of fixture: ScriptedPromptFixture) async throws -> SessionRecord {
-        let entry = try #require(await fixture.harness.agent.sessions[fixture.sessionId])
-        let records = try RouterSessionDirectory.recordedSessions(
-            in: entry.transcriptDirectory.deletingLastPathComponent())
-        return try #require(records.first { $0.sessionId.description == fixture.sessionId.rawValue })
+    #expect(
+      isRunningState(updates[2].update),
+      "expected running before the prompt output, got \(updates[2])")
+    #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
+    #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
+    if case .stateUpdate(.idle) = try #require(updates.last).update {
+    } else {
+      Issue.record("expected idle as the terminator")
     }
-
-    /// Reads one string field of a wire error's `data` object.
-    ///
-    /// - Parameters:
-    ///   - name: The field name.
-    ///   - error: The wire error.
-    /// - Returns: The string value, or `nil` when absent.
-    private static func dataField(_ name: String, of error: RequestError) -> String? {
-        guard case .object(let fields) = error.data ?? .null,
-            case .string(let value) = fields[name] ?? .null
-        else {
-            return nil
-        }
-        return value
-    }
-
-    // MARK: - The prompt order
-
-    /// A scripted prompt streams the acknowledge-then-notify order: the
-    /// `{}` response returns first, then the echo, the title info
-    /// update, `running`, the chunks, and one `idle` with
-    /// `end_turn`. The echo owns the message identity: the agent
-    /// chunks ride one different id.
-    @Test
-    func aScriptedPromptStreamsTheAcknowledgeThenNotifyOrder() async throws {
-        let fixture = try await Self.makeFixture(script: [
-            .textDelta("Hello "), .textDelta("there."), .endPass,
-        ])
-        _ = try await fixture.harness.connection.prompt(
-            Self.makePromptRequest(sessionId: fixture.sessionId))
-        let updates = promptUpdates(in: try await ScriptedPromptFixture.waitForIdle(fixture.collector))
-        await fixture.close()
-
-        #expect(
-            updates.map(\.update.kind) == [
-                .userMessage, .sessionInfoUpdate, .stateUpdate,
-                .agentMessageChunk, .agentMessageChunk, .stateUpdate,
-            ])
-        let echo = try #require(
-            userMessageEcho(of: updates.first?.update),
-            "expected the user_message echo first, got \(updates)")
-        #expect(echo.content == .value([.text(TextContent(text: Self.promptText))]))
-        #expect(!echo.messageId.rawValue.isEmpty)
-
-        let chunkIds = updates.compactMap { notification -> MessageId? in
-            if case .agentMessageChunk(let chunk) = notification.update {
-                return chunk.messageId
-            }
-            return nil
-        }
-        #expect(Set(chunkIds).count == 1)
-        #expect(chunkIds.first != echo.messageId)
-
-        #expect(
-            isRunningState(updates[2].update),
-            "expected running before the prompt output, got \(updates[2])")
-        #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
-        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
-        if case .stateUpdate(.idle) = try #require(updates.last).update {} else {
-            Issue.record("expected idle as the terminator")
-        }
-    }
-
-    /// The prompt response names the user message (ACP
-    /// schema-v2.0.0-alpha.7): its `messageId` is the id of the one
-    /// `user_message` echo that reaches the client.
-    @Test
-    func thePromptResponseNamesTheEchoedUserMessage() async throws {
-        let fixture = try await Self.makeFixture(script: [.textDelta("Hello."), .endPass])
-        let response = try await fixture.harness.connection.prompt(
-            Self.makePromptRequest(sessionId: fixture.sessionId))
-        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-        await fixture.close()
-
-        let echoIds = updates.compactMap { userMessageEcho(of: $0.update)?.messageId }
-        #expect(echoIds == [response.messageId])
-    }
-
-    // MARK: - More than one prompt (elicitation-plan task 3)
-
-    /// A second `session/prompt` during a running prompt is accepted: its
-    /// mail waits in the mail queue of the session, and the session stays
-    /// `running`. A `session/cancel` then ends both prompts, with one `idle`
-    /// and the `cancelled` stop reason.
-    @Test
-    func aSecondPromptDuringARunningPromptIsAcceptedAndWaits() async throws {
-        let fixture = try await Self.makeFixture(script: [.hold])
-        var secondResponse: PromptResponse?
-        let run = try await ScriptedPromptFixture.runPrompt(
-            Self.makePromptRequest(sessionId: fixture.sessionId), through: fixture.harness
-        ) {
-            try await ScriptedPromptFixture.waitForRunning(fixture.collector)
-            let response = try await fixture.harness.connection.prompt(
-                Self.makePromptRequest(sessionId: fixture.sessionId))
-            secondResponse = response
-            _ = try await ScriptedPromptFixture.waitForUpdatesBeforeSettle(
-                of: fixture.collector, toReach: "the echo of the second prompt"
-            ) { updates in
-                updates.contains { userMessageEcho(of: $0.update)?.messageId == response.messageId }
-            }
-            try await fixture.harness.connection.sessionCancel(
-                CancelSessionNotification(sessionId: fixture.sessionId))
-        }
-        await fixture.close()
-        let (first, updates) = (run.response, run.updates)
-        let second = try #require(secondResponse)
-
-        #expect(first.messageId != second.messageId)
-        #expect(updates.compactMap { userMessageEcho(of: $0.update)?.messageId } == [first.messageId, second.messageId])
-        #expect(updates.count { isRunningState($0.update) } == 1)
-        #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
-        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .cancelled)
-    }
-
-    /// The fixed order of a `session/resume` while a prompt is open (task ^he1rmw6, decision A).
-    /// The resume first does the teardown of `session/close`. The open prompt ends with one `idle`
-    /// and the `cancelled` stop reason. This comes before the resume response. No update of the old
-    /// session comes after it. The new projector serves the session. The next prompt answers, and
-    /// it ends with the third `idle`. The second `idle` is the current-state sync of the resume. It
-    /// comes after the teardown and before the response. It carries no stop reason.
-    @Test
-    func aResumeWhileAPromptIsOpenEndsThatPromptCancelledFirst() async throws {
-        let holdMarker = "HOLD-UNTIL-RESUME"
-        let fixture = try await ScriptedPromptFixture.make(
-            loader: makeScriptedModelLoader(script: [
-                .onPrompt(containing: holdMarker, play: [.hold]), .textDelta("after the resume"), .endPass,
-            ]),
-            label: "PromptExecutionTests", tapsWire: true)
-        _ = try await fixture.harness.connection.prompt(
-            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: holdMarker))
-        try await ScriptedPromptFixture.waitForRunning(fixture.collector)
-        let tap = try #require(fixture.harness.wireTap)
-        var atResume: [UpdateSessionNotification] = []
-
-        let wireAtResume = try await WireItem.sent(by: tap) {
-            _ = try await fixture.harness.connection.resumeSession(
-                ResumeSessionRequest(cwd: AbsolutePath(rawValue: fixture.cwd.path), sessionId: fixture.sessionId))
-            atResume = await fixture.collector.updates
-        }
-        _ = try await fixture.harness.connection.prompt(
-            AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "the next prompt"))
-        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: 3)
-        await fixture.close()
-
-        // Both `idle` updates come before the response of the resume.
-        #expect(wireAtResume.filter { $0 == .state }.count == 2)
-        #expect(wireAtResume.last == .response)
-        #expect(ScriptedPromptFixture.idleCount(in: atResume) == 2)
-        #expect(ScriptedPromptFixture.idleStopReason(in: atResume) == .cancelled)
-        #expect(idleState(of: atResume.last(where: { isIdleState($0.update) })?.update)?.stopReason == nil)
-        let afterResume = Array(updates.dropFirst(atResume.count))
-        #expect(ScriptedPromptFixture.agentText(in: afterResume) == "after the resume")
-        #expect(ScriptedPromptFixture.idleCount(in: afterResume) == 1)
-        #expect(idleState(of: afterResume.last(where: { isIdleState($0.update) })?.update)?.stopReason == .endTurn)
-    }
-
-    /// A cancel that comes before the mail of a prompt ends that prompt with
-    /// the `cancelled` stop reason, and no mail goes into the session:
-    /// `cancelAll()` cannot reach a mail that is not queued (task ^he1rmw6,
-    /// difference 3).
-    @Test
-    func aCancelBeforeTheMailEndsThePromptCancelledWithNoMail() async throws {
-        let fixture = try await Self.makeFixture(script: [.textDelta("never"), .endPass])
-        let entry = try #require(await fixture.harness.agent.sessions[fixture.sessionId])
-        let owner = PromptStateOwner(ledger: entry.stateLedger)
-        await owner.noteCancelRequested()
-        let execution = PromptExecution(
-            sessionId: fixture.sessionId, promptBlocks: [], promptState: owner, send: { _ in },
-            titleRecord: nil, modelName: syntheticModelName, modelPrompt: "never sent")
-        let (ends, end) = AsyncStream.makeStream(of: StopReason.self)
-
-        await execution.run(session: entry.session, projector: entry.projector) { reason in
-            end.yield(reason)
-            end.finish()
-        }
-        var reason: StopReason?
-        for await ended in ends {
-            reason = ended
-        }
-        let transcript = await entry.session.transcript
-        await fixture.close()
-
-        #expect(reason == .cancelled)
-        #expect(!transcript.contains { if case .prompt = $0 { true } else { false } })
-    }
-
-    /// A `session/cancel` with no prompt open sends `cancelAll()` to the
-    /// session and no state update (task ^9xs24pn, decisions Q2 and G6).
-    @Test
-    func aCancelWithNoPromptOpenSendsNoStateUpdate() async throws {
-        let fixture = try await Self.makeFixture(script: [.textDelta("answered"), .endPass])
-        let first = try await ScriptedPromptFixture.runPrompt(
-            Self.makePromptRequest(sessionId: fixture.sessionId), through: fixture.harness
-        ).updates
-
-        try await fixture.harness.connection.sessionCancel(CancelSessionNotification(sessionId: fixture.sessionId))
-        _ = try await fixture.harness.connection.prompt(Self.makePromptRequest(sessionId: fixture.sessionId))
-        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: 2)
-        await fixture.close()
-
-        let between = updates[first.count...].prefix { userMessageEcho(of: $0.update) == nil }
-        #expect(!between.contains { if case .stateUpdate = $0.update { true } else { false } })
-        #expect(ScriptedPromptFixture.idleStopReason(in: Array(updates[first.count...])) == .endTurn)
-    }
-
-    // MARK: - The fixed order of a prompt (elicitation-plan task 49)
-
-    /// The `messageId` of the response and of the echo is the `MailID` of
-    /// the prompt: the Router session gives the answer of a mail with that
-    /// id. The order is the response, the echo, `running`, then the output
-    /// of the mail.
-    @Test
-    func theMessageIdOfAPromptIsItsMailId() async throws {
-        let fixture = try await Self.makeFixture(script: [.textDelta("Hello."), .endPass])
-        let response = try await fixture.harness.connection.prompt(
-            Self.makePromptRequest(sessionId: fixture.sessionId))
-        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-        let session = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.session)
-        let mailId = MailID(try #require(ULID(ulidString: response.messageId.rawValue)))
-        let answer = try await session.awaitAnswer(of: mailId)
-        await fixture.close()
-
-        #expect(answer.mailIds.contains(mailId))
-        #expect(promptUpdates(in: updates).first.map(\.update.kind) == .userMessage)
-        #expect(userMessageEcho(of: promptUpdates(in: updates).first?.update)?.messageId == response.messageId)
-        let running = try #require(updates.firstIndex { isRunningState($0.update) })
-        let output = try #require(updates.firstIndex { agentMessageChunk(of: $0.update) != nil })
-        #expect(running < output)
-    }
-
-    // MARK: - A refused mail after the response (task ^he1rmw6, decision G3)
-
-    /// The fixed order of a mail that the session refuses after the response
-    /// went out: the Router session closed in that window. The prompt still
-    /// ends: the error text goes out as an agent message, and then the
-    /// `idle` with the `error` stop reason. ACP forbids an error response
-    /// after the insertion of the user message.
-    @Test
-    func aMailThatTheSessionRefusesAfterTheResponseEndsThePromptWithTheError() async throws {
-        let fixture = try await Self.makeFixture(script: [.textDelta("never"), .endPass])
-        let session = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.session)
-        await session.close()
-
-        _ = try await fixture.harness.connection.prompt(
-            Self.makePromptRequest(sessionId: fixture.sessionId))
-        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-        await fixture.close()
-
-        let text = ScriptedPromptFixture.agentText(in: updates)
-        let idle = try #require(updates.lastIndex { isIdleState($0.update) })
-        let message = try #require(updates.lastIndex { agentMessageChunk(of: $0.update) != nil })
-        #expect(text == String(describing: MailRefusal.closed))
-        #expect(message < idle)
-        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .error)
-    }
-
-    // MARK: - The stop-reason matrix
-
-    /// A guardrail refusal ends the prompt as `idle` with `refusal`.
-    @Test
-    func aGuardrailRefusalEndsThePromptWithTheRefusalStopReason() async throws {
-        let fixture = try await Self.makeFixture(script: [.fail(.guardrailViolation)])
-        _ = try await fixture.harness.connection.prompt(
-            Self.makePromptRequest(sessionId: fixture.sessionId))
-        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-        await fixture.close()
-
-        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .refusal)
-    }
-
-    /// A context overflow ends the prompt as `idle` with `max_tokens`.
-    @Test
-    func aContextOverflowEndsThePromptWithTheMaxTokensStopReason() async throws {
-        let fixture = try await Self.makeFixture(script: [.fail(.exceededContextWindow)])
-        _ = try await fixture.harness.connection.prompt(
-            Self.makePromptRequest(sessionId: fixture.sessionId))
-        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-        await fixture.close()
-
-        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .maxTokens)
-    }
-
-    /// A `session/cancel` during a held prompt surfaces as `idle` with
-    /// `cancelled`, not as an error.
-    @Test
-    func aCancelledPromptEndsIdleWithTheCancelledStopReason() async throws {
-        let fixture = try await Self.makeFixture(script: [.textDelta("thinking"), .hold])
-        _ = try await fixture.harness.connection.prompt(
-            Self.makePromptRequest(sessionId: fixture.sessionId))
-        try await ScriptedPromptFixture.waitForRunning(fixture.collector)
-
-        try await fixture.harness.connection.sessionCancel(
-            CancelSessionNotification(sessionId: fixture.sessionId))
-        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-        await fixture.close()
-
-        #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
-        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .cancelled)
-    }
-
-    /// The `PromptStop` to `StopReason` function is total, including the
-    /// tool-loop arm whose producer is a later task.
-    @Test func theStopReasonMappingIsTotal() {
-        #expect(PromptExecution.stopReason(for: .completed) == .endTurn)
-        #expect(PromptExecution.stopReason(for: .refusal) == .refusal)
-        #expect(PromptExecution.stopReason(for: .cancelled) == .cancelled)
-        #expect(PromptExecution.stopReason(for: .budgetExhausted) == .maxTokens)
-        #expect(PromptExecution.stopReason(for: .toolLoopCapped) == .maxTurnRequests)
-        #expect(
-            PromptExecution.stopReason(for: .noOutput)
-                == .unknown(PromptExecution.noOutputStopReasonValue))
-        #expect(
-            PromptExecution.stopReason(for: .truncated)
-                == .unknown(PromptExecution.truncatedStopReasonValue))
-        #expect(
-            PromptExecution.stopReason(for: .endedInReasoning)
-                == .unknown(PromptExecution.endedInReasoningStopReasonValue))
-        #expect(
-            PromptExecution.stopReason(for: .repeated)
-                == .unknown(PromptExecution.repeatedStopReasonValue))
-        #expect(
-            PromptExecution.stopReason(for: .reasoningLimit)
-                == .unknown(PromptExecution.reasoningLimitStopReasonValue))
-        #expect(
-            PromptExecution.stopReason(
-                for: .stalled(Self.makeStall(withoutProgress: .zero, fragments: 0)))
-                == .unknown(PromptExecution.stalledStopReasonValue))
-        #expect(PromptExecution.stopReason(for: .failed(message: "boom")) == .error)
-    }
-
-    /// Whether one prompt stop is the `failed` stop. The stop carries a
-    /// message, so no test can name one value to compare against.
-    ///
-    /// - Parameter stop: The prompt stop to read.
-    /// - Returns: `true` for a failed stop.
-    private static func isFailed(_ stop: PromptStop) -> Bool {
-        if case .failed = stop { return true }
-        return false
-    }
-
-    /// The error classifier reads `CancellationError` and the public SDK
-    /// generation errors; an unmapped error degrades to `failed`.
-    @Test func classifyReadsCancellationAndGenerationErrors() {
-        #expect(PromptExecution.classify(CancellationError()) == .cancelled)
-        #expect(PromptExecution.classify(ScriptedFailure.guardrailViolation.error) == .refusal)
-        #expect(
-            PromptExecution.classify(ScriptedFailure.exceededContextWindow.error) == .budgetExhausted)
-        #expect(
-            Self.isFailed(PromptExecution.classify(ScriptedModelError.unknownTool("x"))),
-            "expected an unmapped error to classify as failed")
-    }
-
-    // MARK: - The projection core (synthetic event streams)
-    //
-    // The sinked-execution and event-stream fixtures live in
-    // `Support/ProjectionTestSupport.swift`, shared with
-    // `ACPEventTranslatorTests`.
-
-    /// A retry makes two submissions in one prompt. The Router sends the
-    /// events of both submissions, the usage of each generation call, and
-    /// one `answered` event with the total usage of the chain. The prompt
-    /// sends one `running`, one `usage_update` with the context that the
-    /// last submission left, and one `idle`, keyed on stream completion
-    /// (one prompt can make more than one submission). The total of the
-    /// chain adds nothing to the meter.
-    @Test func aRetryWithTwoSubmissionsSendsOneRunningOneUsageUpdateAndOneIdle() async throws {
-        let windowTokens = 1_000
-        let first = TokenUsage(tokensIn: 100, tokensOut: 20, contextFill: 0.12)
-        let second = TokenUsage(tokensIn: 150, tokensOut: 30, contextFill: 0.18)
-        let chain = TokenUsage(tokensIn: 250, tokensOut: 50, contextFill: 0.18)
-        let (execution, recorder) = makeSinkedExecution()
-        let reason = await execution.drive(
-            events: makeEventStream([
-                makeSubmissionStarted(),
-                .textDelta("first attempt"),
-                .generationCall(
-                    GenerationCallUsage(
-                        tokensIn: 100, tokensOut: 20, finishReason: .completed, entryKind: .text,
-                        contextFill: 0.12)),
-                makeSubmissionEnded(first),
-                makeSubmissionStarted(cause: .continuation),
-                .textReset,
-                .textDelta("second attempt"),
-                .generationCall(
-                    GenerationCallUsage(
-                        tokensIn: 150, tokensOut: 30, finishReason: .completed, entryKind: .text,
-                        contextFill: 0.18)),
-                makeSubmissionEnded(second),
-                .answered(.makeSynthetic(usage: chain)),
-            ]))
-        let updates = await recorder.updates
-
-        #expect(reason == .endTurn)
-        #expect(updates.count { isRunningState($0) } == 1)
-        #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
-        let idle = try #require(
-            idleState(of: updates.last), "expected idle as the terminator, got \(updates)")
-        #expect(idle.stopReason == .endTurn)
-        let usages = updates.compactMap(usageReport(of:))
-        #expect(usages.count == 1)
-        #expect(usages.first?.used == second.tokensIn + second.tokensOut)
-        #expect(usages.first?.size == windowTokens)
-    }
-
-    /// `textReset` discards the collected text as a whole-message
-    /// replace on the same message id, never as another chunk.
-    @Test func textResetSendsAWholeMessageReplaceOnTheSameMessageId() async throws {
-        let (execution, recorder) = makeSinkedExecution()
-        _ = await execution.drive(
-            events: makeEventStream([
-                .textDelta("draft"), .textReset, .textDelta("final"),
-            ]))
-        let updates = await recorder.updates
-
-        let draft = try #require(
-            agentMessageChunk(of: updates[0]),
-            "expected chunk, replace, chunk; got \(updates)")
-        let replace = try #require(
-            agentMessageReplace(of: updates[1]),
-            "expected chunk, replace, chunk; got \(updates)")
-        let final = try #require(
-            agentMessageChunk(of: updates[2]),
-            "expected chunk, replace, chunk; got \(updates)")
-        #expect(replace.messageId == draft.messageId)
-        #expect(replace.content == .value([]))
-        #expect(final.messageId == draft.messageId)
-    }
-
-    /// Tool events project to `tool_call_update` sends in stream order
-    /// and do not disturb the text stream: the two text chunks
-    /// still share one message id, and the prompt still ends with one
-    /// `idle`.
-    @Test func toolEventsProjectInOrderWithoutBreakingTheTextStream() async throws {
-        let (execution, recorder) = makeSinkedExecution()
-        let reason = await execution.drive(
-            events: makeEventStream([
-                .textDelta("a"),
-                .toolCall(id: "call-1", name: "x", argumentsJSON: "{}"),
-                .toolStatus(id: "call-1", status: .completed, summary: nil, output: nil),
-                .textDelta("b"),
-                makeSubmissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
-            ]))
-        let updates = await recorder.updates
-
-        #expect(reason == .endTurn)
-        #expect(
-            updates.map(\.kind) == [
-                .agentMessageChunk, .toolCallUpdate, .toolCallUpdate,
-                .agentMessageChunk, .stateUpdate,
-            ])
-        let chunkIds = updates.compactMap { update -> MessageId? in
-            if case .agentMessageChunk(let chunk) = update { return chunk.messageId }
-            return nil
-        }
-        #expect(Set(chunkIds).count == 1)
-    }
-
-    /// The prompt reports its usage one time, before the idle terminator:
-    /// the context that the last submission left, over the window
-    /// that the generation calls measured.
-    @Test func submissionUsageIsReportedInOneUsageUpdate() async throws {
-        let (execution, recorder) = makeSinkedExecution()
-        _ = await execution.drive(
-            events: makeEventStream([
-                .generationCall(
-                    GenerationCallUsage(
-                        tokensIn: 1, tokensOut: 2, finishReason: .completed, entryKind: .text,
-                        contextFill: 0.15)),
-                makeSubmissionEnded(TokenUsage(tokensIn: 1, tokensOut: 2, contextFill: .nan)),
-                .generationCall(
-                    GenerationCallUsage(
-                        tokensIn: 3, tokensOut: 4, finishReason: .completed, entryKind: .text,
-                        contextFill: 0.35)),
-                makeSubmissionEnded(TokenUsage(tokensIn: 3, tokensOut: 4, contextFill: 0.35)),
-            ]))
-        let updates = await recorder.updates
-
-        let usages = updates.compactMap { update -> UsageUpdate? in
-            if case .usageUpdate(let usage) = update { return usage }
-            return nil
-        }
-        #expect(usages.count == 1)
-        #expect(usages.first?.used == 7)
-        #expect(usages.first?.size == 20)
-        #expect(updates.last?.kind == .stateUpdate)
-    }
-
-    /// A thrown `CancellationError` maps to the `cancelled` stop reason;
-    /// it never escapes as an error and never reads as `refusal`.
-    @Test func aThrownCancellationBecomesTheCancelledStopReason() async throws {
-        let (execution, recorder) = makeSinkedExecution()
-        let reason = await execution.drive(
-            events: makeEventStream([.textDelta("partial")], throwing: CancellationError()))
-        let updates = await recorder.updates
-
-        #expect(reason == .cancelled)
-        #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
-    }
-
-    // MARK: - The no-output prompt (task ^pez780d)
-
-    /// A prompt whose last generate call reached the output token ceiling
-    /// ends with the `_truncated` extension stop reason, never with a
-    /// bare `end_turn` (task ^bw9qt1z).
-    @Test func aPromptThatEndsAtTheTokenCeilingEndsWithTheTruncatedStopReason() async throws {
-        let (execution, recorder) = makeSinkedExecution()
-        let reason = await execution.drive(
-            events: makeEventStream([
-                makeSubmissionEnded(
-                    TokenUsage(
-                        tokensIn: 100, tokensOut: 8192, contextFill: .nan,
-                        finishReason: .maxTokens))
-            ]))
-        let updates = await recorder.updates
-
-        #expect(reason == .unknown(PromptExecution.truncatedStopReasonValue))
-        #expect(
-            ScriptedPromptFixture.idleStopReason(in: updates)
-                == .unknown(PromptExecution.truncatedStopReasonValue))
-    }
-
-    /// A prompt whose last submission ended inside the reasoning, below the
-    /// ceiling, ends with the `_ended_in_reasoning` extension stop reason.
-    /// A bare `end_turn` would show a cut prompt as a finished one, and
-    /// `_truncated` would say that the ceiling stopped it, which is false.
-    @Test func aPromptThatEndsInsideTheReasoningEndsWithTheEndedInReasoningStopReason() async throws {
-        let (execution, recorder) = makeSinkedExecution()
-        let reason = await execution.drive(
-            events: makeEventStream([
-                makeSubmissionEnded(
-                    TokenUsage(
-                        tokensIn: 100, tokensOut: 600, contextFill: .nan,
-                        finishReason: .endedInsideReasoning))
-            ]))
-        let updates = await recorder.updates
-
-        #expect(reason == .unknown(PromptExecution.endedInReasoningStopReasonValue))
-        #expect(
-            ScriptedPromptFixture.idleStopReason(in: updates)
-                == .unknown(PromptExecution.endedInReasoningStopReasonValue))
-    }
-
-    /// A prompt whose last submission stopped because it repeated itself,
-    /// with no recovery left, ends with the `_repeated` extension stop
-    /// reason.
-    @Test func aPromptThatEndsOnRepeatedLinesEndsWithTheRepeatedStopReason() async throws {
-        let (execution, recorder) = makeSinkedExecution()
-        let reason = await execution.drive(
-            events: makeEventStream([
-                makeSubmissionEnded(
-                    TokenUsage(
-                        tokensIn: 100, tokensOut: 2048, contextFill: .nan,
-                        finishReason: .repeatedLines))
-            ]))
-        let updates = await recorder.updates
-
-        #expect(reason == .unknown(PromptExecution.repeatedStopReasonValue))
-        #expect(
-            ScriptedPromptFixture.idleStopReason(in: updates)
-                == .unknown(PromptExecution.repeatedStopReasonValue))
-    }
-
-    /// Router's `reasoningTokenLimit` finish reason cuts the prompt with the
-    /// `reasoningLimit` stop, and that stop goes on the wire as
-    /// `_reasoning_limit` (task ^7fsfw7y).
-    @Test func theReasoningTokenLimitFinishReasonCutsWithTheReasoningLimitStop() {
-        #expect(PromptExecution.cutStop(for: .reasoningTokenLimit) == .reasoningLimit)
-        #expect(PromptExecution.reasoningLimitStopReasonValue == "_reasoning_limit")
-    }
-
-    /// A prompt whose last submission reasoned past the reasoning token limit
-    /// of the repetition detection, with no recovery left, ends with the
-    /// `_reasoning_limit` extension stop reason. `_truncated` would say that
-    /// the output token ceiling stopped it, which is false.
-    @Test func aPromptThatEndsAtTheReasoningTokenLimitEndsWithTheReasoningLimitStopReason() async throws {
-        let (execution, recorder) = makeSinkedExecution()
-        let reason = await execution.drive(
-            events: makeEventStream([
-                makeSubmissionEnded(
-                    TokenUsage(
-                        tokensIn: 100, tokensOut: RepetitionDetection.defaultReasoningTokenLimit,
-                        contextFill: .nan, finishReason: .reasoningTokenLimit))
-            ]))
-        let updates = await recorder.updates
-
-        #expect(reason == .unknown(PromptExecution.reasoningLimitStopReasonValue))
-        #expect(
-            ScriptedPromptFixture.idleStopReason(in: updates)
-                == .unknown(PromptExecution.reasoningLimitStopReasonValue))
-    }
-
-    /// Only the LAST generate call decides: a tool-calling prompt that
-    /// reached the ceiling in an earlier call, and then completed its
-    /// last call, keeps `end_turn`.
-    @Test func anEarlierCeilingDoesNotTruncateAPromptWhoseLastCallCompleted() async throws {
-        let (execution, _) = makeSinkedExecution()
-        let reason = await execution.drive(
-            events: makeEventStream([
-                makeSubmissionEnded(
-                    TokenUsage(
-                        tokensIn: 100, tokensOut: 8192, contextFill: .nan,
-                        finishReason: .maxTokens)),
-                makeSubmissionEnded(
-                    TokenUsage(
-                        tokensIn: 200, tokensOut: 50, contextFill: .nan,
-                        finishReason: .completed)),
-            ]))
-
-        #expect(reason == .endTurn)
-    }
-
-    /// A completed prompt with no output and a zero-token usage report
-    /// ends with the honest `_no_output` extension stop reason, never
-    /// with a bare `end_turn`.
-    @Test func aZeroTokenPromptWithNoOutputEndsWithTheNoOutputStopReason() async throws {
-        let (execution, recorder) = makeSinkedExecution()
-        let reason = await execution.drive(
-            events: makeEventStream([
-                makeSubmissionEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan))
-            ]))
-        let updates = await recorder.updates
-
-        #expect(reason == .unknown(PromptExecution.noOutputStopReasonValue))
-        #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
-        #expect(
-            ScriptedPromptFixture.idleStopReason(in: updates)
-                == .unknown(PromptExecution.noOutputStopReasonValue))
-    }
-
-    /// A prompt that streamed text keeps `end_turn`, also when the usage
-    /// report is zero: the text is real output.
-    @Test func aZeroTokenPromptWithTextKeepsTheEndTurnStopReason() async throws {
-        let (execution, recorder) = makeSinkedExecution()
-        let reason = await execution.drive(
-            events: makeEventStream([
-                .textDelta("real output"),
-                makeSubmissionEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan)),
-            ]))
-        _ = await recorder.updates
-
-        #expect(reason == .endTurn)
-    }
-
-    /// A prompt that made a tool call keeps `end_turn`, also when the
-    /// usage report is zero: the call is real output.
-    @Test func aZeroTokenPromptWithAToolCallKeepsTheEndTurnStopReason() async throws {
-        let (execution, recorder) = makeSinkedExecution()
-        let reason = await execution.drive(
-            events: makeEventStream([
-                .toolCall(id: "call-1", name: "x", argumentsJSON: "{}"),
-                .toolStatus(id: "call-1", status: .completed, summary: nil, output: nil),
-                makeSubmissionEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan)),
-            ]))
-        _ = await recorder.updates
-
-        #expect(reason == .endTurn)
-    }
-
-    /// A prompt that carried an attachment report keeps `end_turn`, also
-    /// when the usage report is zero: the report's `tool_call_update`
-    /// is real output.
-    @Test func aZeroTokenPromptWithAToolCallReportKeepsTheEndTurnStopReason() async throws {
-        let report = ToolCallReport(
-            tool: "files",
-            op: "edit file",
-            correlationID: "01SCRIPTEDRUNTOKEN00000000",
-            sessionID: ULID.generate(),
-            attachments: [
-                ToolCallAttachment(schemaName: "note", contentJSON: #"{"note":"kept"}"#)
-            ])
-        let (execution, recorder) = makeSinkedExecution()
-        let reason = await execution.drive(
-            events: makeEventStream([
-                .toolCallReport(report),
-                makeSubmissionEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan)),
-            ]))
-        _ = await recorder.updates
-
-        #expect(reason == .endTurn)
-    }
-
-    /// A completed prompt with no usage report keeps `end_turn`: with no
-    /// report there is no zero-token evidence, and the prompt must not
-    /// invent one.
-    @Test func aPromptWithNoUsageReportKeepsTheEndTurnStopReason() async throws {
-        let (execution, recorder) = makeSinkedExecution()
-        let reason = await execution.drive(events: makeEventStream([]))
-        _ = await recorder.updates
-
-        #expect(reason == .endTurn)
-    }
-
-    /// A scripted prompt that plays only `.endPass` makes the live defect
-    /// shape on the wire: the Router pass completes with no output and
-    /// a zero-token usage delta. The idle terminator carries
-    /// `_no_output`, never a bare `end_turn`.
-    @Test
-    func aScriptedPromptWithNoOutputEndsIdleWithTheNoOutputStopReason() async throws {
-        let fixture = try await Self.makeFixture(script: [.endPass])
-        _ = try await fixture.harness.connection.prompt(
-            Self.makePromptRequest(sessionId: fixture.sessionId))
-        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-        await fixture.close()
-
-        #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
-        #expect(
-            ScriptedPromptFixture.idleStopReason(in: updates)
-                == .unknown(PromptExecution.noOutputStopReasonValue))
-    }
-
-    // MARK: - The repetition stop (task ^k51h6bb)
-
-    /// The window of Router's repetition watch in the repetition proof, in
-    /// tokens. It is small, so a short script fills it. The scripted
-    /// counter gives one token for each character.
-    private static let repetitionWindowTokens = 200
-
-    /// How many times the repeating script writes ``repeatedReasoningLines``:
-    /// more than one ``repetitionWindowTokens`` window of tokens.
-    private static let repeatedCycleCount = 10
-
-    /// The reasoning line the repeating script writes one time.
-    private static let newReasoningLine = "First I read the failing test and its fixture.\n"
-
-    /// The reasoning lines the repeating script writes again and again.
-    private static let repeatedReasoningLines = [
-        "Maybe the alias is resolved in the compiler.\n",
-        "Let me look at how the compiler resolves it.\n",
-    ]
-
-    /// The project `config.yaml` of the repetition proof: the small window,
-    /// and no recovery, so the first repetition stop ends the prompt.
-    private static let repetitionConfigYAML = """
-        repetition:
-          windowTokens: \(repetitionWindowTokens)
-          recoveriesPerAnswer: 0
-        """
-
-    /// The script of the repetition proof: one new reasoning line, the
-    /// repeated lines, and a hold that only a cancel ends. Router's
-    /// repetition watch reads the growing reasoning and stops the call.
-    private static var repeatingReasoningScript: [ScriptedPassStep] {
-        let cycle = repeatedReasoningLines.map { ScriptedPassStep.reasoning($0) }
-        let repeated = Array(repeating: cycle, count: repeatedCycleCount).flatMap { $0 }
-        return [.reasoning(newReasoningLine)] + repeated + [.hold]
-    }
-
-    /// The content of the one segment of a `repeatedPartRemoval` event: for
-    /// each cut entry id, the UTF-8 length of its text that the render keeps.
-    private struct RepeatedPartCut: Decodable {
-        /// The kept UTF-8 length of each cut entry, by entry id.
-        let keptUTF8Lengths: [String: Int]
-    }
-
-    /// The cut that `event` records, or `nil` when its first segment is not
-    /// a structure segment under Router's repeated-part schema name.
-    ///
-    /// - Parameter event: A recorded `repeatedPartRemoval` event.
-    /// - Returns: The decoded cut, or `nil`.
-    /// - Throws: When the segment content does not decode.
-    private static func repeatedPartCut(in event: TranscriptEvent) throws -> RepeatedPartCut? {
-        guard case .structure(_, let schemaName, let contentJSON)? = event.entry?.segments?.first,
-            schemaName == ResumeSessionFixture.repeatedPartRemovalSchemaName
-        else {
-            return nil
-        }
-        return try JSONDecoder().decode(RepeatedPartCut.self, from: Data(contentJSON.utf8))
-    }
-
-    /// Runs one prompt over ``repeatingReasoningScript`` to its end, and
-    /// waits until the journal of the session holds the
-    /// `repeatedPartRemoval` event and the session accepts a new request.
-    ///
-    /// - Returns: The fixture, the idle stop reason of the prompt, and the
-    ///   recorded events of the session.
-    /// - Throws: Whatever the wire calls, the waits or the journal read throw.
-    private static func runRepeatingPrompt() async throws -> (
-        fixture: ScriptedPromptFixture, stopReason: StopReason?, events: [TranscriptEvent]
+  }
+
+  /// The prompt response names the user message (ACP
+  /// schema-v2.0.0-alpha.7): its `messageId` is the id of the one
+  /// `user_message` echo that reaches the client.
+  @Test
+  func thePromptResponseNamesTheEchoedUserMessage() async throws {
+    let fixture = try await Self.makeFixture(script: [.textDelta("Hello."), .endPass])
+    let response = try await fixture.harness.connection.prompt(
+      Self.makePromptRequest(sessionId: fixture.sessionId))
+    let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+    await fixture.close()
+
+    let echoIds = updates.compactMap { userMessageEcho(of: $0.update)?.messageId }
+    #expect(echoIds == [response.messageId])
+  }
+
+  // MARK: - More than one prompt (elicitation-plan task 3)
+
+  /// A second `session/prompt` during a running prompt is accepted: its
+  /// mail waits in the mail queue of the session, and the session stays
+  /// `running`. A `session/cancel` then ends both prompts, with one `idle`
+  /// and the `cancelled` stop reason.
+  @Test
+  func aSecondPromptDuringARunningPromptIsAcceptedAndWaits() async throws {
+    let fixture = try await Self.makeFixture(script: [.hold])
+    var secondResponse: PromptResponse?
+    let run = try await ScriptedPromptFixture.runPrompt(
+      Self.makePromptRequest(sessionId: fixture.sessionId), through: fixture.harness
     ) {
-        let fixture = try await ScriptedPromptFixture.make(
-            script: repeatingReasoningScript, label: "PromptExecutionTests-repetition",
-            projectConfigYAML: repetitionConfigYAML)
-        let updates = try await ScriptedPromptFixture.runPrompt(
-            makePromptRequest(sessionId: fixture.sessionId), through: fixture.harness
-        ).updates
-        let root = try ResumeSessionFixture.projectRecordingRoot(of: fixture.cwd)
-        // When the Router session is idle, its journal holds each event of
-        // the answer, the repeatedPartRemoval event too.
-        try await ResumeSessionFixture.waitForJournal(of: fixture.sessionId, in: fixture.harness.agent)
-        let events = try ResumeSessionFixture.recordedEvents(under: root, sessionId: fixture.sessionId)
-        return (fixture, ScriptedPromptFixture.idleStopReason(in: updates), events)
+      try await ScriptedPromptFixture.waitForRunning(fixture.collector)
+      let response = try await fixture.harness.connection.prompt(
+        Self.makePromptRequest(sessionId: fixture.sessionId))
+      secondResponse = response
+      _ = try await ScriptedPromptFixture.waitForUpdatesBeforeSettle(
+        of: fixture.collector, toReach: "the echo of the second prompt"
+      ) { updates in
+        updates.contains { userMessageEcho(of: $0.update)?.messageId == response.messageId }
+      }
+      try await fixture.harness.connection.sessionCancel(
+        CancelSessionNotification(sessionId: fixture.sessionId))
+    }
+    await fixture.close()
+    let (first, updates) = (run.response, run.updates)
+    let second = try #require(secondResponse)
+
+    #expect(first.messageId != second.messageId)
+    #expect(
+      updates.compactMap { userMessageEcho(of: $0.update)?.messageId } == [
+        first.messageId, second.messageId,
+      ])
+    #expect(updates.count { isRunningState($0.update) } == 1)
+    #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
+    #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .cancelled)
+  }
+
+  /// The fixed order of a `session/resume` while a prompt is open (task ^he1rmw6, decision A).
+  /// The resume first does the teardown of `session/close`. The open prompt ends with one `idle`
+  /// and the `cancelled` stop reason. This comes before the resume response. No update of the old
+  /// session comes after it. The new projector serves the session. The next prompt answers, and
+  /// it ends with the third `idle`. The second `idle` is the current-state sync of the resume. It
+  /// comes after the teardown and before the response. It carries no stop reason.
+  @Test
+  func aResumeWhileAPromptIsOpenEndsThatPromptCancelledFirst() async throws {
+    let holdMarker = "HOLD-UNTIL-RESUME"
+    let fixture = try await ScriptedPromptFixture.make(
+      loader: makeScriptedModelLoader(script: [
+        .onPrompt(containing: holdMarker, play: [.hold]), .textDelta("after the resume"), .endPass,
+      ]),
+      label: "PromptExecutionTests", tapsWire: true)
+    _ = try await fixture.harness.connection.prompt(
+      AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: holdMarker))
+    try await ScriptedPromptFixture.waitForRunning(fixture.collector)
+    let tap = try #require(fixture.harness.wireTap)
+    var atResume: [UpdateSessionNotification] = []
+
+    let wireAtResume = try await WireItem.sent(by: tap) {
+      _ = try await fixture.harness.connection.resumeSession(
+        ResumeSessionRequest(
+          cwd: AbsolutePath(rawValue: fixture.cwd.path), sessionId: fixture.sessionId))
+      atResume = await fixture.collector.updates
+    }
+    _ = try await fixture.harness.connection.prompt(
+      AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "the next prompt"))
+    let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: 3)
+    await fixture.close()
+
+    // Both `idle` updates come before the response of the resume.
+    #expect(wireAtResume.filter { $0 == .state }.count == 2)
+    #expect(wireAtResume.last == .response)
+    #expect(ScriptedPromptFixture.idleCount(in: atResume) == 2)
+    #expect(ScriptedPromptFixture.idleStopReason(in: atResume) == .cancelled)
+    #expect(
+      idleState(of: atResume.last(where: { isIdleState($0.update) })?.update)?.stopReason == nil)
+    let afterResume = Array(updates.dropFirst(atResume.count))
+    #expect(ScriptedPromptFixture.agentText(in: afterResume) == "after the resume")
+    #expect(ScriptedPromptFixture.idleCount(in: afterResume) == 1)
+    #expect(
+      idleState(of: afterResume.last(where: { isIdleState($0.update) })?.update)?.stopReason
+        == .endTurn)
+  }
+
+  /// A cancel that comes before the mail of a prompt ends that prompt with
+  /// the `cancelled` stop reason, and no mail goes into the session:
+  /// `cancelAll()` cannot reach a mail that is not queued (task ^he1rmw6,
+  /// difference 3).
+  @Test
+  func aCancelBeforeTheMailEndsThePromptCancelledWithNoMail() async throws {
+    let fixture = try await Self.makeFixture(script: [.textDelta("never"), .endPass])
+    let entry = try #require(await fixture.harness.agent.sessions[fixture.sessionId])
+    let owner = PromptStateOwner(ledger: entry.stateLedger)
+    await owner.noteCancelRequested()
+    let execution = PromptExecution(
+      sessionId: fixture.sessionId, promptBlocks: [], promptState: owner, send: { _ in },
+      titleRecord: nil, modelName: syntheticModelName, modelPrompt: "never sent")
+    let (ends, end) = AsyncStream.makeStream(of: StopReason.self)
+
+    await execution.run(session: entry.session, projector: entry.projector) { reason in
+      end.yield(reason)
+      end.finish()
+    }
+    var reason: StopReason?
+    for await ended in ends {
+      reason = ended
+    }
+    let transcript = await entry.session.transcript
+    await fixture.close()
+
+    #expect(reason == .cancelled)
+    #expect(!transcript.contains { if case .prompt = $0 { true } else { false } })
+  }
+
+  /// A `session/cancel` with no prompt open sends `cancelAll()` to the
+  /// session and no state update (task ^9xs24pn, decisions Q2 and G6).
+  @Test
+  func aCancelWithNoPromptOpenSendsNoStateUpdate() async throws {
+    let fixture = try await Self.makeFixture(script: [.textDelta("answered"), .endPass])
+    let first = try await ScriptedPromptFixture.runPrompt(
+      Self.makePromptRequest(sessionId: fixture.sessionId), through: fixture.harness
+    ).updates
+
+    try await fixture.harness.connection.sessionCancel(
+      CancelSessionNotification(sessionId: fixture.sessionId))
+    _ = try await fixture.harness.connection.prompt(
+      Self.makePromptRequest(sessionId: fixture.sessionId))
+    let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: 2)
+    await fixture.close()
+
+    let between = updates[first.count...].prefix { userMessageEcho(of: $0.update) == nil }
+    #expect(!between.contains { if case .stateUpdate = $0.update { true } else { false } })
+    #expect(ScriptedPromptFixture.idleStopReason(in: Array(updates[first.count...])) == .endTurn)
+  }
+
+  // MARK: - The fixed order of a prompt (elicitation-plan task 49)
+
+  /// The `messageId` of the response and of the echo is the `MailID` of
+  /// the prompt: the Router session gives the answer of a mail with that
+  /// id. The order is the response, the echo, `running`, then the output
+  /// of the mail.
+  @Test
+  func theMessageIdOfAPromptIsItsMailId() async throws {
+    let fixture = try await Self.makeFixture(script: [.textDelta("Hello."), .endPass])
+    let response = try await fixture.harness.connection.prompt(
+      Self.makePromptRequest(sessionId: fixture.sessionId))
+    let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+    let session = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.session)
+    let mailId = MailID(try #require(ULID(ulidString: response.messageId.rawValue)))
+    let answer = try await session.awaitAnswer(of: mailId)
+    await fixture.close()
+
+    #expect(answer.mailIds.contains(mailId))
+    #expect(promptUpdates(in: updates).first.map(\.update.kind) == .userMessage)
+    #expect(
+      userMessageEcho(of: promptUpdates(in: updates).first?.update)?.messageId == response.messageId
+    )
+    let running = try #require(updates.firstIndex { isRunningState($0.update) })
+    let output = try #require(updates.firstIndex { agentMessageChunk(of: $0.update) != nil })
+    #expect(running < output)
+  }
+
+  // MARK: - A refused mail after the response (task ^he1rmw6, decision G3)
+
+  /// The fixed order of a mail that the session refuses after the response
+  /// went out: the Router session closed in that window. The prompt still
+  /// ends: the error text goes out as an agent message, and then the
+  /// `idle` with the `error` stop reason. ACP forbids an error response
+  /// after the insertion of the user message.
+  @Test
+  func aMailThatTheSessionRefusesAfterTheResponseEndsThePromptWithTheError() async throws {
+    let fixture = try await Self.makeFixture(script: [.textDelta("never"), .endPass])
+    let session = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.session)
+    await session.close()
+
+    _ = try await fixture.harness.connection.prompt(
+      Self.makePromptRequest(sessionId: fixture.sessionId))
+    let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+    await fixture.close()
+
+    let text = ScriptedPromptFixture.agentText(in: updates)
+    let idle = try #require(updates.lastIndex { isIdleState($0.update) })
+    let message = try #require(updates.lastIndex { agentMessageChunk(of: $0.update) != nil })
+    #expect(text == String(describing: MailRefusal.closed))
+    #expect(message < idle)
+    #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .error)
+  }
+
+  // MARK: - The stop-reason matrix
+
+  /// A guardrail refusal ends the prompt as `idle` with `refusal`.
+  @Test
+  func aGuardrailRefusalEndsThePromptWithTheRefusalStopReason() async throws {
+    let fixture = try await Self.makeFixture(script: [.fail(.guardrailViolation)])
+    _ = try await fixture.harness.connection.prompt(
+      Self.makePromptRequest(sessionId: fixture.sessionId))
+    let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+    await fixture.close()
+
+    #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .refusal)
+  }
+
+  /// A context overflow ends the prompt as `idle` with `max_tokens`.
+  @Test
+  func aContextOverflowEndsThePromptWithTheMaxTokensStopReason() async throws {
+    let fixture = try await Self.makeFixture(script: [.fail(.exceededContextWindow)])
+    _ = try await fixture.harness.connection.prompt(
+      Self.makePromptRequest(sessionId: fixture.sessionId))
+    let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+    await fixture.close()
+
+    #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .maxTokens)
+  }
+
+  /// A `session/cancel` during a held prompt surfaces as `idle` with
+  /// `cancelled`, not as an error.
+  @Test
+  func aCancelledPromptEndsIdleWithTheCancelledStopReason() async throws {
+    let fixture = try await Self.makeFixture(script: [.textDelta("thinking"), .hold])
+    _ = try await fixture.harness.connection.prompt(
+      Self.makePromptRequest(sessionId: fixture.sessionId))
+    try await ScriptedPromptFixture.waitForRunning(fixture.collector)
+
+    try await fixture.harness.connection.sessionCancel(
+      CancelSessionNotification(sessionId: fixture.sessionId))
+    let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+    await fixture.close()
+
+    #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
+    #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .cancelled)
+  }
+
+  /// The `PromptStop` to `StopReason` function is total, including the
+  /// tool-loop arm whose producer is a later task.
+  @Test func theStopReasonMappingIsTotal() {
+    #expect(PromptExecution.stopReason(for: .completed) == .endTurn)
+    #expect(PromptExecution.stopReason(for: .refusal) == .refusal)
+    #expect(PromptExecution.stopReason(for: .cancelled) == .cancelled)
+    #expect(PromptExecution.stopReason(for: .budgetExhausted) == .maxTokens)
+    #expect(PromptExecution.stopReason(for: .toolLoopCapped) == .maxTurnRequests)
+    #expect(
+      PromptExecution.stopReason(for: .noOutput)
+        == .unknown(PromptExecution.noOutputStopReasonValue))
+    #expect(
+      PromptExecution.stopReason(for: .truncated)
+        == .unknown(PromptExecution.truncatedStopReasonValue))
+    #expect(
+      PromptExecution.stopReason(for: .endedInReasoning)
+        == .unknown(PromptExecution.endedInReasoningStopReasonValue))
+    #expect(
+      PromptExecution.stopReason(for: .repeated)
+        == .unknown(PromptExecution.repeatedStopReasonValue))
+    #expect(
+      PromptExecution.stopReason(for: .reasoningLimit)
+        == .unknown(PromptExecution.reasoningLimitStopReasonValue))
+    #expect(
+      PromptExecution.stopReason(
+        for: .stalled(Self.makeStall(withoutProgress: .zero, fragments: 0)))
+        == .unknown(PromptExecution.stalledStopReasonValue))
+    #expect(PromptExecution.stopReason(for: .failed(message: "boom")) == .error)
+  }
+
+  /// Whether one prompt stop is the `failed` stop. The stop carries a
+  /// message, so no test can name one value to compare against.
+  ///
+  /// - Parameter stop: The prompt stop to read.
+  /// - Returns: `true` for a failed stop.
+  private static func isFailed(_ stop: PromptStop) -> Bool {
+    if case .failed = stop { return true }
+    return false
+  }
+
+  /// The error classifier reads `CancellationError` and the public SDK
+  /// generation errors; an unmapped error degrades to `failed`.
+  @Test func classifyReadsCancellationAndGenerationErrors() {
+    #expect(PromptExecution.classify(CancellationError()) == .cancelled)
+    #expect(PromptExecution.classify(ScriptedFailure.guardrailViolation.error) == .refusal)
+    #expect(
+      PromptExecution.classify(ScriptedFailure.exceededContextWindow.error) == .budgetExhausted)
+    #expect(
+      Self.isFailed(PromptExecution.classify(ScriptedModelError.unknownTool("x"))),
+      "expected an unmapped error to classify as failed")
+  }
+
+  // MARK: - The projection core (synthetic event streams)
+  //
+  // The sinked-execution and event-stream fixtures live in
+  // `Support/ProjectionTestSupport.swift`, shared with
+  // `ACPEventTranslatorTests`.
+
+  /// A retry makes two submissions in one prompt. The Router sends the
+  /// events of both submissions, the usage of each generation call, and
+  /// one `answered` event with the total usage of the chain. The prompt
+  /// sends one `running`, one `usage_update` with the context that the
+  /// last submission left, and one `idle`, keyed on stream completion
+  /// (one prompt can make more than one submission). The total of the
+  /// chain adds nothing to the meter.
+  @Test func aRetryWithTwoSubmissionsSendsOneRunningOneUsageUpdateAndOneIdle() async throws {
+    let windowTokens = 1_000
+    let first = TokenUsage(tokensIn: 100, tokensOut: 20, contextFill: 0.12)
+    let second = TokenUsage(tokensIn: 150, tokensOut: 30, contextFill: 0.18)
+    let chain = TokenUsage(tokensIn: 250, tokensOut: 50, contextFill: 0.18)
+    let (execution, recorder) = makeSinkedExecution()
+    let reason = await execution.drive(
+      events: makeEventStream([
+        makeSubmissionStarted(),
+        .textDelta("first attempt"),
+        .generationCall(
+          GenerationCallUsage(
+            tokensIn: 100, tokensOut: 20, finishReason: .completed, entryKind: .text,
+            contextFill: 0.12)),
+        makeSubmissionEnded(first),
+        makeSubmissionStarted(cause: .continuation),
+        .textReset,
+        .textDelta("second attempt"),
+        .generationCall(
+          GenerationCallUsage(
+            tokensIn: 150, tokensOut: 30, finishReason: .completed, entryKind: .text,
+            contextFill: 0.18)),
+        makeSubmissionEnded(second),
+        .answered(.makeSynthetic(usage: chain)),
+      ]))
+    let updates = await recorder.updates
+
+    #expect(reason == .endTurn)
+    #expect(updates.count { isRunningState($0) } == 1)
+    #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
+    let idle = try #require(
+      idleState(of: updates.last), "expected idle as the terminator, got \(updates)")
+    #expect(idle.stopReason == .endTurn)
+    let usages = updates.compactMap(usageReport(of:))
+    #expect(usages.count == 1)
+    #expect(usages.first?.used == second.tokensIn + second.tokensOut)
+    #expect(usages.first?.size == windowTokens)
+  }
+
+  /// `textReset` discards the collected text as a whole-message
+  /// replace on the same message id, never as another chunk.
+  @Test func textResetSendsAWholeMessageReplaceOnTheSameMessageId() async throws {
+    let (execution, recorder) = makeSinkedExecution()
+    _ = await execution.drive(
+      events: makeEventStream([
+        .textDelta("draft"), .textReset, .textDelta("final"),
+      ]))
+    let updates = await recorder.updates
+
+    let draft = try #require(
+      agentMessageChunk(of: updates[0]),
+      "expected chunk, replace, chunk; got \(updates)")
+    let replace = try #require(
+      agentMessageReplace(of: updates[1]),
+      "expected chunk, replace, chunk; got \(updates)")
+    let final = try #require(
+      agentMessageChunk(of: updates[2]),
+      "expected chunk, replace, chunk; got \(updates)")
+    #expect(replace.messageId == draft.messageId)
+    #expect(replace.content == .value([]))
+    #expect(final.messageId == draft.messageId)
+  }
+
+  /// Tool events project to `tool_call_update` sends in stream order
+  /// and do not disturb the text stream: the two text chunks
+  /// still share one message id, and the prompt still ends with one
+  /// `idle`.
+  @Test func toolEventsProjectInOrderWithoutBreakingTheTextStream() async throws {
+    let (execution, recorder) = makeSinkedExecution()
+    let reason = await execution.drive(
+      events: makeEventStream([
+        .textDelta("a"),
+        .toolCall(id: "call-1", name: "x", argumentsJSON: "{}"),
+        .toolStatus(id: "call-1", status: .completed, summary: nil, output: nil),
+        .textDelta("b"),
+        makeSubmissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
+      ]))
+    let updates = await recorder.updates
+
+    #expect(reason == .endTurn)
+    #expect(
+      updates.map(\.kind) == [
+        .agentMessageChunk, .toolCallUpdate, .toolCallUpdate,
+        .agentMessageChunk, .stateUpdate,
+      ])
+    let chunkIds = updates.compactMap { update -> MessageId? in
+      if case .agentMessageChunk(let chunk) = update { return chunk.messageId }
+      return nil
+    }
+    #expect(Set(chunkIds).count == 1)
+  }
+
+  /// The prompt reports its usage one time, before the idle terminator:
+  /// the context that the last submission left, over the window
+  /// that the generation calls measured.
+  @Test func submissionUsageIsReportedInOneUsageUpdate() async throws {
+    let (execution, recorder) = makeSinkedExecution()
+    _ = await execution.drive(
+      events: makeEventStream([
+        .generationCall(
+          GenerationCallUsage(
+            tokensIn: 1, tokensOut: 2, finishReason: .completed, entryKind: .text,
+            contextFill: 0.15)),
+        makeSubmissionEnded(TokenUsage(tokensIn: 1, tokensOut: 2, contextFill: .nan)),
+        .generationCall(
+          GenerationCallUsage(
+            tokensIn: 3, tokensOut: 4, finishReason: .completed, entryKind: .text,
+            contextFill: 0.35)),
+        makeSubmissionEnded(TokenUsage(tokensIn: 3, tokensOut: 4, contextFill: 0.35)),
+      ]))
+    let updates = await recorder.updates
+
+    let usages = updates.compactMap { update -> UsageUpdate? in
+      if case .usageUpdate(let usage) = update { return usage }
+      return nil
+    }
+    #expect(usages.count == 1)
+    #expect(usages.first?.used == 7)
+    #expect(usages.first?.size == 20)
+    #expect(updates.last?.kind == .stateUpdate)
+  }
+
+  /// A thrown `CancellationError` maps to the `cancelled` stop reason;
+  /// it never escapes as an error and never reads as `refusal`.
+  @Test func aThrownCancellationBecomesTheCancelledStopReason() async throws {
+    let (execution, recorder) = makeSinkedExecution()
+    let reason = await execution.drive(
+      events: makeEventStream([.textDelta("partial")], throwing: CancellationError()))
+    let updates = await recorder.updates
+
+    #expect(reason == .cancelled)
+    #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
+  }
+
+  // MARK: - The no-output prompt (task ^pez780d)
+
+  /// A prompt whose last generate call reached the output token ceiling
+  /// ends with the `_truncated` extension stop reason, never with a
+  /// bare `end_turn` (task ^bw9qt1z).
+  @Test func aPromptThatEndsAtTheTokenCeilingEndsWithTheTruncatedStopReason() async throws {
+    let (execution, recorder) = makeSinkedExecution()
+    let reason = await execution.drive(
+      events: makeEventStream([
+        makeSubmissionEnded(
+          TokenUsage(
+            tokensIn: 100, tokensOut: 8192, contextFill: .nan,
+            finishReason: .maxTokens))
+      ]))
+    let updates = await recorder.updates
+
+    #expect(reason == .unknown(PromptExecution.truncatedStopReasonValue))
+    #expect(
+      ScriptedPromptFixture.idleStopReason(in: updates)
+        == .unknown(PromptExecution.truncatedStopReasonValue))
+  }
+
+  /// A prompt whose last submission ended inside the reasoning, below the
+  /// ceiling, ends with the `_ended_in_reasoning` extension stop reason.
+  /// A bare `end_turn` would show a cut prompt as a finished one, and
+  /// `_truncated` would say that the ceiling stopped it, which is false.
+  @Test func aPromptThatEndsInsideTheReasoningEndsWithTheEndedInReasoningStopReason() async throws {
+    let (execution, recorder) = makeSinkedExecution()
+    let reason = await execution.drive(
+      events: makeEventStream([
+        makeSubmissionEnded(
+          TokenUsage(
+            tokensIn: 100, tokensOut: 600, contextFill: .nan,
+            finishReason: .endedInsideReasoning))
+      ]))
+    let updates = await recorder.updates
+
+    #expect(reason == .unknown(PromptExecution.endedInReasoningStopReasonValue))
+    #expect(
+      ScriptedPromptFixture.idleStopReason(in: updates)
+        == .unknown(PromptExecution.endedInReasoningStopReasonValue))
+  }
+
+  /// A prompt whose last submission stopped because it repeated itself,
+  /// with no recovery left, ends with the `_repeated` extension stop
+  /// reason.
+  @Test func aPromptThatEndsOnRepeatedLinesEndsWithTheRepeatedStopReason() async throws {
+    let (execution, recorder) = makeSinkedExecution()
+    let reason = await execution.drive(
+      events: makeEventStream([
+        makeSubmissionEnded(
+          TokenUsage(
+            tokensIn: 100, tokensOut: 2048, contextFill: .nan,
+            finishReason: .repeatedLines))
+      ]))
+    let updates = await recorder.updates
+
+    #expect(reason == .unknown(PromptExecution.repeatedStopReasonValue))
+    #expect(
+      ScriptedPromptFixture.idleStopReason(in: updates)
+        == .unknown(PromptExecution.repeatedStopReasonValue))
+  }
+
+  /// Router's `reasoningTokenLimit` finish reason cuts the prompt with the
+  /// `reasoningLimit` stop, and that stop goes on the wire as
+  /// `_reasoning_limit` (task ^7fsfw7y).
+  @Test func theReasoningTokenLimitFinishReasonCutsWithTheReasoningLimitStop() {
+    #expect(PromptExecution.cutStop(for: .reasoningTokenLimit) == .reasoningLimit)
+    #expect(PromptExecution.reasoningLimitStopReasonValue == "_reasoning_limit")
+  }
+
+  /// A prompt whose last submission reasoned past the reasoning token limit
+  /// of the repetition detection, with no recovery left, ends with the
+  /// `_reasoning_limit` extension stop reason. `_truncated` would say that
+  /// the output token ceiling stopped it, which is false.
+  @Test func aPromptThatEndsAtTheReasoningTokenLimitEndsWithTheReasoningLimitStopReason()
+    async throws
+  {
+    let (execution, recorder) = makeSinkedExecution()
+    let reason = await execution.drive(
+      events: makeEventStream([
+        makeSubmissionEnded(
+          TokenUsage(
+            tokensIn: 100, tokensOut: RepetitionDetection.defaultReasoningTokenLimit,
+            contextFill: .nan, finishReason: .reasoningTokenLimit))
+      ]))
+    let updates = await recorder.updates
+
+    #expect(reason == .unknown(PromptExecution.reasoningLimitStopReasonValue))
+    #expect(
+      ScriptedPromptFixture.idleStopReason(in: updates)
+        == .unknown(PromptExecution.reasoningLimitStopReasonValue))
+  }
+
+  /// Only the LAST generate call decides: a tool-calling prompt that
+  /// reached the ceiling in an earlier call, and then completed its
+  /// last call, keeps `end_turn`.
+  @Test func anEarlierCeilingDoesNotTruncateAPromptWhoseLastCallCompleted() async throws {
+    let (execution, _) = makeSinkedExecution()
+    let reason = await execution.drive(
+      events: makeEventStream([
+        makeSubmissionEnded(
+          TokenUsage(
+            tokensIn: 100, tokensOut: 8192, contextFill: .nan,
+            finishReason: .maxTokens)),
+        makeSubmissionEnded(
+          TokenUsage(
+            tokensIn: 200, tokensOut: 50, contextFill: .nan,
+            finishReason: .completed)),
+      ]))
+
+    #expect(reason == .endTurn)
+  }
+
+  /// A completed prompt with no output and a zero-token usage report
+  /// ends with the honest `_no_output` extension stop reason, never
+  /// with a bare `end_turn`.
+  @Test func aZeroTokenPromptWithNoOutputEndsWithTheNoOutputStopReason() async throws {
+    let (execution, recorder) = makeSinkedExecution()
+    let reason = await execution.drive(
+      events: makeEventStream([
+        makeSubmissionEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan))
+      ]))
+    let updates = await recorder.updates
+
+    #expect(reason == .unknown(PromptExecution.noOutputStopReasonValue))
+    #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
+    #expect(
+      ScriptedPromptFixture.idleStopReason(in: updates)
+        == .unknown(PromptExecution.noOutputStopReasonValue))
+  }
+
+  /// A prompt that streamed text keeps `end_turn`, also when the usage
+  /// report is zero: the text is real output.
+  @Test func aZeroTokenPromptWithTextKeepsTheEndTurnStopReason() async throws {
+    let (execution, recorder) = makeSinkedExecution()
+    let reason = await execution.drive(
+      events: makeEventStream([
+        .textDelta("real output"),
+        makeSubmissionEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan)),
+      ]))
+    _ = await recorder.updates
+
+    #expect(reason == .endTurn)
+  }
+
+  /// A prompt that made a tool call keeps `end_turn`, also when the
+  /// usage report is zero: the call is real output.
+  @Test func aZeroTokenPromptWithAToolCallKeepsTheEndTurnStopReason() async throws {
+    let (execution, recorder) = makeSinkedExecution()
+    let reason = await execution.drive(
+      events: makeEventStream([
+        .toolCall(id: "call-1", name: "x", argumentsJSON: "{}"),
+        .toolStatus(id: "call-1", status: .completed, summary: nil, output: nil),
+        makeSubmissionEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan)),
+      ]))
+    _ = await recorder.updates
+
+    #expect(reason == .endTurn)
+  }
+
+  /// A prompt that carried an attachment report keeps `end_turn`, also
+  /// when the usage report is zero: the report's `tool_call_update`
+  /// is real output.
+  @Test func aZeroTokenPromptWithAToolCallReportKeepsTheEndTurnStopReason() async throws {
+    let report = ToolCallReport(
+      tool: "files",
+      op: "edit file",
+      correlationID: "01SCRIPTEDRUNTOKEN00000000",
+      sessionID: ULID.generate(),
+      attachments: [
+        ToolCallAttachment(schemaName: "note", contentJSON: #"{"note":"kept"}"#)
+      ])
+    let (execution, recorder) = makeSinkedExecution()
+    let reason = await execution.drive(
+      events: makeEventStream([
+        .toolCallReport(report),
+        makeSubmissionEnded(TokenUsage(tokensIn: 0, tokensOut: 0, contextFill: .nan)),
+      ]))
+    _ = await recorder.updates
+
+    #expect(reason == .endTurn)
+  }
+
+  /// A completed prompt with no usage report keeps `end_turn`: with no
+  /// report there is no zero-token evidence, and the prompt must not
+  /// invent one.
+  @Test func aPromptWithNoUsageReportKeepsTheEndTurnStopReason() async throws {
+    let (execution, recorder) = makeSinkedExecution()
+    let reason = await execution.drive(events: makeEventStream([]))
+    _ = await recorder.updates
+
+    #expect(reason == .endTurn)
+  }
+
+  /// A scripted prompt that plays only `.endPass` makes the live defect
+  /// shape on the wire: the Router pass completes with no output and
+  /// a zero-token usage delta. The idle terminator carries
+  /// `_no_output`, never a bare `end_turn`.
+  @Test
+  func aScriptedPromptWithNoOutputEndsIdleWithTheNoOutputStopReason() async throws {
+    let fixture = try await Self.makeFixture(script: [.endPass])
+    _ = try await fixture.harness.connection.prompt(
+      Self.makePromptRequest(sessionId: fixture.sessionId))
+    let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+    await fixture.close()
+
+    #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
+    #expect(
+      ScriptedPromptFixture.idleStopReason(in: updates)
+        == .unknown(PromptExecution.noOutputStopReasonValue))
+  }
+
+  // MARK: - The repetition stop (task ^k51h6bb)
+
+  /// The window of Router's repetition watch in the repetition proof, in
+  /// tokens. It is small, so a short script fills it. The scripted
+  /// counter gives one token for each character.
+  private static let repetitionWindowTokens = 200
+
+  /// How many times the repeating script writes ``repeatedReasoningLines``:
+  /// more than one ``repetitionWindowTokens`` window of tokens.
+  private static let repeatedCycleCount = 10
+
+  /// The reasoning line the repeating script writes one time.
+  private static let newReasoningLine = "First I read the failing test and its fixture.\n"
+
+  /// The reasoning lines the repeating script writes again and again.
+  private static let repeatedReasoningLines = [
+    "Maybe the alias is resolved in the compiler.\n",
+    "Let me look at how the compiler resolves it.\n",
+  ]
+
+  /// The project `config.yaml` of the repetition proof: the small window,
+  /// and no recovery, so the first repetition stop ends the prompt.
+  private static let repetitionConfigYAML = """
+    repetition:
+      windowTokens: \(repetitionWindowTokens)
+      recoveriesPerAnswer: 0
+    """
+
+  /// The script of the repetition proof: one new reasoning line, the
+  /// repeated lines, and a hold that only a cancel ends. Router's
+  /// repetition watch reads the growing reasoning and stops the call.
+  private static var repeatingReasoningScript: [ScriptedPassStep] {
+    let cycle = repeatedReasoningLines.map { ScriptedPassStep.reasoning($0) }
+    let repeated = Array(repeating: cycle, count: repeatedCycleCount).flatMap { $0 }
+    return [.reasoning(newReasoningLine)] + repeated + [.hold]
+  }
+
+  /// The content of the one segment of a `repeatedPartRemoval` event: for
+  /// each cut entry id, the UTF-8 length of its text that the render keeps.
+  private struct RepeatedPartCut: Decodable {
+    /// The kept UTF-8 length of each cut entry, by entry id.
+    let keptUTF8Lengths: [String: Int]
+  }
+
+  /// The cut that `event` records, or `nil` when its first segment is not
+  /// a structure segment under Router's repeated-part schema name.
+  ///
+  /// - Parameter event: A recorded `repeatedPartRemoval` event.
+  /// - Returns: The decoded cut, or `nil`.
+  /// - Throws: When the segment content does not decode.
+  private static func repeatedPartCut(in event: TranscriptEvent) throws -> RepeatedPartCut? {
+    guard case .structure(_, let schemaName, let contentJSON)? = event.entry?.segments?.first,
+      schemaName == ResumeSessionFixture.repeatedPartRemovalSchemaName
+    else {
+      return nil
+    }
+    return try JSONDecoder().decode(RepeatedPartCut.self, from: Data(contentJSON.utf8))
+  }
+
+  /// Runs one prompt over ``repeatingReasoningScript`` to its end, and
+  /// waits until the journal of the session holds the
+  /// `repeatedPartRemoval` event and the session accepts a new request.
+  ///
+  /// - Returns: The fixture, the idle stop reason of the prompt, and the
+  ///   recorded events of the session.
+  /// - Throws: Whatever the wire calls, the waits or the journal read throw.
+  private static func runRepeatingPrompt() async throws -> (
+    fixture: ScriptedPromptFixture, stopReason: StopReason?, events: [TranscriptEvent]
+  ) {
+    let fixture = try await ScriptedPromptFixture.make(
+      script: repeatingReasoningScript, label: "PromptExecutionTests-repetition",
+      projectConfigYAML: repetitionConfigYAML)
+    let updates = try await ScriptedPromptFixture.runPrompt(
+      makePromptRequest(sessionId: fixture.sessionId), through: fixture.harness
+    ).updates
+    let root = try ResumeSessionFixture.projectRecordingRoot(of: fixture.cwd)
+    // When the Router session is idle, its journal holds each event of
+    // the answer, the repeatedPartRemoval event too.
+    try await ResumeSessionFixture.waitForJournal(of: fixture.sessionId, in: fixture.harness.agent)
+    let events = try ResumeSessionFixture.recordedEvents(under: root, sessionId: fixture.sessionId)
+    return (fixture, ScriptedPromptFixture.idleStopReason(in: updates), events)
+  }
+
+  /// A prompt whose reasoning repeats its lines ends with the `_repeated`
+  /// stop reason. Router's repetition watch stops the call, and the
+  /// session records a `repeatedPartRemoval` event in its journal: Router's
+  /// text, and a cut of the one reasoning entry that keeps each new
+  /// reasoning line one time. A resume of that session replays each
+  /// message that the client saw live, with its live id, and sends no
+  /// message for the `repeatedPartRemoval` event.
+  @Test
+  func aRepetitionStopRecordsARepeatedPartRemovalThatAResumeReplays() async throws {
+    let (fixture, stopReason, events) = try await Self.runRepeatingPrompt()
+    #expect(stopReason == .unknown(PromptExecution.repeatedStopReasonValue))
+
+    let removal = try #require(events.first { $0.kind == .repeatedPartRemoval })
+    #expect(removal.text?.hasPrefix(ResumeSessionFixture.repeatedPartRemovalText) == true)
+    let cut = try #require(try Self.repeatedPartCut(in: removal))
+    let newLines = Self.newReasoningLine + Self.repeatedReasoningLines.joined()
+    #expect(Array(cut.keptUTF8Lengths.values) == [newLines.utf8.count])
+
+    await fixture.harness.agent.markSessionClosed(fixture.sessionId)
+    let live = ReplayedMessage.live(in: await fixture.collector.updates.map(\.update))
+    let countBefore = await fixture.collector.updates.count
+    _ = try await fixture.harness.connection.resumeSession(
+      ResumeSessionRequest(
+        cwd: AbsolutePath(rawValue: fixture.cwd.path), sessionId: fixture.sessionId,
+        replayFrom: .start(ReplayFromStart())))
+    let replayUpdates = Array(await fixture.collector.updates.dropFirst(countBefore)).map(\.update)
+    #expect(!live.isEmpty)
+    #expect(ReplayedMessage.replayed(in: replayUpdates) == live)
+    await fixture.close()
+  }
+
+  // MARK: - The stalled generation (task ^s0bw5cv)
+
+  /// Makes one stall report of the shape Router emits on a streaming
+  /// request.
+  ///
+  /// - Parameters:
+  ///   - withoutProgress: How long the generation has gone with no
+  ///     observable progress. It also stands as the time in flight,
+  ///     which no assertion reads.
+  ///   - fragments: How many fragments arrived before the stall.
+  /// - Returns: The report.
+  private static func makeStall(
+    withoutProgress: Duration, fragments: Int
+  ) -> GenerationStall {
+    GenerationStall(
+      timeWithoutProgress: withoutProgress,
+      timeInFlight: withoutProgress,
+      visibility: .fragments(observed: fragments), lastProgress: .callStart)
+  }
+
+  /// A generation that has made no fragment for the whole bound ends
+  /// the prompt with the honest `_stalled` extension stop reason.
+  ///
+  /// The stream never finishes, which is the shape of the defect: a
+  /// model the loader cannot drive reports a stall on each interval
+  /// and yields nothing else, so the guard is the only way out of the
+  /// drive loop. The test thus ends only when the guard ends the prompt.
+  @Test
+  func aGenerationWithNoFragmentPastTheBoundEndsThePromptAsStalled() async throws {
+    let stall = Self.makeStall(
+      withoutProgress: PromptExecution.stalledGenerationBound, fragments: 0)
+    let events = AsyncThrowingStream<SessionEvent, Error> { continuation in
+      continuation.yield(.generationStalled(stall))
+    }
+    let (execution, recorder) = makeSinkedExecution()
+    let reason = await execution.drive(events: events)
+    let updates = await recorder.updates
+
+    #expect(reason == .unknown(PromptExecution.stalledStopReasonValue))
+    #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
+    #expect(
+      ScriptedPromptFixture.idleStopReason(in: updates)
+        == .unknown(PromptExecution.stalledStopReasonValue))
+  }
+
+  /// A stall shorter than the bound is a report and not a bound: the
+  /// generation continues, and the prompt ends on its own events.
+  @Test
+  func aStallShorterThanTheBoundDoesNotEndThePrompt() async throws {
+    let stall = Self.makeStall(
+      withoutProgress: PromptExecution.stalledGenerationBound - .seconds(1), fragments: 0)
+    let (execution, recorder) = makeSinkedExecution()
+    let reason = await execution.drive(
+      events: makeEventStream([
+        .generationStalled(stall),
+        .textDelta("late, and real"),
+        makeSubmissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
+      ]))
+    _ = await recorder.updates
+
+    #expect(reason == .endTurn)
+  }
+
+  /// A stall past the bound on a generation that already made a
+  /// fragment does not end the prompt: a slow decode is not a model
+  /// that cannot generate.
+  @Test
+  func aStallPastTheBoundAfterAFragmentDoesNotEndThePrompt() async throws {
+    let stall = Self.makeStall(
+      withoutProgress: PromptExecution.stalledGenerationBound, fragments: 1)
+    let (execution, recorder) = makeSinkedExecution()
+    let reason = await execution.drive(
+      events: makeEventStream([
+        .textDelta("a first fragment"),
+        .generationStalled(stall),
+        makeSubmissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
+      ]))
+    _ = await recorder.updates
+
+    #expect(reason == .endTurn)
+  }
+
+  /// A stall past the bound after the prompt made a tool call does not
+  /// end the prompt. A tool call is observable output, and the fragment
+  /// count of the report does not count it, so a report of zero
+  /// fragments after a tool call is never a model that cannot generate.
+  @Test
+  func aStallPastTheBoundAfterAToolCallDoesNotEndThePrompt() async throws {
+    let stall = Self.makeStall(
+      withoutProgress: PromptExecution.stalledGenerationBound, fragments: 0)
+    let (execution, recorder) = makeSinkedExecution()
+    let reason = await execution.drive(
+      events: makeEventStream([
+        .toolCall(id: "call-1", name: "x", argumentsJSON: "{}"),
+        .generationStalled(stall),
+        makeSubmissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
+      ]))
+    _ = await recorder.updates
+
+    #expect(reason == .endTurn)
+  }
+
+  /// The seconds of one reporting interval of the Router stall watch
+  /// in the synthetic stream below. The value is shorter than the
+  /// bound, and no assertion reads it.
+  private static let stallReportIntervalSeconds = 60
+
+  /// A request whose time in flight is longer than the bound, but whose
+  /// time without progress is shorter, does not end with `_stalled`.
+  ///
+  /// The time in flight of a stall report includes each wait of the
+  /// submission that is not a generation with no progress: a tool body,
+  /// or a wait for the model while it generates for another session. The
+  /// guard must read only `timeWithoutProgress`, thus the request
+  /// continues to its text and its usage, and it ends with `end_turn`.
+  @Test
+  func aLongTimeInFlightNeverEndsTheRequestAsStalled() async throws {
+    let wait = PromptExecution.stalledGenerationBound + .seconds(1)
+    let interval = Duration.seconds(Self.stallReportIntervalSeconds)
+    let stallAfterTheWait = GenerationStall(
+      timeWithoutProgress: interval,
+      timeInFlight: wait + interval,
+      visibility: .fragments(observed: 0), lastProgress: .callStart)
+    let (execution, recorder) = makeSinkedExecution()
+    let reason = await execution.drive(
+      events: makeEventStream([
+        makeSubmissionStarted(),
+        .generationStalled(stallAfterTheWait),
+        .textDelta("the answer, after the wait"),
+        makeSubmissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
+      ]))
+    let updates = await recorder.updates
+
+    #expect(reason == .endTurn)
+    #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
+  }
+
+  /// The seconds a real build task took to reach its FIRST observable
+  /// output, on the shipped standard model (task ^ec8hn3z).
+  ///
+  /// Measured on 2026-09-08 with `mlx-community/Qwen3.8-27B-mxfp4`:
+  /// the tier-4 `greet` prompt, sent through `acp-agent run`, made its
+  /// first tool call 555 seconds after the prompt, and then wrote the
+  /// three files, ran pytest green and printed the expected line. The
+  /// prompt thus makes no observable output at all for the first nine
+  /// minutes.
+  private static let measuredSecondsToFirstOutput = 555
+
+  /// A generation that has made no fragment for as long as a real
+  /// build task takes to reach its first output does NOT end the prompt.
+  ///
+  /// The stall reports of that measured run said `0 fragments` for the
+  /// whole prompt, while `runCode` and shell calls were completing, so a
+  /// fragment count of zero never proves that the model made nothing.
+  /// A bound under the measured time therefore ends a healthy prompt.
+  @Test
+  func aStallAtTheMeasuredTimeToFirstOutputDoesNotEndThePrompt() async throws {
+    let stall = Self.makeStall(
+      withoutProgress: .seconds(Self.measuredSecondsToFirstOutput), fragments: 0)
+    let (execution, recorder) = makeSinkedExecution()
+    let reason = await execution.drive(
+      events: makeEventStream([
+        .generationStalled(stall),
+        .textDelta("the first output, nine minutes in"),
+        makeSubmissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
+      ]))
+    _ = await recorder.updates
+
+    #expect(reason == .endTurn)
+  }
+
+  // MARK: - Running and idle from Router work (elicitation-plan task 2)
+
+  /// The stop reason of an `idle` update, or `nil` when the update is not
+  /// an `idle` or the `idle` has none.
+  ///
+  /// - Parameter update: The update.
+  /// - Returns: The stop reason.
+  private static func idleStopReason(of update: SessionUpdate?) -> StopReason? {
+    guard case .stateUpdate(.idle(let idle)) = update else { return nil }
+    return idle.stopReason
+  }
+
+  /// The ledger sends `idle` only when the session has no work, so each
+  /// `idle` says so in `_meta.noWork`: the `idle` at the end of Router
+  /// work, and the `idle` of a prompt that ended before it started. A
+  /// headless client ends on that `idle`, and a GUI can ignore the mark.
+  @Test
+  func eachIdleOfTheLedgerSaysThatTheSessionHasNoWork() async throws {
+    let recorder = SinkRecorder()
+    let ledger = SessionStateLedger(send: { update in await recorder.append(update) })
+    let source = ULID()
+
+    await ledger.workStarted(on: source)
+    await ledger.workEnded(on: source)
+    await PromptStateOwner(ledger: ledger).promptDidEnd(stop: .cancelled)
+    let idles = await recorder.updates.compactMap { update -> IdleStateUpdate? in
+      guard case .stateUpdate(.idle(let idle)) = update else { return nil }
+      return idle
     }
 
-    /// A prompt whose reasoning repeats its lines ends with the `_repeated`
-    /// stop reason. Router's repetition watch stops the call, and the
-    /// session records a `repeatedPartRemoval` event in its journal: Router's
-    /// text, and a cut of the one reasoning entry that keeps each new
-    /// reasoning line one time. A resume of that session replays each
-    /// message that the client saw live, with its live id, and sends no
-    /// message for the `repeatedPartRemoval` event.
-    @Test
-    func aRepetitionStopRecordsARepeatedPartRemovalThatAResumeReplays() async throws {
-        let (fixture, stopReason, events) = try await Self.runRepeatingPrompt()
-        #expect(stopReason == .unknown(PromptExecution.repeatedStopReasonValue))
+    #expect(
+      idles.count == 2, "expected the idle of the work and the idle of the prompt, got \(idles)")
+    #expect(idles.allSatisfy { $0.saysNoWork })
+  }
 
-        let removal = try #require(events.first { $0.kind == .repeatedPartRemoval })
-        #expect(removal.text?.hasPrefix(ResumeSessionFixture.repeatedPartRemovalText) == true)
-        let cut = try #require(try Self.repeatedPartCut(in: removal))
-        let newLines = Self.newReasoningLine + Self.repeatedReasoningLines.joined()
-        #expect(Array(cut.keptUTF8Lengths.values) == [newLines.utf8.count])
+  /// With no prompt open, the work of a Router session gives `running` at
+  /// `workStarted` and `idle` at `workEnded`. No prompt ended, so the
+  /// `idle` has no stop reason.
+  @Test
+  func routerWorkWithNoPromptOpenGivesRunningThenIdleWithNoStopReason() async throws {
+    let recorder = SinkRecorder()
+    let ledger = SessionStateLedger(send: { update in await recorder.append(update) })
+    let source = ULID()
 
-        await fixture.harness.agent.markSessionClosed(fixture.sessionId)
-        let live = ReplayedMessage.live(in: await fixture.collector.updates.map(\.update))
-        let countBefore = await fixture.collector.updates.count
-        _ = try await fixture.harness.connection.resumeSession(
-            ResumeSessionRequest(
-                cwd: AbsolutePath(rawValue: fixture.cwd.path), sessionId: fixture.sessionId,
-                replayFrom: .start(ReplayFromStart())))
-        let replayUpdates = Array(await fixture.collector.updates.dropFirst(countBefore)).map(\.update)
-        #expect(!live.isEmpty)
-        #expect(ReplayedMessage.replayed(in: replayUpdates) == live)
-        await fixture.close()
+    await ledger.workStarted(on: source)
+    await ledger.workEnded(on: source)
+    let updates = await recorder.updates
+
+    #expect(updates.count == 2, "expected running then idle, got \(updates)")
+    #expect(isRunningState(updates.first))
+    #expect(isIdleState(updates.last))
+    #expect(Self.idleStopReason(of: updates.last) == nil)
+  }
+
+  /// A prompt that ends while Router still works sends no `idle`: the
+  /// `idle` comes at `workEnded`, with the stop reason of that prompt.
+  @Test
+  func aPromptThatEndsWhileRouterWorksGetsItsIdleAtWorkEnded() async throws {
+    let recorder = SinkRecorder()
+    let ledger = SessionStateLedger(send: { update in await recorder.append(update) })
+    let owner = PromptStateOwner(ledger: ledger)
+    let source = ULID()
+
+    await owner.promptDidStart()
+    await ledger.workStarted(on: source)
+    await owner.promptDidEnd(stop: .completed)
+    let atPromptEnd = await recorder.updates
+    await ledger.workEnded(on: source)
+    let updates = await recorder.updates
+
+    #expect(atPromptEnd.count == 1)
+    #expect(isRunningState(atPromptEnd.first))
+    #expect(updates.count == 2)
+    #expect(Self.idleStopReason(of: updates.last) == .endTurn)
+  }
+
+  /// The session is busy while any of its Router sessions works: the end
+  /// of the work of one session keeps it `running`, and the `idle` comes
+  /// when the last one ends. The end of the feed of a session ends its
+  /// work too.
+  @Test
+  func theSessionStaysRunningUntilEachRouterSessionEndsItsWork() async throws {
+    let recorder = SinkRecorder()
+    let ledger = SessionStateLedger(send: { update in await recorder.append(update) })
+    let replaced = ULID()
+    let replacement = ULID()
+
+    await ledger.workStarted(on: replaced)
+    await ledger.workStarted(on: replacement)
+    await ledger.workEnded(on: replacement)
+    let whileOneWorks = await recorder.updates
+    await ledger.workEnded(on: replaced)
+    let updates = await recorder.updates
+
+    #expect(whileOneWorks.count == 1)
+    #expect(isRunningState(whileOneWorks.first))
+    #expect(updates.count == 2)
+    #expect(isIdleState(updates.last))
+  }
+
+  /// Two prompts share the state of one session: `running` goes out when
+  /// the first prompt starts, and the one `idle` goes out when the last
+  /// open prompt ends, with the stop reason of that prompt.
+  @Test
+  func theSessionGoesIdleWhenTheLastOpenPromptEnds() async throws {
+    let recorder = SinkRecorder()
+    let ledger = SessionStateLedger(send: { update in await recorder.append(update) })
+    let first = PromptStateOwner(ledger: ledger)
+    let second = PromptStateOwner(ledger: ledger)
+
+    await first.promptDidStart()
+    await second.promptDidStart()
+    await first.promptDidEnd(stop: .completed)
+    let whileSecondRuns = await recorder.updates
+    await second.promptDidEnd(stop: .cancelled)
+    let updates = await recorder.updates
+
+    #expect(whileSecondRuns.count == 1)
+    #expect(isRunningState(whileSecondRuns.first))
+    #expect(updates.count == 2)
+    #expect(idleState(of: updates.last)?.stopReason == .cancelled)
+  }
+
+  // MARK: - A waiting session holds no model
+  //
+  // The two sessions of each proof use one queued scripted model, thus one
+  // model lock. Session A waits in a background run: an elicitation
+  // from a `runCode` snippet, or a shell command. `runCode` holds the model
+  // only for its inline grace, and a shell command gives its pending answer
+  // at once. Then the run continues in the background, and the submission
+  // of A ends. The prompt of B must then get the model and end, while A
+  // still waits.
+
+  /// The snippet of the elicitation proof: one question to the person.
+  private static let elicitingSnippet = #"return await elicit("Which colour do you want?");"#
+
+  /// The content of the accept: `elicit("question")` asks for one string
+  /// field, `answer`.
+  private static let acceptedContent: FoundationModelsACP.JSONValue = .object([
+    "answer": .string("blue")
+  ])
+
+  /// The text that a run result holds, with no white space, when the run
+  /// got the `accept` action.
+  private static let acceptedActionText = #""action":"accept""#
+
+  /// The name of the named pipe that the shell command of the tool-body
+  /// proof reads. Nothing writes the pipe, thus the read waits until the
+  /// session close stops it.
+  private static let pipeName = "wait.fifo"
+
+  /// The snippet of the tool-body proof: one shell read of the named pipe.
+  private static let waitingSnippet =
+    #"return await tools.shell.execute({ command: "cat \#(pipeName)" });"#
+
+  /// The marker of the prompt of session A in the tool-body proof. Its
+  /// pass starts the shell read.
+  private static let waitingMarker = "Read the pipe"
+
+  /// The text that the pass of session B plays in the tool-body proof.
+  private static let answerText = "answered"
+
+  /// Session A waits in an elicitation that the client does not answer.
+  /// Session B prompts on the same model, and its prompt ends with
+  /// `end_turn` while A still waits.
+  ///
+  /// The prompt of A ends at the answer of its own mail when its snippet
+  /// goes to the background (task ^9xs24pn, decision Q1), but the question
+  /// of A stays open. Thus A can send an `idle`, and only an `end_turn` one.
+  @Test
+  func aSessionInAnElicitationHoldsNoModel() async throws {
+    let fixture = try await QueuedScriptedFixture.make(
+      script: ScriptedPromptFixture.makeToolPromptScript(
+        code: Self.elicitingSnippet, onPromptContaining: Self.promptText),
+      label: "PromptExecutionTests-elicitation")
+    try await fixture.prompt(fixture.firstSessionId, text: Self.promptText)
+    _ = try await ElicitationWait.firstPendingElicitation(in: fixture.firstSession)
+
+    try await fixture.prompt(fixture.secondSessionId, text: Self.promptText)
+    let questionOfB = try await ElicitationWait.firstPendingElicitation(in: fixture.secondSession)
+    await MainActor.run {
+      fixture.secondSession.acceptElicitation(questionOfB.id, content: Self.acceptedContent)
+    }
+    let updatesOfB = try await fixture.waitForIdle(of: fixture.secondSessionId)
+    let pendingOfA = await fixture.pendingElicitations(of: fixture.firstSession)
+    let updatesOfA = await fixture.updates(of: fixture.firstSessionId)
+    try await fixture.closeSessions()
+
+    #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfB) == .endTurn)
+    #expect(
+      SkillsLibraryTests.toolCallText(in: updatesOfB)
+        .filter { !$0.isWhitespace }
+        .contains(Self.acceptedActionText))
+    #expect(pendingOfA.count == 1)
+    #expect(ScriptedPromptFixture.idleCount(in: updatesOfA) <= 1)
+    #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfA) ?? .endTurn == .endTurn)
+  }
+
+  /// Session A waits in a tool body: a shell read of a named pipe that
+  /// nothing writes. Session B prompts on the same model, and its prompt
+  /// ends with `end_turn` while the tool body of A still waits.
+  ///
+  /// The prompt of A ends at the answer of its own mail when its read goes
+  /// to the background (task ^9xs24pn, decision Q1), while the read still
+  /// waits. Thus A can send an `idle`, and only an `end_turn` one. B starts
+  /// no read, so its prompt ends after its own answer. The close of each
+  /// session at the end stops the read of A.
+  @Test
+  func aSessionInAToolBodyHoldsNoModel() async throws {
+    let fixture = try await QueuedScriptedFixture.make(
+      script: [
+        .onPrompt(
+          containing: Self.waitingMarker,
+          play: try ScriptedPromptFixture.makeToolPromptScript(code: Self.waitingSnippet)),
+        .textDelta(Self.answerText),
+        .endPass,
+      ],
+      label: "PromptExecutionTests-tool-body",
+      workingDirectory: try NamedPipe.makeDirectory(
+        holding: Self.pipeName, label: "PromptExecutionTests-pipe-repo"))
+    try await fixture.prompt(fixture.firstSessionId, text: Self.waitingMarker)
+    let counter = fixture.passCounter
+    try await counter.wait(for: "the pass of session A starts") { $0.started == 1 }
+
+    try await fixture.prompt(fixture.secondSessionId, text: Self.promptText)
+    let updatesOfB = try await fixture.waitForIdle(of: fixture.secondSessionId)
+    let updatesOfA = await fixture.updates(of: fixture.firstSessionId)
+    try await fixture.closeSessions()
+
+    #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfB) == .endTurn)
+    #expect(ScriptedPromptFixture.idleCount(in: updatesOfA) <= 1)
+    #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfA) ?? .endTurn == .endTurn)
+  }
+
+  // MARK: - The unknown-id policy
+
+  /// An unknown `sessionId` answers `-32602` with the id in `data`,
+  /// and sends no `session/update`.
+  @Test
+  func anUnknownSessionIdAnswersInvalidParamsAndSendsNoUpdate() async throws {
+    let fixture = try await Self.makeFixture(script: [.endPass])
+    let bogus = SessionId(rawValue: syntheticSessionIdValue)
+
+    do {
+      _ = try await fixture.harness.connection.prompt(
+        Self.makePromptRequest(sessionId: bogus))
+      Issue.record("expected invalid params for the unknown id")
+    } catch let error as RequestError {
+      #expect(error.code == .invalidParams)
+      #expect(Self.dataField("sessionId", of: error) == bogus.rawValue)
     }
 
-    // MARK: - The stalled generation (task ^s0bw5cv)
+    #expect(promptUpdates(in: await fixture.collector.updates).isEmpty)
+    await fixture.close()
+  }
 
-    /// Makes one stall report of the shape Router emits on a streaming
-    /// request.
-    ///
-    /// - Parameters:
-    ///   - withoutProgress: How long the generation has gone with no
-    ///     observable progress. It also stands as the time in flight,
-    ///     which no assertion reads.
-    ///   - fragments: How many fragments arrived before the stall.
-    /// - Returns: The report.
-    private static func makeStall(
-        withoutProgress: Duration, fragments: Int
-    ) -> GenerationStall {
-        GenerationStall(
-            timeWithoutProgress: withoutProgress,
-            timeInFlight: withoutProgress,
-            visibility: .fragments(observed: fragments), lastProgress: .callStart)
+  /// A known but closed session answers `-32602` with the resume
+  /// hint, because a closed session is resumable, not promptable.
+  @Test
+  func aClosedSessionIdAnswersInvalidParamsWithTheResumeHint() async throws {
+    let fixture = try await Self.makeFixture(script: [.endPass])
+    await fixture.harness.agent.markSessionClosed(fixture.sessionId)
+
+    do {
+      _ = try await fixture.harness.connection.prompt(
+        Self.makePromptRequest(sessionId: fixture.sessionId))
+      Issue.record("expected invalid params for the closed id")
+    } catch let error as RequestError {
+      #expect(error.code == .invalidParams)
+      #expect(Self.dataField("reason", of: error) == "closed; resume it first")
     }
 
-    /// A generation that has made no fragment for the whole bound ends
-    /// the prompt with the honest `_stalled` extension stop reason.
-    ///
-    /// The stream never finishes, which is the shape of the defect: a
-    /// model the loader cannot drive reports a stall on each interval
-    /// and yields nothing else, so the guard is the only way out of the
-    /// drive loop. The test thus ends only when the guard ends the prompt.
-    @Test
-    func aGenerationWithNoFragmentPastTheBoundEndsThePromptAsStalled() async throws {
-        let stall = Self.makeStall(
-            withoutProgress: PromptExecution.stalledGenerationBound, fragments: 0)
-        let events = AsyncThrowingStream<SessionEvent, Error> { continuation in
-            continuation.yield(.generationStalled(stall))
-        }
-        let (execution, recorder) = makeSinkedExecution()
-        let reason = await execution.drive(events: events)
-        let updates = await recorder.updates
+    #expect(promptUpdates(in: await fixture.collector.updates).isEmpty)
+    await fixture.close()
+  }
 
-        #expect(reason == .unknown(PromptExecution.stalledStopReasonValue))
-        #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
-        #expect(
-            ScriptedPromptFixture.idleStopReason(in: updates)
-                == .unknown(PromptExecution.stalledStopReasonValue))
+  // MARK: - The title and the record timing
+
+  /// The `index.md` of the session holds no title before the first
+  /// prompt, holds a one-line title after the first prompt, and keeps
+  /// that title at the second prompt.
+  @Test
+  func theFirstPromptWritesTheTitleRecordWithAOneLineTitle() async throws {
+    let fixture = try await Self.makeFixture(script: [.textDelta("done"), .endPass])
+    #expect(try await Self.sessionRecord(of: fixture).facts.title == nil)
+
+    _ = try await fixture.harness.connection.prompt(
+      Self.makePromptRequest(sessionId: fixture.sessionId))
+    let firstPrompt = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+
+    let record = try await Self.sessionRecord(of: fixture)
+    #expect(record.facts.title == Self.promptTitleLine)
+    #expect(
+      record.workingDirectory.standardizedFileURL.path == fixture.cwd.standardizedFileURL.path)
+
+    let titles = firstPrompt.compactMap { notification -> PatchField<String>? in
+      if case .sessionInfoUpdate(let info) = notification.update { return info.title }
+      return nil
     }
+    #expect(titles == [.value(Self.promptTitleLine)])
 
-    /// A stall shorter than the bound is a report and not a bound: the
-    /// generation continues, and the prompt ends on its own events.
-    @Test
-    func aStallShorterThanTheBoundDoesNotEndThePrompt() async throws {
-        let stall = Self.makeStall(
-            withoutProgress: PromptExecution.stalledGenerationBound - .seconds(1), fragments: 0)
-        let (execution, recorder) = makeSinkedExecution()
-        let reason = await execution.drive(
-            events: makeEventStream([
-                .generationStalled(stall),
-                .textDelta("late, and real"),
-                makeSubmissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
-            ]))
-        _ = await recorder.updates
+    _ = try await fixture.harness.connection.prompt(
+      Self.makePromptRequest(sessionId: fixture.sessionId, text: "a second prompt"))
+    let secondPrompt = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: 2)
+    let afterSecond = try await Self.sessionRecord(of: fixture)
+    await fixture.close()
 
-        #expect(reason == .endTurn)
-    }
-
-    /// A stall past the bound on a generation that already made a
-    /// fragment does not end the prompt: a slow decode is not a model
-    /// that cannot generate.
-    @Test
-    func aStallPastTheBoundAfterAFragmentDoesNotEndThePrompt() async throws {
-        let stall = Self.makeStall(
-            withoutProgress: PromptExecution.stalledGenerationBound, fragments: 1)
-        let (execution, recorder) = makeSinkedExecution()
-        let reason = await execution.drive(
-            events: makeEventStream([
-                .textDelta("a first fragment"),
-                .generationStalled(stall),
-                makeSubmissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
-            ]))
-        _ = await recorder.updates
-
-        #expect(reason == .endTurn)
-    }
-
-    /// A stall past the bound after the prompt made a tool call does not
-    /// end the prompt. A tool call is observable output, and the fragment
-    /// count of the report does not count it, so a report of zero
-    /// fragments after a tool call is never a model that cannot generate.
-    @Test
-    func aStallPastTheBoundAfterAToolCallDoesNotEndThePrompt() async throws {
-        let stall = Self.makeStall(
-            withoutProgress: PromptExecution.stalledGenerationBound, fragments: 0)
-        let (execution, recorder) = makeSinkedExecution()
-        let reason = await execution.drive(
-            events: makeEventStream([
-                .toolCall(id: "call-1", name: "x", argumentsJSON: "{}"),
-                .generationStalled(stall),
-                makeSubmissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
-            ]))
-        _ = await recorder.updates
-
-        #expect(reason == .endTurn)
-    }
-
-    /// The seconds of one reporting interval of the Router stall watch
-    /// in the synthetic stream below. The value is shorter than the
-    /// bound, and no assertion reads it.
-    private static let stallReportIntervalSeconds = 60
-
-    /// A request whose time in flight is longer than the bound, but whose
-    /// time without progress is shorter, does not end with `_stalled`.
-    ///
-    /// The time in flight of a stall report includes each wait of the
-    /// submission that is not a generation with no progress: a tool body,
-    /// or a wait for the model while it generates for another session. The
-    /// guard must read only `timeWithoutProgress`, thus the request
-    /// continues to its text and its usage, and it ends with `end_turn`.
-    @Test
-    func aLongTimeInFlightNeverEndsTheRequestAsStalled() async throws {
-        let wait = PromptExecution.stalledGenerationBound + .seconds(1)
-        let interval = Duration.seconds(Self.stallReportIntervalSeconds)
-        let stallAfterTheWait = GenerationStall(
-            timeWithoutProgress: interval,
-            timeInFlight: wait + interval,
-            visibility: .fragments(observed: 0), lastProgress: .callStart)
-        let (execution, recorder) = makeSinkedExecution()
-        let reason = await execution.drive(
-            events: makeEventStream([
-                makeSubmissionStarted(),
-                .generationStalled(stallAfterTheWait),
-                .textDelta("the answer, after the wait"),
-                makeSubmissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
-            ]))
-        let updates = await recorder.updates
-
-        #expect(reason == .endTurn)
-        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
-    }
-
-    /// The seconds a real build task took to reach its FIRST observable
-    /// output, on the shipped standard model (task ^ec8hn3z).
-    ///
-    /// Measured on 2026-09-08 with `mlx-community/Qwen3.8-27B-mxfp4`:
-    /// the tier-4 `greet` prompt, sent through `acp-agent run`, made its
-    /// first tool call 555 seconds after the prompt, and then wrote the
-    /// three files, ran pytest green and printed the expected line. The
-    /// prompt thus makes no observable output at all for the first nine
-    /// minutes.
-    private static let measuredSecondsToFirstOutput = 555
-
-    /// A generation that has made no fragment for as long as a real
-    /// build task takes to reach its first output does NOT end the prompt.
-    ///
-    /// The stall reports of that measured run said `0 fragments` for the
-    /// whole prompt, while `runCode` and shell calls were completing, so a
-    /// fragment count of zero never proves that the model made nothing.
-    /// A bound under the measured time therefore ends a healthy prompt.
-    @Test
-    func aStallAtTheMeasuredTimeToFirstOutputDoesNotEndThePrompt() async throws {
-        let stall = Self.makeStall(
-            withoutProgress: .seconds(Self.measuredSecondsToFirstOutput), fragments: 0)
-        let (execution, recorder) = makeSinkedExecution()
-        let reason = await execution.drive(
-            events: makeEventStream([
-                .generationStalled(stall),
-                .textDelta("the first output, nine minutes in"),
-                makeSubmissionEnded(TokenUsage(tokensIn: 1, tokensOut: 1, contextFill: .nan)),
-            ]))
-        _ = await recorder.updates
-
-        #expect(reason == .endTurn)
-    }
-
-    // MARK: - Running and idle from Router work (elicitation-plan task 2)
-
-    /// The stop reason of an `idle` update, or `nil` when the update is not
-    /// an `idle` or the `idle` has none.
-    ///
-    /// - Parameter update: The update.
-    /// - Returns: The stop reason.
-    private static func idleStopReason(of update: SessionUpdate?) -> StopReason? {
-        guard case .stateUpdate(.idle(let idle)) = update else { return nil }
-        return idle.stopReason
-    }
-
-    /// The ledger sends `idle` only when the session has no work, so each
-    /// `idle` says so in `_meta.noWork`: the `idle` at the end of Router
-    /// work, and the `idle` of a prompt that ended before it started. A
-    /// headless client ends on that `idle`, and a GUI can ignore the mark.
-    @Test
-    func eachIdleOfTheLedgerSaysThatTheSessionHasNoWork() async throws {
-        let recorder = SinkRecorder()
-        let ledger = SessionStateLedger(send: { update in await recorder.append(update) })
-        let source = ULID()
-
-        await ledger.workStarted(on: source)
-        await ledger.workEnded(on: source)
-        await PromptStateOwner(ledger: ledger).promptDidEnd(stop: .cancelled)
-        let idles = await recorder.updates.compactMap { update -> IdleStateUpdate? in
-            guard case .stateUpdate(.idle(let idle)) = update else { return nil }
-            return idle
-        }
-
-        #expect(idles.count == 2, "expected the idle of the work and the idle of the prompt, got \(idles)")
-        #expect(idles.allSatisfy { $0.saysNoWork })
-    }
-
-    /// With no prompt open, the work of a Router session gives `running` at
-    /// `workStarted` and `idle` at `workEnded`. No prompt ended, so the
-    /// `idle` has no stop reason.
-    @Test
-    func routerWorkWithNoPromptOpenGivesRunningThenIdleWithNoStopReason() async throws {
-        let recorder = SinkRecorder()
-        let ledger = SessionStateLedger(send: { update in await recorder.append(update) })
-        let source = ULID()
-
-        await ledger.workStarted(on: source)
-        await ledger.workEnded(on: source)
-        let updates = await recorder.updates
-
-        #expect(updates.count == 2, "expected running then idle, got \(updates)")
-        #expect(isRunningState(updates.first))
-        #expect(isIdleState(updates.last))
-        #expect(Self.idleStopReason(of: updates.last) == nil)
-    }
-
-    /// A prompt that ends while Router still works sends no `idle`: the
-    /// `idle` comes at `workEnded`, with the stop reason of that prompt.
-    @Test
-    func aPromptThatEndsWhileRouterWorksGetsItsIdleAtWorkEnded() async throws {
-        let recorder = SinkRecorder()
-        let ledger = SessionStateLedger(send: { update in await recorder.append(update) })
-        let owner = PromptStateOwner(ledger: ledger)
-        let source = ULID()
-
-        await owner.promptDidStart()
-        await ledger.workStarted(on: source)
-        await owner.promptDidEnd(stop: .completed)
-        let atPromptEnd = await recorder.updates
-        await ledger.workEnded(on: source)
-        let updates = await recorder.updates
-
-        #expect(atPromptEnd.count == 1)
-        #expect(isRunningState(atPromptEnd.first))
-        #expect(updates.count == 2)
-        #expect(Self.idleStopReason(of: updates.last) == .endTurn)
-    }
-
-    /// The session is busy while any of its Router sessions works: the end
-    /// of the work of one session keeps it `running`, and the `idle` comes
-    /// when the last one ends. The end of the feed of a session ends its
-    /// work too.
-    @Test
-    func theSessionStaysRunningUntilEachRouterSessionEndsItsWork() async throws {
-        let recorder = SinkRecorder()
-        let ledger = SessionStateLedger(send: { update in await recorder.append(update) })
-        let replaced = ULID()
-        let replacement = ULID()
-
-        await ledger.workStarted(on: replaced)
-        await ledger.workStarted(on: replacement)
-        await ledger.workEnded(on: replacement)
-        let whileOneWorks = await recorder.updates
-        await ledger.workEnded(on: replaced)
-        let updates = await recorder.updates
-
-        #expect(whileOneWorks.count == 1)
-        #expect(isRunningState(whileOneWorks.first))
-        #expect(updates.count == 2)
-        #expect(isIdleState(updates.last))
-    }
-
-    /// Two prompts share the state of one session: `running` goes out when
-    /// the first prompt starts, and the one `idle` goes out when the last
-    /// open prompt ends, with the stop reason of that prompt.
-    @Test
-    func theSessionGoesIdleWhenTheLastOpenPromptEnds() async throws {
-        let recorder = SinkRecorder()
-        let ledger = SessionStateLedger(send: { update in await recorder.append(update) })
-        let first = PromptStateOwner(ledger: ledger)
-        let second = PromptStateOwner(ledger: ledger)
-
-        await first.promptDidStart()
-        await second.promptDidStart()
-        await first.promptDidEnd(stop: .completed)
-        let whileSecondRuns = await recorder.updates
-        await second.promptDidEnd(stop: .cancelled)
-        let updates = await recorder.updates
-
-        #expect(whileSecondRuns.count == 1)
-        #expect(isRunningState(whileSecondRuns.first))
-        #expect(updates.count == 2)
-        #expect(idleState(of: updates.last)?.stopReason == .cancelled)
-    }
-
-    // MARK: - A waiting session holds no model
-    //
-    // The two sessions of each proof use one queued scripted model, thus one
-    // model lock. Session A waits in a background run: an elicitation
-    // from a `runCode` snippet, or a shell command. `runCode` holds the model
-    // only for its inline grace, and a shell command gives its pending answer
-    // at once. Then the run continues in the background, and the submission
-    // of A ends. The prompt of B must then get the model and end, while A
-    // still waits.
-
-    /// The snippet of the elicitation proof: one question to the person.
-    private static let elicitingSnippet = #"return await elicit("Which colour do you want?");"#
-
-    /// The content of the accept: `elicit("question")` asks for one string
-    /// field, `answer`.
-    private static let acceptedContent: FoundationModelsACP.JSONValue = .object(["answer": .string("blue")])
-
-    /// The text that a run result holds, with no white space, when the run
-    /// got the `accept` action.
-    private static let acceptedActionText = #""action":"accept""#
-
-    /// The name of the named pipe that the shell command of the tool-body
-    /// proof reads. Nothing writes the pipe, thus the read waits until the
-    /// session close stops it.
-    private static let pipeName = "wait.fifo"
-
-    /// The snippet of the tool-body proof: one shell read of the named pipe.
-    private static let waitingSnippet =
-        #"return await tools.shell.execute({ command: "cat \#(pipeName)" });"#
-
-    /// The marker of the prompt of session A in the tool-body proof. Its
-    /// pass starts the shell read.
-    private static let waitingMarker = "Read the pipe"
-
-    /// The text that the pass of session B plays in the tool-body proof.
-    private static let answerText = "answered"
-
-    /// Session A waits in an elicitation that the client does not answer.
-    /// Session B prompts on the same model, and its prompt ends with
-    /// `end_turn` while A still waits.
-    ///
-    /// The prompt of A ends at the answer of its own mail when its snippet
-    /// goes to the background (task ^9xs24pn, decision Q1), but the question
-    /// of A stays open. Thus A can send an `idle`, and only an `end_turn` one.
-    @Test
-    func aSessionInAnElicitationHoldsNoModel() async throws {
-        let fixture = try await QueuedScriptedFixture.make(
-            script: ScriptedPromptFixture.makeToolPromptScript(
-                code: Self.elicitingSnippet, onPromptContaining: Self.promptText),
-            label: "PromptExecutionTests-elicitation")
-        try await fixture.prompt(fixture.firstSessionId, text: Self.promptText)
-        _ = try await ElicitationWait.firstPendingElicitation(in: fixture.firstSession)
-
-        try await fixture.prompt(fixture.secondSessionId, text: Self.promptText)
-        let questionOfB = try await ElicitationWait.firstPendingElicitation(in: fixture.secondSession)
-        await MainActor.run {
-            fixture.secondSession.acceptElicitation(questionOfB.id, content: Self.acceptedContent)
-        }
-        let updatesOfB = try await fixture.waitForIdle(of: fixture.secondSessionId)
-        let pendingOfA = await fixture.pendingElicitations(of: fixture.firstSession)
-        let updatesOfA = await fixture.updates(of: fixture.firstSessionId)
-        try await fixture.closeSessions()
-
-        #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfB) == .endTurn)
-        #expect(
-            SkillsLibraryTests.toolCallText(in: updatesOfB)
-                .filter { !$0.isWhitespace }
-                .contains(Self.acceptedActionText))
-        #expect(pendingOfA.count == 1)
-        #expect(ScriptedPromptFixture.idleCount(in: updatesOfA) <= 1)
-        #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfA) ?? .endTurn == .endTurn)
-    }
-
-    /// Session A waits in a tool body: a shell read of a named pipe that
-    /// nothing writes. Session B prompts on the same model, and its prompt
-    /// ends with `end_turn` while the tool body of A still waits.
-    ///
-    /// The prompt of A ends at the answer of its own mail when its read goes
-    /// to the background (task ^9xs24pn, decision Q1), while the read still
-    /// waits. Thus A can send an `idle`, and only an `end_turn` one. B starts
-    /// no read, so its prompt ends after its own answer. The close of each
-    /// session at the end stops the read of A.
-    @Test
-    func aSessionInAToolBodyHoldsNoModel() async throws {
-        let fixture = try await QueuedScriptedFixture.make(
-            script: [
-                .onPrompt(
-                    containing: Self.waitingMarker,
-                    play: try ScriptedPromptFixture.makeToolPromptScript(code: Self.waitingSnippet)),
-                .textDelta(Self.answerText),
-                .endPass,
-            ],
-            label: "PromptExecutionTests-tool-body",
-            workingDirectory: try NamedPipe.makeDirectory(
-                holding: Self.pipeName, label: "PromptExecutionTests-pipe-repo"))
-        try await fixture.prompt(fixture.firstSessionId, text: Self.waitingMarker)
-        let counter = fixture.passCounter
-        try await counter.wait(for: "the pass of session A starts") { $0.started == 1 }
-
-        try await fixture.prompt(fixture.secondSessionId, text: Self.promptText)
-        let updatesOfB = try await fixture.waitForIdle(of: fixture.secondSessionId)
-        let updatesOfA = await fixture.updates(of: fixture.firstSessionId)
-        try await fixture.closeSessions()
-
-        #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfB) == .endTurn)
-        #expect(ScriptedPromptFixture.idleCount(in: updatesOfA) <= 1)
-        #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfA) ?? .endTurn == .endTurn)
-    }
-
-    // MARK: - The unknown-id policy
-
-    /// An unknown `sessionId` answers `-32602` with the id in `data`,
-    /// and sends no `session/update`.
-    @Test
-    func anUnknownSessionIdAnswersInvalidParamsAndSendsNoUpdate() async throws {
-        let fixture = try await Self.makeFixture(script: [.endPass])
-        let bogus = SessionId(rawValue: syntheticSessionIdValue)
-
-        do {
-            _ = try await fixture.harness.connection.prompt(
-                Self.makePromptRequest(sessionId: bogus))
-            Issue.record("expected invalid params for the unknown id")
-        } catch let error as RequestError {
-            #expect(error.code == .invalidParams)
-            #expect(Self.dataField("sessionId", of: error) == bogus.rawValue)
-        }
-
-        #expect(promptUpdates(in: await fixture.collector.updates).isEmpty)
-        await fixture.close()
-    }
-
-    /// A known but closed session answers `-32602` with the resume
-    /// hint, because a closed session is resumable, not promptable.
-    @Test
-    func aClosedSessionIdAnswersInvalidParamsWithTheResumeHint() async throws {
-        let fixture = try await Self.makeFixture(script: [.endPass])
-        await fixture.harness.agent.markSessionClosed(fixture.sessionId)
-
-        do {
-            _ = try await fixture.harness.connection.prompt(
-                Self.makePromptRequest(sessionId: fixture.sessionId))
-            Issue.record("expected invalid params for the closed id")
-        } catch let error as RequestError {
-            #expect(error.code == .invalidParams)
-            #expect(Self.dataField("reason", of: error) == "closed; resume it first")
-        }
-
-        #expect(promptUpdates(in: await fixture.collector.updates).isEmpty)
-        await fixture.close()
-    }
-
-    // MARK: - The title and the record timing
-
-    /// The `index.md` of the session holds no title before the first
-    /// prompt, holds a one-line title after the first prompt, and keeps
-    /// that title at the second prompt.
-    @Test
-    func theFirstPromptWritesTheTitleRecordWithAOneLineTitle() async throws {
-        let fixture = try await Self.makeFixture(script: [.textDelta("done"), .endPass])
-        #expect(try await Self.sessionRecord(of: fixture).facts.title == nil)
-
-        _ = try await fixture.harness.connection.prompt(
-            Self.makePromptRequest(sessionId: fixture.sessionId))
-        let firstPrompt = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-
-        let record = try await Self.sessionRecord(of: fixture)
-        #expect(record.facts.title == Self.promptTitleLine)
-        #expect(record.workingDirectory.standardizedFileURL.path == fixture.cwd.standardizedFileURL.path)
-
-        let titles = firstPrompt.compactMap { notification -> PatchField<String>? in
-            if case .sessionInfoUpdate(let info) = notification.update { return info.title }
-            return nil
-        }
-        #expect(titles == [.value(Self.promptTitleLine)])
-
-        _ = try await fixture.harness.connection.prompt(
-            Self.makePromptRequest(sessionId: fixture.sessionId, text: "a second prompt"))
-        let secondPrompt = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: 2)
-        let afterSecond = try await Self.sessionRecord(of: fixture)
-        await fixture.close()
-
-        #expect(afterSecond.facts.title == Self.promptTitleLine)
-        #expect(secondPrompt.count { $0.update.kind == .sessionInfoUpdate } == 1)
-    }
+    #expect(afterSecond.facts.title == Self.promptTitleLine)
+    #expect(secondPrompt.count { $0.update.kind == .sessionInfoUpdate } == 1)
+  }
 }

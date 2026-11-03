@@ -17,133 +17,133 @@ import Testing
 /// No test of this suite uses the Keychain. The Keychain round-trip test is
 /// `KeychainSecretStoreTests` in the `IntegrationTests/` package.
 @Suite struct SecretStoreTests {
-    // MARK: - Constants
+  // MARK: - Constants
 
-    /// The reference name that each store of this suite knows.
-    private static let knownReference = "search-provider"
+  /// The reference name that each store of this suite knows.
+  private static let knownReference = "search-provider"
 
-    /// The reference name that no store of this suite knows.
-    private static let unknownReference = "no-such-reference"
+  /// The reference name that no store of this suite knows.
+  private static let unknownReference = "no-such-reference"
 
-    /// The value of ``knownReference``. It is a placeholder, not a key.
-    private static let knownValue = "placeholder-secret-value"
+  /// The value of ``knownReference``. It is a placeholder, not a key.
+  private static let knownValue = "placeholder-secret-value"
 
-    /// The dotfolder name of the compositions of this suite.
-    private static let dotfolderName = "secret-store-host"
+  /// The dotfolder name of the compositions of this suite.
+  private static let dotfolderName = "secret-store-host"
 
-    // MARK: - InMemorySecretStore
+  // MARK: - InMemorySecretStore
 
-    /// The in-memory store gives the value of a known name, and nil for an
-    /// unknown name.
-    @Test func theInMemoryStoreGivesTheValueOfAKnownNameAndNilForAnUnknownName() throws {
-        let store = InMemorySecretStore([Self.knownReference: Self.knownValue])
+  /// The in-memory store gives the value of a known name, and nil for an
+  /// unknown name.
+  @Test func theInMemoryStoreGivesTheValueOfAKnownNameAndNilForAnUnknownName() throws {
+    let store = InMemorySecretStore([Self.knownReference: Self.knownValue])
 
-        #expect(try store.value(forReference: Self.knownReference) == Self.knownValue)
-        #expect(try store.value(forReference: Self.unknownReference) == nil)
-    }
+    #expect(try store.value(forReference: Self.knownReference) == Self.knownValue)
+    #expect(try store.value(forReference: Self.unknownReference) == nil)
+  }
 
-    /// No text form of the in-memory store shows a value: not
-    /// `description`, not `debugDescription`, not the mirror that `dump`
-    /// reads.
-    @Test func theInMemoryStoreShowsNoValueInItsTextForms() {
-        let store = InMemorySecretStore([Self.knownReference: Self.knownValue])
-        let mirrorText = Mirror(reflecting: store).children
-            .map { String(reflecting: $0.value) }
-            .joined()
+  /// No text form of the in-memory store shows a value: not
+  /// `description`, not `debugDescription`, not the mirror that `dump`
+  /// reads.
+  @Test func theInMemoryStoreShowsNoValueInItsTextForms() {
+    let store = InMemorySecretStore([Self.knownReference: Self.knownValue])
+    let mirrorText = Mirror(reflecting: store).children
+      .map { String(reflecting: $0.value) }
+      .joined()
 
-        #expect(!store.description.contains(Self.knownValue))
-        #expect(!store.debugDescription.contains(Self.knownValue))
-        #expect(!String(describing: store).contains(Self.knownValue))
-        #expect(!String(reflecting: store).contains(Self.knownValue))
-        #expect(mirrorText.contains(Self.knownReference))
-        #expect(!mirrorText.contains(Self.knownValue))
-    }
+    #expect(!store.description.contains(Self.knownValue))
+    #expect(!store.debugDescription.contains(Self.knownValue))
+    #expect(!String(describing: store).contains(Self.knownValue))
+    #expect(!String(reflecting: store).contains(Self.knownValue))
+    #expect(mirrorText.contains(Self.knownReference))
+    #expect(!mirrorText.contains(Self.knownValue))
+  }
 
-    // MARK: - KeychainSecretStore
+  // MARK: - KeychainSecretStore
 
-    /// The Keychain store keeps the service and the Keychain that the host
-    /// gave.
-    @Test func theKeychainStoreKeepsItsServiceAndItsKeychain() {
-        let store = KeychainSecretStore(service: Self.dotfolderName, synchronizable: true)
+  /// The Keychain store keeps the service and the Keychain that the host
+  /// gave.
+  @Test func theKeychainStoreKeepsItsServiceAndItsKeychain() {
+    let store = KeychainSecretStore(service: Self.dotfolderName, synchronizable: true)
 
-        #expect(store.service == Self.dotfolderName)
-        #expect(store.synchronizable)
-    }
+    #expect(store.service == Self.dotfolderName)
+    #expect(store.synchronizable)
+  }
 
-    /// A store that names no Keychain reads the login Keychain, thus its
-    /// query names no Keychain file: a lookup reads the default search list.
-    @Test func theDefaultKeychainOfTheStoreIsTheLoginKeychain() throws {
-        let store = KeychainSecretStore(service: Self.dotfolderName, synchronizable: false)
+  /// A store that names no Keychain reads the login Keychain, thus its
+  /// query names no Keychain file: a lookup reads the default search list.
+  @Test func theDefaultKeychainOfTheStoreIsTheLoginKeychain() throws {
+    let store = KeychainSecretStore(service: Self.dotfolderName, synchronizable: false)
 
-        let query = try store.itemQuery(account: Self.knownReference)
+    let query = try store.itemQuery(account: Self.knownReference)
 
-        #expect(store.keychain == .login)
-        #expect(query[kSecUseKeychain] == nil)
-        #expect(query[kSecMatchSearchList] == nil)
-    }
+    #expect(store.keychain == .login)
+    #expect(query[kSecUseKeychain] == nil)
+    #expect(query[kSecMatchSearchList] == nil)
+  }
 
-    /// The query of a store over a Keychain file carries that Keychain: as
-    /// the Keychain that `SecItemAdd` adds to, and as the only Keychain of the
-    /// search list of a lookup or a delete. No Keychain file is made: opening
-    /// a `SecKeychain` for a path reads no file.
-    @Test func theQueryOfAFileKeychainStoreCarriesThatKeychain() throws {
-        let folder = FileManager.default.temporaryDirectory
-            .appendingPathComponent("secret-store-tests-\(UUID().uuidString)", isDirectory: true)
-        let given = KeychainSecretStore.Keychain.file(
-            folder.appendingPathComponent("given.keychain-db"))
-        let other = KeychainSecretStore.Keychain.file(
-            folder.appendingPathComponent("other.keychain-db"))
-        let store = KeychainSecretStore(
-            service: Self.dotfolderName, synchronizable: false, keychain: given)
+  /// The query of a store over a Keychain file carries that Keychain: as
+  /// the Keychain that `SecItemAdd` adds to, and as the only Keychain of the
+  /// search list of a lookup or a delete. No Keychain file is made: opening
+  /// a `SecKeychain` for a path reads no file.
+  @Test func theQueryOfAFileKeychainStoreCarriesThatKeychain() throws {
+    let folder = FileManager.default.temporaryDirectory
+      .appendingPathComponent("secret-store-tests-\(UUID().uuidString)", isDirectory: true)
+    let given = KeychainSecretStore.Keychain.file(
+      folder.appendingPathComponent("given.keychain-db"))
+    let other = KeychainSecretStore.Keychain.file(
+      folder.appendingPathComponent("other.keychain-db"))
+    let store = KeychainSecretStore(
+      service: Self.dotfolderName, synchronizable: false, keychain: given)
 
-        let query = try store.itemQuery(account: Self.knownReference)
-        let givenKeychain = try #require(try given.makeSecKeychain(forReference: Self.knownReference))
-        let otherKeychain = try #require(try other.makeSecKeychain(forReference: Self.knownReference))
-        let addTarget = try #require(query[kSecUseKeychain]) as AnyObject
-        let searchList = try #require(query[kSecMatchSearchList] as? [AnyObject])
+    let query = try store.itemQuery(account: Self.knownReference)
+    let givenKeychain = try #require(try given.makeSecKeychain(forReference: Self.knownReference))
+    let otherKeychain = try #require(try other.makeSecKeychain(forReference: Self.knownReference))
+    let addTarget = try #require(query[kSecUseKeychain]) as AnyObject
+    let searchList = try #require(query[kSecMatchSearchList] as? [AnyObject])
 
-        #expect(store.keychain == given)
-        #expect(CFEqual(addTarget, givenKeychain))
-        #expect(!CFEqual(addTarget, otherKeychain))
-        #expect(searchList.count == 1)
-        #expect(searchList.allSatisfy { CFEqual($0, givenKeychain) })
-    }
+    #expect(store.keychain == given)
+    #expect(CFEqual(addTarget, givenKeychain))
+    #expect(!CFEqual(addTarget, otherKeychain))
+    #expect(searchList.count == 1)
+    #expect(searchList.allSatisfy { CFEqual($0, givenKeychain) })
+  }
 
-    // MARK: - SecretStoreError
+  // MARK: - SecretStoreError
 
-    /// A store error names the reference and the status, and holds no
-    /// value: the error has no field for one.
-    @Test func aStoreErrorNamesTheReference() {
-        let failure = SecretStoreError.keychainFailure(
-            reference: Self.knownReference, status: errSecInteractionNotAllowed)
-        let undecodable = SecretStoreError.undecodableValue(reference: Self.knownReference)
+  /// A store error names the reference and the status, and holds no
+  /// value: the error has no field for one.
+  @Test func aStoreErrorNamesTheReference() {
+    let failure = SecretStoreError.keychainFailure(
+      reference: Self.knownReference, status: errSecInteractionNotAllowed)
+    let undecodable = SecretStoreError.undecodableValue(reference: Self.knownReference)
 
-        #expect(failure.description.contains(Self.knownReference))
-        #expect(failure.description.contains(String(errSecInteractionNotAllowed)))
-        #expect(undecodable.description.contains(Self.knownReference))
-    }
+    #expect(failure.description.contains(Self.knownReference))
+    #expect(failure.description.contains(String(errSecInteractionNotAllowed)))
+    #expect(undecodable.description.contains(Self.knownReference))
+  }
 
-    // MARK: - The composition
+  // MARK: - The composition
 
-    /// `ComposedAgent.compose(secretStore:)` gives the store of the host to
-    /// the agent.
-    @Test func theCompositionKeepsTheStoreOfTheHost() async throws {
-        let store = InMemorySecretStore([Self.knownReference: Self.knownValue])
+  /// `ComposedAgent.compose(secretStore:)` gives the store of the host to
+  /// the agent.
+  @Test func theCompositionKeepsTheStoreOfTheHost() async throws {
+    let store = InMemorySecretStore([Self.knownReference: Self.knownValue])
 
-        let composed = try await composeStubAgent(
-            name: Self.dotfolderName, label: "SecretStoreTests-given", secretStore: store)
+    let composed = try await composeStubAgent(
+      name: Self.dotfolderName, label: "SecretStoreTests-given", secretStore: store)
 
-        #expect(composed.agent.secretStore as? InMemorySecretStore == store)
-    }
+    #expect(composed.agent.secretStore as? InMemorySecretStore == store)
+  }
 
-    /// With no store, the composition gives the agent the login Keychain
-    /// under the service of the dotfolder name.
-    @Test func theCompositionDefaultsToTheLoginKeychainOfTheDotfolderName() async throws {
-        let composed = try await composeStubAgent(
-            name: Self.dotfolderName, label: "SecretStoreTests-default")
+  /// With no store, the composition gives the agent the login Keychain
+  /// under the service of the dotfolder name.
+  @Test func theCompositionDefaultsToTheLoginKeychainOfTheDotfolderName() async throws {
+    let composed = try await composeStubAgent(
+      name: Self.dotfolderName, label: "SecretStoreTests-default")
 
-        #expect(
-            composed.agent.secretStore as? KeychainSecretStore
-                == KeychainSecretStore(service: Self.dotfolderName, synchronizable: false))
-    }
+    #expect(
+      composed.agent.secretStore as? KeychainSecretStore
+        == KeychainSecretStore(service: Self.dotfolderName, synchronizable: false))
+  }
 }

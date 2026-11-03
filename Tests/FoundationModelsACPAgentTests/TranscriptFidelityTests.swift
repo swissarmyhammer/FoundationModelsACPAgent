@@ -28,226 +28,232 @@ import Testing
 /// The model is the scripted backend, so the suite loads no weights and
 /// touches no network.
 @Suite(.closesHarnesses) struct TranscriptFidelityTests {
-    /// The text the scripted model streams before it calls its tool. A
-    /// pass with text gives the `response` entry a non-empty segment.
-    private static let replyText = "the snippet ran"
+  /// The text the scripted model streams before it calls its tool. A
+  /// pass with text gives the `response` entry a non-empty segment.
+  private static let replyText = "the snippet ran"
 
-    /// The snippet the scripted `runCode` call carries. It computes in
-    /// the sandbox and reads nothing, so the proof stays fast.
-    private static let snippetCode = "return 1 + 1;"
+  /// The snippet the scripted `runCode` call carries. It computes in
+  /// the sandbox and reads nothing, so the proof stays fast.
+  private static let snippetCode = "return 1 + 1;"
 
-    /// The text of every driven prompt. Each prompt appends its own
-    /// ordinal, so the two prompts carry different text.
-    private static let promptText = "run the snippet, prompt "
+  /// The text of every driven prompt. Each prompt appends its own
+  /// ordinal, so the two prompts carry different text.
+  private static let promptText = "run the snippet, prompt "
 
-    /// The scripted id of the prompt's first tool call — the `runCode`
-    /// call. The scripted backend mints ids by ordinal.
-    private static let runCodeCallId = ScriptedSessionBackend.scriptedCallIdPrefix + "1"
+  /// The scripted id of the prompt's first tool call — the `runCode`
+  /// call. The scripted backend mints ids by ordinal.
+  private static let runCodeCallId = ScriptedSessionBackend.scriptedCallIdPrefix + "1"
 
-    /// The `prompt` kind string.
-    private static let promptKind = "prompt"
+  /// The `prompt` kind string.
+  private static let promptKind = "prompt"
 
-    /// The `response` kind string.
-    private static let responseKind = "response"
+  /// The `response` kind string.
+  private static let responseKind = "response"
 
-    /// The `instructions` kind string.
-    private static let instructionsKind = "instructions"
+  /// The `instructions` kind string.
+  private static let instructionsKind = "instructions"
 
-    // MARK: - One two-prompt run
+  // MARK: - One two-prompt run
 
-    /// What one two-prompt scripted run left behind.
-    private struct FidelityRun {
-        /// The wire notifications the client collected, in arrival
-        /// order.
-        let updates: [UpdateSessionNotification]
+  /// What one two-prompt scripted run left behind.
+  private struct FidelityRun {
+    /// The wire notifications the client collected, in arrival
+    /// order.
+    let updates: [UpdateSessionNotification]
 
-        /// The session's recorded events after the first prompt.
-        let eventsAfterFirstPrompt: [TranscriptEvent]
+    /// The session's recorded events after the first prompt.
+    let eventsAfterFirstPrompt: [TranscriptEvent]
 
-        /// The session's recorded events after the second prompt.
-        let eventsAfterSecondPrompt: [TranscriptEvent]
+    /// The session's recorded events after the second prompt.
+    let eventsAfterSecondPrompt: [TranscriptEvent]
 
-        /// The session's recorded lines, read from disk after the
-        /// second prompt.
-        let recordedLines: [RecordedTranscriptLine]
+    /// The session's recorded lines, read from disk after the
+    /// second prompt.
+    let recordedLines: [RecordedTranscriptLine]
+  }
+
+  /// Drives two scripted prompts over one session and reads the
+  /// recording after each of them.
+  ///
+  /// - Parameter label: The directory label of the calling proof.
+  /// - Returns: The run's wire notifications and recorded events.
+  /// - Throws: Whatever the wiring, a prompt, or the recording read
+  ///   throws.
+  private static func runTwoPrompts(label: String) async throws -> FidelityRun {
+    let script =
+      [ScriptedPassStep.textDelta(replyText)]
+      + (try ScriptedPromptFixture.makeToolPromptScript(code: snippetCode))
+    let fixture = try await ScriptedPromptFixture.make(script: script, label: label)
+    let root = try ResumeSessionFixture.projectRecordingRoot(of: fixture.cwd)
+
+    try await drivePrompt(
+      fixture, sessionId: fixture.sessionId, ordinal: 1, idleCount: 1, root: root)
+    let afterFirst = try ResumeSessionFixture.recordedEvents(
+      under: root, sessionId: fixture.sessionId)
+    try await drivePrompt(
+      fixture, sessionId: fixture.sessionId, ordinal: 2, idleCount: 2, root: root)
+    let afterSecond = try ResumeSessionFixture.recordedEvents(
+      under: root, sessionId: fixture.sessionId)
+    let updates = await fixture.collector.updates
+    await fixture.close()
+
+    return FidelityRun(
+      updates: updates,
+      eventsAfterFirstPrompt: afterFirst,
+      eventsAfterSecondPrompt: afterSecond,
+      recordedLines: try RecordedTranscriptFile.lines(
+        under: root, sessionId: fixture.sessionId))
+  }
+
+  /// Sends one prompt and waits until its response is recorded and
+  /// the session accepts the next prompt.
+  ///
+  /// - Parameters:
+  ///   - fixture: The wired fixture to drive.
+  ///   - sessionId: The session to prompt.
+  ///   - ordinal: The one-based number of the prompt in that session.
+  ///   - idleCount: The number of prompt ends the collector holds when
+  ///     this prompt is over. It counts every session on the wire, and
+  ///     `ordinal` counts one session only.
+  ///   - root: The recording root the session records under.
+  /// - Throws: Whatever the prompt or a wait throws.
+  private static func drivePrompt(
+    _ fixture: ScriptedPromptFixture,
+    sessionId: SessionId,
+    ordinal: Int,
+    idleCount: Int,
+    root: URL
+  ) async throws {
+    try await ScriptedPromptFixture.runPrompt(
+      AgentClientHarness.makePromptRequest(
+        sessionId: sessionId, text: promptText + String(ordinal)),
+      through: fixture.harness, count: idleCount)
+    try await ResumeSessionFixture.waitForRecordedResponses(
+      under: root, sessionId: sessionId, count: ordinal, agent: fixture.harness.agent)
+  }
+
+  // MARK: - The proofs
+
+  @Test("two prompts record no divergence while the tool surface is unchanged")
+  func twoPromptsRecordNoDivergence() async throws {
+    let run = try await Self.runTwoPrompts(label: "TranscriptFidelityTests-divergence")
+
+    #expect(run.eventsAfterSecondPrompt.allSatisfy { $0.kind != .divergence })
+    // The recording is not empty, so the emptiness of the divergence
+    // set is a fact about a real recording.
+    #expect(run.eventsAfterSecondPrompt.contains { $0.kind == .response })
+  }
+
+  @Test("one prompt records its prompt text, its toolCalls with the arguments, and its response")
+  func onePromptIsRecordedWhole() async throws {
+    let run = try await Self.runTwoPrompts(label: "TranscriptFidelityTests-whole")
+
+    let prompts = RecordedTranscriptFile.lines(ofKind: Self.promptKind, in: run.recordedLines)
+    #expect(prompts.count == 2)
+    #expect(prompts.first?.text == Self.promptText + "1")
+
+    let calls = RecordedTranscriptFile.lines(
+      ofKind: RecordedTranscriptFile.toolCallsKind, in: run.recordedLines
+    )
+    .flatMap { $0.entry?.toolCalls ?? [] }
+    let runCodeCall = try #require(
+      calls.first { $0.toolName == ScriptedPromptFixture.runCodeToolName })
+    #expect(runCodeCall.argumentsJSON.contains(Self.snippetCode))
+
+    let responses = RecordedTranscriptFile.lines(
+      ofKind: Self.responseKind, in: run.recordedLines)
+    #expect(responses.count == 2)
+    let response = try #require(responses.first)
+    #expect(response.entry?.segments?.isEmpty == false)
+    #expect(response.text == Self.replyText)
+  }
+
+  @Test("the runCode call reaches the wire as a tool call update")
+  func theRunCodeCallReachesTheWire() async throws {
+    let run = try await Self.runTwoPrompts(label: "TranscriptFidelityTests-wire")
+
+    let callUpdates = run.updates.compactMap { notification -> ToolCallUpdate? in
+      guard case .toolCallUpdate(let update) = notification.update,
+        update.toolCallId.rawValue == Self.runCodeCallId
+      else { return nil }
+      return update
     }
+    // The run updates of the call go on the same id (task ^e1yq4gh), and
+    // they can come before the `toolCall` event. The update of the
+    // `toolCall` event is the one that carries the arguments.
+    let sdkCall = try #require(callUpdates.first { $0.rawInput != .unchanged })
+    #expect(String(describing: sdkCall.rawInput).contains(Self.snippetCode))
+    // The first update of the call gives the call its one title: the `op`
+    // of the run, or the tool name when the `toolCall` event comes first.
+    // No later update sends a title over it (task ^w7hzpmq).
+    let firstUpdate = try #require(callUpdates.first)
+    #expect(
+      callUpdates.compactMap { patchValue($0.title) } == [
+        try #require(patchValue(firstUpdate.title))
+      ])
+  }
 
-    /// Drives two scripted prompts over one session and reads the
-    /// recording after each of them.
-    ///
-    /// - Parameter label: The directory label of the calling proof.
-    /// - Returns: The run's wire notifications and recorded events.
-    /// - Throws: Whatever the wiring, a prompt, or the recording read
-    ///   throws.
-    private static func runTwoPrompts(label: String) async throws -> FidelityRun {
-        let script =
-            [ScriptedPassStep.textDelta(replyText)]
-            + (try ScriptedPromptFixture.makeToolPromptScript(code: snippetCode))
-        let fixture = try await ScriptedPromptFixture.make(script: script, label: label)
-        let root = try ResumeSessionFixture.projectRecordingRoot(of: fixture.cwd)
+  @Test("the recorded event count never falls between two reads")
+  func theRecordedCountNeverFalls() async throws {
+    let run = try await Self.runTwoPrompts(label: "TranscriptFidelityTests-count")
 
-        try await drivePrompt(fixture, sessionId: fixture.sessionId, ordinal: 1, idleCount: 1, root: root)
-        let afterFirst = try ResumeSessionFixture.recordedEvents(
-            under: root, sessionId: fixture.sessionId)
-        try await drivePrompt(fixture, sessionId: fixture.sessionId, ordinal: 2, idleCount: 2, root: root)
-        let afterSecond = try ResumeSessionFixture.recordedEvents(
-            under: root, sessionId: fixture.sessionId)
-        let updates = await fixture.collector.updates
-        await fixture.close()
+    #expect(run.eventsAfterSecondPrompt.count > run.eventsAfterFirstPrompt.count)
+    #expect(
+      run.eventsAfterSecondPrompt.prefix(run.eventsAfterFirstPrompt.count).map(\.seq)
+        == run.eventsAfterFirstPrompt.map(\.seq))
+  }
 
-        return FidelityRun(
-            updates: updates,
-            eventsAfterFirstPrompt: afterFirst,
-            eventsAfterSecondPrompt: afterSecond,
-            recordedLines: try RecordedTranscriptFile.lines(
-                under: root, sessionId: fixture.sessionId))
-    }
+  /// The byte-identity proof of the `instructions` entry.
+  ///
+  /// The entry is recorded once per session, so two READINGS of it in
+  /// one session leave one recorded line. Two sessions over the same
+  /// tool surface leave two lines, and each line carries the
+  /// `parametersSchemaJSON` of every declared tool as a string. Equal
+  /// strings are equal bytes, which is what the schema encoder must
+  /// give for one unchanged surface.
+  @Test("two sessions over one tool surface record byte-identical tool definitions")
+  func theInstructionsToolDefinitionsAreByteIdentical() async throws {
+    let script =
+      [ScriptedPassStep.textDelta(Self.replyText)]
+      + (try ScriptedPromptFixture.makeToolPromptScript(code: Self.snippetCode))
+    let fixture = try await ScriptedPromptFixture.make(
+      script: script, label: "TranscriptFidelityTests-instructions")
+    let root = try ResumeSessionFixture.projectRecordingRoot(of: fixture.cwd)
+    try await Self.drivePrompt(
+      fixture, sessionId: fixture.sessionId, ordinal: 1, idleCount: 1, root: root)
+    let second = try await fixture.harness.connection.newSession(
+      NewSessionRequest(cwd: AbsolutePath(rawValue: fixture.cwd.path)))
+    try await Self.drivePrompt(
+      fixture, sessionId: second.sessionId, ordinal: 1, idleCount: 2, root: root)
+    await fixture.close()
 
-    /// Sends one prompt and waits until its response is recorded and
-    /// the session accepts the next prompt.
-    ///
-    /// - Parameters:
-    ///   - fixture: The wired fixture to drive.
-    ///   - sessionId: The session to prompt.
-    ///   - ordinal: The one-based number of the prompt in that session.
-    ///   - idleCount: The number of prompt ends the collector holds when
-    ///     this prompt is over. It counts every session on the wire, and
-    ///     `ordinal` counts one session only.
-    ///   - root: The recording root the session records under.
-    /// - Throws: Whatever the prompt or a wait throws.
-    private static func drivePrompt(
-        _ fixture: ScriptedPromptFixture,
-        sessionId: SessionId,
-        ordinal: Int,
-        idleCount: Int,
-        root: URL
-    ) async throws {
-        try await ScriptedPromptFixture.runPrompt(
-            AgentClientHarness.makePromptRequest(sessionId: sessionId, text: promptText + String(ordinal)),
-            through: fixture.harness, count: idleCount)
-        try await ResumeSessionFixture.waitForRecordedResponses(
-            under: root, sessionId: sessionId, count: ordinal, agent: fixture.harness.agent)
-    }
+    let firstDefinitions = try Self.toolDefinitions(
+      under: root, sessionId: fixture.sessionId)
+    let secondDefinitions = try Self.toolDefinitions(under: root, sessionId: second.sessionId)
 
-    // MARK: - The proofs
+    #expect(!firstDefinitions.isEmpty)
+    // A schema that recorded as the empty-string sentinel would make
+    // the comparison below true and prove nothing.
+    #expect(firstDefinitions.allSatisfy { !$0.parametersSchemaJSON.isEmpty })
+    #expect(firstDefinitions.map(\.name) == secondDefinitions.map(\.name))
+    #expect(
+      firstDefinitions.map(\.parametersSchemaJSON)
+        == secondDefinitions.map(\.parametersSchemaJSON))
+  }
 
-    @Test("two prompts record no divergence while the tool surface is unchanged")
-    func twoPromptsRecordNoDivergence() async throws {
-        let run = try await Self.runTwoPrompts(label: "TranscriptFidelityTests-divergence")
-
-        #expect(run.eventsAfterSecondPrompt.allSatisfy { $0.kind != .divergence })
-        // The recording is not empty, so the emptiness of the divergence
-        // set is a fact about a real recording.
-        #expect(run.eventsAfterSecondPrompt.contains { $0.kind == .response })
-    }
-
-    @Test("one prompt records its prompt text, its toolCalls with the arguments, and its response")
-    func onePromptIsRecordedWhole() async throws {
-        let run = try await Self.runTwoPrompts(label: "TranscriptFidelityTests-whole")
-
-        let prompts = RecordedTranscriptFile.lines(ofKind: Self.promptKind, in: run.recordedLines)
-        #expect(prompts.count == 2)
-        #expect(prompts.first?.text == Self.promptText + "1")
-
-        let calls = RecordedTranscriptFile.lines(
-            ofKind: RecordedTranscriptFile.toolCallsKind, in: run.recordedLines
-        )
-        .flatMap { $0.entry?.toolCalls ?? [] }
-        let runCodeCall = try #require(
-            calls.first { $0.toolName == ScriptedPromptFixture.runCodeToolName })
-        #expect(runCodeCall.argumentsJSON.contains(Self.snippetCode))
-
-        let responses = RecordedTranscriptFile.lines(
-            ofKind: Self.responseKind, in: run.recordedLines)
-        #expect(responses.count == 2)
-        let response = try #require(responses.first)
-        #expect(response.entry?.segments?.isEmpty == false)
-        #expect(response.text == Self.replyText)
-    }
-
-    @Test("the runCode call reaches the wire as a tool call update")
-    func theRunCodeCallReachesTheWire() async throws {
-        let run = try await Self.runTwoPrompts(label: "TranscriptFidelityTests-wire")
-
-        let callUpdates = run.updates.compactMap { notification -> ToolCallUpdate? in
-            guard case .toolCallUpdate(let update) = notification.update,
-                update.toolCallId.rawValue == Self.runCodeCallId
-            else { return nil }
-            return update
-        }
-        // The run updates of the call go on the same id (task ^e1yq4gh), and
-        // they can come before the `toolCall` event. The update of the
-        // `toolCall` event is the one that carries the arguments.
-        let sdkCall = try #require(callUpdates.first { $0.rawInput != .unchanged })
-        #expect(String(describing: sdkCall.rawInput).contains(Self.snippetCode))
-        // The first update of the call gives the call its one title: the `op`
-        // of the run, or the tool name when the `toolCall` event comes first.
-        // No later update sends a title over it (task ^w7hzpmq).
-        let firstUpdate = try #require(callUpdates.first)
-        #expect(callUpdates.compactMap { patchValue($0.title) } == [try #require(patchValue(firstUpdate.title))])
-    }
-
-    @Test("the recorded event count never falls between two reads")
-    func theRecordedCountNeverFalls() async throws {
-        let run = try await Self.runTwoPrompts(label: "TranscriptFidelityTests-count")
-
-        #expect(run.eventsAfterSecondPrompt.count > run.eventsAfterFirstPrompt.count)
-        #expect(
-            run.eventsAfterSecondPrompt.prefix(run.eventsAfterFirstPrompt.count).map(\.seq)
-                == run.eventsAfterFirstPrompt.map(\.seq))
-    }
-
-    /// The byte-identity proof of the `instructions` entry.
-    ///
-    /// The entry is recorded once per session, so two READINGS of it in
-    /// one session leave one recorded line. Two sessions over the same
-    /// tool surface leave two lines, and each line carries the
-    /// `parametersSchemaJSON` of every declared tool as a string. Equal
-    /// strings are equal bytes, which is what the schema encoder must
-    /// give for one unchanged surface.
-    @Test("two sessions over one tool surface record byte-identical tool definitions")
-    func theInstructionsToolDefinitionsAreByteIdentical() async throws {
-        let script =
-            [ScriptedPassStep.textDelta(Self.replyText)]
-            + (try ScriptedPromptFixture.makeToolPromptScript(code: Self.snippetCode))
-        let fixture = try await ScriptedPromptFixture.make(
-            script: script, label: "TranscriptFidelityTests-instructions")
-        let root = try ResumeSessionFixture.projectRecordingRoot(of: fixture.cwd)
-        try await Self.drivePrompt(
-            fixture, sessionId: fixture.sessionId, ordinal: 1, idleCount: 1, root: root)
-        let second = try await fixture.harness.connection.newSession(
-            NewSessionRequest(cwd: AbsolutePath(rawValue: fixture.cwd.path)))
-        try await Self.drivePrompt(
-            fixture, sessionId: second.sessionId, ordinal: 1, idleCount: 2, root: root)
-        await fixture.close()
-
-        let firstDefinitions = try Self.toolDefinitions(
-            under: root, sessionId: fixture.sessionId)
-        let secondDefinitions = try Self.toolDefinitions(under: root, sessionId: second.sessionId)
-
-        #expect(!firstDefinitions.isEmpty)
-        // A schema that recorded as the empty-string sentinel would make
-        // the comparison below true and prove nothing.
-        #expect(firstDefinitions.allSatisfy { !$0.parametersSchemaJSON.isEmpty })
-        #expect(firstDefinitions.map(\.name) == secondDefinitions.map(\.name))
-        #expect(
-            firstDefinitions.map(\.parametersSchemaJSON)
-                == secondDefinitions.map(\.parametersSchemaJSON))
-    }
-
-    /// The tool definitions of one session's recorded `instructions`
-    /// entry.
-    ///
-    /// - Parameters:
-    ///   - root: The recording root to read.
-    ///   - sessionId: The session whose entry to read.
-    /// - Returns: The declared definitions, in recorded order.
-    /// - Throws: The read or the decode error.
-    private static func toolDefinitions(
-        under root: URL, sessionId: SessionId
-    ) throws -> [RecordedTranscriptLine.ToolDefinition] {
-        let lines = try RecordedTranscriptFile.lines(under: root, sessionId: sessionId)
-        return RecordedTranscriptFile.lines(ofKind: Self.instructionsKind, in: lines)
-            .flatMap { $0.entry?.toolDefinitions ?? [] }
-    }
+  /// The tool definitions of one session's recorded `instructions`
+  /// entry.
+  ///
+  /// - Parameters:
+  ///   - root: The recording root to read.
+  ///   - sessionId: The session whose entry to read.
+  /// - Returns: The declared definitions, in recorded order.
+  /// - Throws: The read or the decode error.
+  private static func toolDefinitions(
+    under root: URL, sessionId: SessionId
+  ) throws -> [RecordedTranscriptLine.ToolDefinition] {
+    let lines = try RecordedTranscriptFile.lines(under: root, sessionId: sessionId)
+    return RecordedTranscriptFile.lines(ofKind: Self.instructionsKind, in: lines)
+      .flatMap { $0.entry?.toolDefinitions ?? [] }
+  }
 }

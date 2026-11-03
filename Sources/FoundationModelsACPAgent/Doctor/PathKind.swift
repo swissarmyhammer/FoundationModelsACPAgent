@@ -10,25 +10,25 @@ import Foundation
 /// way. The probe follows a symbolic link, so a link to a directory is a
 /// directory.
 enum PathKind: Equatable {
-    /// Nothing stands at the path.
-    case missing
+  /// Nothing stands at the path.
+  case missing
 
-    /// A directory stands at the path.
-    case directory
+  /// A directory stands at the path.
+  case directory
 
-    /// Something that is not a directory, for example a plain file, stands
-    /// at the path.
-    case notADirectory
+  /// Something that is not a directory, for example a plain file, stands
+  /// at the path.
+  case notADirectory
 
-    /// What stands at `url` on disk.
-    ///
-    /// - Parameter url: The path to test.
-    /// - Returns: The kind of the path.
-    static func of(_ url: URL) -> PathKind {
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
-            return .missing
-        }
-        return isDirectory.boolValue ? .directory : .notADirectory
+  /// What stands at `url` on disk.
+  ///
+  /// - Parameter url: The path to test.
+  /// - Returns: The kind of the path.
+  static func of(_ url: URL) -> PathKind {
+    var isDirectory: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
+      return .missing
     }
+    return isDirectory.boolValue ? .directory : .notADirectory
+  }
 }

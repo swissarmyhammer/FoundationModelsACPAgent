@@ -32,59 +32,61 @@ import Tracing
 /// tests call ``makeWriter(telemetryFile:)`` and
 /// ``makeLogHandler(label:writer:)``, which bootstrap nothing.
 enum TelemetryBootstrap {
-    /// The lowest level the stderr handler writes.
-    ///
-    /// stderr of the CLI is for warnings and errors. The family libraries
-    /// log each span start at `info`, and at the default level of
-    /// `StreamLogHandler` those records filled stderr on every run.
-    static let standardErrorLogLevel: Logger.Level = .warning
+  /// The lowest level the stderr handler writes.
+  ///
+  /// stderr of the CLI is for warnings and errors. The family libraries
+  /// log each span start at `info`, and at the default level of
+  /// `StreamLogHandler` those records filled stderr on every run.
+  static let standardErrorLogLevel: Logger.Level = .warning
 
-    /// Bootstraps logging, and with a telemetry file tracing and metrics too.
-    /// Call it one time, before the process writes a log record.
-    ///
-    /// - Parameter telemetryFile: The path of the telemetry file, or `nil`
-    ///   for stderr only.
-    /// - Throws: `ValidationError` when the telemetry file cannot be opened.
-    ///   Nothing is bootstrapped then, and the process exits with a usage
-    ///   error.
-    static func bootstrap(telemetryFile: String?) throws {
-        let writer = try makeWriter(telemetryFile: telemetryFile)
-        LoggingSystem.bootstrap { label in makeLogHandler(label: label, writer: writer) }
-        guard let writer else { return }
-        InstrumentationSystem.bootstrap(TelemetryFileTracer(writer: writer))
-        MetricsSystem.bootstrap(TelemetryFileMetricsFactory(writer: writer))
-    }
+  /// Bootstraps logging, and with a telemetry file tracing and metrics too.
+  /// Call it one time, before the process writes a log record.
+  ///
+  /// - Parameter telemetryFile: The path of the telemetry file, or `nil`
+  ///   for stderr only.
+  /// - Throws: `ValidationError` when the telemetry file cannot be opened.
+  ///   Nothing is bootstrapped then, and the process exits with a usage
+  ///   error.
+  static func bootstrap(telemetryFile: String?) throws {
+    let writer = try makeWriter(telemetryFile: telemetryFile)
+    LoggingSystem.bootstrap { label in makeLogHandler(label: label, writer: writer) }
+    guard let writer else { return }
+    InstrumentationSystem.bootstrap(TelemetryFileTracer(writer: writer))
+    MetricsSystem.bootstrap(TelemetryFileMetricsFactory(writer: writer))
+  }
 
-    /// Opens the telemetry file.
-    ///
-    /// - Parameter telemetryFile: The path of the telemetry file, or `nil`.
-    /// - Returns: The writer of the file, or `nil` when there is no file.
-    /// - Throws: `ValidationError` with the path and the system reason when
-    ///   the file cannot be opened. A path that cannot work is a usage
-    ///   error, in the same way as a bad option value.
-    static func makeWriter(telemetryFile: String?) throws -> TelemetryFileWriter? {
-        guard let telemetryFile else { return nil }
-        do {
-            return try TelemetryFileWriter(path: telemetryFile)
-        } catch {
-            throw ValidationError("\(error)")
-        }
+  /// Opens the telemetry file.
+  ///
+  /// - Parameter telemetryFile: The path of the telemetry file, or `nil`.
+  /// - Returns: The writer of the file, or `nil` when there is no file.
+  /// - Throws: `ValidationError` with the path and the system reason when
+  ///   the file cannot be opened. A path that cannot work is a usage
+  ///   error, in the same way as a bad option value.
+  static func makeWriter(telemetryFile: String?) throws -> TelemetryFileWriter? {
+    guard let telemetryFile else { return nil }
+    do {
+      return try TelemetryFileWriter(path: telemetryFile)
+    } catch {
+      throw ValidationError("\(error)")
     }
+  }
 
-    /// Makes the log handler of one logger.
-    ///
-    /// - Parameters:
-    ///   - label: The label of the logger.
-    ///   - writer: The writer of the telemetry file, or `nil`.
-    /// - Returns: The stderr handler at ``standardErrorLogLevel``. With a
-    ///   writer, a `MultiplexLogHandler` of that stderr handler and a
-    ///   ``TelemetryFileLogHandler``: the multiplex sends each record to each
-    ///   handler whose own level admits it, so the file gets `debug` and up
-    ///   and stderr still gets `warning` and up.
-    static func makeLogHandler(label: String, writer: TelemetryFileWriter?) -> any LogHandler {
-        var standardError = StreamLogHandler.standardError(label: label)
-        standardError.logLevel = standardErrorLogLevel
-        guard let writer else { return standardError }
-        return MultiplexLogHandler([standardError, TelemetryFileLogHandler(label: label, writer: writer)])
-    }
+  /// Makes the log handler of one logger.
+  ///
+  /// - Parameters:
+  ///   - label: The label of the logger.
+  ///   - writer: The writer of the telemetry file, or `nil`.
+  /// - Returns: The stderr handler at ``standardErrorLogLevel``. With a
+  ///   writer, a `MultiplexLogHandler` of that stderr handler and a
+  ///   ``TelemetryFileLogHandler``: the multiplex sends each record to each
+  ///   handler whose own level admits it, so the file gets `debug` and up
+  ///   and stderr still gets `warning` and up.
+  static func makeLogHandler(label: String, writer: TelemetryFileWriter?) -> any LogHandler {
+    var standardError = StreamLogHandler.standardError(label: label)
+    standardError.logLevel = standardErrorLogLevel
+    guard let writer else { return standardError }
+    return MultiplexLogHandler([
+      standardError, TelemetryFileLogHandler(label: label, writer: writer),
+    ])
+  }
 }

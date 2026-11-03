@@ -1,10 +1,10 @@
+import Foundation
 import FoundationModels
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsAgents
 import FoundationModelsExtras
 import FoundationModelsRouter
-import Foundation
 import InMemoryTracing
 import TelemetryTestSupport
 import Testing
@@ -26,589 +26,605 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
 /// project layer of a temporary working directory. No test reads a
 /// marketplace agent.
 @Suite(.closesHarnesses) struct AgentsToolTests {
-    // MARK: - Constants
+  // MARK: - Constants
 
-    /// The name of the `agents` tool.
-    static let agentsToolName = "agents"
+  /// The name of the `agents` tool.
+  static let agentsToolName = "agents"
 
-    /// The name of the `skills` tool.
-    static let skillsToolName = "skills"
+  /// The name of the `skills` tool.
+  static let skillsToolName = "skills"
 
-    /// The name of the Multitool `searchTools` session tool.
-    static let searchToolsName = "searchTools"
+  /// The name of the Multitool `searchTools` session tool.
+  static let searchToolsName = "searchTools"
 
-    /// The name of the Multitool `runCode` session tool.
-    static let runCodeName = "runCode"
+  /// The name of the Multitool `runCode` session tool.
+  static let runCodeName = "runCode"
 
-    /// The folder of a layer root that holds the agent folders.
-    static let agentsFolderName = "agents"
+  /// The folder of a layer root that holds the agent folders.
+  static let agentsFolderName = "agents"
 
-    /// The document of an agent folder.
-    static let agentDocumentName = "AGENT.md"
+  /// The document of an agent folder.
+  static let agentDocumentName = "AGENT.md"
 
+  /// The agent whose run ends at once.
+  static let quickAgent = "quick"
 
-    /// The agent whose run ends at once.
-    static let quickAgent = "quick"
+  /// The agent whose run waits for the test.
+  static let slowAgent = "slow"
 
-    /// The agent whose run waits for the test.
-    static let slowAgent = "slow"
+  /// The prompt of a quick run: the marker of its scripted branch.
+  static let quickRunPrompt = "QUICK-RUN-MARKER"
 
-    /// The prompt of a quick run: the marker of its scripted branch.
-    static let quickRunPrompt = "QUICK-RUN-MARKER"
+  /// The prompt of a slow run: the marker of its scripted branch.
+  static let slowRunPrompt = "SLOW-RUN-MARKER"
 
-    /// The prompt of a slow run: the marker of its scripted branch.
-    static let slowRunPrompt = "SLOW-RUN-MARKER"
+  /// The final text of a quick run.
+  static let quickFinalText = "QUICK-FINAL-TEXT"
 
-    /// The final text of a quick run.
-    static let quickFinalText = "QUICK-FINAL-TEXT"
+  /// The final text of a slow run.
+  static let slowFinalText = "SLOW-FINAL-TEXT"
 
-    /// The final text of a slow run.
-    static let slowFinalText = "SLOW-FINAL-TEXT"
+  /// The prompt of the root session that starts the quick run.
+  static let rootQuickPrompt = "ROOT-QUICK-MARKER"
 
-    /// The prompt of the root session that starts the quick run.
-    static let rootQuickPrompt = "ROOT-QUICK-MARKER"
+  /// The prompt of the root session that starts the slow run.
+  static let rootSlowPrompt = "ROOT-SLOW-MARKER"
 
-    /// The prompt of the root session that starts the slow run.
-    static let rootSlowPrompt = "ROOT-SLOW-MARKER"
+  /// A settle period that is much shorter than the default, so that a test
+  /// can see that the root session uses the value of the context.
+  static let shortSettlePeriod: TimeInterval = 0.5
 
-    /// A settle period that is much shorter than the default, so that a test
-    /// can see that the root session uses the value of the context.
-    static let shortSettlePeriod: TimeInterval = 0.5
+  /// The text that the pending envelope of the Router holds.
+  static let pendingMarker = "pending"
 
-    /// The text that the pending envelope of the Router holds.
-    static let pendingMarker = "pending"
+  // MARK: - Fixtures
 
-    // MARK: - Fixtures
+  /// Writes the agent folder `<cwd>/.agents/agents/<name>/AGENT.md`.
+  ///
+  /// - Parameters:
+  ///   - name: The id of the agent, which is also the folder name.
+  ///   - cwd: The session working directory.
+  ///   - tools: The value of the `tools` key of the agent, or `nil` for an agent with no such key.
+  ///     A run gets the `agents` tool only with an explicit grant.
+  /// - Throws: The directory-creation or write error.
+  static func writeAgent(named name: String, in cwd: URL, tools: String? = nil) throws {
+    let folder =
+      cwd
+      .appendingPathComponent(".\(SurfaceCatalog.agentsDotfolderName)", isDirectory: true)
+      .appendingPathComponent(agentsFolderName, isDirectory: true)
+      .appendingPathComponent(name, isDirectory: true)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let toolsLine = tools.map { "tools: \($0)\n" } ?? ""
+    let document =
+      "---\nname: \(name)\ndescription: The \(name) test agent.\n\(toolsLine)---\n\nDo the task.\n"
+    try document.write(
+      to: folder.appendingPathComponent(agentDocumentName, isDirectory: false),
+      atomically: true, encoding: .utf8)
+  }
 
-    /// Writes the agent folder `<cwd>/.agents/agents/<name>/AGENT.md`.
-    ///
-    /// - Parameters:
-    ///   - name: The id of the agent, which is also the folder name.
-    ///   - cwd: The session working directory.
-    ///   - tools: The value of the `tools` key of the agent, or `nil` for an agent with no such key.
-    ///     A run gets the `agents` tool only with an explicit grant.
-    /// - Throws: The directory-creation or write error.
-    static func writeAgent(named name: String, in cwd: URL, tools: String? = nil) throws {
-        let folder = cwd
-            .appendingPathComponent(".\(SurfaceCatalog.agentsDotfolderName)", isDirectory: true)
-            .appendingPathComponent(agentsFolderName, isDirectory: true)
-            .appendingPathComponent(name, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let toolsLine = tools.map { "tools: \($0)\n" } ?? ""
-        let document = "---\nname: \(name)\ndescription: The \(name) test agent.\n\(toolsLine)---\n\nDo the task.\n"
-        try document.write(
-            to: folder.appendingPathComponent(agentDocumentName, isDirectory: false),
-            atomically: true, encoding: .utf8)
+  /// Makes a catalog context over a fresh working directory that holds
+  /// the quick and the slow agent folders. The configuration is
+  /// ``AgentConfiguration/withoutMarketplaces``, thus the skills source
+  /// and the agent registry need no network.
+  ///
+  /// - Parameters:
+  ///   - label: The directory label of the calling test.
+  ///   - script: The steps of each scripted pass.
+  ///   - inlineSettleGrace: The settle period of the context.
+  ///   - configure: The mutation that shapes the configuration.
+  /// - Returns: The context.
+  /// - Throws: Whatever the fixture writes or the profile resolve throws.
+  static func makeContext(
+    label: String,
+    script: [ScriptedPassStep] = [.endPass],
+    inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
+    runClock: (any RunClock)? = nil,
+    configure: (inout AgentConfiguration) -> Void = { _ in }
+  ) async throws -> CatalogContext {
+    let cwd = makeResolvedDirectory(label: "AgentsToolTests-\(label)")
+    try writeAgent(named: quickAgent, in: cwd)
+    try writeAgent(named: slowAgent, in: cwd)
+    var configuration = AgentConfiguration.withoutMarketplaces
+    configuration.tools.codeContext = .disabled
+    configure(&configuration)
+    let cacheDirectory = makeResolvedDirectory(label: "AgentsToolTests-\(label)-cache")
+    let loader = makeScriptedModelLoader(script: script)
+    let profile =
+      if let runClock {
+        try await makeStubProfile(
+          cacheDirectory: cacheDirectory, loader: loader, runClock: runClock)
+      } else {
+        try await makeStubProfile(cacheDirectory: cacheDirectory, loader: loader)
+      }
+    return CatalogContext(
+      workingDirectory: cwd,
+      configuration: configuration,
+      profile: profile,
+      settingsFolders: try SettingsFoldersFixture.make(label: "AgentsToolTests"),
+      environment: [:],
+      inlineSettleGrace: inlineSettleGrace)
+  }
+
+  /// The script of the `start agent` proofs: each run plays the branch of
+  /// its prompt, and the root session starts the run that its prompt
+  /// names.
+  ///
+  /// - Parameter hold: The hold that the slow run waits on.
+  /// - Returns: The script.
+  static func startAgentScript(hold: ScriptedHold) -> [ScriptedPassStep] {
+    [
+      .onPrompt(containing: quickRunPrompt, play: [.textDelta(quickFinalText), .endPass]),
+      .onPrompt(
+        containing: slowRunPrompt,
+        play: [.holdUntilReleased(hold), .textDelta(slowFinalText), .endPass]),
+      .onPrompt(
+        containing: rootQuickPrompt,
+        play: [startAgentCall(agent: quickAgent, prompt: quickRunPrompt), .endPass]),
+      .onPrompt(
+        containing: rootSlowPrompt,
+        play: [startAgentCall(agent: slowAgent, prompt: slowRunPrompt), .endPass]),
+      .endPass,
+    ]
+  }
+
+  /// The scripted `start agent` call of the `agents` tool.
+  ///
+  /// - Parameters:
+  ///   - agent: The id of the agent to start.
+  ///   - prompt: The prompt of the run.
+  /// - Returns: The tool-call step.
+  static func startAgentCall(agent: String, prompt: String) -> ScriptedPassStep {
+    .toolCall(
+      name: agentsToolName,
+      argumentsJSON: #"{"op":"start agent","name":"\#(agent)","prompt":"\#(prompt)"}"#)
+  }
+
+  /// Makes the root session over a surface, with the settle period of the
+  /// surface.
+  ///
+  /// - Parameters:
+  ///   - surface: The mounted surface.
+  ///   - context: The context of the surface.
+  /// - Returns: The root session.
+  static func makeRootSession(surface: SessionSurface, context: CatalogContext) -> any RoutedSession
+  {
+    context.profile.standard.makeBudgetedSession(
+      instructions: "",
+      workingDirectory: context.workingDirectory,
+      recordingRoot: makeResolvedDirectory(label: "AgentsToolTests-recordings"),
+      tools: surface.tools,
+      compaction: AgentConfiguration().compaction,
+      repetition: AgentConfiguration().repetition,
+      inlineSettleGrace: surface.inlineSettleGrace)
+  }
+
+  /// The text of each output of the `agents` tool in a transcript, in
+  /// order.
+  ///
+  /// - Parameter transcript: The transcript of the root session.
+  /// - Returns: The output texts.
+  static func agentsToolOutputs(in transcript: Transcript) -> [String] {
+    transcript.compactMap { entry -> String? in
+      guard case .toolOutput(let output) = entry, output.toolName == agentsToolName else {
+        return nil
+      }
+      return output.segments.map(segmentText).joined()
+    }
+  }
+
+  /// The text of each prompt entry of a transcript, in order.
+  ///
+  /// - Parameter transcript: The transcript to read.
+  /// - Returns: The prompt texts.
+  static func promptTexts(in transcript: Transcript) -> [String] {
+    transcript.compactMap { entry -> String? in
+      guard case .prompt(let prompt) = entry else { return nil }
+      return prompt.segments.map(segmentText).joined()
+    }
+  }
+
+  /// The text of one transcript segment: the text of a text segment, or
+  /// the JSON of a structured segment, which is the form of a tool output
+  /// that is a `String`. Each other segment gives the empty string.
+  ///
+  /// - Parameter segment: The segment.
+  /// - Returns: Its text.
+  static func segmentText(_ segment: Transcript.Segment) -> String {
+    if case .text(let text) = segment {
+      return text.content
+    }
+    if case .structure(let structure) = segment {
+      return structure.content.jsonString
+    }
+    return ""
+  }
+
+  // MARK: - The mount
+
+  /// A default context mounts the `agents` tool as a top-level tool after
+  /// the `skills` tool, and the Multitool surface has no agents verb.
+  @Test func aDefaultContextMountsTheAgentsToolBesideTheSkillsTool() async throws {
+    let context = try await Self.makeContext(label: "mount")
+
+    let surface = try await SurfaceCatalog.sessionSurface(context: context)
+    let built = try await SurfaceCatalog.makeRegistry(context: context)
+
+    #expect(surface.tools.map(\.name) == MountOrder.defaultToolNames)
+    #expect(!built.registry.surface.entries.contains { $0.path.hasPrefix(Self.agentsToolName) })
+    let agents = try #require(surface.tools.first { $0.name == Self.agentsToolName } as? AgentsTool)
+    let agentNames = await agents.launchableAgents().map(\.name)
+    #expect(agentNames.contains(Self.quickAgent))
+    #expect(agentNames.contains(Self.slowAgent))
+    await surface.shutdown()
+  }
+
+  /// The config cannot turn the `agents` tool off. The scalar
+  /// `agents: false` and the body `enabled: false` that the loader reads
+  /// each give a session with the `agents` tool and an agent runner.
+  @Test(arguments: ["agents: false", "agents:\n    enabled: false"])
+  func aConfigThatTurnsTheAgentsToolOffStillMountsTheAgentsTool(entry: String) async throws {
+    let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig(
+      "tools:\n  \(entry)\n  skills:\n    marketplaces: []\n  codeContext: false\n")
+    let context = try await Self.makeContext(label: "off") { configuration in
+      configuration.tools = loaded.configuration.tools
     }
 
-    /// Makes a catalog context over a fresh working directory that holds
-    /// the quick and the slow agent folders. The configuration is
-    /// ``AgentConfiguration/withoutMarketplaces``, thus the skills source
-    /// and the agent registry need no network.
-    ///
-    /// - Parameters:
-    ///   - label: The directory label of the calling test.
-    ///   - script: The steps of each scripted pass.
-    ///   - inlineSettleGrace: The settle period of the context.
-    ///   - configure: The mutation that shapes the configuration.
-    /// - Returns: The context.
-    /// - Throws: Whatever the fixture writes or the profile resolve throws.
-    static func makeContext(
-        label: String,
-        script: [ScriptedPassStep] = [.endPass],
-        inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
-        runClock: (any RunClock)? = nil,
-        configure: (inout AgentConfiguration) -> Void = { _ in }
-    ) async throws -> CatalogContext {
-        let cwd = makeResolvedDirectory(label: "AgentsToolTests-\(label)")
-        try writeAgent(named: quickAgent, in: cwd)
-        try writeAgent(named: slowAgent, in: cwd)
-        var configuration = AgentConfiguration.withoutMarketplaces
-        configuration.tools.codeContext = .disabled
-        configure(&configuration)
-        let cacheDirectory = makeResolvedDirectory(label: "AgentsToolTests-\(label)-cache")
-        let loader = makeScriptedModelLoader(script: script)
-        let profile =
-            if let runClock {
-                try await makeStubProfile(cacheDirectory: cacheDirectory, loader: loader, runClock: runClock)
-            } else {
-                try await makeStubProfile(cacheDirectory: cacheDirectory, loader: loader)
-            }
-        return CatalogContext(
-            workingDirectory: cwd,
-            configuration: configuration,
-            profile: profile,
-            settingsFolders: try SettingsFoldersFixture.make(label: "AgentsToolTests"),
-            environment: [:],
-            inlineSettleGrace: inlineSettleGrace)
+    let surface = try await SurfaceCatalog.sessionSurface(context: context)
+
+    #expect(surface.tools.map(\.name) == MountOrder.defaultToolNames)
+    #expect(surface.agents != nil)
+    await surface.shutdown()
+  }
+
+  /// The runs read the skills registry that the session gives the
+  /// surface, and they get the Multitool session tools and the `skills`
+  /// tool of the agent environment by name.
+  @Test func theRunsGetTheSkillsToolOfTheOneRegistryAndTheSessionTools() async throws {
+    let context = try await Self.makeContext(label: "skills")
+    let skills = await SurfaceCatalog.makeSkillsSource(context: context)
+
+    let surface = try await SurfaceCatalog.sessionSurface(context: context, skills: skills)
+
+    let agents = try #require(surface.agents)
+    #expect(
+      agents.environment.tools.names == [
+        Self.runCodeName, Self.searchToolsName, Self.skillsToolName,
+      ])
+    #expect(surface.tools.filter { $0.name == Self.skillsToolName }.count == 1)
+    await surface.shutdown()
+  }
+
+  /// A factory of the run tools gives a new session tool of the name it
+  /// asks for, and not the fallback tool, when the session tools build.
+  /// The fallback here has an other name, thus a result that is the
+  /// fallback fails the test.
+  @Test func aFreshSessionToolHasTheAskedNameAndIsNotTheFallback() async throws {
+    let context = try await Self.makeContext(label: "fresh")
+    let built = try await SurfaceCatalog.makeRegistry(context: context)
+    let selection = SurfaceCatalog.makeSearchSelection(profile: context.profile)
+    let embedder = ProfileEmbedding(embedder: context.profile.embedding)
+    let probes = try built.registry.makeSessionTools(selection: selection, embedder: embedder)
+    let searchTools = try #require(probes.first { $0.name == Self.searchToolsName })
+
+    let tool = AgentsComposition.freshSessionTool(
+      named: Self.runCodeName, registry: built.registry, selection: selection,
+      embedder: embedder, fallback: searchTools)
+
+    #expect(tool.name == Self.runCodeName)
+  }
+
+  // MARK: - The settle period
+
+  /// The agent environment and the root session take the settle period of
+  /// the catalog context, and the default is the settle period of the
+  /// Router.
+  @Test func theAgentEnvironmentAndTheSurfaceShareTheSettlePeriodOfTheContext() async throws {
+    let context = try await Self.makeContext(
+      label: "settle", inlineSettleGrace: Self.shortSettlePeriod)
+
+    let surface = try await SurfaceCatalog.sessionSurface(context: context)
+
+    #expect(surface.inlineSettleGrace == Self.shortSettlePeriod)
+    #expect(surface.agents?.environment.inlineSettleGrace == Self.shortSettlePeriod)
+    #expect(CatalogContext.defaultInlineSettleGrace == ToolMount.defaultInlineSettleGrace)
+    await surface.shutdown()
+  }
+
+  /// The slice of the recorded `index.md` of a session folder that the
+  /// settle-period tests read. The stored properties of the record are
+  /// internal to Router, thus the tests decode only the key that they need.
+  struct RecordSettleSlice: Decodable {
+    /// The configuration envelope of the record.
+    struct Configuration: Decodable {
+      /// The settle period that the session got in its
+      /// `SessionConfiguration`, in seconds.
+      let inlineSettleGrace: TimeInterval?
     }
 
-    /// The script of the `start agent` proofs: each run plays the branch of
-    /// its prompt, and the root session starts the run that its prompt
-    /// names.
-    ///
-    /// - Parameter hold: The hold that the slow run waits on.
-    /// - Returns: The script.
-    static func startAgentScript(hold: ScriptedHold) -> [ScriptedPassStep] {
-        [
-            .onPrompt(containing: quickRunPrompt, play: [.textDelta(quickFinalText), .endPass]),
-            .onPrompt(
-                containing: slowRunPrompt,
-                play: [.holdUntilReleased(hold), .textDelta(slowFinalText), .endPass]),
-            .onPrompt(
-                containing: rootQuickPrompt,
-                play: [startAgentCall(agent: quickAgent, prompt: quickRunPrompt), .endPass]),
-            .onPrompt(
-                containing: rootSlowPrompt,
-                play: [startAgentCall(agent: slowAgent, prompt: slowRunPrompt), .endPass]),
-            .endPass,
-        ]
+    /// The configuration envelope, or `nil` for a recording made before
+    /// the envelope existed.
+    let configuration: Configuration?
+  }
+
+  /// Makes an initialized agent over the stub profile whose sessions get
+  /// `inlineSettleGrace`.
+  ///
+  /// - Parameters:
+  ///   - label: The directory label of the calling test.
+  ///   - inlineSettleGrace: The settle period of each session of the agent.
+  /// - Returns: The agent, after `initialize`.
+  /// - Throws: Whatever the construction or the handshake throws.
+  static func makeAgent(label: String, inlineSettleGrace: TimeInterval) async throws
+    -> RoutedACPAgent
+  {
+    let agent = try await makeStubAgent(
+      name: AgentClientHarness.dotfolderName,
+      cacheDirectory: makeResolvedDirectory(label: "AgentsToolTests-\(label)-cache"),
+      recordingsDirectory: makeResolvedDirectory(label: "AgentsToolTests-\(label)-recordings"),
+      userDirectory: makeResolvedDirectory(label: "AgentsToolTests-\(label)-user"),
+      inlineSettleGrace: inlineSettleGrace)
+    _ = try await agent.initialize(AgentClientHarness.makeInitializeRequest())
+    return agent
+  }
+
+  /// The recorded settle period of each session record under the
+  /// project-local transcripts root of `cwd`, in no fixed order.
+  ///
+  /// - Parameter cwd: The session working directory.
+  /// - Returns: One value for each `index.md`, or `nil` for a record that
+  ///   holds no settle period.
+  /// - Throws: The walk, the read or the decode error of a record.
+  static func recordedSettlePeriods(under cwd: URL) throws -> [TimeInterval?] {
+    let transcriptsRoot =
+      cwd
+      .appendingPathComponent(".\(AgentClientHarness.dotfolderName)", isDirectory: true)
+      .appendingPathComponent(TranscriptLocation.transcriptsDirectoryName, isDirectory: true)
+    return try RecordedSessionIndexFile.slices(under: transcriptsRoot, as: RecordSettleSlice.self)
+      .map { $0.configuration?.inlineSettleGrace }
+  }
+
+  /// `session/new` gives the session that `makeBudgetedSession` makes the
+  /// settle period of the agent in its `SessionConfiguration`: the record
+  /// of the root session holds the short period, not the default. The
+  /// test reads the record, not a clock.
+  @Test
+  func aNewSessionGetsTheSettlePeriodOfTheAgentInItsConfiguration() async throws {
+    let agent = try await Self.makeAgent(
+      label: "settle-new", inlineSettleGrace: Self.shortSettlePeriod)
+    let cwd = makeResolvedDirectory(label: "AgentsToolTests-settle-new-repo")
+
+    _ = try await agent.newSession(NewSessionRequest(cwd: AbsolutePath(rawValue: cwd.path)))
+
+    let periods = try Self.recordedSettlePeriods(under: cwd)
+    #expect(periods == [Self.shortSettlePeriod])
+  }
+
+  /// A model-slot switch gives the replacement session that
+  /// `makeBudgetedSession` makes the settle period of the agent in its
+  /// `SessionConfiguration`: after the switch, the record of the root
+  /// session and the record of the replacement both hold the short
+  /// period. The test reads the records, not a clock.
+  @Test
+  func aSlotSwitchGivesTheReplacementSessionTheSettlePeriodOfTheAgent() async throws {
+    let agent = try await Self.makeAgent(
+      label: "settle-switch", inlineSettleGrace: Self.shortSettlePeriod)
+    let cwd = makeResolvedDirectory(label: "AgentsToolTests-settle-switch-repo")
+    let response = try await agent.newSession(
+      NewSessionRequest(cwd: AbsolutePath(rawValue: cwd.path)))
+
+    _ = try await agent.setSessionConfigOption(
+      SetSessionConfigOptionRequest(
+        configId: ConfigOptions.modelOptionId, sessionId: response.sessionId,
+        value: .id(SessionConfigValueId(rawValue: ModelSlot.flash.rawValue))))
+
+    let periods = try Self.recordedSettlePeriods(under: cwd)
+    #expect(periods == [Self.shortSettlePeriod, Self.shortSettlePeriod])
+  }
+
+  // MARK: - The start agent answers
+
+  /// A `start agent` call to a run that ends in the settle period gives
+  /// the final message of the run as the output of the call, with no
+  /// pending envelope, and no mail comes after it.
+  ///
+  /// The settle period waits on a `ManualRunClock` that the test never
+  /// advances, so the period cannot end before the quick run. On the real
+  /// clock, a machine with a high load could end the period first.
+  @Test
+  func aQuickRunGivesItsFinalMessageAsTheOutputOfTheCall() async throws {
+    let hold = ScriptedHold()
+    let context = try await Self.makeContext(
+      label: "quick", script: Self.startAgentScript(hold: hold), runClock: ManualRunClock())
+    let surface = try await SurfaceCatalog.sessionSurface(context: context)
+    let session = Self.makeRootSession(surface: surface, context: context)
+
+    _ = try await session.respond(to: Self.rootQuickPrompt, maxTokens: nil)
+
+    let transcript = await session.transcript
+    let output = try #require(Self.agentsToolOutputs(in: transcript).first)
+    #expect(output.contains(Self.quickFinalText), "\(output)")
+    #expect(!output.contains(Self.pendingMarker))
+    #expect(!Self.promptTexts(in: transcript).contains { $0.contains(Self.quickFinalText) })
+    hold.release()
+    await surface.stopAgentRuns()
+    await session.close()
+    await surface.shutdown()
+  }
+
+  /// A `start agent` call to a run that continues after the settle period
+  /// of the context gives the pending envelope. The final message of the
+  /// run comes later as mail, one time.
+  ///
+  /// The settle period is zero, on a `ManualRunClock` that the test never
+  /// advances. The deadline of the period is thus reached when the call
+  /// starts to wait, and the held run cannot end before it, so the call
+  /// gives the pending envelope in a fixed order, with no clock. When the
+  /// held run ends, `awaitIdle()` waits for the open run and for the
+  /// answer of its mail. These tests prove the settle period without a
+  /// clock:
+  /// ``theAgentEnvironmentAndTheSurfaceShareTheSettlePeriodOfTheContext()``
+  /// for the agent environment and the surface,
+  /// ``aNewSessionGetsTheSettlePeriodOfTheAgentInItsConfiguration()`` for
+  /// the root session, and
+  /// ``aSlotSwitchGivesTheReplacementSessionTheSettlePeriodOfTheAgent()``
+  /// for the session after a slot switch.
+  @Test
+  func aSlowRunGoesToTheBackgroundAndItsFinalMessageComesAsMailOneTime() async throws {
+    let hold = ScriptedHold()
+    let context = try await Self.makeContext(
+      label: "slow", script: Self.startAgentScript(hold: hold),
+      inlineSettleGrace: 0, runClock: ManualRunClock())
+    let surface = try await SurfaceCatalog.sessionSurface(context: context)
+    let session = Self.makeRootSession(surface: surface, context: context)
+
+    _ = try await session.respond(to: Self.rootSlowPrompt, maxTokens: nil)
+
+    let output = try #require(Self.agentsToolOutputs(in: await session.transcript).first)
+    #expect(!output.contains(Self.slowFinalText))
+    #expect(output.contains(Self.pendingMarker), "\(output)")
+    hold.release()
+    // The open run counts as work, so the idle comes after the run ended
+    // and after the answer of its mail.
+    #expect(await session.awaitIdle())
+    let mail = Self.promptTexts(in: await session.transcript).filter {
+      $0.contains(Self.slowFinalText)
+    }
+    #expect(mail.count == 1)
+    await session.close()
+    await surface.shutdown()
+  }
+
+  // MARK: - The stop of the runs
+
+  /// `stopAgentRuns()` cancels each run of the surface that is in
+  /// operation.
+  @Test
+  func stopAgentRunsCancelsEachRunInOperation() async throws {
+    let hold = ScriptedHold()
+    let context = try await Self.makeContext(
+      label: "stop", script: Self.startAgentScript(hold: hold))
+    let surface = try await SurfaceCatalog.sessionSurface(context: context)
+    let runner = try #require(surface.agents?.runner)
+    let run = try await runner.start(Self.slowAgent, prompt: Self.slowRunPrompt)
+
+    await surface.stopAgentRuns()
+
+    #expect(run.state == .cancelled)
+    hold.release()
+    await surface.shutdown()
+  }
+
+  // MARK: - The run event observer (task ^zbcrex8)
+
+  /// The completion token of a tool run of an agent run.
+  static let agentToolRunToken = "01AGENTSTOOLRUNTOKEN000001"
+
+  /// The open record of a tool run of an agent run, which Router of the
+  /// agent run joined to an SDK call of the agent run.
+  static let agentToolRunOpenRecord: SessionEvent = .toolInvocation(
+    ToolInvocationRecord(
+      tool: "shell", op: "execute command", correlationID: agentToolRunToken,
+      sessionID: ULID.generate(), openedAt: Date(timeIntervalSince1970: 0)),
+    toolCallID: "call-of-the-agent-run")
+
+  /// The agent environment gives each session event of an agent run to the
+  /// join table of the surface. The open record of a tool run of the agent
+  /// run writes "no join" for that run while the agent run is in operation,
+  /// so the terminal stream announces the run on its completion token and
+  /// does not wait for the end of the agent run.
+  @Test
+  func theOpenRecordOfAToolRunOfAnAgentRunWritesItsEntryWhileTheRunIsInOperation() async throws {
+    let hold = ScriptedHold()
+    let context = try await Self.makeContext(
+      label: "observer", script: Self.startAgentScript(hold: hold))
+    let surface = try await SurfaceCatalog.sessionSurface(context: context)
+    let agents = try #require(surface.agents)
+    let run = try await agents.runner.start(Self.slowAgent, prompt: Self.slowRunPrompt)
+    let observer = try #require(agents.environment.runEventObserver)
+    surface.runCallJoins.openProjection()
+
+    observer(run, SessionOutput(origin: .system, event: Self.agentToolRunOpenRecord))
+
+    #expect(run.state == .running)
+    #expect(
+      surface.runCallJoins.announceToolCallId(for: Self.agentToolRunToken)
+        == ToolCallId(rawValue: Self.agentToolRunToken))
+    hold.release()
+    await surface.shutdown()
+  }
+
+  /// `session/close` stops the agent runs of the session before the root
+  /// session closes: when the close sweep of the root session finishes its
+  /// event stream, the run is already cancelled.
+  @Test
+  func closingASessionStopsItsAgentRunsBeforeTheRootSessionCloses() async throws {
+    let hold = ScriptedHold()
+    let cwd = makeResolvedDirectory(label: "AgentsToolTests-close-repo")
+    try Self.writeAgent(named: Self.slowAgent, in: cwd)
+    let fixture = try await ScriptedPromptFixture.make(
+      script: Self.startAgentScript(hold: hold), label: "AgentsToolTests-close",
+      workingDirectory: cwd)
+    let entry = try #require(await fixture.harness.agent.sessions[fixture.sessionId])
+    let runner = try #require(entry.surface.agents?.runner)
+    let run = try await runner.start(Self.slowAgent, prompt: Self.slowRunPrompt)
+    let events = await entry.session.streamSessionEvents()
+    let stateAtRootClose = Task { () -> AgentRunState in
+      for await _ in events {}
+      return run.state
     }
 
-    /// The scripted `start agent` call of the `agents` tool.
-    ///
-    /// - Parameters:
-    ///   - agent: The id of the agent to start.
-    ///   - prompt: The prompt of the run.
-    /// - Returns: The tool-call step.
-    static func startAgentCall(agent: String, prompt: String) -> ScriptedPassStep {
-        .toolCall(
-            name: agentsToolName,
-            argumentsJSON: #"{"op":"start agent","name":"\#(agent)","prompt":"\#(prompt)"}"#)
+    _ = try await fixture.harness.connection.closeSession(
+      CloseSessionRequest(sessionId: fixture.sessionId))
+
+    #expect(await stateAtRootClose.value == .cancelled)
+    hold.release()
+    await fixture.close()
+  }
+
+  // MARK: - The trace of the wake on agent mail (task ^3p03s3r)
+
+  /// Runs one ACP prompt whose `start agent` call leaves the slow run in
+  /// the background inside one capture, ends the prompt, releases the run,
+  /// and waits until the submission that the mail of the run starts ended.
+  ///
+  /// The settle period of the call runs on the real clock: the prompt ends
+  /// when the period ends, and the held run cannot end before the test
+  /// releases it.
+  ///
+  /// - Returns: The spans of the run.
+  /// - Throws: Whatever the fixture, the wire or the waits throw.
+  static func runTheWakeOnAgentMail() async throws -> [FinishedInMemorySpan] {
+    let hold = ScriptedHold()
+    let cwd = makeResolvedDirectory(label: "AgentsToolTests-traced-wake-repo")
+    try writeAgent(named: slowAgent, in: cwd)
+    return try await TelemetryCapture.run(forbidding: []) { context in
+      let fixture = try await ScriptedPromptFixture.make(
+        script: startAgentScript(hold: hold), label: "AgentsToolTests-traced-wake",
+        workingDirectory: cwd, tracer: context.tracer)
+      _ = try await fixture.harness.connection.prompt(
+        AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: rootSlowPrompt))
+      await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
+      hold.release()
+      _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+      await context.wait { capture in
+        capture.spans.contains(where: RunMailWakeTrace.isRunMailSubmission)
+      }
+      _ = try await fixture.harness.connection.closeSession(
+        CloseSessionRequest(sessionId: fixture.sessionId))
+      await fixture.close()
+      return context.spans
     }
+  }
 
-    /// Makes the root session over a surface, with the settle period of the
-    /// surface.
-    ///
-    /// - Parameters:
-    ///   - surface: The mounted surface.
-    ///   - context: The context of the surface.
-    /// - Returns: The root session.
-    static func makeRootSession(surface: SessionSurface, context: CatalogContext) -> any RoutedSession {
-        context.profile.standard.makeBudgetedSession(
-            instructions: "",
-            workingDirectory: context.workingDirectory,
-            recordingRoot: makeResolvedDirectory(label: "AgentsToolTests-recordings"),
-            tools: surface.tools,
-            compaction: AgentConfiguration().compaction,
-            repetition: AgentConfiguration().repetition,
-            inlineSettleGrace: surface.inlineSettleGrace)
-    }
+  /// The prompt ends while the agent run that it started waits in the
+  /// background. The answer that the final message of the run starts
+  /// later, as mail to the root session, is in the trace of the prompt: its
+  /// submission is no root span, its parent is a span of the subtree of the
+  /// prompt span, and it links to the span that sent the mail.
+  @Test
+  func theWakeOnAgentMailAfterThePromptIsInTheTraceOfThePrompt() async throws {
+    let spans = try await Self.runTheWakeOnAgentMail()
 
-    /// The text of each output of the `agents` tool in a transcript, in
-    /// order.
-    ///
-    /// - Parameter transcript: The transcript of the root session.
-    /// - Returns: The output texts.
-    static func agentsToolOutputs(in transcript: Transcript) -> [String] {
-        transcript.compactMap { entry -> String? in
-            guard case .toolOutput(let output) = entry, output.toolName == agentsToolName else {
-                return nil
-            }
-            return output.segments.map(segmentText).joined()
-        }
-    }
-
-    /// The text of each prompt entry of a transcript, in order.
-    ///
-    /// - Parameter transcript: The transcript to read.
-    /// - Returns: The prompt texts.
-    static func promptTexts(in transcript: Transcript) -> [String] {
-        transcript.compactMap { entry -> String? in
-            guard case .prompt(let prompt) = entry else { return nil }
-            return prompt.segments.map(segmentText).joined()
-        }
-    }
-
-    /// The text of one transcript segment: the text of a text segment, or
-    /// the JSON of a structured segment, which is the form of a tool output
-    /// that is a `String`. Each other segment gives the empty string.
-    ///
-    /// - Parameter segment: The segment.
-    /// - Returns: Its text.
-    static func segmentText(_ segment: Transcript.Segment) -> String {
-        if case .text(let text) = segment {
-            return text.content
-        }
-        if case .structure(let structure) = segment {
-            return structure.content.jsonString
-        }
-        return ""
-    }
-
-    // MARK: - The mount
-
-    /// A default context mounts the `agents` tool as a top-level tool after
-    /// the `skills` tool, and the Multitool surface has no agents verb.
-    @Test func aDefaultContextMountsTheAgentsToolBesideTheSkillsTool() async throws {
-        let context = try await Self.makeContext(label: "mount")
-
-        let surface = try await SurfaceCatalog.sessionSurface(context: context)
-        let built = try await SurfaceCatalog.makeRegistry(context: context)
-
-        #expect(surface.tools.map(\.name) == MountOrder.defaultToolNames)
-        #expect(!built.registry.surface.entries.contains { $0.path.hasPrefix(Self.agentsToolName) })
-        let agents = try #require(surface.tools.first { $0.name == Self.agentsToolName } as? AgentsTool)
-        let agentNames = await agents.launchableAgents().map(\.name)
-        #expect(agentNames.contains(Self.quickAgent))
-        #expect(agentNames.contains(Self.slowAgent))
-        await surface.shutdown()
-    }
-
-    /// The config cannot turn the `agents` tool off. The scalar
-    /// `agents: false` and the body `enabled: false` that the loader reads
-    /// each give a session with the `agents` tool and an agent runner.
-    @Test(arguments: ["agents: false", "agents:\n    enabled: false"])
-    func aConfigThatTurnsTheAgentsToolOffStillMountsTheAgentsTool(entry: String) async throws {
-        let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig(
-            "tools:\n  \(entry)\n  skills:\n    marketplaces: []\n  codeContext: false\n")
-        let context = try await Self.makeContext(label: "off") { configuration in
-            configuration.tools = loaded.configuration.tools
-        }
-
-        let surface = try await SurfaceCatalog.sessionSurface(context: context)
-
-        #expect(surface.tools.map(\.name) == MountOrder.defaultToolNames)
-        #expect(surface.agents != nil)
-        await surface.shutdown()
-    }
-
-    /// The runs read the skills registry that the session gives the
-    /// surface, and they get the Multitool session tools and the `skills`
-    /// tool of the agent environment by name.
-    @Test func theRunsGetTheSkillsToolOfTheOneRegistryAndTheSessionTools() async throws {
-        let context = try await Self.makeContext(label: "skills")
-        let skills = await SurfaceCatalog.makeSkillsSource(context: context)
-
-        let surface = try await SurfaceCatalog.sessionSurface(context: context, skills: skills)
-
-        let agents = try #require(surface.agents)
-        #expect(agents.environment.tools.names == [Self.runCodeName, Self.searchToolsName, Self.skillsToolName])
-        #expect(surface.tools.filter { $0.name == Self.skillsToolName }.count == 1)
-        await surface.shutdown()
-    }
-
-    /// A factory of the run tools gives a new session tool of the name it
-    /// asks for, and not the fallback tool, when the session tools build.
-    /// The fallback here has an other name, thus a result that is the
-    /// fallback fails the test.
-    @Test func aFreshSessionToolHasTheAskedNameAndIsNotTheFallback() async throws {
-        let context = try await Self.makeContext(label: "fresh")
-        let built = try await SurfaceCatalog.makeRegistry(context: context)
-        let selection = SurfaceCatalog.makeSearchSelection(profile: context.profile)
-        let embedder = ProfileEmbedding(embedder: context.profile.embedding)
-        let probes = try built.registry.makeSessionTools(selection: selection, embedder: embedder)
-        let searchTools = try #require(probes.first { $0.name == Self.searchToolsName })
-
-        let tool = AgentsComposition.freshSessionTool(
-            named: Self.runCodeName, registry: built.registry, selection: selection,
-            embedder: embedder, fallback: searchTools)
-
-        #expect(tool.name == Self.runCodeName)
-    }
-
-    // MARK: - The settle period
-
-    /// The agent environment and the root session take the settle period of
-    /// the catalog context, and the default is the settle period of the
-    /// Router.
-    @Test func theAgentEnvironmentAndTheSurfaceShareTheSettlePeriodOfTheContext() async throws {
-        let context = try await Self.makeContext(
-            label: "settle", inlineSettleGrace: Self.shortSettlePeriod)
-
-        let surface = try await SurfaceCatalog.sessionSurface(context: context)
-
-        #expect(surface.inlineSettleGrace == Self.shortSettlePeriod)
-        #expect(surface.agents?.environment.inlineSettleGrace == Self.shortSettlePeriod)
-        #expect(CatalogContext.defaultInlineSettleGrace == ToolMount.defaultInlineSettleGrace)
-        await surface.shutdown()
-    }
-
-    /// The slice of the recorded `index.md` of a session folder that the
-    /// settle-period tests read. The stored properties of the record are
-    /// internal to Router, thus the tests decode only the key that they need.
-    struct RecordSettleSlice: Decodable {
-        /// The configuration envelope of the record.
-        struct Configuration: Decodable {
-            /// The settle period that the session got in its
-            /// `SessionConfiguration`, in seconds.
-            let inlineSettleGrace: TimeInterval?
-        }
-
-        /// The configuration envelope, or `nil` for a recording made before
-        /// the envelope existed.
-        let configuration: Configuration?
-    }
-
-    /// Makes an initialized agent over the stub profile whose sessions get
-    /// `inlineSettleGrace`.
-    ///
-    /// - Parameters:
-    ///   - label: The directory label of the calling test.
-    ///   - inlineSettleGrace: The settle period of each session of the agent.
-    /// - Returns: The agent, after `initialize`.
-    /// - Throws: Whatever the construction or the handshake throws.
-    static func makeAgent(label: String, inlineSettleGrace: TimeInterval) async throws -> RoutedACPAgent {
-        let agent = try await makeStubAgent(
-            name: AgentClientHarness.dotfolderName,
-            cacheDirectory: makeResolvedDirectory(label: "AgentsToolTests-\(label)-cache"),
-            recordingsDirectory: makeResolvedDirectory(label: "AgentsToolTests-\(label)-recordings"),
-            userDirectory: makeResolvedDirectory(label: "AgentsToolTests-\(label)-user"),
-            inlineSettleGrace: inlineSettleGrace)
-        _ = try await agent.initialize(AgentClientHarness.makeInitializeRequest())
-        return agent
-    }
-
-    /// The recorded settle period of each session record under the
-    /// project-local transcripts root of `cwd`, in no fixed order.
-    ///
-    /// - Parameter cwd: The session working directory.
-    /// - Returns: One value for each `index.md`, or `nil` for a record that
-    ///   holds no settle period.
-    /// - Throws: The walk, the read or the decode error of a record.
-    static func recordedSettlePeriods(under cwd: URL) throws -> [TimeInterval?] {
-        let transcriptsRoot = cwd
-            .appendingPathComponent(".\(AgentClientHarness.dotfolderName)", isDirectory: true)
-            .appendingPathComponent(TranscriptLocation.transcriptsDirectoryName, isDirectory: true)
-        return try RecordedSessionIndexFile.slices(under: transcriptsRoot, as: RecordSettleSlice.self)
-            .map { $0.configuration?.inlineSettleGrace }
-    }
-
-    /// `session/new` gives the session that `makeBudgetedSession` makes the
-    /// settle period of the agent in its `SessionConfiguration`: the record
-    /// of the root session holds the short period, not the default. The
-    /// test reads the record, not a clock.
-    @Test
-    func aNewSessionGetsTheSettlePeriodOfTheAgentInItsConfiguration() async throws {
-        let agent = try await Self.makeAgent(label: "settle-new", inlineSettleGrace: Self.shortSettlePeriod)
-        let cwd = makeResolvedDirectory(label: "AgentsToolTests-settle-new-repo")
-
-        _ = try await agent.newSession(NewSessionRequest(cwd: AbsolutePath(rawValue: cwd.path)))
-
-        let periods = try Self.recordedSettlePeriods(under: cwd)
-        #expect(periods == [Self.shortSettlePeriod])
-    }
-
-    /// A model-slot switch gives the replacement session that
-    /// `makeBudgetedSession` makes the settle period of the agent in its
-    /// `SessionConfiguration`: after the switch, the record of the root
-    /// session and the record of the replacement both hold the short
-    /// period. The test reads the records, not a clock.
-    @Test
-    func aSlotSwitchGivesTheReplacementSessionTheSettlePeriodOfTheAgent() async throws {
-        let agent = try await Self.makeAgent(label: "settle-switch", inlineSettleGrace: Self.shortSettlePeriod)
-        let cwd = makeResolvedDirectory(label: "AgentsToolTests-settle-switch-repo")
-        let response = try await agent.newSession(NewSessionRequest(cwd: AbsolutePath(rawValue: cwd.path)))
-
-        _ = try await agent.setSessionConfigOption(
-            SetSessionConfigOptionRequest(
-                configId: ConfigOptions.modelOptionId, sessionId: response.sessionId,
-                value: .id(SessionConfigValueId(rawValue: ModelSlot.flash.rawValue))))
-
-        let periods = try Self.recordedSettlePeriods(under: cwd)
-        #expect(periods == [Self.shortSettlePeriod, Self.shortSettlePeriod])
-    }
-
-    // MARK: - The start agent answers
-
-    /// A `start agent` call to a run that ends in the settle period gives
-    /// the final message of the run as the output of the call, with no
-    /// pending envelope, and no mail comes after it.
-    ///
-    /// The settle period waits on a `ManualRunClock` that the test never
-    /// advances, so the period cannot end before the quick run. On the real
-    /// clock, a machine with a high load could end the period first.
-    @Test
-    func aQuickRunGivesItsFinalMessageAsTheOutputOfTheCall() async throws {
-        let hold = ScriptedHold()
-        let context = try await Self.makeContext(
-            label: "quick", script: Self.startAgentScript(hold: hold), runClock: ManualRunClock())
-        let surface = try await SurfaceCatalog.sessionSurface(context: context)
-        let session = Self.makeRootSession(surface: surface, context: context)
-
-        _ = try await session.respond(to: Self.rootQuickPrompt, maxTokens: nil)
-
-        let transcript = await session.transcript
-        let output = try #require(Self.agentsToolOutputs(in: transcript).first)
-        #expect(output.contains(Self.quickFinalText), "\(output)")
-        #expect(!output.contains(Self.pendingMarker))
-        #expect(!Self.promptTexts(in: transcript).contains { $0.contains(Self.quickFinalText) })
-        hold.release()
-        await surface.stopAgentRuns()
-        await session.close()
-        await surface.shutdown()
-    }
-
-    /// A `start agent` call to a run that continues after the settle period
-    /// of the context gives the pending envelope. The final message of the
-    /// run comes later as mail, one time.
-    ///
-    /// The settle period is zero, on a `ManualRunClock` that the test never
-    /// advances. The deadline of the period is thus reached when the call
-    /// starts to wait, and the held run cannot end before it, so the call
-    /// gives the pending envelope in a fixed order, with no clock. When the
-    /// held run ends, `awaitIdle()` waits for the open run and for the
-    /// answer of its mail. These tests prove the settle period without a
-    /// clock:
-    /// ``theAgentEnvironmentAndTheSurfaceShareTheSettlePeriodOfTheContext()``
-    /// for the agent environment and the surface,
-    /// ``aNewSessionGetsTheSettlePeriodOfTheAgentInItsConfiguration()`` for
-    /// the root session, and
-    /// ``aSlotSwitchGivesTheReplacementSessionTheSettlePeriodOfTheAgent()``
-    /// for the session after a slot switch.
-    @Test
-    func aSlowRunGoesToTheBackgroundAndItsFinalMessageComesAsMailOneTime() async throws {
-        let hold = ScriptedHold()
-        let context = try await Self.makeContext(
-            label: "slow", script: Self.startAgentScript(hold: hold),
-            inlineSettleGrace: 0, runClock: ManualRunClock())
-        let surface = try await SurfaceCatalog.sessionSurface(context: context)
-        let session = Self.makeRootSession(surface: surface, context: context)
-
-        _ = try await session.respond(to: Self.rootSlowPrompt, maxTokens: nil)
-
-        let output = try #require(Self.agentsToolOutputs(in: await session.transcript).first)
-        #expect(!output.contains(Self.slowFinalText))
-        #expect(output.contains(Self.pendingMarker), "\(output)")
-        hold.release()
-        // The open run counts as work, so the idle comes after the run ended
-        // and after the answer of its mail.
-        #expect(await session.awaitIdle())
-        let mail = Self.promptTexts(in: await session.transcript).filter { $0.contains(Self.slowFinalText) }
-        #expect(mail.count == 1)
-        await session.close()
-        await surface.shutdown()
-    }
-
-    // MARK: - The stop of the runs
-
-    /// `stopAgentRuns()` cancels each run of the surface that is in
-    /// operation.
-    @Test
-    func stopAgentRunsCancelsEachRunInOperation() async throws {
-        let hold = ScriptedHold()
-        let context = try await Self.makeContext(
-            label: "stop", script: Self.startAgentScript(hold: hold))
-        let surface = try await SurfaceCatalog.sessionSurface(context: context)
-        let runner = try #require(surface.agents?.runner)
-        let run = try await runner.start(Self.slowAgent, prompt: Self.slowRunPrompt)
-
-        await surface.stopAgentRuns()
-
-        #expect(run.state == .cancelled)
-        hold.release()
-        await surface.shutdown()
-    }
-
-    // MARK: - The run event observer (task ^zbcrex8)
-
-    /// The completion token of a tool run of an agent run.
-    static let agentToolRunToken = "01AGENTSTOOLRUNTOKEN000001"
-
-    /// The open record of a tool run of an agent run, which Router of the
-    /// agent run joined to an SDK call of the agent run.
-    static let agentToolRunOpenRecord: SessionEvent = .toolInvocation(
-        ToolInvocationRecord(
-            tool: "shell", op: "execute command", correlationID: agentToolRunToken,
-            sessionID: ULID.generate(), openedAt: Date(timeIntervalSince1970: 0)),
-        toolCallID: "call-of-the-agent-run")
-
-    /// The agent environment gives each session event of an agent run to the
-    /// join table of the surface. The open record of a tool run of the agent
-    /// run writes "no join" for that run while the agent run is in operation,
-    /// so the terminal stream announces the run on its completion token and
-    /// does not wait for the end of the agent run.
-    @Test
-    func theOpenRecordOfAToolRunOfAnAgentRunWritesItsEntryWhileTheRunIsInOperation() async throws {
-        let hold = ScriptedHold()
-        let context = try await Self.makeContext(
-            label: "observer", script: Self.startAgentScript(hold: hold))
-        let surface = try await SurfaceCatalog.sessionSurface(context: context)
-        let agents = try #require(surface.agents)
-        let run = try await agents.runner.start(Self.slowAgent, prompt: Self.slowRunPrompt)
-        let observer = try #require(agents.environment.runEventObserver)
-        surface.runCallJoins.openProjection()
-
-        observer(run, SessionOutput(origin: .system, event: Self.agentToolRunOpenRecord))
-
-        #expect(run.state == .running)
-        #expect(
-            surface.runCallJoins.announceToolCallId(for: Self.agentToolRunToken)
-                == ToolCallId(rawValue: Self.agentToolRunToken))
-        hold.release()
-        await surface.shutdown()
-    }
-
-    /// `session/close` stops the agent runs of the session before the root
-    /// session closes: when the close sweep of the root session finishes its
-    /// event stream, the run is already cancelled.
-    @Test
-    func closingASessionStopsItsAgentRunsBeforeTheRootSessionCloses() async throws {
-        let hold = ScriptedHold()
-        let cwd = makeResolvedDirectory(label: "AgentsToolTests-close-repo")
-        try Self.writeAgent(named: Self.slowAgent, in: cwd)
-        let fixture = try await ScriptedPromptFixture.make(
-            script: Self.startAgentScript(hold: hold), label: "AgentsToolTests-close",
-            workingDirectory: cwd)
-        let entry = try #require(await fixture.harness.agent.sessions[fixture.sessionId])
-        let runner = try #require(entry.surface.agents?.runner)
-        let run = try await runner.start(Self.slowAgent, prompt: Self.slowRunPrompt)
-        let events = await entry.session.streamSessionEvents()
-        let stateAtRootClose = Task { () -> AgentRunState in
-            for await _ in events {}
-            return run.state
-        }
-
-        _ = try await fixture.harness.connection.closeSession(
-            CloseSessionRequest(sessionId: fixture.sessionId))
-
-        #expect(await stateAtRootClose.value == .cancelled)
-        hold.release()
-        await fixture.close()
-    }
-
-    // MARK: - The trace of the wake on agent mail (task ^3p03s3r)
-
-    /// Runs one ACP prompt whose `start agent` call leaves the slow run in
-    /// the background inside one capture, ends the prompt, releases the run,
-    /// and waits until the submission that the mail of the run starts ended.
-    ///
-    /// The settle period of the call runs on the real clock: the prompt ends
-    /// when the period ends, and the held run cannot end before the test
-    /// releases it.
-    ///
-    /// - Returns: The spans of the run.
-    /// - Throws: Whatever the fixture, the wire or the waits throw.
-    static func runTheWakeOnAgentMail() async throws -> [FinishedInMemorySpan] {
-        let hold = ScriptedHold()
-        let cwd = makeResolvedDirectory(label: "AgentsToolTests-traced-wake-repo")
-        try writeAgent(named: slowAgent, in: cwd)
-        return try await TelemetryCapture.run(forbidding: []) { context in
-            let fixture = try await ScriptedPromptFixture.make(
-                script: startAgentScript(hold: hold), label: "AgentsToolTests-traced-wake",
-                workingDirectory: cwd, tracer: context.tracer)
-            _ = try await fixture.harness.connection.prompt(
-                AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: rootSlowPrompt))
-            await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
-            hold.release()
-            _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-            await context.wait { capture in capture.spans.contains(where: RunMailWakeTrace.isRunMailSubmission) }
-            _ = try await fixture.harness.connection.closeSession(
-                CloseSessionRequest(sessionId: fixture.sessionId))
-            await fixture.close()
-            return context.spans
-        }
-    }
-
-    /// The prompt ends while the agent run that it started waits in the
-    /// background. The answer that the final message of the run starts
-    /// later, as mail to the root session, is in the trace of the prompt: its
-    /// submission is no root span, its parent is a span of the subtree of the
-    /// prompt span, and it links to the span that sent the mail.
-    @Test
-    func theWakeOnAgentMailAfterThePromptIsInTheTraceOfThePrompt() async throws {
-        let spans = try await Self.runTheWakeOnAgentMail()
-
-        try RunMailWakeTrace.expectTheWakeIsInTheTraceOfThePrompt(among: spans)
-    }
+    try RunMailWakeTrace.expectTheWakeIsInTheTraceOfThePrompt(among: spans)
+  }
 }

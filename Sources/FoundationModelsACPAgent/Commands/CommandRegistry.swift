@@ -18,245 +18,245 @@ import Logging
 /// ``beginPublishing(_:)`` set a publisher — publishes the new merged
 /// set, which feeds `available_commands_update`.
 actor CommandRegistry {
-    /// The reserved builtin commands, the first source. Their names can
-    /// never be taken by a later source.
-    private let builtins: [SlashCommand]
+  /// The reserved builtin commands, the first source. Their names can
+  /// never be taken by a later source.
+  private let builtins: [SlashCommand]
 
-    /// The later sources, in precedence order: linked conformers first,
-    /// skills last.
-    private let providers: [any SlashCommandProviding]
+  /// The later sources, in precedence order: linked conformers first,
+  /// skills last.
+  private let providers: [any SlashCommandProviding]
 
-    /// The session working directory each provider resolves against.
-    private let workingDirectory: URL
+  /// The session working directory each provider resolves against.
+  private let workingDirectory: URL
 
-    /// Each provider's current command set, index-aligned with
-    /// ``providers``. Empty until ``load()`` ran.
-    private var providerSets: [[SlashCommand]] = []
+  /// Each provider's current command set, index-aligned with
+  /// ``providers``. Empty until ``load()`` ran.
+  private var providerSets: [[SlashCommand]] = []
 
-    /// The merged command set, in merge order: the builtins first, then
-    /// each later source's new names in source order. A collision
-    /// winner keeps the loser's position.
-    private(set) var commands: [SlashCommand] = []
+  /// The merged command set, in merge order: the builtins first, then
+  /// each later source's new names in source order. A collision
+  /// winner keeps the loser's position.
+  private(set) var commands: [SlashCommand] = []
 
-    /// The kind of each merged command, keyed by the command name. The
-    /// merge fills it with ``commands``.
-    private var kinds: [String: CommandKind] = [:]
+  /// The kind of each merged command, keyed by the command name. The
+  /// merge fills it with ``commands``.
+  private var kinds: [String: CommandKind] = [:]
 
-    /// The consumer of each merged-set publication, or `nil` before
-    /// ``beginPublishing(_:)``.
-    private var publisher: (@Sendable ([SlashCommand]) async -> Void)?
+  /// The consumer of each merged-set publication, or `nil` before
+  /// ``beginPublishing(_:)``.
+  private var publisher: (@Sendable ([SlashCommand]) async -> Void)?
 
-    /// The update-stream follower tasks, one per provider that has a
-    /// `commandUpdates` stream.
-    private var subscriptions: [Task<Void, Never>] = []
+  /// The update-stream follower tasks, one per provider that has a
+  /// `commandUpdates` stream.
+  private var subscriptions: [Task<Void, Never>] = []
 
-    /// Creates a registry over the three sources.
-    ///
-    /// - Parameters:
-    ///   - builtins: The reserved source-1 commands.
-    ///   - providers: The later sources, in precedence order.
-    ///   - workingDirectory: The session working directory.
-    init(builtins: [SlashCommand], providers: [any SlashCommandProviding], workingDirectory: URL) {
-        self.builtins = builtins
-        self.providers = providers
-        self.workingDirectory = workingDirectory
+  /// Creates a registry over the three sources.
+  ///
+  /// - Parameters:
+  ///   - builtins: The reserved source-1 commands.
+  ///   - providers: The later sources, in precedence order.
+  ///   - workingDirectory: The session working directory.
+  init(builtins: [SlashCommand], providers: [any SlashCommandProviding], workingDirectory: URL) {
+    self.builtins = builtins
+    self.providers = providers
+    self.workingDirectory = workingDirectory
+  }
+
+  deinit {
+    for subscription in subscriptions {
+      subscription.cancel()
     }
+  }
 
-    deinit {
-        for subscription in subscriptions {
-            subscription.cancel()
+  /// Loads each provider's initial command set, merges, and starts to
+  /// follow each provider's `commandUpdates` stream. Call it one time,
+  /// at session creation.
+  func load() async {
+    providerSets = []
+    for provider in providers {
+      providerSets.append(await provider.commands(workingDirectory: workingDirectory))
+    }
+    merge()
+    subscribe()
+  }
+
+  /// Sets the publisher and publishes the current merged set at once.
+  /// Every later provider update publishes again through the same
+  /// publisher.
+  ///
+  /// - Parameter publisher: The consumer of each merged-set
+  ///   publication.
+  func beginPublishing(_ publisher: @escaping @Sendable ([SlashCommand]) async -> Void) async {
+    self.publisher = publisher
+    await publisher(commands)
+  }
+
+  /// The merged command with `name`, or `nil` when no source offers
+  /// it.
+  ///
+  /// - Parameter name: The bare command name, no leading slash.
+  /// - Returns: The winning command, or `nil`.
+  func command(named name: String) -> SlashCommand? {
+    commands.first { $0.name == name }
+  }
+
+  /// The kind of the merged command with `name`, or `nil` when no source
+  /// offers it.
+  ///
+  /// - Parameter name: The bare command name, no leading slash.
+  /// - Returns: The kind of the winning command, or `nil`.
+  func kind(ofCommandNamed name: String) -> CommandKind? {
+    kinds[name]
+  }
+
+  /// The number of near-miss suggestions an unknown command names.
+  private static let maxSuggestions = 3
+
+  /// The largest edit distance a suggestion may have. A name farther
+  /// from every command gives no suggestion.
+  private static let maxSuggestionDistance = 3
+
+  /// The merged command names closest to `name`, nearest first, for
+  /// the unknown-command error.
+  ///
+  /// - Parameter name: The unknown command name.
+  /// - Returns: At most ``maxSuggestions`` names within
+  ///   ``maxSuggestionDistance`` edits, ordered by distance and then
+  ///   by name.
+  func nearMisses(to name: String) -> [String] {
+    commands
+      .map { command in (name: command.name, distance: Self.editDistance(name, command.name)) }
+      .filter { $0.distance <= Self.maxSuggestionDistance }
+      .sorted { ($0.distance, $0.name) < ($1.distance, $1.name) }
+      .prefix(Self.maxSuggestions)
+      .map(\.name)
+  }
+
+  /// Maps a merged set to the wire's command list:
+  /// `name` and `description` map straight across, and the provider's
+  /// argument-hint string passes through unchanged as the text
+  /// input's `hint`.
+  ///
+  /// - Parameter commands: The merged set to map.
+  /// - Returns: The wire command list, in the same order.
+  static func availableCommands(for commands: [SlashCommand]) -> [AvailableCommand] {
+    commands.map { command in
+      .command(
+        Command(
+          description: command.description,
+          name: command.name,
+          input: command.argumentHint.map { .text(TextCommandInput(hint: $0)) }))
+    }
+  }
+
+  // MARK: - The merge
+
+  /// Rebuilds ``commands`` and the kind of each command from the builtins
+  /// and the current provider sets. Logs every collision win and every
+  /// reserved-name drop.
+  private func merge() {
+    var positions: [String: Int] = [:]
+    var merged: [SlashCommand] = []
+    var mergedKinds: [String: CommandKind] = [:]
+    for builtin in builtins {
+      guard positions[builtin.name] == nil else {
+        ACPAgentTelemetry.logger(.commands).error(
+          "Two built-in commands have the same name. The registry dropped the later one.",
+          metadata: Self.commandMetadata(builtin))
+        continue
+      }
+      positions[builtin.name] = merged.count
+      merged.append(builtin)
+      mergedKinds[builtin.name] = .builtin
+    }
+    let reservedNames = Set(positions.keys)
+    for (provider, set) in zip(providers, providerSets) {
+      for command in set {
+        if reservedNames.contains(command.name) {
+          ACPAgentTelemetry.logger(.commands).notice(
+            "A command has the name of a built-in command. The registry dropped the command.",
+            metadata: Self.commandMetadata(command))
+          continue
         }
-    }
-
-    /// Loads each provider's initial command set, merges, and starts to
-    /// follow each provider's `commandUpdates` stream. Call it one time,
-    /// at session creation.
-    func load() async {
-        providerSets = []
-        for provider in providers {
-            providerSets.append(await provider.commands(workingDirectory: workingDirectory))
+        if let position = positions[command.name] {
+          ACPAgentTelemetry.logger(.commands).notice(
+            "Two command sources have the same command name. The later source wins.",
+            metadata: Self.commandMetadata(command))
+          merged[position] = command
+        } else {
+          positions[command.name] = merged.count
+          merged.append(command)
         }
-        merge()
-        subscribe()
+        mergedKinds[command.name] = CommandKind(of: command, from: provider)
+      }
     }
+    commands = merged
+    kinds = mergedKinds
+  }
 
-    /// Sets the publisher and publishes the current merged set at once.
-    /// Every later provider update publishes again through the same
-    /// publisher.
-    ///
-    /// - Parameter publisher: The consumer of each merged-set
-    ///   publication.
-    func beginPublishing(_ publisher: @escaping @Sendable ([SlashCommand]) async -> Void) async {
-        self.publisher = publisher
-        await publisher(commands)
+  /// The metadata of a record about one command of the merge: the command
+  /// name. The record holds no other value of the command.
+  ///
+  /// - Parameter command: The command that the record is about.
+  /// - Returns: The ``ACPAgentTelemetry/LogMetadataKey/commandName`` value.
+  private static func commandMetadata(_ command: SlashCommand) -> Logger.Metadata {
+    [ACPAgentTelemetry.LogMetadataKey.commandName: "\(command.name)"]
+  }
+
+  /// Starts one follower task per provider with a `commandUpdates`
+  /// stream. Each pushed set replaces that provider's slot wholesale.
+  private func subscribe() {
+    for (index, provider) in providers.enumerated() {
+      guard let updates = provider.commandUpdates else { continue }
+      subscriptions.append(
+        Task { [weak self] in
+          for await set in updates {
+            guard let self else { return }
+            await self.replaceSet(at: index, with: set)
+          }
+        })
     }
+  }
 
-    /// The merged command with `name`, or `nil` when no source offers
-    /// it.
-    ///
-    /// - Parameter name: The bare command name, no leading slash.
-    /// - Returns: The winning command, or `nil`.
-    func command(named name: String) -> SlashCommand? {
-        commands.first { $0.name == name }
+  /// Replaces one provider's set, re-merges, and publishes.
+  ///
+  /// - Parameters:
+  ///   - index: The provider's position in ``providers``.
+  ///   - set: The pushed replacement set.
+  private func replaceSet(at index: Int, with set: [SlashCommand]) async {
+    providerSets[index] = set
+    merge()
+    if let publisher {
+      await publisher(commands)
     }
+  }
 
-    /// The kind of the merged command with `name`, or `nil` when no source
-    /// offers it.
-    ///
-    /// - Parameter name: The bare command name, no leading slash.
-    /// - Returns: The kind of the winning command, or `nil`.
-    func kind(ofCommandNamed name: String) -> CommandKind? {
-        kinds[name]
+  // MARK: - The edit distance
+
+  /// The Levenshtein distance between two names, for the near-miss
+  /// search.
+  ///
+  /// - Parameters:
+  ///   - left: The first name.
+  ///   - right: The second name.
+  /// - Returns: The number of single-character edits that change one
+  ///   name into the other.
+  static func editDistance(_ left: String, _ right: String) -> Int {
+    let leftCharacters = Array(left)
+    let rightCharacters = Array(right)
+    var previousRow = Array(0...rightCharacters.count)
+    for (leftIndex, leftCharacter) in leftCharacters.enumerated() {
+      var currentRow = [leftIndex + 1]
+      for (rightIndex, rightCharacter) in rightCharacters.enumerated() {
+        let substitution = previousRow[rightIndex] + (leftCharacter == rightCharacter ? 0 : 1)
+        let insertion = currentRow[rightIndex] + 1
+        let deletion = previousRow[rightIndex + 1] + 1
+        currentRow.append(min(substitution, insertion, deletion))
+      }
+      previousRow = currentRow
     }
-
-    /// The number of near-miss suggestions an unknown command names.
-    private static let maxSuggestions = 3
-
-    /// The largest edit distance a suggestion may have. A name farther
-    /// from every command gives no suggestion.
-    private static let maxSuggestionDistance = 3
-
-    /// The merged command names closest to `name`, nearest first, for
-    /// the unknown-command error.
-    ///
-    /// - Parameter name: The unknown command name.
-    /// - Returns: At most ``maxSuggestions`` names within
-    ///   ``maxSuggestionDistance`` edits, ordered by distance and then
-    ///   by name.
-    func nearMisses(to name: String) -> [String] {
-        commands
-            .map { command in (name: command.name, distance: Self.editDistance(name, command.name)) }
-            .filter { $0.distance <= Self.maxSuggestionDistance }
-            .sorted { ($0.distance, $0.name) < ($1.distance, $1.name) }
-            .prefix(Self.maxSuggestions)
-            .map(\.name)
-    }
-
-    /// Maps a merged set to the wire's command list:
-    /// `name` and `description` map straight across, and the provider's
-    /// argument-hint string passes through unchanged as the text
-    /// input's `hint`.
-    ///
-    /// - Parameter commands: The merged set to map.
-    /// - Returns: The wire command list, in the same order.
-    static func availableCommands(for commands: [SlashCommand]) -> [AvailableCommand] {
-        commands.map { command in
-            .command(
-                Command(
-                    description: command.description,
-                    name: command.name,
-                    input: command.argumentHint.map { .text(TextCommandInput(hint: $0)) }))
-        }
-    }
-
-    // MARK: - The merge
-
-    /// Rebuilds ``commands`` and the kind of each command from the builtins
-    /// and the current provider sets. Logs every collision win and every
-    /// reserved-name drop.
-    private func merge() {
-        var positions: [String: Int] = [:]
-        var merged: [SlashCommand] = []
-        var mergedKinds: [String: CommandKind] = [:]
-        for builtin in builtins {
-            guard positions[builtin.name] == nil else {
-                ACPAgentTelemetry.logger(.commands).error(
-                    "Two built-in commands have the same name. The registry dropped the later one.",
-                    metadata: Self.commandMetadata(builtin))
-                continue
-            }
-            positions[builtin.name] = merged.count
-            merged.append(builtin)
-            mergedKinds[builtin.name] = .builtin
-        }
-        let reservedNames = Set(positions.keys)
-        for (provider, set) in zip(providers, providerSets) {
-            for command in set {
-                if reservedNames.contains(command.name) {
-                    ACPAgentTelemetry.logger(.commands).notice(
-                        "A command has the name of a built-in command. The registry dropped the command.",
-                        metadata: Self.commandMetadata(command))
-                    continue
-                }
-                if let position = positions[command.name] {
-                    ACPAgentTelemetry.logger(.commands).notice(
-                        "Two command sources have the same command name. The later source wins.",
-                        metadata: Self.commandMetadata(command))
-                    merged[position] = command
-                } else {
-                    positions[command.name] = merged.count
-                    merged.append(command)
-                }
-                mergedKinds[command.name] = CommandKind(of: command, from: provider)
-            }
-        }
-        commands = merged
-        kinds = mergedKinds
-    }
-
-    /// The metadata of a record about one command of the merge: the command
-    /// name. The record holds no other value of the command.
-    ///
-    /// - Parameter command: The command that the record is about.
-    /// - Returns: The ``ACPAgentTelemetry/LogMetadataKey/commandName`` value.
-    private static func commandMetadata(_ command: SlashCommand) -> Logger.Metadata {
-        [ACPAgentTelemetry.LogMetadataKey.commandName: "\(command.name)"]
-    }
-
-    /// Starts one follower task per provider with a `commandUpdates`
-    /// stream. Each pushed set replaces that provider's slot wholesale.
-    private func subscribe() {
-        for (index, provider) in providers.enumerated() {
-            guard let updates = provider.commandUpdates else { continue }
-            subscriptions.append(
-                Task { [weak self] in
-                    for await set in updates {
-                        guard let self else { return }
-                        await self.replaceSet(at: index, with: set)
-                    }
-                })
-        }
-    }
-
-    /// Replaces one provider's set, re-merges, and publishes.
-    ///
-    /// - Parameters:
-    ///   - index: The provider's position in ``providers``.
-    ///   - set: The pushed replacement set.
-    private func replaceSet(at index: Int, with set: [SlashCommand]) async {
-        providerSets[index] = set
-        merge()
-        if let publisher {
-            await publisher(commands)
-        }
-    }
-
-    // MARK: - The edit distance
-
-    /// The Levenshtein distance between two names, for the near-miss
-    /// search.
-    ///
-    /// - Parameters:
-    ///   - left: The first name.
-    ///   - right: The second name.
-    /// - Returns: The number of single-character edits that change one
-    ///   name into the other.
-    static func editDistance(_ left: String, _ right: String) -> Int {
-        let leftCharacters = Array(left)
-        let rightCharacters = Array(right)
-        var previousRow = Array(0...rightCharacters.count)
-        for (leftIndex, leftCharacter) in leftCharacters.enumerated() {
-            var currentRow = [leftIndex + 1]
-            for (rightIndex, rightCharacter) in rightCharacters.enumerated() {
-                let substitution = previousRow[rightIndex] + (leftCharacter == rightCharacter ? 0 : 1)
-                let insertion = currentRow[rightIndex] + 1
-                let deletion = previousRow[rightIndex + 1] + 1
-                currentRow.append(min(substitution, insertion, deletion))
-            }
-            previousRow = currentRow
-        }
-        return previousRow[rightCharacters.count]
-    }
+    return previousRow[rightCharacters.count]
+  }
 }
 
 // MARK: - The command kind
@@ -268,37 +268,37 @@ actor CommandRegistry {
 /// span attribute. It is part of the observable surface of the agent, so
 /// change a raw value only as a deliberate break.
 enum CommandKind: String, Sendable {
-    /// A built-in command of the agent, the first source.
-    case builtin
+  /// A built-in command of the agent, the first source.
+  case builtin
 
-    /// A command of the skills source, the third source.
-    case skill
+  /// A command of the skills source, the third source.
+  case skill
 
-    /// A command of a linked provider whose text goes to the model as a
-    /// prompt: a `.prompt` template or a `.rendered` body.
-    case promptTemplate = "prompt_template"
+  /// A command of a linked provider whose text goes to the model as a
+  /// prompt: a `.prompt` template or a `.rendered` body.
+  case promptTemplate = "prompt_template"
 
-    /// A command of a linked provider that streams its own text and makes
-    /// no model call: an `.action` body.
-    case action
+  /// A command of a linked provider that streams its own text and makes
+  /// no model call: an `.action` body.
+  case action
 
-    /// The kind of a command that a later source gave.
-    ///
-    /// - Parameters:
-    ///   - command: The command.
-    ///   - provider: The source that gave the command.
-    init(of command: SlashCommand, from provider: any SlashCommandProviding) {
-        if provider is SkillCommandSource {
-            self = .skill
-            return
-        }
-        switch command.body {
-        case .action:
-            self = .action
-        case .prompt, .rendered:
-            self = .promptTemplate
-        }
+  /// The kind of a command that a later source gave.
+  ///
+  /// - Parameters:
+  ///   - command: The command.
+  ///   - provider: The source that gave the command.
+  init(of command: SlashCommand, from provider: any SlashCommandProviding) {
+    if provider is SkillCommandSource {
+      self = .skill
+      return
     }
+    switch command.body {
+    case .action:
+      self = .action
+    case .prompt, .rendered:
+      self = .promptTemplate
+    }
+  }
 }
 
 // MARK: - The skills source
@@ -318,61 +318,61 @@ enum CommandKind: String, Sendable {
 /// `.rendered` itself (upstream adoption `c2pad49`): the
 /// pass-through arm below already forwards a `.rendered` body unchanged.
 struct SkillCommandSource: SlashCommandProviding {
-    /// The session's skills registry, built with `watch: true` so
-    /// `commandUpdates` is non-nil.
-    let registry: SkillsRegistry
+  /// The session's skills registry, built with `watch: true` so
+  /// `commandUpdates` is non-nil.
+  let registry: SkillsRegistry
 
-    /// The registry's user-invocable skills, one `/id` command each,
-    /// with the temporary `.rendered` wrap applied.
-    ///
-    /// - Parameter workingDirectory: The session working directory.
-    /// - Returns: The wrapped command set.
-    func commands(workingDirectory: URL) async -> [SlashCommand] {
-        await registry.commands(workingDirectory: workingDirectory).map(routed(_:))
-    }
+  /// The registry's user-invocable skills, one `/id` command each,
+  /// with the temporary `.rendered` wrap applied.
+  ///
+  /// - Parameter workingDirectory: The session working directory.
+  /// - Returns: The wrapped command set.
+  func commands(workingDirectory: URL) async -> [SlashCommand] {
+    await registry.commands(workingDirectory: workingDirectory).map(routed(_:))
+  }
 
-    /// The registry's pushed re-publications, each set wrapped the same
-    /// way. `nil` when the registry was built with `watch: false`.
-    var commandUpdates: AsyncStream<[SlashCommand]>? {
-        guard let updates = registry.commandUpdates else { return nil }
-        let (stream, continuation) = AsyncStream<[SlashCommand]>.makeStream()
-        let source = self
-        let bridge = Task {
-            for await set in updates {
-                continuation.yield(set.map(source.routed(_:)))
-            }
-            continuation.finish()
-        }
-        continuation.onTermination = { _ in bridge.cancel() }
-        return stream
+  /// The registry's pushed re-publications, each set wrapped the same
+  /// way. `nil` when the registry was built with `watch: false`.
+  var commandUpdates: AsyncStream<[SlashCommand]>? {
+    guard let updates = registry.commandUpdates else { return nil }
+    let (stream, continuation) = AsyncStream<[SlashCommand]>.makeStream()
+    let source = self
+    let bridge = Task {
+      for await set in updates {
+        continuation.yield(set.map(source.routed(_:)))
+      }
+      continuation.finish()
     }
+    continuation.onTermination = { _ in bridge.cancel() }
+    return stream
+  }
 
-    /// Applies the temporary wrap to one skill command: a `.prompt`
-    /// body becomes a `.rendered` body that runs
-    /// `registry.call(id:arguments:)`. Any other body passes through
-    /// unchanged — that arm is what makes the wrap removable once
-    /// Skills emits `.rendered` itself.
-    ///
-    /// - Parameter command: The skill command to wrap.
-    /// - Returns: The wrapped command.
-    private func routed(_ command: SlashCommand) -> SlashCommand {
-        guard case .prompt = command.body else { return command }
-        let registry = registry
-        let id = command.name
-        var wrapped = command
-        wrapped.body = .rendered { invocation in
-            try await registry.call(id: id, arguments: Self.splitArguments(invocation.arguments))
-        }
-        return wrapped
+  /// Applies the temporary wrap to one skill command: a `.prompt`
+  /// body becomes a `.rendered` body that runs
+  /// `registry.call(id:arguments:)`. Any other body passes through
+  /// unchanged — that arm is what makes the wrap removable once
+  /// Skills emits `.rendered` itself.
+  ///
+  /// - Parameter command: The skill command to wrap.
+  /// - Returns: The wrapped command.
+  private func routed(_ command: SlashCommand) -> SlashCommand {
+    guard case .prompt = command.body else { return command }
+    let registry = registry
+    let id = command.name
+    var wrapped = command
+    wrapped.body = .rendered { invocation in
+      try await registry.call(id: id, arguments: Self.splitArguments(invocation.arguments))
     }
+    return wrapped
+  }
 
-    /// Splits the raw invocation text into the positional argument list
-    /// `registry.call(id:arguments:)` takes: whitespace-separated
-    /// words, empty words dropped.
-    ///
-    /// - Parameter raw: The raw text after `/name `.
-    /// - Returns: The positional arguments.
-    static func splitArguments(_ raw: String) -> [String] {
-        raw.split(whereSeparator: \.isWhitespace).map(String.init)
-    }
+  /// Splits the raw invocation text into the positional argument list
+  /// `registry.call(id:arguments:)` takes: whitespace-separated
+  /// words, empty words dropped.
+  ///
+  /// - Parameter raw: The raw text after `/name `.
+  /// - Returns: The positional arguments.
+  static func splitArguments(_ raw: String) -> [String] {
+    raw.split(whereSeparator: \.isWhitespace).map(String.init)
+  }
 }
