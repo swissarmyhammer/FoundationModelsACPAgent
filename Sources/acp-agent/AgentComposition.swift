@@ -53,6 +53,20 @@ enum AgentComposition {
     /// nothing, and the library's one-chunk echo answers as before.
     static let stubChunkGateVariable = "ACP_AGENT_STUB_CHUNK_GATE"
 
+    /// The environment variable that names the script of the stub model:
+    /// the absolute path of a JSON file (`ScriptedStubScript`).
+    ///
+    /// It exists so that a test over a process boundary can make a session
+    /// call a tool, as the scripted model of the in-process tests does. A
+    /// value selects the stub path, as ``stubModelVariable`` does, and the
+    /// scripted model on it. Each session plays the entry of the file that
+    /// its first prompt matches, and echoes when none matches. A file that
+    /// cannot be read, or is not valid, stops the composition with an
+    /// error.
+    ///
+    /// An absent or empty value changes nothing.
+    static let stubScriptVariable = "ACP_AGENT_STUB_SCRIPT"
+
     /// The environment variable that names the folder of the home of the
     /// CLI (task ^98a44n7). `--home` sets it too (``HomeOptions``). With no
     /// value, the home is the XDG home. See ``home(environment:)``.
@@ -89,10 +103,23 @@ enum AgentComposition {
     ///
     /// - Parameter environment: The environment to read.
     /// - Returns: `ComposedAgent.ModelSource.stub` when the variable holds
-    ///   ``stubModelEnabledValue``; `ComposedAgent.ModelSource.live`
-    ///   otherwise.
+    ///   ``stubModelEnabledValue``, or when ``stubScriptVariable`` has a
+    ///   value; `ComposedAgent.ModelSource.live` otherwise.
     static func modelSource(environment: [String: String]) -> ComposedAgent.ModelSource {
-        environment[stubModelVariable] == stubModelEnabledValue ? .stub : .live
+        environment[stubModelVariable] == stubModelEnabledValue || stubScript(environment: environment) != nil
+            ? .stub : .live
+    }
+
+    /// Reads ``stubScriptVariable`` out of `environment`.
+    ///
+    /// - Parameter environment: The environment to read.
+    /// - Returns: The path of the script file of the stub model, or `nil`
+    ///   when the variable is absent or empty.
+    static func stubScript(environment: [String: String]) -> String? {
+        guard let path = environment[stubScriptVariable], !path.isEmpty else {
+            return nil
+        }
+        return path
     }
 
     /// Reads ``stubChunkGateVariable`` out of `environment`.
@@ -135,7 +162,7 @@ enum AgentComposition {
     }
 
     /// Composes the agent of the CLI through the public library helper
-    /// `ComposedAgent.compose(name:workingDirectory:home:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:userDeviceTokens:huggingFaceTokenProvider:reporting:)`.
+    /// `ComposedAgent.compose(name:workingDirectory:home:environment:modelSource:stubChunkGate:stubScript:transcriptLocation:secretStore:userDeviceTokens:huggingFaceTokenProvider:reporting:)`.
     /// The CLI gives no `transcriptLocation`: its config files decide.
     ///
     /// The CLI adds its own choices only: ``dotfolderName``, the home that
@@ -163,7 +190,8 @@ enum AgentComposition {
     ///     start-up configuration loads from.
     ///   - environment: The environment that ``home(environment:)`` reads
     ///     the home from, and ``modelSource(environment:)`` and
-    ///     ``stubChunkGate(environment:)`` read the model switch from.
+    ///     ``stubChunkGate(environment:)`` and ``stubScript(environment:)``
+    ///     read the model switch from.
     ///   - progress: The progress object the resolution reports into, or
     ///     `nil` for a fresh unobserved one. A caller that draws the
     ///     download bar of cli-plan.md §5.7 makes the object first, hands
@@ -185,6 +213,7 @@ enum AgentComposition {
             environment: environment,
             modelSource: modelSource(environment: environment),
             stubChunkGate: stubChunkGate(environment: environment),
+            stubScript: stubScript(environment: environment),
             reporting: progress)
     }
 

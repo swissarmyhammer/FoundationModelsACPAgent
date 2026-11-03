@@ -14,109 +14,6 @@ import Synchronization
 // the script. A pass holds the lock while it plays, and it leaves the lock
 // for each tool body, as a real model does: no tool body runs under the lock.
 
-/// A hold that a scripted pass waits on until the test calls ``release()``.
-///
-/// The wait also ends when the task of the pass is cancelled. Then it throws
-/// `CancellationError`. The wait is event-driven: a continuation, never a
-/// timer. After ``release()``, each wait ends at once.
-public final class ScriptedHold: Sendable, Equatable {
-    /// The state of a hold: the passes that wait, or released.
-    private enum State {
-        /// The hold holds. The key of a waiter is its token.
-        case holding(waiters: [Int: CheckedContinuation<Void, any Error>], nextToken: Int)
-
-        /// The test called ``ScriptedHold/release()``.
-        case released
-    }
-
-    /// The state, guarded because a wait, a cancel and the release can
-    /// come from different tasks.
-    private let state = Mutex(State.holding(waiters: [:], nextToken: 0))
-
-    /// Creates a hold that holds.
-    public init() {}
-
-    /// Two holds are equal only when they are the same hold.
-    ///
-    /// - Parameters:
-    ///   - lhs: A hold.
-    ///   - rhs: Another hold.
-    /// - Returns: `true` when `lhs` and `rhs` are the same object.
-    public static func == (lhs: ScriptedHold, rhs: ScriptedHold) -> Bool {
-        lhs === rhs
-    }
-
-    /// Ends each wait on this hold, and each later wait at once.
-    public func release() {
-        let waiters = state.withLock { state -> [CheckedContinuation<Void, any Error>] in
-            guard case .holding(let waiters, _) = state else { return [] }
-            state = .released
-            return Array(waiters.values)
-        }
-        for waiter in waiters {
-            waiter.resume()
-        }
-    }
-
-    /// Waits until the test calls ``release()``, or until the task is
-    /// cancelled.
-    ///
-    /// - Throws: `CancellationError` when the task is cancelled first.
-    func waitForRelease() async throws {
-        let token = state.withLock { state -> Int? in
-            guard case .holding(let waiters, let nextToken) = state else { return nil }
-            state = .holding(waiters: waiters, nextToken: nextToken + 1)
-            return nextToken
-        }
-        guard let token else { return }
-        try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
-                admit(continuation, token: token)
-            }
-        } onCancel: {
-            removeWaiter(token: token)?.resume(throwing: CancellationError())
-        }
-    }
-
-    /// Keeps `continuation` as a waiter, or resumes it at once when the
-    /// hold is released or the task is cancelled.
-    ///
-    /// The cancel flag is read under the lock. A cancel that comes before
-    /// the waiter is kept thus finds no waiter, and this read sees the flag.
-    ///
-    /// - Parameters:
-    ///   - continuation: The continuation of the waiting pass.
-    ///   - token: The token of the waiter.
-    private func admit(_ continuation: CheckedContinuation<Void, any Error>, token: Int) {
-        let outcome = state.withLock { state -> Result<Void, any Error>? in
-            guard case .holding(var waiters, let nextToken) = state else { return .success(()) }
-            if Task.isCancelled {
-                return .failure(CancellationError())
-            }
-            waiters[token] = continuation
-            state = .holding(waiters: waiters, nextToken: nextToken)
-            return nil
-        }
-        if let outcome {
-            continuation.resume(with: outcome)
-        }
-    }
-
-    /// Removes the waiter of `token`.
-    ///
-    /// - Parameter token: The token of the waiter.
-    /// - Returns: The continuation of the waiter, or `nil` when the hold
-    ///   has no waiter with that token.
-    private func removeWaiter(token: Int) -> CheckedContinuation<Void, any Error>? {
-        state.withLock { state in
-            guard case .holding(var waiters, let nextToken) = state else { return nil }
-            let removed = waiters.removeValue(forKey: token)
-            state = .holding(waiters: waiters, nextToken: nextToken)
-            return removed
-        }
-    }
-}
-
 /// Counts the passes of a queued scripted model: the passes that started,
 /// the passes that hold the model, the maximum number that held it at the
 /// same time, and the passes that wait for it.
@@ -301,7 +198,7 @@ public final class ScriptedPassCounter: Sendable {
 /// The pass leaves the model for each tool body and takes it again after
 /// the body. The turn knows if the pass holds the model now, so ``end()``
 /// leaves the model only when the pass holds it.
-final class ScriptedModelTurn: Sendable {
+final class ScriptedModelTurn: ScriptedPassTurn {
     /// The counter that owns the model lock.
     private let counter: ScriptedPassCounter
 

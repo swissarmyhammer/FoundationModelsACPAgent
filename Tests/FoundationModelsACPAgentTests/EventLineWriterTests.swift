@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsACP
+import FoundationModelsACPAgent
 import FoundationModelsACPAgentTestSupport
 import Testing
 

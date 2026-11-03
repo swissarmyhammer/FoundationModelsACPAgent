@@ -11,7 +11,7 @@ import Synchronization
 // library's echo backend answers in one chunk and in microseconds, so a
 // signal always lands after the prompt is over.
 //
-// The chunk gate of ``ComposedAgent/compose(name:workingDirectory:home:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:userDeviceTokens:huggingFaceTokenProvider:reporting:)``
+// The chunk gate of ``ComposedAgent/compose(name:workingDirectory:home:environment:modelSource:stubChunkGate:stubScript:transcriptLocation:secretStore:userDeviceTokens:huggingFaceTokenProvider:reporting:)``
 // holds a prompt open. The prompt comes back word by word, and before each
 // word the stub reads one byte from a named pipe that the test holds. Thus
 // a test can send `SIGINT` into a live prompt across a real process
@@ -53,6 +53,12 @@ final class StubChunkGate: Sendable {
     /// - Parameter path: The path of the named pipe.
     init(path: String) {
         self.path = path
+    }
+
+    deinit {
+        if let descriptor = state.withLock({ $0.descriptor }) {
+            close(descriptor)
+        }
     }
 
     /// Waits until the test lets the next chunk go out: one byte came, or

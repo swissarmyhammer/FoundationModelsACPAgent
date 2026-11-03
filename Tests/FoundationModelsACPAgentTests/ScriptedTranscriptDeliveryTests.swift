@@ -1,6 +1,7 @@
 import Dispatch
 import Foundation
 import FoundationModels
+import FoundationModelsACPAgent
 import FoundationModelsACPAgentTestSupport
 import Synchronization
 import Testing

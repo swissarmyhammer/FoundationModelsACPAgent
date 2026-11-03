@@ -10,7 +10,7 @@ import HuggingFace
 ///
 /// The work has two steps, and only the first one is slow or can fail:
 ///
-/// 1. ``compose(name:workingDirectory:home:environment:modelSource:stubChunkGate:transcriptLocation:secretStore:userDeviceTokens:huggingFaceTokenProvider:reporting:)``
+/// 1. ``compose(name:workingDirectory:home:environment:modelSource:stubChunkGate:stubScript:transcriptLocation:secretStore:userDeviceTokens:huggingFaceTokenProvider:reporting:)``
 ///    loads the configuration, builds the router and resolves the profile.
 ///    It is `async` and `throws`. A host calls it one time, before it opens
 ///    a connection.
@@ -124,6 +124,12 @@ public struct ComposedAgent: Sendable {
     ///     one byte from before each chunk, or `nil` (the default) for the
     ///     one-chunk echo. Only ``ModelSource/stub`` reads it. A test holds
     ///     a prompt open with it, with no clock.
+    ///   - stubScript: The path of a JSON script file for the stub model
+    ///     (``ScriptedStubScript``), or `nil` (the default) for the echo. Only
+    ///     ``ModelSource/stub`` reads it. Each session of the stub model then
+    ///     plays the entry of the script that its first prompt matches, and
+    ///     echoes when no entry matches. The script has its own `gate` step,
+    ///     thus `stubChunkGate` is not read when a script is given.
     ///   - transcriptLocation: The transcript location that wins over the
     ///     `transcripts.location` of every config layer, or `nil` (the
     ///     default) to let the config files decide. A host that runs the
@@ -174,6 +180,7 @@ public struct ComposedAgent: Sendable {
         environment: [String: String] = ProcessInfo.processInfo.environment,
         modelSource: ModelSource = .live,
         stubChunkGate: String? = nil,
+        stubScript: String? = nil,
         transcriptLocation: TranscriptLocation? = nil,
         secretStore: (any SecretStore)? = nil,
         userDeviceTokens: Set<String> = [],
@@ -191,6 +198,7 @@ public struct ComposedAgent: Sendable {
             router: try makeRouter(
                 for: modelSource,
                 gatedBy: stubChunkGate,
+                scriptedBy: stubScript,
                 recordingInto: try makeRecordingsDirectory(),
                 hooks: hooks.dispatcher,
                 home: home,
@@ -281,6 +289,9 @@ public struct ComposedAgent: Sendable {
     ///   - chunkGate: The path of the named pipe of a stub answer, or
     ///     `nil` for the library's one-chunk echo. The live path ignores
     ///     it.
+    ///   - stubScript: The path of the script file of the stub model, or
+    ///     `nil` for the echo. The live path ignores it. A script wins over
+    ///     `chunkGate`.
     ///   - recordingsDirectory: The router's own recordings root — see
     ///     ``makeRecordingsDirectory()``.
     ///   - hooks: The dispatcher that each session of the router sends its
@@ -297,10 +308,13 @@ public struct ComposedAgent: Sendable {
     /// - Returns: A router over `LiveModelLoader` for ``ModelSource/live``,
     ///   or the library's `EchoModel` router — stub machine, stub
     ///   metadata, echo loader — for ``ModelSource/stub``.
-    /// - Throws: The directory-creation error of the stub cache.
+    /// - Throws: The directory-creation error of the stub cache, or the
+    ///   ``ScriptedStubScriptError`` of a script file that cannot be read or
+    ///   is not valid.
     static func makeRouter(
         for modelSource: ModelSource,
         gatedBy chunkGate: String?,
+        scriptedBy stubScript: String? = nil,
         recordingInto recordingsDirectory: URL,
         hooks: HookDispatcher,
         home: AgentHome,
@@ -319,7 +333,7 @@ public struct ComposedAgent: Sendable {
             EchoModel.makeRouter(
                 cacheDirectory: try makeStubCacheDirectory(),
                 recordingsDirectory: recordingsDirectory,
-                loader: makeStubLoader(gatedBy: chunkGate),
+                loader: try makeStubLoader(gatedBy: chunkGate, scriptedBy: stubScript),
                 hooks: hooks)
         }
     }
@@ -341,11 +355,23 @@ public struct ComposedAgent: Sendable {
 
     /// Makes the loader of the stub path.
     ///
-    /// - Parameter chunkGate: The path of the named pipe, or `nil`.
-    /// - Returns: The library's own stub loader when `chunkGate` is
-    ///   `nil`, and one over ``GatedEchoLLMContainer`` otherwise. Each
-    ///   container of the loader shares one ``StubChunkGate``.
-    private static func makeStubLoader(gatedBy chunkGate: String?) -> StubModelLoader {
+    /// - Parameters:
+    ///   - chunkGate: The path of the named pipe, or `nil`.
+    ///   - stubScript: The path of the script file, or `nil`.
+    /// - Returns: A loader over ``ScriptedLLMContainer`` when `stubScript` is
+    ///   given. Else the library's own stub loader when `chunkGate` is `nil`,
+    ///   and one over ``GatedEchoLLMContainer`` otherwise. Each container of
+    ///   the loader shares one ``StubChunkGate``.
+    /// - Throws: The ``ScriptedStubScriptError`` of a script file that cannot
+    ///   be read or is not valid. The file is read here, once, so a bad file
+    ///   stops the composition before the wire opens.
+    private static func makeStubLoader(
+        gatedBy chunkGate: String?, scriptedBy stubScript: String?
+    ) throws -> StubModelLoader {
+        if let stubScript {
+            let script = try ScriptedStubScript.load(fromPath: stubScript)
+            return StubModelLoader { _ in ScriptedLLMContainer(playbook: .sessions(script)) }
+        }
         guard let chunkGate else {
             return StubModelLoader()
         }
