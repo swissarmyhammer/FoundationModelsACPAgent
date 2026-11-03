@@ -118,7 +118,7 @@ extension RoutedACPAgent {
         guard let sessionId else {
             return try serverEndpointOfTheSessions(named: name)
         }
-        guard let session = sessions[sessionId], !session.isClosed else {
+        guard let session = sessions[sessionId], !session.isClosed, session.ownsSurface else {
             throw GraphQLTunnelError.sessionNotFound(sessionId)
         }
         guard let endpoint = session.surface.graphQLEndpoints.first(where: { $0.name == name }) else {
@@ -169,7 +169,7 @@ extension RoutedACPAgent {
     /// - Returns: The endpoints; a name can be in more than one session.
     private func liveSessionGraphQLEndpoints() -> [any GraphQLEndpoint] {
         sessions
-            .filter { !$0.value.isClosed }
+            .filter { !$0.value.isClosed && $0.value.ownsSurface }
             .sorted { $0.key.rawValue < $1.key.rawValue }
             .flatMap { $0.value.surface.graphQLEndpoints }
     }

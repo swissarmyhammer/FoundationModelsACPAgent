@@ -48,7 +48,15 @@ comments:
     - Note: the RED step was not run on its own, because the package did not compile before the fix. The two new tests were written before the production code, but the first run of them was the green run.
     - next: review.
   timestamp: 2026-11-03T15:05:04.362873+00:00
-position_column: doing
+- actor: wballard
+  id: 01m6gz6ef9xpvzzbfbk815sc1s
+  text: |-
+    commit — changed
+    - evidence: 4184f76 feat(wire)!: adopt ACP schema alpha.13 and add the sub-agent sessions plan (^3j33qc8). Pushed to origin/main.
+    - tests: root swift test 1293 pass. IntegrationTests 34 of 36 pass; the 2 failures are in EmbeddingModelTests (theShippedDefaultCoreMLModelLoadsAndEmbeds, aConfiguredMLXQwenEmbeddingModelLoadsAndEmbeds) with "profile coding cannot co-fit a budget of 78259 bytes" in Router profile resolution. Not a wire break. KNOWN ISSUE, not fixed here: likely an existing mismatch between these tests and the Router main (the Router dropped the native max context floor and default recently); not proven on a clean baseline because the baseline no longer builds against the new wire. Needs its own card.
+    - next: review, then the tasks behind it.
+  timestamp: 2026-11-03T15:07:14.281273+00:00
+position_column: review
 position_ordinal: '80'
 title: 'Adopt ACP schema alpha.13 in the agent: update the wire dependency and fix the breaks'
 ---

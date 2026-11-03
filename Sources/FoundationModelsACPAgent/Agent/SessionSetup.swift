@@ -22,12 +22,25 @@ enum SessionAvailability: Equatable, Sendable {
     case closed
 }
 
-/// One live session in the agent's table: the root Router
+/// One live session in the agent's table: the Router
 /// session plus everything the session composed per cwd — its config, its
 /// assembled instructions, its confinement root set, its transcript
 /// directory, and the mounted tool surface whose pool the session
-/// lifecycle shuts down at close. One ACP session is one root Router
-/// session, with the same ULID.
+/// lifecycle shuts down at close. One ACP session is one Router session,
+/// with the same ULID.
+///
+/// A root session and a nested sub-agent session are the same type, built by
+/// one function (``RoutedACPAgent/registerSession(_:sessionId:parent:build:)``).
+/// A root session has no parent. A nested session has a parent and
+/// **borrows** from it the parts that belong to the mounted surface:
+/// ``configuration``, ``instructions``, ``workingDirectory``,
+/// ``additionalRoots``, ``surface``, ``commands``, ``userPresence`` and
+/// ``isReplayOnly``. It **owns** the parts that belong to the events of its
+/// own Router session: ``session``, ``transcriptDirectory``, ``stateLedger``,
+/// ``projector`` (with its relay and its join table), ``retainedHistory``,
+/// ``announcement`` and ``openPrompts``. The session that owns the surface
+/// (``ownsSurface``) alone stops the agent runs, finishes the shell stream
+/// and shuts the surface down.
 struct ActiveSession: Sendable {
     /// The Router session that answers this ACP session's prompts.
     /// Retaining it is what keeps the resident profile alive for this
@@ -104,6 +117,28 @@ struct ActiveSession: Sendable {
     /// queue after the parent goes. The runs of the `agents` tool are not
     /// here: `SessionSurface.stopAgentRuns()` stops them.
     var descendants: [any RoutedSession] = []
+
+    /// The session that this session is nested in, or `nil` for a root
+    /// session. A nested session is a sub-agent session: its id is the
+    /// Router ULID, and the link never changes (``SessionTree``).
+    let parentSessionId: SessionId?
+
+    /// The sessions nested directly in this session, in the order that they
+    /// started. The close of this session retires each of them.
+    var children: [SessionId] = []
+
+    /// The gate of the updates of this session. A root session sends from
+    /// its start. A nested session sends nothing until its announcement
+    /// opens the gate (``SessionAnnouncementGate``).
+    let announcement: SessionAnnouncementGate
+
+    /// Whether this session owns its mounted surface: only a session with no
+    /// parent does. The close of a nested session never stops the agent
+    /// runs of the surface, never finishes its shell stream and never shuts
+    /// it down, because the parent still uses it.
+    var ownsSurface: Bool {
+        parentSessionId == nil
+    }
 
     /// Whether the session is replay-only: `session/resume` found its
     /// working directory or one of its additional roots missing. The agent
@@ -672,11 +707,13 @@ extension RoutedACPAgent {
         return response
     }
 
-    /// Mounts one made or restored Router session into the agent: the
+    /// Mounts one made or restored root Router session into the agent: the
     /// record of its placement (``recordPlacement(of:placement:)``), the
     /// command registry with
     /// its bound builtin context, the table entry with its retained
-    /// history, the command-set publication, the terminal projection, and
+    /// history (the one build of a session,
+    /// ``registerSession(_:sessionId:parent:build:)``), the command-set
+    /// publication, the terminal projection, and
     /// the status report of the MCP servers.
     ///
     /// The caller sets the owner of the session before the mount
@@ -751,40 +788,15 @@ extension RoutedACPAgent {
 
         // The one reader of the events of the session starts before anything
         // can mail the session, so it keeps each event (elicitation-plan
-        // task 1). The relay reads the outbound path of the session at each
-        // question, so a question goes to the connection of the session as
-        // it is then.
-        let shellOutput = composition.surface.shellOutput
-        let stateLedger = SessionStateLedger(send: historySink(for: sessionId))
-        let table = connections
-        let projector = SessionProjector(
+        // task 1). The build is the one that a nested session takes too.
+        try await registerSession(
+            session,
             sessionId: sessionId,
-            modelName: ConfigOptions.handle(for: ConfigOptions.defaultSlot, of: residentProfile).chosen.stringValue,
-            send: historySink(for: sessionId),
-            shellSnapshot: { commandID in shellOutput?.snapshot(for: commandID) },
-            relay: ElicitationRelay(sessionId: sessionId) { table.path(forSession: sessionId) },
-            runCallJoins: composition.surface.runCallJoins,
-            stateLedger: stateLedger)
-        await projector.attach(session)
-
-        sessions[sessionId] = ActiveSession(
-            session: session,
-            configuration: composition.configuration,
-            instructions: composition.instructions,
-            workingDirectory: workingDirectory,
-            additionalRoots: placement.additionalRoots,
-            transcriptDirectory: session.recordingDirectory,
-            surface: composition.surface,
-            commands: commands,
-            selectedSlot: ConfigOptions.defaultSlot,
-            announcedConfigOptions: configOptions,
-            userPresence: placement.userPresence,
-            stateLedger: stateLedger,
-            projector: projector,
-            isReplayOnly: composition.isReplayOnly,
-            titleRecorded: titleRecorded,
-            retainedHistory: RetainedHistory(history))
-        recordActiveSessions()
+            parent: nil,
+            build: SessionBuild(
+                composition: composition, placement: placement, commands: commands,
+                selectedSlot: ConfigOptions.defaultSlot, announcedConfigOptions: configOptions,
+                titleRecorded: titleRecorded, history: history))
 
         // The response announces the first command list, and each registry
         // change after it publishes the new list.

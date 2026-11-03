@@ -219,6 +219,13 @@ extension RoutedACPAgent {
     /// retained history to its file — in that order. The entry stays in the
     /// table, marked closed, so the session is still resumable.
     ///
+    /// A session that is nested in another one (``ActiveSession/parentSessionId``)
+    /// borrows the surface of its parent. Its teardown never stops the agent
+    /// runs, never finishes the shell stream and never shuts the surface
+    /// down: only the session that owns the surface does
+    /// (``ActiveSession/ownsSurface``). Each session nested in the session
+    /// retires (``retireSession(_:)``) after the agent runs stop.
+    ///
     /// It is idempotent: a session already closed has released its resources,
     /// so this returns at once.
     ///
@@ -246,7 +253,17 @@ extension RoutedACPAgent {
         // a `start agent` call started, thus the session sweep below cannot
         // cancel them, and a run that outlives the root session would send
         // its final message to a closed session.
-        await entry.surface.stopAgentRuns()
+        // A nested session borrows the surface, so only its owner stops the
+        // runs of the surface.
+        if entry.ownsSurface {
+            await entry.surface.stopAgentRuns()
+        }
+        // The run of each nested session closed its Router session when the
+        // runs stopped, so each nested session retires with its own nested
+        // sessions, before the session that they are nested in closes.
+        for childId in entry.children {
+            await retireSession(childId)
+        }
         // The session sweep: it cancels every background run, rejects every
         // pending elicitation, journals the terminal events, and finishes
         // every `streamSessionEvents()` subscription. `deinit` does not run
@@ -266,7 +283,9 @@ extension RoutedACPAgent {
         // runs still have their transports. The pool
         // stops the attached `SurfaceRefresher` first.
         markSessionClosed(sessionId)
-        await entry.surface.shutdown()
+        if entry.ownsSurface {
+            await entry.surface.shutdown()
+        }
         // The retained history goes to its file last, with each update that
         // came after the last prompt, so a new process resumes it whole.
         writeHistory(of: sessionId)

@@ -196,14 +196,25 @@ extension RoutedACPAgent {
     /// life of the session. The sink sends through the connection that it
     /// read from the table for this update, strongly for the send.
     ///
-    /// - Parameter sessionId: The session the updates belong to.
+    /// A session with a gate (``SessionAnnouncementGate``) keeps each update
+    /// in its history, and sends it only when the gate is open. The gate is
+    /// read for each update, so an update that goes out after the gate
+    /// opens is sent, and one that goes before it is not.
+    ///
+    /// - Parameters:
+    ///   - sessionId: The session the updates belong to.
+    ///   - gate: The gate of the session, or `nil` for a session that the
+    ///     client knows already.
     /// - Returns: The sink.
-    nonisolated func historySink(for sessionId: SessionId) -> SessionUpdateSink {
+    nonisolated func historySink(for sessionId: SessionId, gate: SessionAnnouncementGate? = nil) -> SessionUpdateSink {
         { [weak self] update in
             guard let self else {
                 return
             }
             await recordInHistory(update, of: sessionId)
+            guard gate?.isOpen ?? true else {
+                return
+            }
             await connections.path(forSession: sessionId)?.connection.post(update, in: sessionId)
         }
     }

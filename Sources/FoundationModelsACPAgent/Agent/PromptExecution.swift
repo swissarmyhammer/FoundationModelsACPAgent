@@ -953,7 +953,9 @@ extension RoutedACPAgent {
     /// - Parameter sessionId: The session to mark.
     func markSessionClosed(_ sessionId: SessionId) {
         sessions[sessionId]?.isClosed = true
-        sessions[sessionId]?.surface.shellOutput?.finish()
+        if sessions[sessionId]?.ownsSurface ?? false {
+            sessions[sessionId]?.surface.shellOutput?.finish()
+        }
         recordActiveSessions()
         resumePromptsFinishedWaits(of: sessionId)
     }

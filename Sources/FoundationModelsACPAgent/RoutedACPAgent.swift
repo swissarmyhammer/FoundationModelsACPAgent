@@ -70,6 +70,11 @@ public actor RoutedACPAgent: Agent {
     /// connection, and is refused.
     nonisolated let connections = ConnectionTable()
 
+    /// The parent links of the sessions: a root session has none, and a
+    /// nested sub-agent session has one (``SessionTree``). It is the tree
+    /// of ``connections``: the table reads the same links for the owner.
+    nonisolated var sessionTree: SessionTree { connections.tree }
+
     /// The bearer tokens of the devices of the user, as the host gave them
     /// (ACPA-5b, D120 b). ``bind(connection:)`` gives `userDevice` to a
     /// connection whose bearer token is one of them, and `external` to a
@@ -183,11 +188,13 @@ public actor RoutedACPAgent: Agent {
     /// (``AgentMetrics``).
     ///
     /// A closed session stays in ``sessions`` so that it stays resumable, so
-    /// the count reads the entries that are not closed. Call it each time a
+    /// the count reads the entries that are not closed. A nested sub-agent
+    /// session is an entry of the table, and it is not a session that a
+    /// client opened, so the count reads the sessions with no parent. Call it each time a
     /// session is added (`session/new`, `session/resume`), closed
     /// (`session/close`, `session/delete`) or removed.
     func recordActiveSessions() {
-        AgentMetrics.recordActiveSessions(sessions.values.count { !$0.isClosed })
+        AgentMetrics.recordActiveSessions(sessions.values.count { !$0.isClosed && $0.parentSessionId == nil })
     }
 
     /// The registered linked `SlashCommandProviding` conformers

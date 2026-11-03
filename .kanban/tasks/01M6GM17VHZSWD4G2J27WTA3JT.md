@@ -18,6 +18,16 @@ comments:
     - To verify first: how the host finds the child session of an orphan run after a crash (orphan RunKey -> SDK tool call id in the journal -> recorded child with agentSpawn.parentToolCallId). The runner map from completion token to run is in memory and is lost in a crash.
     - Open (the user decides): how the live ACP tree tells the client that a finished child is gone. ACP has no removal message; a child stays an idle association.
   timestamp: 2026-11-03T12:22:44.474879+00:00
+- actor: wballard
+  id: 01m6h07p647y010z6nja5mjd7q
+  text: |-
+    DECISION (coordinator, 2026-11-03), failed children on resume:
+    1. A child that FAILS to restore is announced with a subagent_update: state unknown, no capabilities, and `_meta.sah.restoreFailure = { reason }` (typed wire payload SAH.RestoreFailure, being added by the ACP session; send the full `sah` object, since _meta patches by top-level key).
+    2. Each DESCENDANT of a failed child is announced the same way (unknown, parent before child), with the reason "an ancestor was not restored". They cannot be restored because their caller is not restored.
+    3. The client clears restoreFailure when a later current subagent_update with a state arrives. A silent agent (no current snapshot after the response) is NOT a failure: the child stays unconfirmed (unknown, controls disabled). The client has no timer.
+    4. The original call of the failed child ends as lost (the Router claim API closes an open claim as lost).
+    Add acceptance criteria and a test for items 1 and 2 (a failed child and its descendants announced unknown with the reason, the root still resumes).
+  timestamp: 2026-11-03T15:25:23.524276+00:00
 depends_on:
 - 01M6GM0N9BFK37GGBWPAG9VE1X
 - 01M6GH30709S58BK3AQ1VMBAM7

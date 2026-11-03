@@ -151,9 +151,18 @@ final class ConnectionTable: Sendable {
     /// The table, under its lock.
     private let state: Mutex<State>
 
+    /// The parent links of the sessions. A nested session has no owner
+    /// record: it has the owner of its parent, so a take of the parent, and
+    /// the close of the connection of the parent, reach it with no further
+    /// step. The table reads the links here and keeps no copy of them.
+    let tree: SessionTree
+
     /// Makes the table with the row of ``ConnectionId/direct`` only. The
     /// direct caller is in process, thus `userDevice`.
-    init() {
+    ///
+    /// - Parameter tree: The parent links that the owner lookup reads.
+    init(tree: SessionTree = SessionTree()) {
+        self.tree = tree
         let direct = ConnectionRow(id: .direct, trust: .userDevice, connection: nil)
         state = Mutex(State(rows: [.direct: direct]))
     }
@@ -246,13 +255,35 @@ final class ConnectionTable: Sendable {
         }
     }
 
-    /// The owner of a session.
+    /// The owner of a session. A nested session has the owner of its parent:
+    /// the owner record of the nearest session, from the session up through
+    /// its ancestors in the ``tree``, that has one. The session has no owner
+    /// when none of them has one.
     ///
     /// - Parameter sessionId: The session.
     /// - Returns: The id of the owner connection, or `nil` when the session
     ///   has no owner.
     func owner(of sessionId: SessionId) -> ConnectionId? {
-        state.withLock { $0.owners[sessionId] }
+        let lineage = lineage(of: sessionId)
+        return state.withLock { Self.owner(in: $0, along: lineage) }
+    }
+
+    /// The session and its ancestors, the session first and the root last.
+    ///
+    /// - Parameter sessionId: The session.
+    /// - Returns: The sessions whose owner record can give the owner.
+    private func lineage(of sessionId: SessionId) -> [SessionId] {
+        [sessionId] + tree.ancestors(of: sessionId).reversed()
+    }
+
+    /// The first owner record along a lineage.
+    ///
+    /// - Parameters:
+    ///   - state: The table.
+    ///   - lineage: The sessions to look at, the nearest first.
+    /// - Returns: The owner of the nearest session that has one, or `nil`.
+    private static func owner(in state: State, along lineage: [SessionId]) -> ConnectionId? {
+        lineage.lazy.compactMap { state.owners[$0] }.first
     }
 
     /// The connection that started a session with `session/new`.
@@ -301,8 +332,9 @@ final class ConnectionTable: Sendable {
     /// - Returns: The path, or `nil` when the session has no owner or its
     ///   owner has no outbound path.
     func path(forSession sessionId: SessionId) -> ClientPath? {
-        state.withLock { state in
-            state.owners[sessionId].flatMap { Self.path(of: $0, in: state) }
+        let lineage = lineage(of: sessionId)
+        return state.withLock { state in
+            Self.owner(in: state, along: lineage).flatMap { Self.path(of: $0, in: state) }
         }
     }
 

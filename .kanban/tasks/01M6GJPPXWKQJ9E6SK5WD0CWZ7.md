@@ -64,6 +64,16 @@ comments:
     EFFECT: this task and the re-drive task are BLOCKED by that card for the rule "finished children are not restored". Until it is done, the only way to find interrupted children is the orphan scan of the parent, which misses a child that crashed before its first journal event. Other Router needs of the restore (not decided, no card yet): a public lookup of recorded children by agentSpawn.parentToolCallId and a public orphan scan that does not need the restore of the parent; restore parameters for parentCall, the compaction settings and mailOnlyAnswerLimit (these come from the recording today, against the user rule that config comes from the current config).
     The chain to find the child of an orphan run is shorter than first written: orphan RunKey.correlationID (the completion token) equals the child agentSpawn.parentToolCallId, with parentSessionId equal to the parent. The SDK tool call id is not part of it.
   timestamp: 2026-11-03T12:40:50.614465+00:00
+- actor: wballard
+  id: 01m6h07ns2w7n8ahzdpgtjqe58
+  text: |-
+    DECISION (coordinator, 2026-11-03), failed children on resume:
+    1. A child that FAILS to restore is announced with a subagent_update: state unknown, no capabilities, and `_meta.sah.restoreFailure = { reason }` (typed wire payload SAH.RestoreFailure, being added by the ACP session; send the full `sah` object, since _meta patches by top-level key).
+    2. Each DESCENDANT of a failed child is announced the same way (unknown, parent before child), with the reason "an ancestor was not restored". They cannot be restored because their caller is not restored.
+    3. The client clears restoreFailure when a later current subagent_update with a state arrives. A silent agent (no current snapshot after the response) is NOT a failure: the child stays unconfirmed (unknown, controls disabled). The client has no timer.
+    4. The original call of the failed child ends as lost (the Router claim API closes an open claim as lost).
+    Add acceptance criteria and a test for items 1 and 2 (a failed child and its descendants announced unknown with the reason, the root still resumes).
+  timestamp: 2026-11-03T15:25:23.106541+00:00
 depends_on:
 - 01M6GH2K0VV6RWV5R6SN3HB9SV
 position_column: todo

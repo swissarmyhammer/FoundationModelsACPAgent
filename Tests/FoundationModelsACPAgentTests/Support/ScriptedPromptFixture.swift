@@ -61,6 +61,11 @@ struct ScriptedPromptFixture {
     /// connection close, and a read after this call is not a fixed point.
     func close() async {
         for sessionId in await harness.agent.sessions.keys {
+            // The close of a session retires each session nested in it, so a
+            // nested session can be gone when its turn comes.
+            guard await harness.agent.sessions[sessionId] != nil else {
+                continue
+            }
             do {
                 _ = try await harness.connection.closeSession(CloseSessionRequest(sessionId: sessionId))
             } catch {
