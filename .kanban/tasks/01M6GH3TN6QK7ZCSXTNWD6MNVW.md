@@ -19,6 +19,10 @@ comments:
     WIRE CHANGE (ACP review fix b86bfc2, 2026-11-03, on top of c1b6d20 / ded0830 / 9f1bcd1 / 129fc9a): `ToolCallUpdate.capabilities` is now `PatchField<ToolCallCapabilities>` (was `ToolCallCapabilities?`), and `TerminalUpdate.capabilities` is now `PatchField<TerminalCapabilities>` (was `TerminalCapabilities?`). Rule: omitted leaves the value, `null` clears it, an object replaces the whole value. `AccumulatedTerminal` has `size: TerminalSize?` and `capabilities: PatchField<TerminalCapabilities>`, and replay keeps both. `ElicitationUrlMode.Scope` is now a typealias of `ElicitationFormMode.Scope`.
     EFFECT: this is break number 14 for the adoption task: fix every place that builds or reads these capabilities. It matters for the cancel task (a tool call advertises `cancel` in its capabilities; the agent must clear it with `null` when the call reaches a final status, and must not send capabilities again as a plain value on later updates).
   timestamp: 2026-11-03T13:34:15.228151+00:00
+- actor: claude-code
+  id: 01m6h7g3n2qzrxdagtcxdwd7f7
+  text: 'UPSTREAM NOTE (ACP v2, PR 2743, text already in alpha.13): session/cancel does not stop work that is in the latest background list. The agent stops waiting for the pending requests of the CANCELLED work and SHOULD send $/cancel_request for them (the client answers a request cancelled by the agent with cancelled). For this task: (1) a parent session/cancel leaves the listed sub-agents running (they are in the background list) and cancels the foreground work, including the sub-agent that the turn waits for (not listed); (2) every pending elicitation (and any other agent-to-client request) of the cancelled foreground work gets $/cancel_request; none of a listed background child is cancelled. Add a test for both. Also watch (no card needed yet): draft RFDs 2756 (a failure session update replayed like messages), 2755 (error classification in the error data), 2485 (token usage semantics for sub-agents).'
+  timestamp: 2026-11-03T17:32:19.490875+00:00
 depends_on:
 - 01M6GH30709S58BK3AQ1VMBAM7
 - 01M6GH353HTRBREVKKN3N2WZW8

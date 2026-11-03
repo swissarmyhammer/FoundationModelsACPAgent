@@ -113,10 +113,27 @@ import Testing
         _ resume: ResumeSessionFixture, replayFrom: ReplayFrom?
     ) async throws -> [WireItem] {
         let tap = try #require(resume.fixture.harness.wireTap)
-        let countBefore = await tap.lines.count
-        _ = try await resume.fixture.harness.connection.resumeSession(
-            resume.makeResumeRequest(replayFrom: replayFrom))
-        return WireItem.items(ofWire: Array(await tap.lines.dropFirst(countBefore)))
+        return try await WireItem.sent(by: tap) {
+            _ = try await resume.fixture.harness.connection.resumeSession(
+                resume.makeResumeRequest(replayFrom: replayFrom))
+        }
+    }
+
+    /// Runs one prompt, closes the session, resumes it, and returns what the
+    /// agent sent from the start of the resume request to its response.
+    ///
+    /// - Parameters:
+    ///   - label: The directory label of the calling test.
+    ///   - replayFrom: The replay cursor of the request, or `nil` for none.
+    /// - Returns: The kinds of the wire items.
+    /// - Throws: Whatever the setup or the request throws.
+    private static func wireOfAResumeAfterAPrompt(label: String, replayFrom: ReplayFrom?) async throws -> [WireItem] {
+        var resume = try await ResumeSessionFixture.make(label: label, tapsWire: true)
+        try await resume.runPrompt("a question before the resume")
+        await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
+        let kinds = try await wireKindsOfAResume(resume, replayFrom: replayFrom)
+        await resume.fixture.close()
+        return kinds
     }
 
     // MARK: - The snapshot of the ledger
@@ -261,12 +278,7 @@ import Testing
     /// `state_update`, the `session_info_update`, and then the response.
     @Test
     func aResumeWithAReplaySendsTheReplayThenTheStateThenTheSessionInfoThenTheResponse() async throws {
-        var resume = try await ResumeSessionFixture.make(label: "ResumeSyncTests-replay-order", tapsWire: true)
-        try await resume.runPrompt("a question before the resume")
-        await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
-
-        let kinds = try await Self.wireKindsOfAResume(resume, replayFrom: .start(ReplayFromStart()))
-        await resume.fixture.close()
+        let kinds = try await Self.wireOfAResumeAfterAPrompt(label: "ResumeSyncTests-replay-order", replayFrom: .start(ReplayFromStart()))
 
         #expect(kinds.filter { $0 == .state }.count == 1)
         let stateIndex = try #require(kinds.firstIndex(of: .state))
@@ -283,12 +295,7 @@ import Testing
     /// response.
     @Test
     func aResumeWithNoReplaySendsTheStateAndTheSessionInfoBeforeTheResponseAndNoHistory() async throws {
-        var resume = try await ResumeSessionFixture.make(label: "ResumeSyncTests-no-replay-order", tapsWire: true)
-        try await resume.runPrompt("a question before the quiet resume")
-        await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
-
-        let kinds = try await Self.wireKindsOfAResume(resume, replayFrom: nil)
-        await resume.fixture.close()
+        let kinds = try await Self.wireOfAResumeAfterAPrompt(label: "ResumeSyncTests-no-replay-order", replayFrom: nil)
 
         #expect(!kinds.contains(.message))
         #expect(kinds.filter { $0 == .state }.count == 1)

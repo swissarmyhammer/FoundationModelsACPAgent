@@ -29,6 +29,10 @@ comments:
     WIRE NOTE (2026-11-03, from ACP commits c1b6d20, ded0830 and the _meta key-patch commit): the wire types exist now. SessionUpdate has subagentUpdate, sessionMessage and sessionMessageChunk. SubagentUpdate has patch fields (title, description, capabilities, state, cwd, additionalDirectories, meta). SAH.AgentRun (stored at _meta.sah.agentRun) links the tool call and its child: toolCallId on the subagent_update, sessionId on the tool_call and tool_call_update. BackgroundWork has a sub-agent case.
     RULE FOR THIS TASK: _meta on an upsert now patches by TOP-LEVEL key. A key that is sent replaces that key whole. So the agent must never send a partial `sah` object: if it sends `_meta.sah`, it must carry all the members that must stay (use SAH.AgentRun.inject on top of the existing _meta, keep the other `sah` members). The _meta of a chunk is scoped to the chunk and never changes the stored entry.
   timestamp: 2026-11-03T13:11:15.213217+00:00
+- actor: wballard
+  id: 01m6h6kn1y6bqqmc12verg54at
+  text: 'SPEC REVIEW (independent, 2026-11-03): nothing in the announcer orders the final tool_call_update of the agents call AFTER the final idle subagent_update of the child (rule: the final tool_call_update comes after the last update of the child and after its final state). Make this ordering explicit in this task, with a test, and route both through the one ordered queue.'
+  timestamp: 2026-11-03T17:16:47.038796+00:00
 depends_on:
 - 01M6GH30709S58BK3AQ1VMBAM7
 position_column: todo

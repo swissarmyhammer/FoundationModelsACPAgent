@@ -4,6 +4,10 @@ comments:
   id: 01m6gpcxzgs9zcn4j0y934v6q8
   text: 'UPDATE (2026-11-03): the re-vendor to schema-v2.0.0-alpha.13 is DONE and pushed (commit 4e0667c). The stable `StateUpdate` now has `background: [BackgroundWork]?`, but the stable `BackgroundWork` has only `.terminal` and `.toolCall` (plus `.unknown`). The `subagent` entry is NOT in the stable schema. So the `terminal` and `tool_call` entries of this task can be built now (after the adoption task 01M6GPCJ3CMS7YE71DQ3J33QC8). The `subagent` entry needs the wire types card (01M6GJ664BHY454C5NFPFCSP79), which must also give the unstable subagent entry for the background list. Split the work accordingly, or wait for the wire card for the sub-agent part.'
   timestamp: 2026-11-03T12:33:29.584172+00:00
+- actor: wballard
+  id: 01m6h6kmkzk3j7ahbexszq1887
+  text: 'SPEC REVIEW (independent, 2026-11-03): no state_update has a background list today (SessionStateLedger.currentSnapshot returns running, requires_action, or idle with only the noWork meta). A running sub-agent is never listed and no subagent_update is sent before a listing snapshot. This task fixes it: every state_update carries background once the agent reports it; a listed item is announced before and finalized before removal; the resume sync sends the pre-response item updates before the current state_update.'
+  timestamp: 2026-11-03T17:16:46.591620+00:00
 depends_on:
 - 01M6GM0N9BFK37GGBWPAG9VE1X
 - 01M6GH30709S58BK3AQ1VMBAM7

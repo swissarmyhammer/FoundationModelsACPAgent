@@ -509,7 +509,7 @@ extension RoutedACPAgent {
         guard info != SessionInfoUpdate() else {
             return
         }
-        await connections.path(forSession: sessionId)?.connection.post(.sessionInfoUpdate(info), in: sessionId)
+        await unrecordedSink(for: sessionId, gate: entry.announcement)(.sessionInfoUpdate(info))
     }
 
     // MARK: - The missing-tool report

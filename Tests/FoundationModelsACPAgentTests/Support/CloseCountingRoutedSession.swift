@@ -239,6 +239,18 @@ actor CloseCountingRoutedSession: RoutedSession {
 
     /// Sends the call to the real session.
     ///
+    /// - Parameters:
+    ///   - key: The key of the claimed run.
+    ///   - outcome: The outcome of the run.
+    ///   - detail: The detail of the outcome, or `nil`.
+    /// - Returns: The result of the real session.
+    @discardableResult
+    func completeClaimedRun(_ key: RunKey, outcome: OperationOutcome, detail: String?) async -> Bool {
+        await wrapped.completeClaimedRun(key, outcome: outcome, detail: detail)
+    }
+
+    /// Sends the call to the real session.
+    ///
     /// - Returns: The ids of the open elicitations of the real session.
     func openElicitationIds() async -> [String] {
         await wrapped.openElicitationIds()

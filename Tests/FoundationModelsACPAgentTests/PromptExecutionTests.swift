@@ -200,12 +200,13 @@ import Testing
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: holdMarker))
         try await ScriptedPromptFixture.waitForRunning(fixture.collector)
         let tap = try #require(fixture.harness.wireTap)
-        let linesBefore = await tap.lines.count
+        var atResume: [UpdateSessionNotification] = []
 
-        _ = try await fixture.harness.connection.resumeSession(
-            ResumeSessionRequest(cwd: AbsolutePath(rawValue: fixture.cwd.path), sessionId: fixture.sessionId))
-        let atResume = await fixture.collector.updates
-        let wireAtResume = WireItem.items(ofWire: Array(await tap.lines.dropFirst(linesBefore)))
+        let wireAtResume = try await WireItem.sent(by: tap) {
+            _ = try await fixture.harness.connection.resumeSession(
+                ResumeSessionRequest(cwd: AbsolutePath(rawValue: fixture.cwd.path), sessionId: fixture.sessionId))
+            atResume = await fixture.collector.updates
+        }
         _ = try await fixture.harness.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "the next prompt"))
         let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: 3)

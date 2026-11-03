@@ -5,11 +5,12 @@ import Synchronization
 ///
 /// A root session is known from its `session/new` or `session/resume`
 /// response, so its gate is open from the start. A nested session is not
-/// known until the agent announces it, and an update of a session that the
-/// client does not know has no meaning for the client. Thus the gate of a
-/// nested session starts closed, and the announcement opens it
-/// (``SubagentAnnouncer``); a nested session that the agent registers after its
-/// announcement starts open. While the
+/// known until the agent announces it. An update of a session that the client
+/// does not know has no meaning for the client. Thus the gate of a nested
+/// session starts closed, and the announcement opens it
+/// (``SubagentAnnouncer``). The announcer owns the gate of each run
+/// (``SubagentAnnouncer/gate(for:)``), and the session takes it. So the order
+/// of the announcement and the registration does not matter. While the
 /// gate is closed, the history sink (``RoutedACPAgent/historySink(for:gate:)``)
 /// still keeps each update in the retained history of the session, and sends
 /// nothing.

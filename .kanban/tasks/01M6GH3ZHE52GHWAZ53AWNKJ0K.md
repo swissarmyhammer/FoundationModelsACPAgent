@@ -33,6 +33,16 @@ comments:
     CLIENT: on resume the client invalidates cached child work state and capabilities. Child models made during the replay are `.replaying` and end their replay at the RESPONSE of the root request. After the response a child is UNCONFIRMED (shown as unknown, effective capabilities empty) until its first current snapshot; child controls (cancel) stay disabled until then, and until the resume has succeeded. Everything inside the replay phase is history: no notification, sound, attention mark or auto action. Add `SessionModel.isWorkStateConfirmed` (or an equivalent) as an observable.
     Acceptance criteria to add: no child current snapshot before the response in a replay; every child gets a snapshot after the response; a child is unconfirmed and not cancellable between the response and its snapshot; the re-drive start follows the snapshots; a replay with no replayFrom still announces the children and sends current snapshots; no needsAttention or notification is raised by replayed content.
   timestamp: 2026-11-03T11:50:49.308449+00:00
+- actor: wballard
+  id: 01m6h6kdbpey8ckgzpz99webmx
+  text: |-
+    SPEC REVIEW (independent, ACP session, 2026-11-03) of the committed code; items for THIS task:
+    1. SessionHistory.replayUpdates(from:) returns transcriptUpdates + stateUpdates. stateUpdates starts with the subagent_update announcements, so a session_message that names a child would be replayed BEFORE the child is announced. Rule: in the replay every announcement comes before any update, request or message that carries or names its child id, parent before child.
+    2. The replay keeps every non-state update of stateUpdates (session_info_update, usage, config options) before the current state_update, and the sync sends session_info_update again after it. Fix: the replay holds the transcript and the child announcements only. Historical session_info, usage, config options and commands are optional in a replay; the CURRENT ones follow the current state_update and the response carries the config options and commands.
+    3. The retained history is written to session-history.json with the folded child snapshots (state running, capabilities.cancel). After a process restart the replay sends them before the response, but the children are not restored yet, so there is no run behind them. Fix: a replayed announcement carries NO capabilities, and its state is only what was true at the end of the history (the client treats a child state before the response as history). Never replay capabilities.
+    4. A child entry has its own SessionMergeEngine, but the resume replays only the root engine: the child messages and tool calls are never replayed. Replay each child history under its own id (this task), parent before child.
+    The ACP validator (SubagentWireTraceValidator, wire 364a19a) checks these rules: run the real resume output through it in a test.
+  timestamp: 2026-11-03T17:16:39.158625+00:00
 depends_on:
 - 01M6GJPPXWKQJ9E6SK5WD0CWZ7
 - 01M6GH30709S58BK3AQ1VMBAM7

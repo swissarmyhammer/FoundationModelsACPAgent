@@ -149,12 +149,12 @@ final class RunCallJoinTable: Sendable {
     ///
     /// The run event observer of the agent environment calls this
     /// synchronously in the follow loop of each agent run
-    /// (``AgentsComposition/makeRunEventObserver(runCallJoins:)``). Thus it
+    /// (``AgentsComposition/makeRunEventObserver(runCallJoins:announcer:)``). Thus it
     /// only takes the lock, and it does not wait.
     ///
-    /// An agent run sends no wire update of its tool runs, so a tool run of an
-    /// agent run keeps its completion token, also when Router of the agent run
-    /// joined the record to an SDK call of the agent run.
+    /// An agent run sends no wire update of its tool runs. So a tool run of an
+    /// agent run keeps its completion token. This holds also when Router of
+    /// the agent run joined the record to an SDK call of the agent run.
     ///
     /// - Parameter output: One session output of an agent run.
     func recordAgentRunEvent(_ output: SessionOutput) {
@@ -183,22 +183,37 @@ final class RunCallJoinTable: Sendable {
 
     /// The wire id of a run, after the entry of the run was written.
     ///
-    /// A caller that must name the wire id of a tool call that the projection
-    /// sends reads it here: the observer of an agent run can see the first
-    /// event of a run before the projection handled the open record of the
-    /// `agents` call that started it. A run with an entry gives it at once.
+    /// A caller that names the wire id of a tool call that the projection
+    /// sends reads it here. The observer of an agent run can see the first
+    /// event of a run first. Then the projection did not handle the open record
+    /// of the `agents` call that started the run. A run with an entry gives it
+    /// at once.
     /// While no projection is open, no entry can come, so the run gets
-    /// "no join" at once, the same rule as ``announceToolCallId(for:)``. Else
-    /// the call waits until the entry is written. The stop of the projection
-    /// (``closeProjection()``) and the cancel of the calling task end the wait,
-    /// so the wait never outlives the session. No time decides the entry.
+    /// "no join" at once. This is the rule of ``announceToolCallId(for:)``.
+    /// Else the call waits until the entry is written.
+    ///
+    /// The stop of the projection (``closeProjection()``) and the cancel of the
+    /// calling task end the wait, so the wait never outlives the session. No
+    /// time decides the entry.
     ///
     /// - Parameter token: The completion token of the run.
-    /// - Returns: The tool call id, as ``toolCallId(for:)`` gives it after the
-    ///   wait.
-    func awaitToolCallId(for token: String) async -> ToolCallId {
+    /// - Returns: The tool call id, as ``toolCallId(for:)`` gives it. `nil`
+    ///   when the wait ended with no entry: the task was cancelled. The
+    ///   completion token is not the wire id of a run that may still get an
+    ///   SDK id, so a cancelled wait gives no id.
+    func awaitToolCallId(for token: String) async -> ToolCallId? {
         await awaitEntry(for: token)
-        return toolCallId(for: token)
+        guard let join = state.withLock({ $0.joins[token] }) else {
+            return nil
+        }
+        return Self.toolCallId(of: join, token: token)
+    }
+
+    /// The number of callers that wait for an entry now
+    /// (``awaitToolCallId(for:)``). It tells a reader that a caller is in
+    /// the table, so a later write reaches it.
+    var waiterCount: Int {
+        state.withLock { $0.entryWaiters.count }
     }
 
     /// The wire id of the `Terminal` announce of a run, or `nil` when the run
@@ -278,9 +293,9 @@ final class RunCallJoinTable: Sendable {
     /// - Parameters:
     ///   - waiter: The caller.
     ///   - ticket: The ticket of the caller.
-    /// - Returns: `true` when the caller waits, and `false` when its wait is
-    ///   over: the run has an entry, no projection is open, or the task is
-    ///   cancelled.
+    /// - Returns: `true` when the caller waits. `false` when its wait is over.
+    ///   This is the case when the run has an entry, when no projection is
+    ///   open, or when the task is cancelled.
     private func admitWaiter(_ waiter: EntryWaiter, ticket: Int) -> Bool {
         state.withLock { state in
             if state.joins[waiter.token] != nil || Task.isCancelled {
@@ -295,9 +310,9 @@ final class RunCallJoinTable: Sendable {
         }
     }
 
-    /// Writes `join` for a run that has no entry yet, tells the observer when
-    /// the run waited for it, and ends the wait of each caller of
-    /// ``awaitToolCallId(for:)`` for it. A run that has an entry keeps it.
+    /// Writes `join` for a run that has no entry yet. It tells the observer
+    /// when the run waited for it. It ends the wait of each caller of
+    /// ``awaitToolCallId(for:)`` for the run. A run that has an entry keeps it.
     ///
     /// - Parameters:
     ///   - join: The entry to write.

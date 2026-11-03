@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsACP
+import FoundationModelsACPAgentTestSupport
 
 /// What one line of the wire is, as an order test reads it. A test that
 /// proves an order between the updates and a response reads the lines that
@@ -36,6 +37,19 @@ enum WireItem: Equatable {
         default:
             return .other
         }
+    }
+
+    /// Reads what the agent sent on the wire while `action` ran.
+    ///
+    /// - Parameters:
+    ///   - tap: The tap of the wire.
+    ///   - action: The work whose output is read.
+    /// - Returns: The kinds of the lines that the agent sent, in wire order.
+    /// - Throws: Whatever `action` throws.
+    static func sent(by tap: WireTap, during action: () async throws -> Void) async rethrows -> [WireItem] {
+        let countBefore = await tap.lines.count
+        try await action()
+        return items(ofWire: Array(await tap.lines.dropFirst(countBefore)))
     }
 
     /// Maps each line of the wire to its kind. The response of a request is

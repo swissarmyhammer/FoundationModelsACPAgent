@@ -28,6 +28,10 @@ comments:
     4. The original call of the failed child ends as lost (the Router claim API closes an open claim as lost).
     Add acceptance criteria and a test for items 1 and 2 (a failed child and its descendants announced unknown with the reason, the root still resumes).
   timestamp: 2026-11-03T15:25:23.524276+00:00
+- actor: wballard
+  id: 01m6h6km00q0wtj21jyppj8fqw
+  text: 'SPEC REVIEW (independent, 2026-11-03): the resume has no work after the response today: no current subagent_update for any child. The only child updates a client gets are the replayed ones. This task supplies them: after the response send a current subagent_update (state and capabilities) for every live child, parent before child, before any re-drive. See the replay task for the rule that a replay carries no capabilities.'
+  timestamp: 2026-11-03T17:16:45.952149+00:00
 depends_on:
 - 01M6GM0N9BFK37GGBWPAG9VE1X
 - 01M6GH30709S58BK3AQ1VMBAM7

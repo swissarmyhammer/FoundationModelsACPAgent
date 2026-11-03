@@ -107,18 +107,18 @@ enum AgentsComposition {
     /// (``RunCallJoinTable/recordAgentRunEvent(_:)``). It also gives the run
     /// to `announcer`, which queues the `subagent_update` of the run before
     /// any message that uses the id of the child
-    /// (``SubagentAnnouncer/observe(_:)``).
+    /// (``SubagentAnnouncer``).
     ///
-    /// An agent run uses the shell capability of the root session, so the
-    /// output of its shell runs comes on the shell output stream of the
-    /// session, but its tool records go to the event stream of the agent run.
-    /// The terminal stream holds a shell run that has no entry, and this
-    /// entry releases it while the agent run continues.
+    /// An agent run uses the shell capability of the root session. The output
+    /// of its shell runs comes on the shell output stream of the session. Its
+    /// tool records go to the event stream of the agent run. The terminal
+    /// stream holds a shell run that has no entry, and this entry releases it
+    /// while the agent run continues.
     ///
     /// The environment is made for one session, and the table belongs to the
-    /// same surface, so the observer needs no lookup from the run to the
+    /// same surface. So the observer needs no lookup from the run to the
     /// session. Each run calls the observer synchronously in its follow loop,
-    /// child runs too, and two runs can call it at the same time. Thus the
+    /// child runs too. Two runs can call it at the same time. Thus the
     /// observer only takes the lock of the table and the lock of the announcer,
     /// and it does not wait.
     ///

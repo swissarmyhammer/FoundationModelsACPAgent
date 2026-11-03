@@ -166,4 +166,76 @@ import Testing
         #expect(isRequiresActionState(.stateUpdate(afterAccept)))
         #expect(ScriptedPromptFixture.isIdle(afterFlow))
     }
+
+    /// Opens an accepted URL question whose flow waits for its end.
+    ///
+    /// - Parameter label: The directory label of the calling test.
+    /// - Returns: The question, after the accept.
+    /// - Throws: Whatever the wiring throws.
+    private static func openAcceptedURLQuestion(label: String) async throws -> OpenQuestion {
+        let question = try await OpenQuestion.open(label: label, answerDelivery: .acceptedAwaitingCompletion) {
+            try OpenQuestion.makeURLRequest(elicitationId: $0)
+        }
+        await question.accept()
+        return question
+    }
+
+    /// The end of an accepted URL flow by Router (also from `session/cancel`
+    /// and from the close) ends the held wait: the session goes `idle`.
+    @Test
+    func theRouterEndOfAnAcceptedURLFlowEndsTheHeldWait() async throws {
+        let question = try await Self.openAcceptedURLQuestion(label: "RequiresActionStateTests-url-end")
+        let fixture = question.fixture
+        let ledger = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.stateLedger)
+        let held = await ledger.currentSnapshot()
+
+        await question.relay.end(
+            ElicitationEnd(
+                elicitationId: question.elicitationId, response: .cancel(reason: "the run ended")))
+        let afterEnd = await ledger.currentSnapshot()
+        await fixture.close()
+
+        #expect(isRequiresActionState(.stateUpdate(held)))
+        #expect(ScriptedPromptFixture.isIdle(afterEnd))
+    }
+
+    /// A flow that completes before the round trip knows of the accept ends
+    /// the wait in the relay at the accept. The session never stays
+    /// `requires_action` after that.
+    @Test
+    func aCompletionBeforeTheAcceptEndsTheWaitAtTheAccept() async throws {
+        let question = try await OpenQuestion.open(
+            label: "RequiresActionStateTests-url-early", answerDelivery: .acceptedAwaitingCompletion
+        ) { try OpenQuestion.makeURLRequest(elicitationId: $0) }
+        let fixture = question.fixture
+        let ledger = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.stateLedger)
+        await question.relay.complete(ElicitationCompletion(elicitationId: question.elicitationId))
+        let beforeAccept = await ledger.currentSnapshot()
+
+        await question.accept()
+        let afterAccept = await ledger.currentSnapshot()
+        await fixture.close()
+
+        #expect(isRequiresActionState(.stateUpdate(beforeAccept)))
+        #expect(ScriptedPromptFixture.isIdle(afterAccept))
+    }
+
+    /// A flow that ends while a prompt is open sends `running` again, not
+    /// `idle`.
+    @Test
+    func aFlowThatEndsWhileAPromptIsOpenReturnsToRunning() async throws {
+        let question = try await OpenQuestion.open(
+            label: "RequiresActionStateTests-url-prompt", answerDelivery: .acceptedAwaitingCompletion
+        ) { try OpenQuestion.makeURLRequest(elicitationId: $0) }
+        let fixture = question.fixture
+        let ledger = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.stateLedger)
+        await ledger.promptStarted()
+        await question.accept()
+
+        await question.relay.complete(ElicitationCompletion(elicitationId: question.elicitationId))
+        let afterFlow = await ledger.currentSnapshot()
+        await fixture.close()
+
+        #expect(isRunningState(.stateUpdate(afterFlow)))
+    }
 }

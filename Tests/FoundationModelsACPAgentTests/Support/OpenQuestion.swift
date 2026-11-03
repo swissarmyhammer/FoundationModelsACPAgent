@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
+import FoundationModelsACPClient
 @testable import FoundationModelsExtras
 @testable import FoundationModelsRouter
 import Testing
@@ -56,22 +57,27 @@ struct OpenQuestion {
     /// Ends the question with a cancel of the client, and waits until the
     /// relay is done with it.
     func cancel() async {
-        let clientSession = fixture.session
-        await MainActor.run {
-            for pending in clientSession.pendingElicitations {
-                clientSession.cancelElicitation(pending.id)
-            }
-        }
-        await roundTrip.value
+        await resolveAll { $0.cancelElicitation($1) }
     }
 
     /// Accepts the question at the client, and waits until the round trip of
     /// the relay returns.
     func accept() async {
+        await resolveAll { $0.acceptElicitation($1) }
+    }
+
+    /// Answers each pending question at the client, on the main actor, and
+    /// waits until the round trip of the relay returns.
+    ///
+    /// - Parameter resolve: The client call that answers one question. It
+    ///   gets the client session and the id of the pending question.
+    private func resolveAll(
+        _ resolve: @escaping @MainActor @Sendable (SessionModel, PendingElicitation.ID) -> Void
+    ) async {
         let clientSession = fixture.session
         await MainActor.run {
             for pending in clientSession.pendingElicitations {
-                clientSession.acceptElicitation(pending.id)
+                resolve(clientSession, pending.id)
             }
         }
         await roundTrip.value

@@ -21,6 +21,10 @@ comments:
     4. A follow-up Router card (low priority, after the six) fixes the relay so an answer at the child ends the parent copy. Until it is done, rules 1 to 3 hold.
     Add tests: the relayed copy is never sent; the root state is not requires_action from the copy; the end-of-relay cancel is not forwarded.
   timestamp: 2026-11-03T14:47:51.332005+00:00
+- actor: wballard
+  id: 01m6h6kkhgmgwcjfwf6nzr9qgj
+  text: 'SPEC REVIEW (independent, 2026-11-03): ElicitationRelay.swift near line 522: createElicitation for a child session is sent with no check of the announcement gate; the relay has no reference to it. The announcement goes through an async queue, so a request could reach the wire before the subagent_update of its child (rule: announce before ANY use of the child id). Fix: the request of a child waits for the announcement gate of that child. Also near line 301: `holdsQuestion = request.agentPath.isEmpty`; check with a test that the CHILD own question (original, agentPath empty on the child feed) makes the child requires_action, and that a relayed copy on the parent does not. Both are latent today because no live child session is attached yet; they become real in this task.'
+  timestamp: 2026-11-03T17:16:45.488711+00:00
 depends_on:
 - 01M6GH30709S58BK3AQ1VMBAM7
 position_column: todo

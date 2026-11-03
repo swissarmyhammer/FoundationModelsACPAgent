@@ -30,36 +30,37 @@ typealias ElicitationCompletionHandler = @Sendable (ElicitationCompletion) async
 /// changes that event into one `elicitation/create` on the wire, decodes the
 /// client's answer, and delivers it back through
 /// `RoutedSession.respond(elicitationId:response:)`. The relay lives as long
-/// as the session (elicitation-plan task 4), and the ``SessionProjector``
-/// runs each round trip in its own task, so a question does not stop the
+/// as the session (elicitation-plan task 4). The ``SessionProjector``
+/// runs each round trip in its own task. So a question does not stop the
 /// other output of the session (task 5).
 ///
 /// While a question of this session waits for the user, the relay tells the
-/// state ledger of the session, and the ledger reports `requires_action`
+/// state ledger of the session. The ledger reports `requires_action`
 /// (ACP v2, prompt lifecycle). When the question ends, the ledger reports
 /// `running` or `idle`. The copy of a child question sends nothing. The child
 /// session holds that question and reports its own state. The relay finds a
 /// copy by its agent path, which only a relay sets.
 ///
 /// Router ends a question with no answer of the client when it stops the run
-/// of the question: a cancel of the run, `cancelAll()` and `close()`. It then
-/// sends `SessionEvent.elicitationEnded`, and ``end(_:)`` ends the client
-/// request: the relay cancels the task of the `elicitation/create`, and the
-/// connection sends `$/cancel_request` for it (gap ^crjmk34).
+/// of the question. This happens for a cancel of the run, `cancelAll()` and
+/// `close()`. Router then sends `SessionEvent.elicitationEnded`. The relay
+/// (``end(_:)``) ends the client request. It cancels the task of the
+/// `elicitation/create`, and the connection sends `$/cancel_request` for it
+/// (gap ^crjmk34).
 ///
-/// A URL-mode accept does not end the flow: the run waits until the
+/// A URL-mode accept does not end the flow. The run waits until the
 /// out-of-band flow of the URL completes. The relay keeps the id as
-/// awaiting completion, and sends `elicitation/complete` only when the flow
-/// ended (task ^az53ay4): at `SessionEvent.elicitationCompleted`
-/// (``complete(_:)``), from the client or from the tool, or at
-/// `SessionEvent.elicitationEnded` (``end(_:)``), so the client leaves its
+/// awaiting completion. It sends `elicitation/complete` only when the flow
+/// ended (task ^az53ay4). The flow ends at `SessionEvent.elicitationCompleted`
+/// (``complete(_:)``), from the client or from the tool. It also ends at
+/// `SessionEvent.elicitationEnded` (``end(_:)``). Then the client leaves its
 /// waiting state. The question stays open until then. So the user wait of
-/// the ledger ends with the flow, not at the accept, and the session stays
+/// the ledger ends with the flow, not at the accept. The session stays
 /// `requires_action` while the user works in the browser.
 ///
 /// The outbound path: each question goes to the connection of the session
-/// as it is when the question comes (ACPA-5), with the capabilities of that
-/// connection. A session with no connection with an outbound path gets
+/// as it is when the question comes (ACPA-5). It uses the capabilities of
+/// that connection. A session with no connection with an outbound path gets
 /// `cancel` for its question, as when the connection is gone.
 ///
 /// The capability gate: the client said what it answers at
@@ -379,8 +380,8 @@ actor ElicitationRelay {
     ///
     /// Router also sends `elicitationCompleted` or `elicitationEnded` for
     /// each accepted URL-mode flow before the feed ends. Thus a flow that
-    /// still waits for its completion here is a defect too: the relay
-    /// releases its id and writes a warning, and sends no
+    /// still waits for its completion here is a defect too. The relay
+    /// releases its id and writes a warning. It sends no
     /// `elicitation/complete`. The relay also ends the user wait that the
     /// flow held, so the ledger leaves `requires_action`.
     func drainOpenRoundTrips() async {

@@ -114,25 +114,26 @@ struct SessionBuild {
 
 extension RoutedACPAgent {
     /// The one build of a session, for a root session and for a nested
-    /// sub-agent session: the state ledger, the projector with its
+    /// sub-agent session. It makes the state ledger, the projector with its
     /// elicitation relay, the history sink, and the entry of the table. The
     /// projector reads the events of `session` before anything can mail it.
     ///
     /// A root session has no parent (`parent` is `nil`), and its gate is open
     /// (``SessionAnnouncementGate``). A session with a parent is linked in the
-    /// ``sessionTree``, takes the owner of its parent
-    /// (``ConnectionTable/owner(of:)``), and starts with a closed gate, unless
-    /// the announcer sent its announcement already
-    /// (``SubagentAnnouncer/hasAnnounced(_:)``). The parts that a nested
-    /// session borrows or owns are in ``ActiveSession``.
+    /// ``sessionTree``. It takes the owner of its parent
+    /// (``ConnectionTable/owner(of:)``). It takes its gate from the announcer
+    /// (``SubagentAnnouncer/gate(for:)``): the gate is closed until the
+    /// announcement went out. The parts that a nested session borrows or owns
+    /// are in ``ActiveSession``.
     ///
-    /// The steps that belong to the mounted surface of a root session only
-    /// (the record of the placement, the bind of the shell identity, the
-    /// command registry, the publication of the commands, the terminal
-    /// projection and the status of the MCP servers) stay with
-    /// ``activateSession(_:composition:placement:titleRecorded:history:)``:
-    /// a nested session borrows their results from its parent, and would
-    /// otherwise do them a second time on the same surface.
+    /// Some steps belong to the mounted surface of a root session only. These
+    /// steps are the record of the placement, the bind of the shell identity,
+    /// and the command registry. They are also the publication of the
+    /// commands, the terminal projection and the status of the MCP servers.
+    /// They stay with
+    /// ``activateSession(_:composition:placement:titleRecorded:history:)``.
+    /// A nested session borrows their results from its parent. Else it would
+    /// do them a second time on the same surface.
     ///
     /// - Parameters:
     ///   - session: The Router session.
@@ -145,10 +146,14 @@ extension RoutedACPAgent {
     func registerSession(
         _ session: any RoutedSession, sessionId: SessionId, parent: SessionId?, build: SessionBuild
     ) async throws {
-        // A session starts open when the client knows it: the root session, or
-        // a session whose announcement went out before its entry was made.
-        let announcement = SessionAnnouncementGate(
-            isOpen: parent == nil || build.surface.agents?.announcer.hasAnnounced(session.id) == true)
+        // The gate is the one object that the announcer opens, and it exists
+        // before the first suspension. So an announcement that goes out at any
+        // time before, during or after this registration opens this gate.
+        // A root session is known from its response, so its gate is open.
+        let announcement =
+            parent == nil
+            ? SessionAnnouncementGate(isOpen: true)
+            : build.surface.agents?.announcer.gate(for: session.id) ?? SessionAnnouncementGate(isOpen: false)
         let send = historySink(for: sessionId, gate: announcement)
         let stateLedger = SessionStateLedger(
             send: send, announce: unrecordedSink(for: sessionId, gate: announcement))
@@ -194,6 +199,8 @@ extension RoutedACPAgent {
             sessions[parent]?.children.append(sessionId)
         }
         recordActiveSessions()
+        // A new entry can unblock an announcement that waited for it.
+        build.surface.agents?.announcer.retryBlocked()
     }
 
     /// Records the parent link of a session in the ``sessionTree``. The
@@ -217,7 +224,7 @@ extension RoutedACPAgent {
 
     /// Registers the Router session of a sub-agent as a session nested in
     /// `parent`. The ACP id of the nested session is the ULID of its Router
-    /// session, as for a root session, and no table maps one id to another.
+    /// session, as for a root session. No table maps one id to another.
     ///
     /// The build is the one of a root session
     /// (``registerSession(_:sessionId:parent:build:)``), with the surface of

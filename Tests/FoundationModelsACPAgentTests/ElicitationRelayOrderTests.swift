@@ -180,4 +180,23 @@ import Testing
 
         #expect(responses == [.cancel(reason: ElicitationRelay.feedEndedCancelReason)])
     }
+
+    /// The drain ends the user wait that an accepted URL flow still holds, so
+    /// the ledger leaves `requires_action` when the feed ends.
+    @Test func theDrainEndsTheHeldWaitOfAnAcceptedURLFlow() async throws {
+        let question = try await OpenQuestion.open(
+            label: "ElicitationRelayOrderTests-drain-held-wait", answerDelivery: .acceptedAwaitingCompletion
+        ) { try OpenQuestion.makeURLRequest(elicitationId: $0) }
+        let fixture = question.fixture
+        let ledger = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.stateLedger)
+        await question.accept()
+        let beforeDrain = await ledger.currentSnapshot()
+
+        await question.relay.drainOpenRoundTrips()
+        let afterDrain = await ledger.currentSnapshot()
+        await fixture.close()
+
+        #expect(isRequiresActionState(.stateUpdate(beforeDrain)))
+        #expect(ScriptedPromptFixture.isIdle(afterDrain))
+    }
 }
