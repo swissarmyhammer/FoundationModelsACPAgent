@@ -435,15 +435,18 @@ code gives the local detail.
   `MailID` of the prompt. A prompt that comes while another one is open is
   accepted too. The prompt ends at the terminal event of its own mail, so a
   client waits for the first `idle` after the echo of its own `messageId`.
-- **`running` and `idle` follow the work of the session.** The session is
-  busy while Router works (an answer that runs, an open background run, or
-  queued run mail) or a prompt is open. `running` goes out when the session
-  becomes busy, also with no prompt open, and `idle` when it is not busy any
-  more. The `idle` carries the stop reason of the last prompt that ended
-  since the last `running`; after only background work it has no stop
-  reason. A run that waits only for the user is no work, so an open question
-  does not keep the session `running`. The agent never sends
-  `requires_action`.
+- **`running`, `requires_action` and `idle` follow the work of the
+  session.** The session is busy while Router works (an answer that runs, an
+  open background run, or queued run mail) or a prompt is open. `running`
+  goes out when the session becomes busy, also with no prompt open, and
+  `idle` when it is not busy any more. The `idle` carries the stop reason of
+  the last prompt that ended since the last `running`. After only background
+  work it has no stop reason. A run that waits only for the user is no work,
+  so an open question does not keep the session `running`. While a question
+  of the session waits for the user, the agent sends `requires_action`. When
+  the question ends, it sends `running` or `idle`. The copy of a question of
+  a child session sends nothing. A `session/resume` sends the current state
+  after the replay and before the response.
 - **`session/cancel` is a signal.** It sends `cancelAll()` to the Router
   session. Each open prompt ends `cancelled` at once, and its response says
   so. The `idle` comes when the work of the session ends. You can only stop

@@ -514,7 +514,7 @@ struct ScriptedPromptFixture {
     ///
     /// - Parameter state: The state of the agent that a session model shows.
     /// - Returns: `true` for the idle state.
-    private static func isIdle(_ state: StateUpdate?) -> Bool {
+    static func isIdle(_ state: StateUpdate?) -> Bool {
         guard case .idle = state else { return false }
         return true
     }

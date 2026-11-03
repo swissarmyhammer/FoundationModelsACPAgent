@@ -32,10 +32,14 @@ typealias ElicitationCompletionHandler = @Sendable (ElicitationCompletion) async
 /// `RoutedSession.respond(elicitationId:response:)`. The relay lives as long
 /// as the session (elicitation-plan task 4), and the ``SessionProjector``
 /// runs each round trip in its own task, so a question does not stop the
-/// other output of the session (task 5). The relay sends no state update:
-/// a foreground question keeps its answer as Router work, so the session
-/// stays `running`, and a background question is no work (elicitation-plan
-/// section 8). The agent never sends `requires_action`.
+/// other output of the session (task 5).
+///
+/// While a question of this session waits for the user, the relay tells the
+/// state ledger of the session, and the ledger reports `requires_action`
+/// (ACP v2, prompt lifecycle). When the question ends, the ledger reports
+/// `running` or `idle`. The copy of a child question sends nothing. The child
+/// session holds that question and reports its own state. The relay finds a
+/// copy by its agent path, which only a relay sets.
 ///
 /// Router ends a question with no answer of the client when it stops the run
 /// of the question: a cancel of the run, `cancelAll()` and `close()`. It then
@@ -111,6 +115,16 @@ actor ElicitationRelay {
     /// id. ``end(_:)`` and ``drainOpenRoundTrips()`` resume them.
     private var pendingAnswers: [String: CheckedContinuation<ClientAnswer, Never>] = [:]
 
+    /// The state ledger of the session. It reports `requires_action` while
+    /// a question waits for the user. A relay with no ledger reports nothing.
+    private let stateLedger: SessionStateLedger?
+
+    /// The questions whose answer Router took, so the run of the question
+    /// resumes. The value is the work-event mark of the ledger from before
+    /// the answer went to Router. ``relayRequest(_:toolCallId:tool:on:)``
+    /// reads and removes each entry.
+    private var resumedAnswerMarks: [String: Int] = [:]
+
     /// The tasks that carry the wire requests in flight, keyed by the
     /// elicitation id. ``end(_:)`` and ``drainOpenRoundTrips()`` cancel
     /// them.
@@ -174,10 +188,16 @@ actor ElicitationRelay {
     ///
     /// - Parameters:
     ///   - sessionId: The session this relay serves.
+    ///   - stateLedger: The state ledger that learns when a question waits
+    ///     for the user, or `nil` for none.
     ///   - outboundPath: Gives the outbound path of the session as it is
     ///     when a question comes, or `nil` when the session has none.
-    init(sessionId: SessionId, outboundPath: @escaping @Sendable () -> ClientPath?) {
+    init(
+        sessionId: SessionId, stateLedger: SessionStateLedger? = nil,
+        outboundPath: @escaping @Sendable () -> ClientPath?
+    ) {
         self.sessionId = sessionId
+        self.stateLedger = stateLedger
         self.outboundPath = outboundPath
     }
 
@@ -269,8 +289,17 @@ actor ElicitationRelay {
                 reason: .duplicateURLElicitationId)
             return .decline
         }
+        let holdsQuestion = request.agentPath.isEmpty
+        if holdsQuestion {
+            await stateLedger?.userWaitStarted(elicitationId)
+        }
         let outcome = await deliverRoundTrip(
             wireRequest, elicitationId: elicitationId, mode: request.mode, over: path?.connection, on: session)
+        let resumeMark = resumedAnswerMarks.removeValue(forKey: elicitationId)
+        if holdsQuestion {
+            await stateLedger?.userWaitEnded(
+                elicitationId, resumedWork: resumeMark != nil, since: resumeMark ?? 0)
+        }
         if !awaitingCompletion.contains(elicitationId) {
             endURLFlowIfNeeded(mode: request.mode, elicitationId: elicitationId)
         }
@@ -396,13 +425,14 @@ actor ElicitationRelay {
         case .ended(let end):
             return end.response
         }
+        let workMark = await stateLedger?.workEventMark ?? 0
         let delivery = await session.respond(elicitationId: elicitationId, response: answer)
         if let respondHold {
             await respondHold(elicitationId)
         }
         switch delivery {
         case .delivered:
-            break
+            resumedAnswerMarks[elicitationId] = workMark
         case .acceptedAwaitingCompletion:
             await awaitURLFlowEnd(elicitationId: elicitationId)
         case .noPendingElicitation:

@@ -1,0 +1,396 @@
+import Foundation
+import FoundationModelsACP
+import FoundationModelsACPAgentTestSupport
+import FoundationModelsACPClient
+@testable import FoundationModelsExtras
+@testable import FoundationModelsRouter
+import Synchronization
+import Testing
+
+@testable import FoundationModelsACPAgent
+
+/// The current-state sync of `session/resume` (ACP v2 Session Setup,
+/// "Ordering"): after the replay of the requested history, if any, and before
+/// the response, the agent sends one current `state_update` and then the
+/// current `session_info_update`. It does this for each resume, with or
+/// without `replayFrom`. The replay never sends the retained `state_update`
+/// as the current state. The sync does not change the retained state of the
+/// history.
+@Suite(.closesHarnesses) struct ResumeSyncTests {
+    // MARK: - Readers
+
+    /// A sink that keeps each update it gets, in the order of the calls.
+    private final class RecordingSink: Sendable {
+        /// The updates that the sink got.
+        private let kept = Mutex<[SessionUpdate]>([])
+
+        /// The updates that the sink got, in order.
+        var updates: [SessionUpdate] {
+            kept.withLock { $0 }
+        }
+
+        /// The sink function of the recorder.
+        var send: SessionUpdateSink {
+            { update in self.kept.withLock { $0.append(update) } }
+        }
+    }
+
+    /// A sink that holds its first update until the test opens the gate. It
+    /// keeps each update when the update is done, so the order of the kept
+    /// updates is the order in which the sends finished.
+    private final class GatedSink: Sendable {
+        /// The test opens it to let the first update finish.
+        let gate = LateAnswerGate()
+
+        /// Open when the first update reached the sink.
+        let firstReached = LateAnswerGate()
+
+        /// The number of updates that reached the sink.
+        private let reached = Mutex(0)
+
+        /// The updates whose send is done.
+        private let kept = Mutex<[SessionUpdate]>([])
+
+        /// The updates whose send is done, in order.
+        var updates: [SessionUpdate] {
+            kept.withLock { $0 }
+        }
+
+        /// The sink function of the recorder.
+        var send: SessionUpdateSink {
+            { update in
+                let isFirst = self.reached.withLock { count -> Bool in
+                    count += 1
+                    return count == 1
+                }
+                if isFirst {
+                    await self.firstReached.open()
+                    await self.gate.wait()
+                }
+                self.kept.withLock { $0.append(update) }
+            }
+        }
+    }
+
+    /// Maps each update to its ``WireItem``.
+    ///
+    /// - Parameter updates: The updates.
+    /// - Returns: The kinds, in order.
+    private static func kinds(of updates: [SessionUpdate]) -> [WireItem] {
+        updates.map(WireItem.of(update:))
+    }
+
+    /// Resumes the session of `resume` and returns what the agent sent from
+    /// the start of the request to its response, in wire order.
+    ///
+    /// - Parameters:
+    ///   - resume: The fixture, which taps the wire.
+    ///   - replayFrom: The replay cursor of the request, or `nil` for none.
+    /// - Returns: The kinds of the wire items.
+    /// - Throws: Whatever the request throws.
+    private static func wireKindsOfAResume(
+        _ resume: ResumeSessionFixture, replayFrom: ReplayFrom?
+    ) async throws -> [WireItem] {
+        let tap = try #require(resume.fixture.harness.wireTap)
+        let countBefore = await tap.lines.count
+        _ = try await resume.fixture.harness.connection.resumeSession(
+            resume.makeResumeRequest(replayFrom: replayFrom))
+        return WireItem.items(ofWire: Array(await tap.lines.dropFirst(countBefore)))
+    }
+
+    // MARK: - The snapshot of the ledger
+
+    /// A ledger with no work has nothing to announce, and its snapshot is
+    /// `idle`.
+    @Test
+    func aLedgerWithNoWorkSnapshotsIdle() async {
+        let ledger = SessionStateLedger(send: RecordingSink().send)
+
+        let snapshot = await ledger.currentSnapshot()
+
+        #expect(ScriptedPromptFixture.isIdle(snapshot))
+    }
+
+    /// An `idle` snapshot says nothing about the last stop reason: it is not
+    /// a new completion or a new cancellation.
+    @Test
+    func anIdleSnapshotAfterAPromptEndedAnnouncesNoStopReason() async {
+        let ledger = SessionStateLedger(send: RecordingSink().send)
+        await ledger.promptStarted()
+        await ledger.promptEnded(IdleStateUpdate(stopReason: .cancelled), started: true)
+
+        let snapshot = await ledger.currentSnapshot()
+
+        guard case .idle(let idle) = snapshot else {
+            Issue.record("expected idle, got \(snapshot)")
+            return
+        }
+        #expect(idle.stopReason == nil)
+    }
+
+    /// An open prompt makes the snapshot `running`.
+    @Test
+    func aLedgerWithAnOpenPromptSnapshotsRunning() async {
+        let ledger = SessionStateLedger(send: RecordingSink().send)
+        await ledger.promptStarted()
+
+        let snapshot = await ledger.currentSnapshot()
+
+        #expect(isRunningState(.stateUpdate(snapshot)))
+    }
+
+    /// A question that waits for the user makes the snapshot
+    /// `requires_action`, also while a prompt is open.
+    @Test
+    func aWaitingQuestionSnapshotsRequiresAction() async {
+        let ledger = SessionStateLedger(send: RecordingSink().send)
+        await ledger.promptStarted()
+        await ledger.userWaitStarted("a question")
+
+        let snapshot = await ledger.currentSnapshot()
+
+        #expect(isRequiresActionState(.stateUpdate(snapshot)))
+    }
+
+    /// The announce sends the snapshot to the announce sink, and not to the
+    /// sink of the changes: the sink of the changes records into the
+    /// history.
+    @Test
+    func aSnapshotGoesToTheAnnounceSinkAndNotToTheSinkOfTheChanges() async {
+        let changes = RecordingSink()
+        let announced = RecordingSink()
+        let ledger = SessionStateLedger(send: changes.send, announce: announced.send)
+        await ledger.promptStarted()
+
+        await ledger.announceCurrentState()
+
+        #expect(stateNames(of: changes.updates) == ["running"])
+        #expect(stateNames(of: announced.updates) == ["running"])
+    }
+
+    /// The announce sends the snapshot also when the last change said the
+    /// same state.
+    @Test
+    func aSnapshotIsSentAlsoWhenItEqualsTheLastChange() async {
+        let sink = RecordingSink()
+        let ledger = SessionStateLedger(send: sink.send)
+        await ledger.promptStarted()
+
+        await ledger.announceCurrentState()
+
+        #expect(stateNames(of: sink.updates) == ["running", "running"])
+    }
+
+    /// A snapshot that is in flight is not overtaken by a later change. The
+    /// sink holds the snapshot, the session becomes busy, and the sink then
+    /// lets the snapshot go. The snapshot says `idle` and the change says
+    /// `running`, and the client must read them in that order: a last
+    /// `idle` would show a busy session as idle.
+    @Test
+    func aSnapshotInFlightIsNotOvertakenByALaterChange() async {
+        let sink = GatedSink()
+        let ledger = SessionStateLedger(send: sink.send)
+        let snapshot = Task { await ledger.announceCurrentState() }
+        await sink.firstReached.wait()
+        let change = Task { await ledger.promptStarted() }
+        while await !ledger.hasOpenPrompt {
+            await Task.yield()
+        }
+
+        await sink.gate.open()
+        await snapshot.value
+        await change.value
+
+        #expect(stateNames(of: sink.updates) == ["idle", "running"])
+    }
+
+    /// Each snapshot after a change shows the state of that change.
+    @Test
+    func aSnapshotAfterAChangeShowsTheStateOfThatChange() async {
+        let sink = RecordingSink()
+        let ledger = SessionStateLedger(send: sink.send)
+        await ledger.promptStarted()
+        await ledger.announceCurrentState()
+        await ledger.promptEnded(IdleStateUpdate(stopReason: .endTurn), started: true)
+        await ledger.announceCurrentState()
+
+        #expect(stateNames(of: sink.updates) == ["running", "running", "idle", "idle"])
+    }
+
+    // MARK: - The replay path
+
+    /// The replay of the history sends no `state_update`: the retained one is
+    /// a record of the past, and not the current state.
+    @Test
+    func theReplayOfARetainedHistoryHoldsNoStateUpdate() {
+        let history = SessionMergeEngine(replaying: [
+            .stateUpdate(.running(RunningStateUpdate())),
+            .sessionInfoUpdate(SessionInfoUpdate(title: .value("a title"))),
+        ])
+
+        let replay = history.replayUpdates(from: .start)
+
+        #expect(stateNames(of: replay).isEmpty)
+        #expect(Self.kinds(of: replay).contains(.info))
+    }
+
+    // MARK: - The wire order
+
+    /// With `replayFrom: start` the wire order is: the replay, one current
+    /// `state_update`, the `session_info_update`, and then the response.
+    @Test
+    func aResumeWithAReplaySendsTheReplayThenTheStateThenTheSessionInfoThenTheResponse() async throws {
+        var resume = try await ResumeSessionFixture.make(label: "ResumeSyncTests-replay-order", tapsWire: true)
+        try await resume.runPrompt("a question before the resume")
+        await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
+
+        let kinds = try await Self.wireKindsOfAResume(resume, replayFrom: .start(ReplayFromStart()))
+        await resume.fixture.close()
+
+        #expect(kinds.filter { $0 == .state }.count == 1)
+        let stateIndex = try #require(kinds.firstIndex(of: .state))
+        let lastMessage = try #require(kinds.lastIndex(of: .message))
+        let infoIndex = try #require(kinds.lastIndex(of: .info))
+        let responseIndex = try #require(kinds.firstIndex(of: .response))
+        #expect(lastMessage < stateIndex)
+        #expect(stateIndex < infoIndex)
+        #expect(infoIndex < responseIndex)
+    }
+
+    /// With no `replayFrom` the agent sends no history, and the current
+    /// `state_update` and the `session_info_update` still come before the
+    /// response.
+    @Test
+    func aResumeWithNoReplaySendsTheStateAndTheSessionInfoBeforeTheResponseAndNoHistory() async throws {
+        var resume = try await ResumeSessionFixture.make(label: "ResumeSyncTests-no-replay-order", tapsWire: true)
+        try await resume.runPrompt("a question before the quiet resume")
+        await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
+
+        let kinds = try await Self.wireKindsOfAResume(resume, replayFrom: nil)
+        await resume.fixture.close()
+
+        #expect(!kinds.contains(.message))
+        #expect(kinds.filter { $0 == .state }.count == 1)
+        let stateIndex = try #require(kinds.firstIndex(of: .state))
+        let infoIndex = try #require(kinds.lastIndex(of: .info))
+        let responseIndex = try #require(kinds.firstIndex(of: .response))
+        #expect(stateIndex < infoIndex)
+        #expect(infoIndex < responseIndex)
+    }
+
+    /// A resumed session with no prompt open shows `idle` as its current
+    /// state, and the recorded `idle` or `running` of the past is not sent.
+    @Test
+    func aResumeSendsIdleWhenNoPromptIsOpen() async throws {
+        var resume = try await ResumeSessionFixture.make(label: "ResumeSyncTests-idle")
+        try await resume.runPrompt("a question before the idle resume")
+        await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
+
+        let countBefore = await resume.fixture.collector.updates.count
+        _ = try await resume.fixture.harness.connection.resumeSession(
+            resume.makeResumeRequest(replayFrom: .start(ReplayFromStart())))
+        let updates = Array(await resume.fixture.collector.updates.dropFirst(countBefore)).map(\.update)
+        await resume.fixture.close()
+
+        #expect(stateNames(of: updates) == ["idle"])
+        #expect(updates.compactMap(idleState(of:)).first?.stopReason == nil)
+    }
+
+    /// A session with no title and no session info gets no
+    /// `session_info_update`: an empty update has no value, and the replay
+    /// skips it too.
+    @Test
+    func aResumeOfASessionWithNoInfoSendsNoSessionInfoUpdate() async throws {
+        let resume = try await ResumeSessionFixture.make(label: "ResumeSyncTests-no-info")
+        await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
+
+        let countBefore = await resume.fixture.collector.updates.count
+        _ = try await resume.fixture.harness.connection.resumeSession(resume.makeResumeRequest())
+        let updates = Array(await resume.fixture.collector.updates.dropFirst(countBefore)).map(\.update)
+        await resume.fixture.close()
+
+        #expect(stateNames(of: updates) == ["idle"])
+        #expect(!Self.kinds(of: updates).contains(.info))
+    }
+
+    // MARK: - The retained history
+
+    /// The sync does not replace the retained state of the history: after a
+    /// resume the history still holds the `idle` with the stop reason of the
+    /// last prompt.
+    @Test
+    func aResumeKeepsTheRetainedIdleWithItsStopReason() async throws {
+        var resume = try await ResumeSessionFixture.make(label: "ResumeSyncTests-retained-state")
+        try await resume.runPrompt("a question before the resume")
+        await ScriptedPromptFixture.waitForPromptsFinished(resume.fixture.harness.agent, resume.fixture.sessionId)
+        await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
+
+        _ = try await resume.fixture.harness.connection.resumeSession(resume.makeResumeRequest())
+        let entry = try #require(await resume.fixture.harness.agent.sessions[resume.fixture.sessionId])
+        let retained = entry.history.agentState
+        await resume.fixture.close()
+
+        guard case .idle(let idle)? = retained else {
+            Issue.record("expected a retained idle, got \(String(describing: retained))")
+            return
+        }
+        #expect(idle.stopReason == .endTurn)
+    }
+
+    // MARK: - The function of the sync
+
+    // A resume ends each open prompt of the session and builds a new entry
+    // with a new ledger and a new relay. So at the response of a resume the
+    // ledger is busy, or a question waits, only when work or a question
+    // starts in the gap between the activation and the sync. No test can
+    // place that start in the gap. The two tests below call the function of
+    // the sync on a live session, and they test the function.
+
+    /// ``RoutedACPAgent/syncCurrentState(of:)`` reads the ledger of the live
+    /// session: with a prompt open the current state is `running`.
+    @Test
+    func syncCurrentStateSendsRunningWhenTheLedgerIsBusy() async throws {
+        let resume = try await ResumeSessionFixture.make(label: "ResumeSyncTests-running")
+        let agent = resume.fixture.harness.agent
+        let sessionId = resume.fixture.sessionId
+        let ledger = try #require(await agent.sessions[sessionId]?.stateLedger)
+        await ledger.promptStarted()
+        try await ScriptedPromptFixture.waitForRunning(resume.fixture.collector)
+
+        let countBefore = await resume.fixture.collector.updates.count
+        await agent.syncCurrentState(of: sessionId)
+        let received = try await resume.fixture.collector.wait(for: "the snapshot reaches the client") { updates in
+            updates.count { isRunningState($0.update) } >= 2
+        }
+        let updates = Array(received.dropFirst(countBefore)).map(\.update)
+        await ledger.promptEnded(IdleStateUpdate(stopReason: .cancelled), started: true)
+        await resume.fixture.close()
+
+        #expect(stateNames(of: updates) == ["running"])
+    }
+
+    /// ``RoutedACPAgent/syncCurrentState(of:)`` sends `requires_action` while
+    /// a question of the session waits for the user. The live change of the
+    /// question went out first, and the snapshot agrees with it.
+    @Test
+    func syncCurrentStateSendsRequiresActionWhileAQuestionWaits() async throws {
+        let question = try await OpenQuestion.open(label: "ResumeSyncTests-requires-action") {
+            OpenQuestion.makeFormRequest(elicitationId: $0)
+        }
+        let fixture = question.fixture
+        _ = try await fixture.collector.wait(for: "the live requires_action") { updates in
+            updates.contains { isRequiresActionState($0.update) }
+        }
+
+        let countBefore = await fixture.collector.updates.count
+        await fixture.harness.agent.syncCurrentState(of: fixture.sessionId)
+        let received = try await fixture.collector.wait(for: "the snapshot reaches the client") { updates in
+            updates.count { isRequiresActionState($0.update) } >= 2
+        }
+        let updates = Array(received.dropFirst(countBefore)).map(\.update)
+        await question.cancel()
+        await fixture.close()
+
+        #expect(stateNames(of: updates) == ["requires_action"])
+    }
+}

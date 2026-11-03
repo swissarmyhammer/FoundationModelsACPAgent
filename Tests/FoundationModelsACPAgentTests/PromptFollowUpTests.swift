@@ -234,7 +234,8 @@ import Tracing
 
     /// Opens one session whose prompt starts a background run that asks one
     /// question, and waits until the question reaches the client and the
-    /// session sent its first `idle`.
+    /// session reports `requires_action` for it. It also waits until the
+    /// prompt ended.
     ///
     /// The run clock of the session is a `ManualRunClock`. The snippet waits
     /// for the answer inside the settle period of the call, so the test
@@ -247,7 +248,7 @@ import Tracing
     ///   - recorder: Records each prompt that the model gets, or `nil` for
     ///     no record.
     /// - Returns: The fixture, the pending question, and the updates at that
-    ///   `idle`.
+    ///   `requires_action`.
     /// - Throws: Whatever the construction, the wire or the waits throw.
     private static func askInTheBackground(
         label: String, recorder: PromptRecorder? = nil
@@ -269,32 +270,41 @@ import Tracing
         let question = try await ElicitationWait.firstPendingElicitation(in: fixture.session)
         await clock.waitForSleepers(atLeast: Self.sleepersInTheSettlePeriod)
         clock.advance(by: .seconds(CatalogContext.defaultInlineSettleGrace))
-        let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
+        let updates = try await fixture.collector.wait(for: "the requires_action update") { updates in
+            updates.contains { isRequiresActionState($0.update) }
+        }
+        // The prompt ends when its run goes to the background. A close
+        // before that end would end the prompt as `cancelled`.
+        await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
         return (fixture, question, updates)
     }
 
     /// An open question does not keep the session `running`: a background
-    /// run that waits only for the user is no Router work, so the session
-    /// goes `idle` while its question is still open at the client. No
-    /// `requires_action` goes out.
+    /// run that waits only for the user is no Router work. The session
+    /// reports `requires_action` while the question is open at the client,
+    /// and the `idle` of the prompt goes out when the question ends. The
+    /// `idle` carries the stop reason of the prompt.
     @Test
-    func anOpenQuestionDoesNotKeepTheSessionRunning() async throws {
+    func anOpenQuestionReportsRequiresActionUntilItEnds() async throws {
         let asked = try await Self.askInTheBackground(label: "PromptFollowUpTests-open-question")
-        let pendingAtIdle = await ElicitationWait.pendingElicitations(in: asked.fixture.session)
+        let pendingAtWait = await ElicitationWait.pendingElicitations(in: asked.fixture.session)
         _ = try await asked.fixture.harness.connection.closeSession(
             CloseSessionRequest(sessionId: asked.fixture.sessionId))
+        let updates = await asked.fixture.collector.updates
         await asked.fixture.close()
 
-        #expect(pendingAtIdle.map(\.id) == [asked.question.id])
-        #expect(ScriptedPromptFixture.idleStopReason(in: asked.updates) == .endTurn)
-        #expect(!asked.updates.contains { isRequiresActionState($0.update) })
+        #expect(pendingAtWait.map(\.id) == [asked.question.id])
+        #expect(!asked.updates.contains { isIdleState($0.update) })
+        #expect(stateNames(of: updates.map(\.update)).prefix(2) == ["running", "requires_action"])
+        #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
     }
 
-    /// Background work with no prompt open gives `running` and then `idle`.
-    /// The answer to the question resumes the background run: Router work
+    /// The answer to the question of a background run ends the
+    /// `requires_action`. The answer resumes the background run: Router work
     /// starts with no prompt open, the run settles, its mail starts an
-    /// answer, and the work ends. No prompt ended since that `running`, so
-    /// the `idle` has no stop reason.
+    /// answer, and the work ends. The session then reports `idle`. The prompt
+    /// ended during the `requires_action`, so the `idle` carries its stop
+    /// reason.
     @Test
     func backgroundWorkWithNoPromptOpenGivesRunningThenIdle() async throws {
         let recorder = PromptRecorder()
@@ -319,17 +329,15 @@ import Tracing
         let updates = await asked.fixture.collector.updates
         await asked.fixture.close()
 
-        let afterFirstIdle = Array(updates[asked.updates.count...])
-        let states = afterFirstIdle.filter {
+        let afterWait = Array(updates[asked.updates.count...])
+        // The session goes `running` for the work that the answer resumes,
+        // and then `idle`.
+        let states = afterWait.filter {
             if case .stateUpdate = $0.update { true } else { false }
         }
-        #expect(states.count == 2, "expected running then idle, got \(states)")
-        #expect(isRunningState(states.first?.update))
-        #expect(isIdleState(states.last?.update))
-        if case .stateUpdate(.idle(let idle)) = states.last?.update {
-            #expect(idle.stopReason == nil)
-        }
-        #expect(ScriptedPromptFixture.agentChunkTexts(in: afterFirstIdle).contains(Self.mailReply))
+        #expect(isIdleState(states.last?.update), "expected a last idle, got \(states)")
+        #expect(idleState(of: states.last?.update)?.stopReason == .endTurn)
+        #expect(ScriptedPromptFixture.agentChunkTexts(in: afterWait).contains(Self.mailReply))
         #expect(await Self.aRunGotAccept(in: recorder))
     }
 

@@ -55,7 +55,9 @@ import Testing
         #expect(table.starter(of: owner.sessionId) == owner.harness.routedConnection.id)
         _ = try await taker.connection.prompt(
             AgentClientHarness.makePromptRequest(sessionId: owner.sessionId, text: Self.promptText))
-        _ = try await ScriptedPromptFixture.waitForIdle(try #require(taker.collector))
+        // The first `idle` of the taker is the current-state sync of its
+        // resume, and the second one ends the prompt.
+        _ = try await ScriptedPromptFixture.waitForIdle(try #require(taker.collector), count: 2)
 
         #expect(await takerCreates.creates.count == 1)
         #expect(await ownerCreates.creates.count == 1)

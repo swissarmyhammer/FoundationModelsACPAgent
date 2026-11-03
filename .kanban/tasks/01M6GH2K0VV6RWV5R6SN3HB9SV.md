@@ -59,8 +59,8 @@ comments:
   id: 01m6h0g2fs4a0m7e33famss193
   text: 'Fix of the finding on ConnectionTable owner(of:in:). The nestedUnder map and the hand-written walk are gone. ConnectionTable now holds the one SessionTree (init(tree:)) and reads the parent links from it. owner(of:) takes the session and its ancestors from the tree and gives the first owner record. path(forSession:) uses the same lookup. recordNested and forgetNested are removed: SessionBuild links and removes in the tree only, and the agent sessionTree is now connections.tree, so one copy of the links exists. The table has no "if child" branch. New tests in Tests/FoundationModelsACPAgentTests/ConnectionTableTreeTests.swift: a child linked in the tree has the owner of its parent, a take of the parent reaches the child, an unlinked child and a stranger have no owner. They failed to compile before the fix (no tree). Root swift test: 1319 tests in 145 suites passed, 1 known issue (HarnessSmokeTests, not related).'
   timestamp: 2026-11-03T15:29:58.265125+00:00
-position_column: review
-position_ordinal: '8180'
+position_column: done
+position_ordinal: ffff9780
 title: Register a nested sub-agent as an ordinary ACP session with a parent link (shared session build)
 ---
 ## What

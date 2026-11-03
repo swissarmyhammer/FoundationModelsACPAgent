@@ -244,17 +244,9 @@ import Testing
     ///
     /// - Parameter updates: The collected notifications.
     /// - Returns: The markers of the running, requires-action, and idle
-    ///   state updates. The agent sends no requires-action; the marker
-    ///   shows a defect.
+    ///   state updates.
     private static func stateMarkers(in updates: [UpdateSessionNotification]) -> [String] {
-        updates.compactMap { notification in
-            switch notification.update {
-            case .stateUpdate(.running): "running"
-            case .stateUpdate(.requiresAction): "requires_action"
-            case .stateUpdate(.idle): "idle"
-            default: nil
-            }
-        }
+        stateNames(of: updates.map(\.update))
     }
 
     /// Wires a fixture whose session mounts the loopback `mcp-test-server`
@@ -287,9 +279,9 @@ import Testing
     // MARK: - The form round trip
 
     /// A tool that elicits in form mode produces one `elicitation/create`
-    /// at the client, and the tool receives the accepted content. The answer
-    /// of the prompt is Router work while its tool waits, so the session
-    /// stays `running`: no `requires_action` goes out.
+    /// at the client, and the tool receives the accepted content. While the
+    /// question waits for the user, the session reports `requires_action`.
+    /// The answer ends the wait, and the session reports `running` again.
     @Test
     func aFormElicitationRoundTripsTheAcceptedContentToTheTool() async throws {
         let fixture = try await Self.makeLoopbackFixture(
@@ -309,8 +301,10 @@ import Testing
         } else {
             Issue.record("expected a form mode, got \(pending.request.mode)")
         }
-        let markersAtPending = Self.stateMarkers(in: await fixture.collector.updates)
-        #expect(markersAtPending == ["running"])
+        let atPending = try await fixture.collector.wait(for: "the requires_action update") { updates in
+            updates.contains { isRequiresActionState($0.update) }
+        }
+        #expect(Self.stateMarkers(in: atPending) == ["running", "requires_action"])
 
         await MainActor.run {
             fixture.session.acceptElicitation(
@@ -325,7 +319,7 @@ import Testing
 
         #expect(creates.count == 1)
         #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
-        #expect(Self.stateMarkers(in: updates) == ["running", "idle"])
+        #expect(Self.stateMarkers(in: updates) == ["running", "requires_action", "running", "idle"])
         let wireText = try encodedWireText(of: updates)
         #expect(wireText.contains(Self.acceptedAnswer))
         #expect(wireText.contains(Self.acceptedResultText))
@@ -631,7 +625,7 @@ import Testing
         #expect(captured.delivery == .completed)
         #expect(captured.completions == [captured.elicitationId])
         #expect(ScriptedPromptFixture.idleStopReason(in: captured.updates) == .endTurn)
-        #expect(Self.stateMarkers(in: captured.updates) == ["running", "idle"])
+        #expect(Self.stateMarkers(in: captured.updates) == ["running", "requires_action", "running", "idle"])
         #expect(try encodedWireText(of: captured.updates).contains(Self.acceptedResultText))
     }
 
@@ -670,7 +664,7 @@ import Testing
         #expect(captured.completions == [captured.elicitationId])
         #expect(ScriptedPromptFixture.idleStopReason(in: captured.updates) == .endTurn)
         #expect(try encodedWireText(of: captured.updates).contains(Self.cancelledRunText(of: captured.runToken)))
-        #expect(!Self.stateMarkers(in: captured.updates).contains("requires_action"))
+        #expect(Self.stateMarkers(in: captured.updates) == ["running", "requires_action", "running", "idle"])
     }
 
     // MARK: - A URL flow that ends while the relay waits for respond
@@ -834,12 +828,14 @@ import Testing
     /// `idle(cancelled)` and ends the question. The `cancelAll()` signal of
     /// Router first sends the terminal event of the prompt's mail, and then
     /// ends the question with `cancel` and the reason "run cancelled", and
-    /// the relay ends the client request. The states are `running` and one
-    /// `idle`, with no `requires_action`. The URL-mode tool is used here, so
-    /// the cancel also releases an outstanding URL elicitation id.
+    /// the relay ends the client request. The states are `running`,
+    /// `requires_action` while the question waits, and one `idle`. The
+    /// URL-mode tool is used here, so the cancel also releases an outstanding
+    /// URL elicitation id.
     ///
-    /// The run waits only for the user, so the idle can go out before the
-    /// end of the question. The test reads the records after
+    /// The end of the question can come before or after the end of the
+    /// prompt. In the first case a `running` goes out between them. The test
+    /// reads the records after
     /// `fixture.close()`: a `session/close` that succeeded returns after the
     /// projector sent each event of the session (task ^3546eff).
     @Test
@@ -858,7 +854,10 @@ import Testing
         }
 
         #expect(ScriptedPromptFixture.idleStopReason(in: captured.updates) == .cancelled)
-        #expect(Self.stateMarkers(in: captured.updates) == ["running", "idle"])
+        let markers = Self.stateMarkers(in: captured.updates)
+        #expect(markers.prefix(2) == ["running", "requires_action"])
+        #expect(markers.last == "idle")
+        #expect(markers.count { $0 == "idle" } == 1)
         let ends = Self.endRecords(in: captured.records)
         #expect(ends.count == 1)
         #expect(

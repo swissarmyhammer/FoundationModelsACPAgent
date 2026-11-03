@@ -146,7 +146,8 @@ extension RoutedACPAgent {
     ) async throws {
         let announcement = SessionAnnouncementGate(isOpen: parent == nil)
         let send = historySink(for: sessionId, gate: announcement)
-        let stateLedger = SessionStateLedger(send: send)
+        let stateLedger = SessionStateLedger(
+            send: send, announce: unrecordedSink(for: sessionId, gate: announcement))
         let shellOutput = build.surface.shellOutput
         let table = connections
         let projector = SessionProjector(
@@ -154,7 +155,7 @@ extension RoutedACPAgent {
             modelName: ConfigOptions.handle(for: build.selectedSlot, of: residentProfile).chosen.stringValue,
             send: send,
             shellSnapshot: { commandID in shellOutput?.snapshot(for: commandID) },
-            relay: ElicitationRelay(sessionId: sessionId) { table.path(forSession: sessionId) },
+            relay: ElicitationRelay(sessionId: sessionId, stateLedger: stateLedger) { table.path(forSession: sessionId) },
             runCallJoins: build.runCallJoins,
             stateLedger: stateLedger)
         await projector.attach(session)

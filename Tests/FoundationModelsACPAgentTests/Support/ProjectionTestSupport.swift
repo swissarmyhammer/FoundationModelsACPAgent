@@ -673,6 +673,22 @@ func isRequiresActionState(_ update: SessionUpdate?) -> Bool {
     return false
 }
 
+/// The names of the state updates in a sequence, in order.
+///
+/// - Parameter updates: The updates to read.
+/// - Returns: `running`, `requires_action` or `idle` for each state update.
+///   The other updates give nothing.
+func stateNames(of updates: [SessionUpdate]) -> [String] {
+    updates.compactMap { update in
+        switch update {
+        case .stateUpdate(.running): "running"
+        case .stateUpdate(.requiresAction): "requires_action"
+        case .stateUpdate(.idle): "idle"
+        default: nil
+        }
+    }
+}
+
 /// The user-message echo one update carries.
 ///
 /// - Parameter update: The update to read.

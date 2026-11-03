@@ -228,6 +228,7 @@ extension RoutedACPAgent {
             history: history)
 
         try await replayHistory(history, from: replayCursor, sessionId: params.sessionId)
+        await syncCurrentState(of: params.sessionId)
 
         let response = ResumeSessionResponse(
             availableCommands: activation.availableCommands,
@@ -481,6 +482,34 @@ extension RoutedACPAgent {
         for update in history.replayUpdates(from: cursor) {
             await connection.post(update, in: sessionId)
         }
+    }
+
+    // MARK: - The current-state sync
+
+    /// Sends the current state of the resumed session (ACP v2 Session Setup,
+    /// "Ordering"). It runs after the replay, if any, and before the resume
+    /// response. It sends one current `state_update`, and then the current
+    /// `session_info_update` when there is info. It runs for each resume,
+    /// with or without `replayFrom`, and it sends no history.
+    ///
+    /// The `state_update` comes from the ledger of the session. The ledger
+    /// sends it in order with the live changes, and it does not record it
+    /// in the history (``SessionStateLedger/announceCurrentState()``). The
+    /// replay sends no retained `state_update`
+    /// (``SessionMergeEngine/replayUpdates(from:)``). A session that no
+    /// connection serves sends nothing, as the sink does.
+    ///
+    /// - Parameter sessionId: The resumed session.
+    func syncCurrentState(of sessionId: SessionId) async {
+        guard let entry = sessions[sessionId] else {
+            return
+        }
+        await entry.stateLedger.announceCurrentState()
+        let info = entry.history.sessionInfoSyncUpdate(recordedTitle: entry.session.facts.title)
+        guard info != SessionInfoUpdate() else {
+            return
+        }
+        await connections.path(forSession: sessionId)?.connection.post(.sessionInfoUpdate(info), in: sessionId)
     }
 
     // MARK: - The missing-tool report

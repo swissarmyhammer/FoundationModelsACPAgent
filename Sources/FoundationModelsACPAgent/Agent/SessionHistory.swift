@@ -142,10 +142,31 @@ extension SessionMergeEngine {
         }
     }
 
+    /// The current session info that a `session/resume` sync sends. It is
+    /// the info that the history folded from the live updates. When the
+    /// history has no title, it takes the recorded title. A session that an
+    /// earlier build recorded has only that title.
+    ///
+    /// - Parameter recordedTitle: The title in the Router record of the
+    ///   session, or `nil`.
+    /// - Returns: The session info update.
+    func sessionInfoSyncUpdate(recordedTitle: String?) -> SessionInfoUpdate {
+        var info = sessionInfo
+        if case .unchanged = info.title, let recordedTitle {
+            info.title = .value(recordedTitle)
+        }
+        return info
+    }
+
     /// The updates that a `session/resume` replay sends, at or after
     /// `cursor`: the full retained history. Each transcript
     /// entry goes as one whole update with its id, then each state field
     /// that has a value.
+    ///
+    /// The retained `state_update` is not in the replay. It records a past
+    /// state, and a client that gets it would show that state as current
+    /// activity. The current state goes out after the replay, from the
+    /// ledger of the session (``SessionStateLedger/announceCurrentState()``).
     ///
     /// The replay goes out before the resume response. Thus the command
     /// list and the configuration options of the response come last, and
@@ -156,8 +177,18 @@ extension SessionMergeEngine {
     func replayUpdates(from cursor: ReplayCursor) -> [SessionUpdate] {
         switch cursor {
         case .start:
-            return transcriptUpdates + stateUpdates
+            return transcriptUpdates + stateUpdates.filter { !$0.isStateUpdate }
         }
+    }
+}
+
+extension SessionUpdate {
+    /// Whether this update is a `state_update`.
+    var isStateUpdate: Bool {
+        if case .stateUpdate = self {
+            return true
+        }
+        return false
     }
 }
 
@@ -207,12 +238,29 @@ extension RoutedACPAgent {
     ///     client knows already.
     /// - Returns: The sink.
     nonisolated func historySink(for sessionId: SessionId, gate: SessionAnnouncementGate? = nil) -> SessionUpdateSink {
-        { [weak self] update in
+        let posting = unrecordedSink(for: sessionId, gate: gate)
+        return { [weak self] update in
             guard let self else {
                 return
             }
             await recordInHistory(update, of: sessionId)
-            guard gate?.isOpen ?? true else {
+            await posting(update)
+        }
+    }
+
+    /// The sink of a snapshot: it sends through the connection like
+    /// ``historySink(for:gate:)``, with the same gate, and records nothing
+    /// in the retained history. A snapshot of the current state is no
+    /// event of the session, so it must not replace the retained state.
+    ///
+    /// - Parameters:
+    ///   - sessionId: The session the updates belong to.
+    ///   - gate: The gate of the session, or `nil` for a session that the
+    ///     client knows already.
+    /// - Returns: The sink.
+    nonisolated func unrecordedSink(for sessionId: SessionId, gate: SessionAnnouncementGate? = nil) -> SessionUpdateSink {
+        { [weak self] update in
+            guard let self, gate?.isOpen ?? true else {
                 return
             }
             await connections.path(forSession: sessionId)?.connection.post(update, in: sessionId)
