@@ -164,11 +164,10 @@ actor ElicitationRelay {
     /// ``complete(_:)`` or at ``end(_:)``.
     private var awaitingCompletion: Set<String> = []
 
-    /// The accepted URL-mode flows whose question of this session still
-    /// holds the user wait of the ledger. Router holds such a question until
-    /// the flow completes or ends, so the wait ends with the flow, not at
-    /// the accept. ``finishURLFlow(elicitationId:)`` and
-    /// ``drainOpenRoundTrips()`` end these waits.
+    /// The accepted URL-mode flows whose question of this session still holds the user wait of the
+    /// ledger. Router holds such a question until the flow completes or ends. So the wait ends with
+    /// the flow, not at the accept. ``finishURLFlow(elicitationId:)`` and ``drainOpenRoundTrips()``
+    /// end these waits.
     private var heldURLWaits: Set<String> = []
 
     /// The ids of the URL-mode flows that completed before their round trip

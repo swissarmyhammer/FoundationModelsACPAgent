@@ -7,8 +7,8 @@ extension SubagentUpdate {
     /// The fields of this snapshot that differ from the snapshot that the
     /// client holds. An omitted field is unchanged for the client.
     ///
-    /// - Parameter previous: The snapshot that the last sent update made, or
-    ///   `nil` when the client does not know the child yet.
+    /// - Parameter previous: The snapshot that the last sent update made. It is `nil` when the
+    ///   client does not know the child yet.
     /// - Returns: This snapshot with no previous snapshot, the changed fields
     ///   only with one, or `nil` when nothing changed.
     func patch(replacing previous: SubagentUpdate?) -> SubagentUpdate? {
@@ -27,8 +27,8 @@ extension SubagentUpdate {
         return patch == SubagentUpdate(sessionId: sessionId) ? nil : patch
     }
 
-    /// A field as a patch: the new value when it differs, and omitted when it
-    /// is the value that the client holds.
+    /// A field as a patch. It has the new value when it differs. It is omitted when it is the value
+    /// that the client holds.
     ///
     /// - Parameters:
     ///   - field: The new value of the field.
@@ -69,23 +69,22 @@ extension RoutedACPAgent {
             })
     }
 
-    /// Sends one `subagent_update` for a report, on the session of the parent
-    /// of the run, through the history sink of that session. The update is in
-    /// the retained history of the parent, so a resume replays it.
+    /// Sends one `subagent_update` for a report, on the session of the parent of the run. It goes
+    /// through the history sink of that session. The update is in the retained history of the
+    /// parent, so a resume replays it.
     ///
-    /// The update carries all fields when the client does not know the child
-    /// (`previous` is `nil`), and only the changed fields after that. The
-    /// parent is the session that started the run, and the root session for a
-    /// run that no session started. The call sends nothing and records
-    /// nothing in four cases. The parent is not in the table, is closed, has
-    /// no connection, or is not known to the client yet.
+    /// The update carries all fields when the client does not know the child (`previous` is `nil`).
+    /// After that, it carries only the changed fields. The parent is the session that started the
+    /// run. For a run that no session started, the parent is the root session. The call sends
+    /// nothing and records nothing in four cases. The parent is not in the table, is closed, has no
+    /// connection, or is not known to the client yet.
     ///
     /// - Parameters:
     ///   - report: The report of the run.
     ///   - previous: The snapshot that the last sent update of the run made,
     ///     or `nil`.
-    ///   - link: The wire id of the `agents` call that started the run, or
-    ///     `nil` when the run has none or it is not known.
+    ///   - link: The wire id of the `agents` call that started the run. It is `nil` when the run
+    ///     has none or the id is not known.
     ///   - root: The ACP id of the root session of the surface.
     /// - Returns: What was done.
     func deliverSubagentReport(

@@ -531,8 +531,8 @@ enum ACPAgentTelemetry {
         /// not build.
         case agentsComposition = "AgentsComposition"
 
-        /// The announcement of agent runs: the link to the tool call of a
-        /// run that could not be read or written.
+        /// The announcement of agent runs. This category covers a link to the tool call of a run
+        /// that could not be read or written.
         case subagentAnnouncement = "SubagentAnnouncement"
 
         /// The GraphQL tunnel: a notification of a subscription that could

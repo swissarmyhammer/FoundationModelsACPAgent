@@ -88,10 +88,10 @@ import Testing
 
     // MARK: - The replay
 
-    /// The replay from the start sends the full retained history: each
-    /// transcript entry as one whole update with its id, then each state
-    /// field that has a value, except the retained `state_update`: it is a
-    /// past state, and the current state goes out after the replay.
+    /// The replay from the start sends the full retained history. Each transcript entry goes out as
+    /// one whole update with its id. Then each state field that has a value goes out. The retained
+    /// `state_update` does not go out. It is a past state. The current state goes out after the
+    /// replay.
     @Test func theReplayFromTheStartSendsTheFullHistory() {
         let replay = Self.sampleHistory.replayUpdates(from: .start)
 

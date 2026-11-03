@@ -192,15 +192,13 @@ final class RunCallJoinTable: Sendable {
     /// "no join" at once. This is the rule of ``announceToolCallId(for:)``.
     /// Else the call waits until the entry is written.
     ///
-    /// The stop of the projection (``closeProjection()``) and the cancel of the
-    /// calling task end the wait, so the wait never outlives the session. No
-    /// time decides the entry.
+    /// The stop of the projection (``closeProjection()``) ends the wait. The cancel of the calling
+    /// task ends it too. So the wait never outlives the session. No time decides the entry.
     ///
     /// - Parameter token: The completion token of the run.
-    /// - Returns: The tool call id, as ``toolCallId(for:)`` gives it. `nil`
-    ///   when the wait ended with no entry: the task was cancelled. The
-    ///   completion token is not the wire id of a run that may still get an
-    ///   SDK id, so a cancelled wait gives no id.
+    /// - Returns: The tool call id, as ``toolCallId(for:)`` gives it. `nil` when the wait ended
+    ///   with no entry because the task was cancelled. The completion token is not the wire id of a
+    ///   run that may still get an SDK id. So a cancelled wait gives no id.
     func awaitToolCallId(for token: String) async -> ToolCallId? {
         await awaitEntry(for: token)
         guard let join = state.withLock({ $0.joins[token] }) else {
@@ -293,9 +291,9 @@ final class RunCallJoinTable: Sendable {
     /// - Parameters:
     ///   - waiter: The caller.
     ///   - ticket: The ticket of the caller.
-    /// - Returns: `true` when the caller waits. `false` when its wait is over.
-    ///   This is the case when the run has an entry, when no projection is
-    ///   open, or when the task is cancelled.
+    /// - Returns: `true` when the caller waits. `false` when its wait is over. The wait is over
+    ///   when the run has an entry. It is also over when no projection is open or the task is
+    ///   cancelled.
     private func admitWaiter(_ waiter: EntryWaiter, ticket: Int) -> Bool {
         state.withLock { state in
             if state.joins[waiter.token] != nil || Task.isCancelled {

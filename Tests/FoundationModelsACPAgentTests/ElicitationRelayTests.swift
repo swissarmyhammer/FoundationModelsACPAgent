@@ -38,37 +38,12 @@ import Testing
 
     // MARK: - Mapping builders
 
-    /// A form-mode Extras request with one required string field.
-    ///
-    /// - Parameter elicitationId: The id the request carries.
-    /// - Returns: The request.
-    private static func makeFormRequest(elicitationId: ULID = ULID()) -> ElicitationRequest {
-        ElicitationRequest(
-            message: requestMessage,
-            elicitationId: elicitationId,
-            requestedSchema: ElicitationRequestedSchema(
-                properties: [answerField: .string(ElicitationStringSchema())],
-                required: [answerField]))
-    }
-
-    /// A URL-mode Extras request.
-    ///
-    /// - Parameter elicitationId: The id the request carries.
-    /// - Returns: The request.
-    /// - Throws: When ``requestLink`` does not parse as a URL.
-    private static func makeURLRequest(elicitationId: ULID = ULID()) throws -> ElicitationRequest {
-        ElicitationRequest(
-            message: requestMessage,
-            elicitationId: elicitationId,
-            url: try #require(URL(string: requestLink)))
-    }
-
     // MARK: - The request mapping
 
     /// A form-mode request maps to a form-mode create: the message, the
     /// schema fields, and the session scope with the run's tool call id.
     @Test func aFormRequestMapsToAFormModeCreateScopedToTheSessionAndToolCall() throws {
-        let request = Self.makeFormRequest()
+        let request = OpenQuestion.makeFormRequest(message: Self.requestMessage, field: Self.answerField)
 
         let wire = try #require(
             ElicitationRelay.wireRequest(
@@ -98,7 +73,8 @@ import Testing
     /// request's own elicitation id and the link.
     @Test func aURLRequestMapsToAURLModeCreateCarryingTheElicitationId() throws {
         let elicitationId = ULID()
-        let request = try Self.makeURLRequest(elicitationId: elicitationId)
+        let request = try OpenQuestion.makeURLRequest(
+            elicitationId: elicitationId, message: Self.requestMessage, link: Self.requestLink)
 
         let wire = try #require(
             ElicitationRelay.wireRequest(
@@ -484,7 +460,9 @@ import Testing
             label: "ElicitationRelayTests-decline-unsupported")
         let session = try await Self.recordingSession(of: fixture)
 
-        try await Self.relayDirectly(try Self.makeURLRequest(), in: fixture, over: session)
+        try await Self.relayDirectly(
+            try OpenQuestion.makeURLRequest(message: Self.requestMessage, link: Self.requestLink),
+            in: fixture, over: session)
         let responses = await session.responses.map(\.response)
         await fixture.close()
 
@@ -502,12 +480,16 @@ import Testing
         let elicitationId = ULID()
         let first = Task {
             try await Self.relayDirectly(
-                try Self.makeURLRequest(elicitationId: elicitationId), in: fixture, over: session)
+                try OpenQuestion.makeURLRequest(
+                    elicitationId: elicitationId, message: Self.requestMessage, link: Self.requestLink),
+                in: fixture, over: session)
         }
         let pending = try await ElicitationWait.firstPendingElicitation(in: fixture.session)
 
         try await Self.relayDirectly(
-            try Self.makeURLRequest(elicitationId: elicitationId), in: fixture, over: session)
+            try OpenQuestion.makeURLRequest(
+                elicitationId: elicitationId, message: Self.requestMessage, link: Self.requestLink),
+            in: fixture, over: session)
         let responsesAtDuplicate = await session.responses.map(\.response)
         await MainActor.run {
             fixture.session.cancelElicitation(pending.id)

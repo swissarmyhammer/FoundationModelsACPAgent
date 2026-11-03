@@ -2,10 +2,9 @@ import Foundation
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 
-/// What one line of the wire is, as an order test reads it. A test that
-/// proves an order between the updates and a response reads the lines that
-/// the agent sent (`WireTap`), because the collector of the updates does
-/// not see the responses.
+/// What one line of the wire is, as an order test reads it. A test that proves an order between the
+/// updates and a response reads the lines that the agent sent (`WireTap`). The collector of the
+/// updates does not see the responses.
 enum WireItem: Equatable {
     /// A whole-message upsert of a replay.
     case message

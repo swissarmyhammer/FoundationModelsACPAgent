@@ -101,26 +101,22 @@ enum AgentsComposition {
         return AgentsMount(tool: tool, runner: runner, environment: environment, announcer: announcer)
     }
 
-    /// Makes the observer of the session events of each agent run of the
-    /// session (task ^zbcrex8). It gives each event to `runCallJoins`, and
-    /// the open record of a tool run writes "no join" for that run
-    /// (``RunCallJoinTable/recordAgentRunEvent(_:)``). It also gives the run
-    /// to `announcer`, which queues the `subagent_update` of the run before
-    /// any message that uses the id of the child
-    /// (``SubagentAnnouncer``).
+    /// Makes the observer of the session events of each agent run of the session (task ^zbcrex8).
+    /// It gives each event to `runCallJoins`. The open record of a tool run then writes "no join"
+    /// for that run (``RunCallJoinTable/recordAgentRunEvent(_:)``). It also gives the run to
+    /// `announcer`. The announcer queues the `subagent_update` of the run before any message that
+    /// uses the id of the child (``SubagentAnnouncer``).
     ///
-    /// An agent run uses the shell capability of the root session. The output
-    /// of its shell runs comes on the shell output stream of the session. Its
-    /// tool records go to the event stream of the agent run. The terminal
-    /// stream holds a shell run that has no entry, and this entry releases it
-    /// while the agent run continues.
+    /// An agent run uses the shell capability of the root session. The output of its shell runs
+    /// comes on the shell output stream of the session. Its tool records go to the event stream of
+    /// the agent run. The terminal stream holds a shell run that has no entry. This entry releases
+    /// the run while the agent run continues.
     ///
-    /// The environment is made for one session, and the table belongs to the
-    /// same surface. So the observer needs no lookup from the run to the
-    /// session. Each run calls the observer synchronously in its follow loop,
-    /// child runs too. Two runs can call it at the same time. Thus the
-    /// observer only takes the lock of the table and the lock of the announcer,
-    /// and it does not wait.
+    /// The environment is made for one session, and the table belongs to the same surface. So the
+    /// observer needs no lookup from the run to the session. Each run calls the observer
+    /// synchronously in its follow loop, child runs too. Two runs can call it at the same time.
+    /// Thus the observer only takes the lock of the table and the lock of the announcer. It does
+    /// not wait.
     ///
     /// - Parameters:
     ///   - runCallJoins: The join table of the session.

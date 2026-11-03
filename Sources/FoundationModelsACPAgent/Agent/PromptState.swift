@@ -28,18 +28,15 @@ extension AgentSideConnection {
     }
 }
 
-/// The `state_update` of one ACP session: `requires_action` while a question
-/// of the session waits for the user, else `running` while the session is
-/// busy, else `idle`.
+/// The `state_update` of one ACP session. It is `requires_action` while a question of the session
+/// waits for the user. Else it is `running` while the session is busy. Else it is `idle`.
 ///
-/// The session is busy while Router works (``workStarted(on:)`` and
-/// ``workEnded(on:)``) or a prompt is open. Router work is an open
-/// background run, an answer that runs, or queued run mail. A run that waits
-/// only for the user is no work, so an open question does not keep the
-/// session busy. A prompt counts too, because some prompts make no Router
-/// work. Examples are a slash command with no model pass, a refused mail,
-/// and a prompt cancelled before its mail went in. More than one Router
-/// session can feed the session, as the replacement session of a model slot
+/// The session is busy while Router works (``workStarted(on:)`` and ``workEnded(on:)``) or a prompt
+/// is open. Router work is an open background run, an answer that runs, or queued run mail. A run
+/// that waits only for the user is no work. So an open question does not keep the session busy. A
+/// prompt counts too, because some prompts make no Router work. Examples are a slash command with
+/// no model pass and a refused mail. Another example is a prompt cancelled before its mail went in.
+/// More than one Router session can feed the session, as the replacement session of a model slot
 /// switch does. So the ledger keeps the set of the sessions that work.
 ///
 /// A question waits for the user from ``userWaitStarted(_:)`` to
@@ -88,9 +85,9 @@ actor SessionStateLedger {
     /// and ``workEnded(on:)``).
     private var workEventCount = 0
 
-    /// The number of answers that Router took and that resume a run, whose
-    /// work event the ledger did not take yet. Such an answer keeps the
-    /// session busy. A work event ends the count.
+    /// The number of answers that Router took and that resume a run. The ledger did not take the
+    /// work event of these answers yet. Such an answer keeps the session busy. A work event ends
+    /// the count.
     private var answersResuming = 0
 
     /// The state that the last change reported.
@@ -189,8 +186,8 @@ actor SessionStateLedger {
         await sendChange()
     }
 
-    /// Records that the question `question` waits for the user now, and
-    /// sends `requires_action` when the session did not report it yet.
+    /// Records that the question `question` waits for the user now. It sends `requires_action` when
+    /// the session did not report it yet.
     ///
     /// - Parameter question: The elicitation id of the question.
     func userWaitStarted(_ question: String) async {
@@ -198,8 +195,8 @@ actor SessionStateLedger {
         await sendChange()
     }
 
-    /// Records that the question `question` does not wait for the user any
-    /// more, and sends `running` or `idle` when no other question waits.
+    /// Records that the question `question` does not wait for the user any more. It sends `running`
+    /// or `idle` when no other question waits.
     ///
     /// An answer that Router took resumes a run, and Router then sends a work
     /// event. The ledger can take the end of the wait before that event. So
@@ -335,16 +332,13 @@ actor SessionStateLedger {
 
 /// The prompt-state owner of one prompt.
 ///
-/// It gives the transitions of its prompt to the ``SessionStateLedger`` of
-/// the session: the start and the end with a stop reason. The ledger
-/// decides which state update goes out, because more than one prompt can be
-/// open and Router work keeps the session busy too. The ledger also reports
-/// `requires_action` while a question waits for the user. This owner does
-/// not know the questions.
-/// It also records a `session/cancel` request, so the prompt ends as
-/// `cancelled` even when the cancelled model work runs to completion:
-/// model work that never checks for cancellation returns its response,
-/// and does not throw.
+/// It gives the transitions of its prompt to the ``SessionStateLedger`` of the session. These are
+/// the start and the end with a stop reason. The ledger decides which state update goes out. More
+/// than one prompt can be open, and Router work keeps the session busy too. The ledger also reports
+/// `requires_action` while a question waits for the user. This owner does not know the questions.
+/// It also records a `session/cancel` request. So the prompt ends as `cancelled` even when the
+/// cancelled model work runs to completion. Model work that never checks for cancellation returns
+/// its response. It does not throw.
 actor PromptStateOwner {
     /// The state ledger of the session.
     private let ledger: SessionStateLedger

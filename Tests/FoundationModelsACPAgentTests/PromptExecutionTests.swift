@@ -179,15 +179,12 @@ import Testing
         #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .cancelled)
     }
 
-    /// The fixed order of a `session/resume` while a prompt is open (task
-    /// ^he1rmw6, decision A). The resume first does the teardown of
-    /// `session/close`: the open prompt ends with one `idle` and the
-    /// `cancelled` stop reason before the resume response. No update of the
-    /// old session comes after it, and the new projector serves the session:
-    /// the next prompt answers, and it ends with the third `idle`. The second
-    /// `idle` is the current-state sync of the resume: it
-    /// comes after the teardown and before the response, and it carries no
-    /// stop reason.
+    /// The fixed order of a `session/resume` while a prompt is open (task ^he1rmw6, decision A).
+    /// The resume first does the teardown of `session/close`. The open prompt ends with one `idle`
+    /// and the `cancelled` stop reason. This comes before the resume response. No update of the old
+    /// session comes after it. The new projector serves the session. The next prompt answers, and
+    /// it ends with the third `idle`. The second `idle` is the current-state sync of the resume. It
+    /// comes after the teardown and before the response. It carries no stop reason.
     @Test
     func aResumeWhileAPromptIsOpenEndsThatPromptCancelledFirst() async throws {
         let holdMarker = "HOLD-UNTIL-RESUME"

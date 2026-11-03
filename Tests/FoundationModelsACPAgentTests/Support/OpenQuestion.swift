@@ -8,9 +8,9 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// One question that waits for the user in a fresh session of a scripted
-/// fixture. The relay of the session carries the question to the client
-/// over the wire, as a tool question does, and the client holds it.
+/// One question that waits for the user in a fresh session of a scripted fixture. The relay of the
+/// session carries the question to the client over the wire, as a tool question does. The client
+/// holds it.
 struct OpenQuestion {
     /// The wired fixture whose session holds the question.
     let fixture: ScriptedPromptFixture
@@ -66,8 +66,8 @@ struct OpenQuestion {
         await resolveAll { $0.acceptElicitation($1) }
     }
 
-    /// Answers each pending question at the client, on the main actor, and
-    /// waits until the round trip of the relay returns.
+    /// Answers each pending question at the client, on the main actor. It waits until the round
+    /// trip of the relay returns.
     ///
     /// - Parameter resolve: The client call that answers one question. It
     ///   gets the client session and the id of the pending question.
@@ -83,27 +83,46 @@ struct OpenQuestion {
         await roundTrip.value
     }
 
+    /// The message of the default requests.
+    static let defaultMessage = "Which colour do you want?"
+
+    /// The link of the default URL-mode request.
+    static let defaultLink = "https://example.com/sign-in"
+
+    /// The name of the one form field of the default form request.
+    static let defaultField = "answer"
+
     /// A URL-mode request.
     ///
-    /// - Parameter elicitationId: The id the request carries.
+    /// - Parameters:
+    ///   - elicitationId: The id the request carries.
+    ///   - message: The message of the request.
+    ///   - link: The link of the request.
     /// - Returns: The request.
-    /// - Throws: When the fixed link does not parse as a URL.
-    static func makeURLRequest(elicitationId: ULID) throws -> ElicitationRequest {
+    /// - Throws: When `link` does not parse as a URL.
+    static func makeURLRequest(
+        elicitationId: ULID = ULID(), message: String = defaultMessage, link: String = defaultLink
+    ) throws -> ElicitationRequest {
         ElicitationRequest(
-            message: "Sign in to go on.", elicitationId: elicitationId,
-            url: try #require(URL(string: "https://example.com/sign-in")))
+            message: message, elicitationId: elicitationId,
+            url: try #require(URL(string: link)))
     }
 
-    /// A form-mode request with one string field.
+    /// A form-mode request with one required string field.
     ///
-    /// - Parameter elicitationId: The id the request carries.
+    /// - Parameters:
+    ///   - elicitationId: The id the request carries.
+    ///   - message: The message of the request.
+    ///   - field: The name of the field.
     /// - Returns: The request.
-    static func makeFormRequest(elicitationId: ULID) -> ElicitationRequest {
+    static func makeFormRequest(
+        elicitationId: ULID = ULID(), message: String = defaultMessage, field: String = defaultField
+    ) -> ElicitationRequest {
         ElicitationRequest(
-            message: "Which colour do you want?",
+            message: message,
             elicitationId: elicitationId,
             requestedSchema: ElicitationRequestedSchema(
-                properties: ["answer": .string(ElicitationStringSchema())],
-                required: ["answer"]))
+                properties: [field: .string(ElicitationStringSchema())],
+                required: [field]))
     }
 }

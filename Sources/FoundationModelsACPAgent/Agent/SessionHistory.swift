@@ -248,10 +248,9 @@ extension RoutedACPAgent {
         }
     }
 
-    /// The sink of a snapshot: it sends through the connection like
-    /// ``historySink(for:gate:)``, with the same gate, and records nothing
-    /// in the retained history. A snapshot of the current state is no
-    /// event of the session, so it must not replace the retained state.
+    /// The sink of a snapshot. It sends through the connection like ``historySink(for:gate:)``,
+    /// with the same gate. It records nothing in the retained history. A snapshot of the current
+    /// state is no event of the session, so it must not replace the retained state.
     ///
     /// - Parameters:
     ///   - sessionId: The session the updates belong to.

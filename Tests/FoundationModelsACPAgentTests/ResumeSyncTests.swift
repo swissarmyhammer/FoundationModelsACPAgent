@@ -9,19 +9,17 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// The current-state sync of `session/resume` (ACP v2 Session Setup,
-/// "Ordering"): after the replay of the requested history, if any, and before
-/// the response, the agent sends one current `state_update` and then the
-/// current `session_info_update`. It does this for each resume, with or
-/// without `replayFrom`. The replay never sends the retained `state_update`
-/// as the current state. The sync does not change the retained state of the
-/// history.
+/// The current-state sync of `session/resume` (ACP v2 Session Setup, "Ordering"). The agent sends
+/// it after the replay of the requested history, if any, and before the response. It sends one
+/// current `state_update` and then the current `session_info_update`. It does this for each resume,
+/// with or without `replayFrom`. The replay never sends the retained `state_update` as the current
+/// state. The sync does not change the retained state of the history.
 @Suite(.closesHarnesses) struct ResumeSyncTests {
     // MARK: - Readers
 
-    /// A sink that holds its first update until the test opens the gate. It
-    /// keeps each update when the update is done, so the order of the kept
-    /// updates is the order in which the sends finished.
+    /// A sink that holds its first update until the test opens the gate. It keeps each update when
+    /// the update is done. So the order of the kept updates is the order in which the sends
+    /// finished.
     private final class GatedSink: Sendable {
         /// The test opens it to let the first update finish.
         let gate = LateAnswerGate()
@@ -101,8 +99,8 @@ import Testing
         return Array(received.dropFirst(countBefore)).map(\.update)
     }
 
-    /// Resumes the session of `resume` and returns what the agent sent from
-    /// the start of the request to its response, in wire order.
+    /// Resumes the session of `resume`. It returns what the agent sent from the start of the
+    /// request to its response, in wire order.
     ///
     /// - Parameters:
     ///   - resume: The fixture, which taps the wire.
@@ -119,8 +117,8 @@ import Testing
         }
     }
 
-    /// Runs one prompt, closes the session, resumes it, and returns what the
-    /// agent sent from the start of the resume request to its response.
+    /// Runs one prompt, closes the session, and resumes it. It returns what the agent sent from the
+    /// start of the resume request to its response.
     ///
     /// - Parameters:
     ///   - label: The directory label of the calling test.
@@ -190,9 +188,8 @@ import Testing
         #expect(isRequiresActionState(.stateUpdate(snapshot)))
     }
 
-    /// The announce sends the snapshot to the announce sink, and not to the
-    /// sink of the changes: the sink of the changes records into the
-    /// history.
+    /// The announce sends the snapshot to the announce sink, and not to the sink of the changes.
+    /// The sink of the changes records into the history.
     @Test
     func aSnapshotGoesToTheAnnounceSinkAndNotToTheSinkOfTheChanges() async {
         let changes = RecordingSink()
@@ -219,11 +216,10 @@ import Testing
         #expect(stateNames(of: sink.updates) == ["running", "running"])
     }
 
-    /// A snapshot that is in flight is not overtaken by a later change. The
-    /// sink holds the snapshot, the session becomes busy, and the sink then
-    /// lets the snapshot go. The snapshot says `idle` and the change says
-    /// `running`, and the client must read them in that order: a last
-    /// `idle` would show a busy session as idle.
+    /// A later change does not overtake a snapshot that is in flight. The sink holds the snapshot.
+    /// The session becomes busy. The sink then lets the snapshot go. The snapshot says `idle` and
+    /// the change says `running`. The client must read them in that order, because a last `idle`
+    /// would show a busy session as idle.
     @Test
     func aSnapshotInFlightIsNotOvertakenByALaterChange() async {
         let sink = GatedSink()
@@ -257,8 +253,8 @@ import Testing
 
     // MARK: - The replay path
 
-    /// The replay of the history sends no `state_update`: the retained one is
-    /// a record of the past, and not the current state.
+    /// The replay of the history sends no `state_update`. The retained one is a record of the past,
+    /// and not the current state.
     @Test
     func theReplayOfARetainedHistoryHoldsNoStateUpdate() {
         let history = SessionMergeEngine(replaying: [
@@ -306,8 +302,8 @@ import Testing
         #expect(infoIndex < responseIndex)
     }
 
-    /// A resumed session with no prompt open shows `idle` as its current
-    /// state, and the recorded `idle` or `running` of the past is not sent.
+    /// A resumed session with no prompt open shows `idle` as its current state. The recorded `idle`
+    /// or `running` of the past is not sent.
     @Test
     func aResumeSendsIdleWhenNoPromptIsOpen() async throws {
         var resume = try await ResumeSessionFixture.make(label: "ResumeSyncTests-idle")
@@ -321,9 +317,8 @@ import Testing
         #expect(updates.compactMap(idleState(of:)).first?.stopReason == nil)
     }
 
-    /// A session with no title and no session info gets no
-    /// `session_info_update`: an empty update has no value, and the replay
-    /// skips it too.
+    /// A session with no title and no session info gets no `session_info_update`. An empty update
+    /// has no value, and the replay skips it too.
     @Test
     func aResumeOfASessionWithNoInfoSendsNoSessionInfoUpdate() async throws {
         let resume = try await ResumeSessionFixture.make(label: "ResumeSyncTests-no-info")
@@ -338,9 +333,8 @@ import Testing
 
     // MARK: - The retained history
 
-    /// The sync does not replace the retained state of the history: after a
-    /// resume the history still holds the `idle` with the stop reason of the
-    /// last prompt.
+    /// The sync does not replace the retained state of the history. After a resume the history
+    /// still holds the `idle` with the stop reason of the last prompt.
     @Test
     func aResumeKeepsTheRetainedIdleWithItsStopReason() async throws {
         var resume = try await ResumeSessionFixture.make(label: "ResumeSyncTests-retained-state")
@@ -362,12 +356,11 @@ import Testing
 
     // MARK: - The function of the sync
 
-    // A resume ends each open prompt of the session and builds a new entry
-    // with a new ledger and a new relay. So at the response of a resume the
-    // ledger is busy, or a question waits, only when work or a question
-    // starts in the gap between the activation and the sync. No test can
-    // place that start in the gap. The two tests below call the function of
-    // the sync on a live session, and they test the function.
+    // A resume ends each open prompt of the session. It builds a new entry with a new ledger and a
+    // new relay. So at the response of a resume the ledger is busy, or a question waits, only in
+    // one case. In this case work or a question starts in the gap between the activation and the
+    // sync. No test can place that start in the gap. The two tests below call the function of the
+    // sync on a live session. They test the function.
 
     /// ``RoutedACPAgent/syncCurrentState(of:)`` reads the ledger of the live
     /// session: with a prompt open the current state is `running`.

@@ -798,8 +798,8 @@ extension RoutedACPAgent {
                 selectedSlot: ConfigOptions.defaultSlot, announcedConfigOptions: configOptions,
                 titleRecorded: titleRecorded, history: history))
 
-        // The announcer of the agent runs of the surface sends through this
-        // agent from now on, so each run is announced on this root session.
+        // The announcer of the agent runs of the surface sends through this agent from now on. So
+        // each run is announced on this root session.
         if let agents = composition.surface.agents {
             agents.announcer.bind(makeSubagentOutlet(root: sessionId, runner: agents.runner))
         }

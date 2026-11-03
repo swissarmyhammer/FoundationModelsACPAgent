@@ -23,19 +23,6 @@ import Testing
     /// The name of the tool that posts the questions of the tests.
     private static let askingTool = "elicitor"
 
-    /// A form-mode request with one string field.
-    ///
-    /// - Parameter elicitationId: The id the request carries.
-    /// - Returns: The request.
-    private static func makeFormRequest(elicitationId: ULID) -> ElicitationRequest {
-        ElicitationRequest(
-            message: "Which colour do you want?",
-            elicitationId: elicitationId,
-            requestedSchema: ElicitationRequestedSchema(
-                properties: ["answer": .string(ElicitationStringSchema())],
-                required: ["answer"]))
-    }
-
     /// The parts of one test: the fixture, its relay, and a double of its
     /// Router session that records each answer.
     private struct Parts {
@@ -132,7 +119,7 @@ import Testing
             await parts.relay.end(
                 ElicitationEnd(elicitationId: elicitationId, response: .cancel(reason: RunPlane.runCancelledReason)))
             await parts.relay.drainOpenRoundTrips()
-            let creates = try await Self.relayLate(Self.makeFormRequest(elicitationId: elicitationId), in: parts)
+            let creates = try await Self.relayLate(OpenQuestion.makeFormRequest(elicitationId: elicitationId), in: parts)
             return (creates, await parts.session.responses.map(\.response))
         }
 
@@ -147,7 +134,7 @@ import Testing
         let (creates, responses) = try await Self.withParts(label: "ElicitationRelayOrderTests-drain-then-relay") {
             parts in
             await parts.relay.drainOpenRoundTrips()
-            let creates = try await Self.relayLate(Self.makeFormRequest(elicitationId: ULID()), in: parts)
+            let creates = try await Self.relayLate(OpenQuestion.makeFormRequest(elicitationId: ULID()), in: parts)
             return (creates, await parts.session.responses.map(\.response))
         }
 
@@ -163,7 +150,7 @@ import Testing
         let responses = try await Self.withParts(label: "ElicitationRelayOrderTests-drain-reason") { parts in
             let event = OperationEvent(
                 tool: Self.askingTool, op: "elicit", correlationID: "relay-drain", kind: .elicitation, detail: "",
-                elicitation: Self.makeFormRequest(elicitationId: ULID()))
+                elicitation: OpenQuestion.makeFormRequest(elicitationId: ULID()))
             let relayReturn = await RelayReturn()
             let roundTrip = Task {
                 await parts.relay.relay(event, on: parts.session)
@@ -181,8 +168,8 @@ import Testing
         #expect(responses == [.cancel(reason: ElicitationRelay.feedEndedCancelReason)])
     }
 
-    /// The drain ends the user wait that an accepted URL flow still holds, so
-    /// the ledger leaves `requires_action` when the feed ends.
+    /// The drain ends the user wait that an accepted URL flow still holds. So the ledger leaves
+    /// `requires_action` when the feed ends.
     @Test func theDrainEndsTheHeldWaitOfAnAcceptedURLFlow() async throws {
         let question = try await OpenQuestion.open(
             label: "ElicitationRelayOrderTests-drain-held-wait", answerDelivery: .acceptedAwaitingCompletion

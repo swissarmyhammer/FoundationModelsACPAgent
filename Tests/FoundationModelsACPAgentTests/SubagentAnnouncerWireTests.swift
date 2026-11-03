@@ -33,10 +33,9 @@ extension SubagentAnnouncerTests {
         /// run, and the run holds after it.
         private static let startedText = "STARTED-TEXT"
 
-        /// The script of the runs of this suite. The slow run gives one text
-        /// delta, so its session has an event, and then it holds until the
-        /// test releases it. The root session starts the slow run when its
-        /// prompt names it.
+        /// The script of the runs of this suite. The slow run gives one text delta, so its session
+        /// has an event. Then it holds until the test releases it. The root session starts the slow
+        /// run when its prompt names it.
         ///
         /// - Parameter hold: The hold that the slow run waits on.
         /// - Returns: The script.
@@ -164,8 +163,8 @@ extension SubagentAnnouncerTests {
             announcements(in: updates).filter { $0.update.sessionId == child }
         }
 
-        /// Whether a notification uses the id of `child`: it is on the
-        /// session of the child, or it is an update for the child.
+        /// Whether a notification uses the id of `child`. It is on the session of the child, or it
+        /// is an update for the child.
         ///
         /// - Parameters:
         ///   - notification: The notification.
@@ -217,8 +216,8 @@ extension SubagentAnnouncerTests {
             }
         }
 
-        /// A nested session whose announcement waits for the join entry of its
-        /// `agents` call: the root join table has no entry for the token.
+        /// A nested session whose announcement waits for the join entry of its `agents` call. The
+        /// root join table has no entry for the token.
         private struct HeldLink {
             /// The fixture.
             let fixture: ScriptedPromptFixture
@@ -255,8 +254,8 @@ extension SubagentAnnouncerTests {
 
         // MARK: The first message
 
-        /// The first wire message that uses the id of a child is the
-        /// `subagent_update` for that id, on the parent session.
+        /// The first wire message that uses the id of a child is the `subagent_update` for that id.
+        /// It goes out on the parent session.
         @Test
         func theFirstMessageOfAChildIsItsSubagentUpdateOnTheParent() async throws {
             let hold = ScriptedHold()
@@ -273,10 +272,9 @@ extension SubagentAnnouncerTests {
             await Self.finish(fixture, releasing: hold)
         }
 
-        /// The announcement names the agent, its description, the cancel
-        /// capability and the running state. It omits the place: the run has
-        /// no public working directory, and the place of the parent is not the
-        /// place of the child. A run that no tool call started has no link.
+        /// The announcement names the agent, its description, the cancel capability and the running
+        /// state. It omits the place. The run has no public working directory, and the place of the
+        /// parent is not the place of the child. A run that no tool call started has no link.
         @Test
         func theAnnouncementCarriesTheFieldsOfTheRun() async throws {
             let hold = ScriptedHold()
@@ -317,8 +315,8 @@ extension SubagentAnnouncerTests {
 
         // MARK: The link
 
-        /// The announcement of a run that an `agents` call started names the
-        /// tool call id that is on the wire for that call.
+        /// The announcement of a run that an `agents` call started names the tool call id. That id
+        /// is on the wire for that call.
         @Test
         func theAnnouncementLinksTheToolCallThatStartedTheRun() async throws {
             let hold = ScriptedHold()
@@ -346,8 +344,8 @@ extension SubagentAnnouncerTests {
             await fixture.close()
         }
 
-        /// The announcement does not leave before the join entry of its call,
-        /// and it carries the SDK id after the entry.
+        /// The announcement does not leave before the join entry of its call. After the entry, it
+        /// carries the SDK id.
         @Test
         func theAnnouncementWaitsForTheEntryAndCarriesTheSdkId() async throws {
             let held = try await Self.makeHeldLink()
@@ -364,8 +362,8 @@ extension SubagentAnnouncerTests {
             await held.fixture.close()
         }
 
-        /// The stop of the projection ends the wait: the call has no join, and
-        /// its wire id is its completion token.
+        /// The stop of the projection ends the wait. The call has no join, and its wire id is its
+        /// completion token.
         @Test
         func theStopOfTheProjectionAnnouncesWithTheTokenAsWireId() async throws {
             let held = try await Self.makeHeldLink()
@@ -452,8 +450,8 @@ extension SubagentAnnouncerTests {
             await fixture.close()
         }
 
-        /// A link that is known after the first announcement goes out as a
-        /// later patch with the whole `sah` object and nothing else.
+        /// A link that is known after the first announcement goes out as a later patch. The patch
+        /// has the whole `sah` object and nothing else.
         @Test
         func aLinkThatComesLaterGoesOutAsAPatch() async throws {
             let fixture = try await Self.makeIdleFixture()
@@ -667,8 +665,8 @@ extension SubagentAnnouncerTests {
             await held.fixture.close()
         }
 
-        /// An update that the closed gate holds back is not lost for the
-        /// replay: the retained history of the child keeps it.
+        /// An update that the closed gate holds back is not lost for the replay. The retained
+        /// history of the child keeps it.
         @Test
         func anUpdateHeldBackByTheGateStaysInTheHistoryOfTheChild() async throws {
             let fixture = try await Self.makeIdleFixture()
@@ -718,9 +716,8 @@ extension SubagentAnnouncerTests {
 
             #expect(delivery == .blocked)
             #expect(await agent.sessions[fixture.sessionId]?.history.subagents.isEmpty == true)
-            // The agent closed the table row of the connection, so the
-            // session/close request cannot reach it: the close of the wire
-            // closes the session.
+            // The agent closed the table row of the connection, so the session/close request cannot
+            // reach it. The close of the wire closes the session.
             await fixture.harness.close()
         }
 

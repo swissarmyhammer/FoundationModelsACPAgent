@@ -4,14 +4,14 @@ import FoundationModelsAgents
 import FoundationModelsRouter
 import Synchronization
 
-/// What the announcer knows of one agent run when it reports the run: the
-/// fields that the `subagent_update` of the run is made from.
+/// What the announcer knows of one agent run when it reports the run. These are the fields that
+/// make the `subagent_update` of the run.
 ///
-/// The report holds values only. So the observer of the run events can make it
-/// at once, and hand it to the queue of the announcer.
+/// The report holds values only. So the observer of the run events can make it at once. It then
+/// hands the report to the queue of the announcer.
 struct SubagentReport: Equatable, Sendable {
-    /// The id of the run. The session of a run has the id of the run, so this
-    /// is the Router session id of the child.
+    /// The id of the run. The session of a run has the id of the run. So this is the Router session
+    /// id of the child.
     let runID: ULID
 
     /// The session that started the run: the root session or the parent run.
@@ -28,9 +28,9 @@ struct SubagentReport: Equatable, Sendable {
     /// The foreground state of the run.
     let state: StateUpdate
 
-    /// The completion token of the `agents` call that started the run, or
-    /// `nil` for a run that no call started (a run of the host). The join
-    /// table of the parent maps the token to the wire id of the call.
+    /// The completion token of the `agents` call that started the run. It is `nil` for a run that
+    /// no call started (a run of the host). The join table of the parent maps the token to the wire
+    /// id of the call.
     let completionToken: String?
 
     /// Makes a report from its parts.
@@ -64,9 +64,9 @@ struct SubagentReport: Equatable, Sendable {
             state: Self.state(of: run.state), completionToken: run.completionToken)
     }
 
-    /// The foreground state that a state of a run reports. A run in operation
-    /// is `running`. A run that ended is `idle`, with the stop reason of the
-    /// way it ended, the same mapping as for the end of a prompt.
+    /// The foreground state that a state of a run reports. A run in operation is `running`. A run
+    /// that ended is `idle`. Its stop reason is the way it ended, the same mapping as for the end
+    /// of a prompt.
     ///
     /// - Parameter runState: The state of the run.
     /// - Returns: The state update.
@@ -93,9 +93,9 @@ enum SubagentLink: Equatable, Sendable {
     /// The wire id of the `agents` call that started the run.
     case callId(ToolCallId)
 
-    /// The wire id cannot be found now: the parent is not in the table, or
-    /// the wait ended with no entry. The run is tried again at the next event
-    /// that can change this (``SubagentAnnouncer/retryBlocked()``).
+    /// The wire id cannot be found now. The parent is not in the table, or the wait ended with no
+    /// entry. The next event that can change this tries the run again
+    /// (``SubagentAnnouncer/retryBlocked()``).
     case unavailable
 
     /// The wire id, or `nil` for any other link.
@@ -142,27 +142,24 @@ struct SubagentOutlet: Sendable {
     let deliver:
         @Sendable (_ report: SubagentReport, _ previous: SubagentUpdate?, _ link: ToolCallId?) async -> SubagentDelivery
 
-    /// The report of a run that is in operation or finished, or `nil` when the
-    /// runner does not know the id.
+    /// The report of a run that is in operation or finished. It is `nil` when the runner does not
+    /// know the id.
     let parentReport: @Sendable (_ runID: ULID) async -> SubagentReport?
 }
 
 /// The queue that announces each agent run to the client.
 ///
-/// An agent run starts in the background, and the observer of its session
-/// events (``AgentsComposition/makeRunEventObserver(runCallJoins:announcer:)``)
-/// must not wait. The observer hands the run to `observe`, which only takes a
-/// lock. One task reads the ids of the runs that have news, in
-/// order, and delivers the newest report of each run through the outlet. So
-/// the announcement of a child goes out first. The gate of the session of the
-/// child (``gate(for:)``) opens after it, in the same step. No update of the
-/// child can leave before its announcement.
+/// An agent run starts in the background. The observer of its session events
+/// (``AgentsComposition/makeRunEventObserver(runCallJoins:announcer:)``) must not wait. The
+/// observer hands the run to `observe`, which only takes a lock. One task reads the ids of the runs
+/// that have news, in order. It delivers the newest report of each run through the outlet. So the
+/// announcement of a child goes out first. The gate of the session of the child (``gate(for:)``)
+/// opens after it, in the same step. No update of the child can leave before its announcement.
 ///
-/// Each run has one small state. It holds the newest report, the report that
-/// the outlet handled last, the snapshot, the link, and a flag for a blocked
-/// delivery. A report that equals the handled one is not queued again. An
-/// event that comes while a delivery is in flight is not lost. The consumer
-/// reads the newest report when it takes the run.
+/// Each run has one small state. The state holds the newest report and the report that the outlet
+/// handled last. It also holds the snapshot, the link, and a flag for a blocked delivery. A report
+/// that equals the handled one is not queued again. An event that comes while a delivery is in
+/// flight is not lost. The consumer reads the newest report when it takes the run.
 ///
 /// A run that an `agents` call started waits for the wire id of the call. The
 /// wait runs in a task of the run, never in the task of the queue. So a run
@@ -184,9 +181,9 @@ struct SubagentOutlet: Sendable {
 /// The queue starts when the outlet is bound (``bind(_:)``). Events that come
 /// before the bind wait for it. ``stop()`` ends the queue.
 ///
-/// A class, because the surface and the agent share one queue. A `Mutex`
-/// guards the state. The task of the queue holds the announcer until
-/// ``stop()`` ends the stream, and the close of the session calls it.
+/// A class, because the surface and the agent share one queue. A `Mutex` guards the state. The task
+/// of the queue holds the announcer until ``stop()`` ends the stream. The close of the session
+/// calls it.
 final class SubagentAnnouncer: Sendable {
     /// How far the link of a run is.
     private enum LinkProgress: Equatable, Sendable {
@@ -253,6 +250,9 @@ final class SubagentAnnouncer: Sendable {
         /// Whether the newest report is the final report of the run.
         var isFinal = false
 
+        /// Whether the consumer delivers the handled report now.
+        var isDelivering = false
+
         /// Takes the run out of the queue and tells what to do with it.
         mutating func takeStep(epoch: Int) -> Step {
             isQueued = false
@@ -274,6 +274,7 @@ final class SubagentAnnouncer: Sendable {
             }
             attemptEpoch = epoch
             handled = report
+            isDelivering = true
             return .deliver(report, sent, callId)
         }
 
@@ -281,6 +282,42 @@ final class SubagentAnnouncer: Sendable {
         /// nothing holds it back.
         var hasNews: Bool {
             !isBlocked && !isQueued && latest != nil && latest != handled
+        }
+
+        /// Whether the run ended and the outlet handled its final report. No
+        /// delivery is in flight and no report waits in the queue.
+        var isSettled: Bool {
+            isFinal && !isDelivering && !isQueued && latest == handled
+        }
+    }
+
+    /// The ids of the runs whose state was dropped, oldest first. The list has
+    /// a limit, so a long session holds a bounded number of ids.
+    private struct FinishedRuns {
+        /// The most ids that the list keeps. A run that is older than this many
+        /// later runs is forgotten.
+        static let limit = 4096
+
+        /// The ids, for the lookup.
+        private var ids: Set<ULID> = []
+
+        /// The ids in the order that they came, for the removal of the oldest.
+        private var order: [ULID] = []
+
+        /// Whether the id is in the list.
+        func contains(_ runID: ULID) -> Bool {
+            ids.contains(runID)
+        }
+
+        /// Adds an id. At the limit, the oldest id leaves the list.
+        mutating func insert(_ runID: ULID) {
+            guard ids.insert(runID).inserted else {
+                return
+            }
+            order.append(runID)
+            if order.count > Self.limit {
+                ids.remove(order.removeFirst())
+            }
         }
     }
 
@@ -298,15 +335,33 @@ final class SubagentAnnouncer: Sendable {
         /// How many times ``SubagentAnnouncer/retryBlocked()`` ran.
         var retryEpoch = 0
 
+        /// The ids of the runs whose state was dropped. A late event of such a
+        /// run does nothing.
+        var finished = FinishedRuns()
+
+        /// Drops the state of a run that ended, and remembers its id.
+        ///
+        /// - Parameter runID: The id of the run.
+        /// - Returns: Whether the client knew the run: the announcement was
+        ///   sent.
+        mutating func prune(_ runID: ULID) -> Bool {
+            let wasAnnounced = runs.removeValue(forKey: runID)?.sent != nil
+            finished.insert(runID)
+            return wasAnnounced
+        }
+
         /// Blocks a run after an attempt that could not go on. When a retry
         /// came during the attempt, the run is queued again instead, so no
-        /// retry event is lost.
+        /// retry event is lost. The same holds for a final report that came
+        /// during the attempt: nothing else would try it.
         mutating func blockOrRetry(_ runID: ULID, in queue: AsyncStream<ULID>.Continuation) {
             guard let run = runs[runID] else {
                 return
             }
+            let hasNewFinalReport = run.isFinal && run.latest != run.handled
             runs[runID]?.handled = nil
-            if run.attemptEpoch == retryEpoch {
+            runs[runID]?.isDelivering = false
+            if run.attemptEpoch == retryEpoch, !hasNewFinalReport {
                 runs[runID]?.isBlocked = true
             } else {
                 queueIfNew(runID, in: queue)
@@ -342,8 +397,14 @@ final class SubagentAnnouncer: Sendable {
         state.withLock { $0.isStopped }
     }
 
-    /// Whether the client knows the child of a run: the announcement of the
-    /// run was sent, and the run is still live.
+    /// How many runs have a state now. A run that ended and was handled has
+    /// none. A test reads it to see that the announcer holds nothing.
+    var trackedRunCount: Int {
+        state.withLock { $0.runs.count }
+    }
+
+    /// Whether the client knows the child of a run. The announcement of the run was sent, and the
+    /// run is still live.
     ///
     /// - Parameter runID: The id of the run.
     /// - Returns: `true` after the first sent announcement of the run.
@@ -351,18 +412,18 @@ final class SubagentAnnouncer: Sendable {
         state.withLock { $0.runs[runID]?.sent != nil }
     }
 
-    /// The gate of the session of a run. The session takes it when the agent
-    /// makes its entry, and the announcer opens it after it sent the
-    /// announcement. The gate does not depend on the entry. So an announcement
-    /// that goes out before, during or after the registration of the session
-    /// opens the one gate that the session holds.
+    /// The gate of the session of a run. The session takes it when the agent makes its entry. The
+    /// announcer opens it after it sent the announcement. The gate does not depend on the entry. So
+    /// the timing of the announcement does not matter. It can go out before, during or after the
+    /// registration of the session. It always opens the one gate that the session holds.
     ///
     /// - Parameter runID: The id of the run, which is the session id.
-    /// - Returns: The gate. After the stop, or after the final announcement
-    ///   of a run, it is a new closed gate: no announcement can come.
+    /// - Returns: The gate. After the stop, or after the end of the run, it is a new closed gate.
+    ///   The announcer does not keep that gate, because no announcement can come. Else the session
+    ///   gets the one gate of the run, also when it asks again.
     func gate(for runID: ULID) -> SessionAnnouncementGate {
         state.withLock { state in
-            guard !state.isStopped else {
+            guard !state.isStopped, !state.finished.contains(runID) else {
                 return SessionAnnouncementGate(isOpen: false)
             }
             if state.runs[runID] == nil {
@@ -381,50 +442,86 @@ final class SubagentAnnouncer: Sendable {
     ///
     /// - Parameter run: The run that gave an event.
     func observe(_ run: AgentRun) {
+        observe(runID: run.id, watchEnd: { watchEnd(of: run) }, makeReport: { SubagentReport(run: run) })
+    }
+
+    /// Queues the report of a run. The run is a pair of closures, so a test can
+    /// count the calls.
+    ///
+    /// - Parameters:
+    ///   - runID: The id of the run.
+    ///   - watchEnd: Starts to watch the end of the run. It runs once for a
+    ///     run.
+    ///   - makeReport: Makes the report of the run, as it is now. It does not
+    ///     run for a run that waits for a retry, or for a run that ended.
+    func observe(runID: ULID, watchEnd: () -> Void, makeReport: () -> SubagentReport) {
         let watch = state.withLock { state -> Bool? in
-            guard !state.isStopped else {
+            guard !state.isStopped, !state.finished.contains(runID) else {
                 return nil
             }
-            let known = state.runs[run.id]
+            let known = state.runs[runID]
             if known?.isBlocked == true, known?.isWatched == true {
                 return nil
             }
-            state.runs[run.id, default: RunState()].isWatched = true
+            state.runs[runID, default: RunState()].isWatched = true
             return known?.isWatched != true
         }
         guard let watch else {
             return
         }
         if watch {
-            watchEnd(of: run)
+            watchEnd()
         }
-        observe(SubagentReport(run: run))
+        observe(makeReport())
     }
 
-    /// Queues a report, unless the announcer stopped, the run waits for a
-    /// retry, or the outlet handled this report already.
+    /// Queues a report. It does nothing in four cases. The announcer stopped, or the run ended and
+    /// was dropped. The run waits for a retry, or the outlet handled this report already. A final
+    /// report that the outlet handled already ends the state of the run.
     ///
     /// - Parameters:
     ///   - report: The report.
     ///   - isFinal: Whether the run ended and this is its last report.
     func observe(_ report: SubagentReport, isFinal: Bool = false) {
-        state.withLock { state in
-            guard !state.isStopped else {
-                return
+        let runID = report.runID
+        let pruned = state.withLock { state -> Bool? in
+            guard !state.isStopped, !state.finished.contains(runID) else {
+                return nil
             }
-            state.runs[report.runID, default: RunState()].latest = report
+            state.runs[runID, default: RunState()].latest = report
             if isFinal {
                 // The end of a run is an event that retries a blocked run.
-                state.runs[report.runID]?.isFinal = true
-                state.runs[report.runID]?.isBlocked = false
+                state.runs[runID]?.isFinal = true
+                state.runs[runID]?.isBlocked = false
             }
-            state.queueIfNew(report.runID, in: queue)
+            state.queueIfNew(runID, in: queue)
+            guard state.runs[runID]?.isSettled == true else {
+                return nil
+            }
+            return state.prune(runID)
+        }
+        if let pruned {
+            didPrune(runID, wasAnnounced: pruned)
         }
     }
 
-    /// Makes each blocked run ready for a new try. Call it when something
-    /// that could unblock a run happened: an announcement was sent, or a
-    /// session was made in the table.
+    /// Does what follows the drop of the state of a run. The run is out of the
+    /// way of the runs that wait for it, so they get a new try.
+    ///
+    /// - Parameters:
+    ///   - runID: The id of the run.
+    ///   - wasAnnounced: Whether the client knew the run.
+    private func didPrune(_ runID: ULID, wasAnnounced: Bool) {
+        if !wasAnnounced {
+            ACPAgentTelemetry.logger(.subagentAnnouncement).notice(
+                "An agent run ended and the client never learned of it. The announcer drops its state.",
+                metadata: ["run_id": "\(runID)"])
+        }
+        retryBlocked()
+    }
+
+    /// Makes each blocked run ready for a new try. Call it when something that could unblock a run
+    /// happened. This is an announcement that was sent, or a session that was made in the table.
     func retryBlocked() {
         state.withLock { state in
             guard !state.isStopped else {
@@ -524,25 +621,42 @@ final class SubagentAnnouncer: Sendable {
     }
 
     /// Records the link of a run. A known link queues the run. A link that
-    /// cannot be found now blocks the run.
+    /// cannot be found now blocks the run, or ends it when the run ended.
     ///
     /// - Parameters:
     ///   - link: What the outlet found.
     ///   - runID: The id of the run.
     private func finishLink(_ link: SubagentLink, of runID: ULID) {
-        state.withLock { state in
+        let pruned = state.withLock { state -> Bool? in
             guard !state.isStopped, state.runs[runID]?.link == .resolving else {
-                return
+                return nil
             }
             state.runs[runID]?.linkTask = nil
             if link == .unavailable {
                 state.runs[runID]?.link = .unresolved
+                if state.runs[runID]?.isFinal == true {
+                    // No later event can change the answer for a run that ended.
+                    return state.prune(runID)
+                }
                 state.blockOrRetry(runID, in: queue)
             } else {
                 state.runs[runID]?.link = .resolved(link)
                 state.queueIfNew(runID, in: queue)
             }
+            return nil
         }
+        if let pruned {
+            didPrune(runID, wasAnnounced: pruned)
+        }
+    }
+
+    /// Whether the client has no more to learn of a run. Either the announcement of the run was
+    /// sent, or the run ended and its state was dropped.
+    ///
+    /// - Parameter runID: The id of the run.
+    /// - Returns: `true` when the run needs no announcement.
+    private func isSettled(_ runID: ULID) -> Bool {
+        state.withLock { $0.finished.contains(runID) || $0.runs[runID]?.sent != nil }
     }
 
     /// Delivers a report, unless its parent run is not announced yet, and
@@ -563,16 +677,16 @@ final class SubagentAnnouncer: Sendable {
         complete(report, with: await outlet.deliver(report, previous, callId))
     }
 
-    /// Makes a run wait for its parent run, when the caller is a run that the
-    /// client does not know yet. The parent goes into the queue, and its
-    /// announcement retries the child.
+    /// Makes a run wait for its parent run. This holds when the caller is a run that the client
+    /// does not know yet. A parent that ended counts as known. The parent goes into the queue, and
+    /// its announcement retries the child.
     ///
     /// - Parameters:
     ///   - report: The report of the child.
     ///   - outlet: Where the announcements go.
     /// - Returns: `true` when the run waits for its parent.
     private func waitsForParent(of report: SubagentReport, through outlet: SubagentOutlet) async -> Bool {
-        guard let caller = report.caller, caller.description != outlet.root.rawValue, !hasAnnounced(caller),
+        guard let caller = report.caller, caller.description != outlet.root.rawValue, !isSettled(caller),
             let parent = await outlet.parentReport(caller)
         else {
             return false
@@ -583,18 +697,19 @@ final class SubagentAnnouncer: Sendable {
     }
 
     /// Records what the outlet did with a report. A sent announcement opens
-    /// the gate and retries the blocked runs. The final report, once handled,
-    /// ends the state of its run.
+    /// the gate and retries the blocked runs. The final report, once tried,
+    /// ends the state of its run. It ends it also after a blocked try.
     ///
     /// - Parameters:
     ///   - report: The report.
     ///   - delivery: What the outlet did.
     private func complete(_ report: SubagentReport, with delivery: SubagentDelivery) {
-        var wasSent = false
-        state.withLock { state in
+        let outcome = state.withLock { state -> (wasSent: Bool, pruned: Bool?) in
             guard state.runs[report.runID] != nil else {
-                return
+                return (false, nil)
             }
+            state.runs[report.runID]?.isDelivering = false
+            var wasSent = false
             switch delivery {
             case .sent(let snapshot):
                 state.runs[report.runID]?.sent = snapshot
@@ -605,11 +720,16 @@ final class SubagentAnnouncer: Sendable {
             case .blocked:
                 state.blockOrRetry(report.runID, in: queue)
             }
-            if let run = state.runs[report.runID], run.isFinal, !run.isBlocked, run.latest == run.handled {
-                state.runs.removeValue(forKey: report.runID)
+            // The last try for the final report ends the run, whatever the outlet said. No later
+            // event can change the answer.
+            if let run = state.runs[report.runID], run.isFinal, run.latest == report {
+                return (wasSent, state.prune(report.runID))
             }
+            return (wasSent, nil)
         }
-        if wasSent {
+        if let pruned = outcome.pruned {
+            didPrune(report.runID, wasAnnounced: pruned)
+        } else if outcome.wasSent {
             retryBlocked()
         }
     }

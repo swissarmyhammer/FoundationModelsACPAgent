@@ -4,12 +4,13 @@ import FoundationModelsACPAgentTestSupport
 import FoundationModelsAgents
 import FoundationModelsExtras
 import FoundationModelsRouter
+import Synchronization
 import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// The announcement of each agent run to the client: one `subagent_update` on
-/// the parent session, before any message that uses the id of the child.
+/// The announcement of each agent run to the client. One `subagent_update` goes out on the parent
+/// session, before any message that uses the id of the child.
 ///
 /// The `Queue` suite proves the queue of ``SubagentAnnouncer`` with a
 /// recording outlet. The `Patch` suite proves the patch of two snapshots. The
@@ -47,8 +48,8 @@ import Testing
             title: .value(report.title))
     }
 
-    /// One call of the outlet of a test: the report, the snapshot that the
-    /// announcer held for the run at that time, and the link.
+    /// One call of the outlet of a test. It holds the report, the snapshot that the announcer held
+    /// for the run at that time, and the link.
     struct Delivery: Sendable {
         /// The report that the announcer delivered.
         let report: SubagentReport
@@ -116,6 +117,29 @@ extension SubagentAnnouncerTests {
             }
         }
 
+        /// Waits until the announcer holds no state of any run. The wait has a
+        /// limit, so a state that stays gives a failed test and no hang.
+        ///
+        /// - Parameter announcer: The announcer.
+        /// - Returns: The number of runs with a state at the end of the wait.
+        private static func trackedRunCountAfterSettling(_ announcer: SubagentAnnouncer) async -> Int {
+            let deadline = ContinuousClock.now + .seconds(5)
+            while announcer.trackedRunCount != 0, ContinuousClock.now < deadline {
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+            return announcer.trackedRunCount
+        }
+
+        /// Counts the deliveries of one run.
+        ///
+        /// - Parameters:
+        ///   - log: The record of the deliveries.
+        ///   - runID: The run.
+        /// - Returns: The count.
+        private static func deliveryCount(_ log: Log, of runID: ULID) -> Int {
+            log.value.filter { $0.report.runID == runID }.count
+        }
+
         // MARK: Order and dedupe
 
         /// The first report of a run is delivered with no earlier snapshot.
@@ -132,8 +156,8 @@ extension SubagentAnnouncerTests {
             await announcer.stop()
         }
 
-        /// A changed report of the same run is delivered with the snapshot of
-        /// the first delivery, so the outlet sends only the changed fields.
+        /// A changed report of the same run is delivered with the snapshot of the first delivery.
+        /// So the outlet sends only the changed fields.
         @Test
         func aChangedReportCarriesTheSnapshotOfTheFirstDelivery() async throws {
             let announcer = SubagentAnnouncer()
@@ -232,8 +256,8 @@ extension SubagentAnnouncerTests {
             await announcer.stop()
         }
 
-        /// A report that comes before the bind waits for it, and the bind
-        /// delivers the runs in the order that they came.
+        /// A report that comes before the bind waits for it. The bind then delivers the runs in the
+        /// order that they came.
         @Test
         func reportsBeforeTheBindAreDeliveredInOrderAfterIt() async throws {
             let announcer = SubagentAnnouncer()
@@ -401,8 +425,8 @@ extension SubagentAnnouncerTests {
             await announcer.stop()
         }
 
-        /// A retry that comes while a delivery is in flight is not lost: the
-        /// delivery ends blocked, and the run is delivered again at once.
+        /// A retry that comes while a delivery is in flight is not lost. The delivery ends blocked,
+        /// and the run is delivered again at once.
         @Test
         func aRetryDuringABlockedDeliveryIsNotLost() async throws {
             let announcer = SubagentAnnouncer()
@@ -454,8 +478,8 @@ extension SubagentAnnouncerTests {
 
         // MARK: Blocked runs
 
-        /// A report that the outlet could not deliver is delivered again at
-        /// the retry, with the newest report of the run.
+        /// A report that the outlet could not deliver is delivered again at the retry. The retry
+        /// uses the newest report of the run.
         @Test
         func aBlockedReportIsDeliveredAgainAtTheRetry() async throws {
             let announcer = SubagentAnnouncer()
@@ -483,8 +507,8 @@ extension SubagentAnnouncerTests {
             await announcer.stop()
         }
 
-        /// An event that equals the report in flight is not lost when the
-        /// delivery ends blocked: the retry delivers the run.
+        /// An event that equals the report in flight is not lost when the delivery ends blocked.
+        /// The retry delivers the run.
         @Test
         func anEqualEventDuringABlockedDeliveryIsNotLost() async throws {
             let announcer = SubagentAnnouncer()
@@ -516,8 +540,8 @@ extension SubagentAnnouncerTests {
             await announcer.stop()
         }
 
-        /// A blocked run costs no work for a later event: the outlet gets no
-        /// second delivery and no parent lookup until the retry.
+        /// A blocked run costs no work for a later event. The outlet gets no second delivery and no
+        /// parent lookup until the retry.
         @Test
         func aBlockedRunCostsNoWorkForLaterEvents() async throws {
             let announcer = SubagentAnnouncer()
@@ -541,8 +565,8 @@ extension SubagentAnnouncerTests {
             await announcer.stop()
         }
 
-        /// The end of a run is an event that retries a blocked run, so a
-        /// child is never gated for good.
+        /// The end of a run is an event that retries a blocked run. So a child is never gated for
+        /// good.
         @Test
         func theEndOfARunRetriesABlockedRun() async throws {
             let announcer = SubagentAnnouncer()
@@ -606,8 +630,8 @@ extension SubagentAnnouncerTests {
             #expect(!announcer.hasAnnounced(report.runID))
         }
 
-        /// The final report of a run, once handled, ends the state of the run:
-        /// the announcer holds nothing of a run that ended.
+        /// The final report of a run, once handled, ends the state of the run. The announcer holds
+        /// nothing of a run that ended.
         @Test
         func theFinalReportEndsTheStateOfTheRun() async throws {
             let announcer = SubagentAnnouncer()
@@ -627,6 +651,180 @@ extension SubagentAnnouncerTests {
             _ = try await Self.wait(log, for: sentinel.runID)
 
             #expect(!announcer.hasAnnounced(running.runID))
+            await announcer.stop()
+        }
+
+
+        /// A final run whose last try ends blocked holds no state. A nested
+        /// run of an `agents` call has no parent entry, so each try ends so.
+        @Test
+        func aFinalRunWhoseOutletBlocksHoldsNoState() async throws {
+            let announcer = SubagentAnnouncer()
+            let log = Log([])
+            announcer.bind(Self.makeOutlet(log: log, answer: { _ in .blocked }))
+            let running = SubagentAnnouncerTests.makeReport()
+            announcer.observe(running)
+            _ = try await Self.wait(log, for: running.runID)
+
+            announcer.observe(
+                SubagentAnnouncerTests.makeReport(runID: running.runID, state: SubagentAnnouncerTests.endedState),
+                isFinal: true)
+
+            #expect(await Self.trackedRunCountAfterSettling(announcer) == 0)
+            await announcer.stop()
+        }
+
+        /// A final run whose link is not found at the last try holds no state.
+        @Test
+        func aFinalRunWhoseLinkIsUnavailableHoldsNoState() async throws {
+            let announcer = SubagentAnnouncer()
+            let log = Log([])
+            let links = WatchedValue(0)
+            announcer.bind(
+                Self.makeOutlet(
+                    log: log,
+                    link: { _ in
+                        links.update { $0 += 1 }
+                        return .unavailable
+                    }))
+            let running = SubagentAnnouncerTests.makeReport(completionToken: "token")
+            announcer.observe(running)
+            _ = try await links.wait(for: "the first ask") { $0 >= 1 }
+
+            announcer.observe(
+                SubagentAnnouncerTests.makeReport(
+                    runID: running.runID, state: SubagentAnnouncerTests.endedState, completionToken: "token"),
+                isFinal: true)
+
+            #expect(await Self.trackedRunCountAfterSettling(announcer) == 0)
+            await announcer.stop()
+        }
+
+        /// A final report that equals the handled report is not queued, and
+        /// the state of the run still ends.
+        @Test
+        func aFinalReportEqualToTheHandledReportEndsTheState() async throws {
+            let announcer = SubagentAnnouncer()
+            let log = Log([])
+            announcer.bind(Self.makeOutlet(log: log))
+            let ended = SubagentAnnouncerTests.makeReport(state: SubagentAnnouncerTests.endedState)
+            announcer.observe(ended)
+            _ = try await Self.wait(log, for: ended.runID)
+
+            announcer.observe(ended, isFinal: true)
+
+            #expect(await Self.trackedRunCountAfterSettling(announcer) == 0)
+            await announcer.stop()
+        }
+
+        /// A late event of a run that ended does nothing. The client knows the child, so it gets no
+        /// second full announcement.
+        @Test
+        func anEventAfterTheEndOfTheRunSendsNothing() async throws {
+            let announcer = SubagentAnnouncer()
+            let log = Log([])
+            announcer.bind(Self.makeOutlet(log: log))
+            let ended = SubagentAnnouncerTests.makeReport(state: SubagentAnnouncerTests.endedState)
+            announcer.observe(ended, isFinal: true)
+            _ = try await Self.wait(log, for: ended.runID)
+            #expect(await Self.trackedRunCountAfterSettling(announcer) == 0)
+            let watches = Mutex(0)
+
+            announcer.observe(
+                runID: ended.runID, watchEnd: { watches.withLock { $0 += 1 } },
+                makeReport: { SubagentAnnouncerTests.makeReport(runID: ended.runID) })
+            let sentinel = SubagentAnnouncerTests.makeReport()
+            announcer.observe(sentinel)
+            _ = try await Self.wait(log, for: sentinel.runID)
+
+            #expect(Self.deliveryCount(log, of: ended.runID) == 1)
+            #expect(watches.withLock { $0 } == 0)
+            await announcer.stop()
+        }
+
+        /// A parent that ended counts as announced. A child that outlives its
+        /// parent does not announce the parent again.
+        @Test
+        func aChildThatOutlivesItsParentDoesNotAnnounceTheParentAgain() async throws {
+            let announcer = SubagentAnnouncer()
+            let log = Log([])
+            let parent = SubagentAnnouncerTests.makeReport()
+            let child = SubagentAnnouncerTests.makeReport(caller: parent.runID)
+            announcer.bind(Self.makeOutlet(log: log, parents: [parent]))
+            announcer.observe(parent)
+            _ = try await Self.wait(log, for: parent.runID)
+            announcer.observe(
+                SubagentAnnouncerTests.makeReport(runID: parent.runID, state: SubagentAnnouncerTests.endedState),
+                isFinal: true)
+            _ = try await Self.wait(log, for: parent.runID, times: 2)
+            #expect(await Self.trackedRunCountAfterSettling(announcer) == 0)
+
+            announcer.observe(child)
+            _ = try await Self.wait(log, for: child.runID)
+
+            #expect(Self.deliveryCount(log, of: parent.runID) == 2)
+            #expect(announcer.trackedRunCount == 1)
+            await announcer.stop()
+        }
+
+        /// A child waits for a parent that is not announced. When the parent
+        /// ends blocked and its state is dropped, the child is tried again.
+        @Test
+        func aChildWaitingForAParentIsTriedAgainWhenTheParentEnds() async throws {
+            let announcer = SubagentAnnouncer()
+            let log = Log([])
+            let parent = SubagentAnnouncerTests.makeReport()
+            let child = SubagentAnnouncerTests.makeReport(caller: parent.runID)
+            announcer.bind(
+                Self.makeOutlet(
+                    log: log, parents: [parent],
+                    answer: { report in
+                        report.runID == parent.runID ? .blocked : .sent(SubagentAnnouncerTests.makeSnapshot(of: report))
+                    }))
+            announcer.observe(child)
+            _ = try await Self.wait(log, for: parent.runID)
+
+            announcer.observe(
+                SubagentAnnouncerTests.makeReport(runID: parent.runID, state: SubagentAnnouncerTests.endedState),
+                isFinal: true)
+
+            _ = try await Self.wait(log, for: child.runID)
+            await announcer.stop()
+        }
+
+        /// A blocked and watched run builds no report for a later event. The retry delivers the
+        /// report that the announcer held.
+        @Test
+        func aBlockedRunBuildsNoReportForALaterEvent() async throws {
+            let announcer = SubagentAnnouncer()
+            let log = Log([])
+            let blocking = WatchedValue(true)
+            announcer.bind(
+                Self.makeOutlet(log: log, answer: { report in
+                    blocking.value ? .blocked : .sent(SubagentAnnouncerTests.makeSnapshot(of: report))
+                }))
+            let held = SubagentAnnouncerTests.makeReport()
+            let builds = Mutex(0)
+            let observeEvent = {
+                announcer.observe(
+                    runID: held.runID, watchEnd: {},
+                    makeReport: {
+                        builds.withLock { $0 += 1 }
+                        return held
+                    })
+            }
+            observeEvent()
+            _ = try await Self.wait(log, for: held.runID)
+            let sentinel = SubagentAnnouncerTests.makeReport()
+            announcer.observe(sentinel)
+            _ = try await Self.wait(log, for: sentinel.runID)
+
+            observeEvent()
+            blocking.update { $0 = false }
+            announcer.retryBlocked()
+
+            _ = try await Self.wait(log, for: held.runID, times: 2)
+            #expect(builds.withLock { $0 } == 1)
             await announcer.stop()
         }
 
@@ -681,30 +879,69 @@ extension SubagentAnnouncerTests {
             #expect(!gate.isOpen)
         }
 
+
+        /// A session that registers after the end of its run holds a closed gate. The announcer
+        /// keeps no state for it.
+        @Test
+        func aGateTakenAfterTheEndOfTheRunIsClosedAndKeepsNoState() async throws {
+            let announcer = SubagentAnnouncer()
+            let log = Log([])
+            announcer.bind(Self.makeOutlet(log: log))
+            let ended = SubagentAnnouncerTests.makeReport(state: SubagentAnnouncerTests.endedState)
+            announcer.observe(ended, isFinal: true)
+            _ = try await Self.wait(log, for: ended.runID)
+            #expect(await Self.trackedRunCountAfterSettling(announcer) == 0)
+
+            let gate = announcer.gate(for: ended.runID)
+
+            #expect(!gate.isOpen)
+            #expect(announcer.trackedRunCount == 0)
+            await announcer.stop()
+        }
+
+        /// A session that is retired and registered again during the life of its run gets the same
+        /// gate. The announcement opens it.
+        @Test
+        func aSessionRegisteredAgainGetsTheSameOpenGate() async throws {
+            let announcer = SubagentAnnouncer()
+            let log = Log([])
+            let report = SubagentAnnouncerTests.makeReport()
+            announcer.bind(Self.makeOutlet(log: log))
+            let first = announcer.gate(for: report.runID)
+
+            announcer.observe(report)
+            _ = try await Self.wait(log, for: report.runID)
+            let second = announcer.gate(for: report.runID)
+
+            #expect(second === first)
+            #expect(second.isOpen)
+            await announcer.stop()
+        }
+
         // MARK: Stop
 
-        /// After the stop, a run waiting in the queue is not delivered. The
-        /// first delivery holds until the stop, and the second run stays in
-        /// the queue.
+        /// After the stop, a run waiting in the queue is not delivered. The first delivery holds
+        /// until the stop cancels the task of the queue. The second run stays in the queue.
         @Test
         func aStoppedAnnouncerDeliversNoQueuedReport() async throws {
             let announcer = SubagentAnnouncer()
             let log = Log([])
-            let released = WatchedValue(false)
             let first = SubagentAnnouncerTests.makeReport()
             let second = SubagentAnnouncerTests.makeReport()
             announcer.bind(
                 Self.makeOutlet(log: log, answer: { _ in
-                    _ = try? await released.wait(for: "the release") { $0 }
+                    // The gate that the test controls: the delivery ends only
+                    // after the stop cancelled the task of the queue.
+                    while !Task.isCancelled {
+                        try? await Task.sleep(for: .milliseconds(1))
+                    }
                     return .blocked
                 }))
             announcer.observe(first)
             _ = try await Self.wait(log, for: first.runID)
             announcer.observe(second)
 
-            async let stopped: Void = announcer.stop()
-            released.update { $0 = true }
-            await stopped
+            await announcer.stop()
 
             #expect(log.value.map(\.report) == [first])
         }
@@ -784,8 +1021,8 @@ func waitForWaiter(in joins: RunCallJoinTable) async {
 }
 
 extension SubagentAnnouncerTests {
-    /// The wait of the announcer for the entry that the join table writes for
-    /// the `agents` call that started a run.
+    /// The wait of the announcer for the entry that the join table writes. The entry is for the
+    /// `agents` call that started a run.
     @Suite(.timeLimit(.minutes(1))) struct Join {
         /// The completion token of the `agents` call.
         private static let token = "01AGENTSCALLTOKEN0000000001"

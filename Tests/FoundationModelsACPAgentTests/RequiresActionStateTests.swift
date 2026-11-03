@@ -71,9 +71,8 @@ import Testing
         #expect(sink.updates.compactMap(idleState(of:)).last?.stopReason == .cancelled)
     }
 
-    /// An answer that Router took resumes a run. The session goes `running`
-    /// at once, with no `idle` between the answer and the work, even when the
-    /// work event of Router comes later.
+    /// An answer that Router took resumes a run. The session goes `running` at once. There is no
+    /// `idle` between the answer and the work, even when the work event of Router comes later.
     @Test
     func anAnswerThatResumesARunSendsNoIdleBeforeTheWorkEvent() async {
         let sink = RecordingSink()
@@ -89,9 +88,8 @@ import Testing
         #expect(sink.names == ["requires_action", "running", "idle"])
     }
 
-    /// An answer whose work already started and ended sends `idle`: the
-    /// ledger must not keep the session busy for a work event that it took
-    /// already.
+    /// An answer whose work already started and ended sends `idle`. The ledger must not keep the
+    /// session busy for a work event that it took already.
     @Test
     func anAnswerWhoseWorkAlreadyEndedLeavesTheSessionIdle() async {
         let sink = RecordingSink()
@@ -180,8 +178,8 @@ import Testing
         return question
     }
 
-    /// The end of an accepted URL flow by Router (also from `session/cancel`
-    /// and from the close) ends the held wait: the session goes `idle`.
+    /// Router ends an accepted URL flow (also from `session/cancel` and from the close). This ends
+    /// the held wait. The session goes `idle`.
     @Test
     func theRouterEndOfAnAcceptedURLFlowEndsTheHeldWait() async throws {
         let question = try await Self.openAcceptedURLQuestion(label: "RequiresActionStateTests-url-end")
@@ -199,9 +197,8 @@ import Testing
         #expect(ScriptedPromptFixture.isIdle(afterEnd))
     }
 
-    /// A flow that completes before the round trip knows of the accept ends
-    /// the wait in the relay at the accept. The session never stays
-    /// `requires_action` after that.
+    /// A flow that completes before the round trip knows of the accept ends the wait at the accept.
+    /// The session never stays `requires_action` after that.
     @Test
     func aCompletionBeforeTheAcceptEndsTheWaitAtTheAccept() async throws {
         let question = try await OpenQuestion.open(

@@ -232,10 +232,9 @@ import Tracing
         }
     }
 
-    /// Opens one session whose prompt starts a background run that asks one
-    /// question, and waits until the question reaches the client and the
-    /// session reports `requires_action` for it. It also waits until the
-    /// prompt ended.
+    /// Opens one session whose prompt starts a background run that asks one question. It waits
+    /// until the question reaches the client and the session reports `requires_action` for it. It
+    /// also waits until the prompt ended.
     ///
     /// The run clock of the session is a `ManualRunClock`. The snippet waits
     /// for the answer inside the settle period of the call, so the test
@@ -279,11 +278,10 @@ import Tracing
         return (fixture, question, updates)
     }
 
-    /// An open question does not keep the session `running`: a background
-    /// run that waits only for the user is no Router work. The session
-    /// reports `requires_action` while the question is open at the client,
-    /// and the `idle` of the prompt goes out when the question ends. The
-    /// `idle` carries the stop reason of the prompt.
+    /// An open question does not keep the session `running`. A background run that waits only for
+    /// the user is no Router work. The session reports `requires_action` while the question is open
+    /// at the client. The `idle` of the prompt goes out when the question ends. The `idle` carries
+    /// the stop reason of the prompt.
     @Test
     func anOpenQuestionReportsRequiresActionUntilItEnds() async throws {
         let asked = try await Self.askInTheBackground(label: "PromptFollowUpTests-open-question")
@@ -299,12 +297,10 @@ import Tracing
         #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
     }
 
-    /// The answer to the question of a background run ends the
-    /// `requires_action`. The answer resumes the background run: Router work
-    /// starts with no prompt open, the run settles, its mail starts an
-    /// answer, and the work ends. The session then reports `idle`. The prompt
-    /// ended during the `requires_action`, so the `idle` carries its stop
-    /// reason.
+    /// The answer to the question of a background run ends the `requires_action`. The answer
+    /// resumes the background run. Router work starts with no prompt open. The run settles, its
+    /// mail starts an answer, and the work ends. The session then reports `idle`. The prompt ended
+    /// during the `requires_action`, so the `idle` carries its stop reason.
     @Test
     func backgroundWorkWithNoPromptOpenGivesRunningThenIdle() async throws {
         let recorder = PromptRecorder()
