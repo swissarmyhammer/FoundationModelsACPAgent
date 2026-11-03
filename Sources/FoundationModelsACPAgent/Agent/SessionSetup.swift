@@ -30,7 +30,7 @@ enum SessionAvailability: Equatable, Sendable {
 /// with the same ULID.
 ///
 /// A root session and a nested sub-agent session are the same type, built by
-/// one function (``RoutedACPAgent/registerSession(_:sessionId:parent:build:)``).
+/// one function (``RoutedACPAgent/registerSession(_:sessionId:parent:build:events:)``).
 /// A root session has no parent. A nested session has a parent and
 /// **borrows** from it the parts that belong to the mounted surface:
 /// ``configuration``, ``instructions``, ``workingDirectory``,
@@ -712,7 +712,7 @@ extension RoutedACPAgent {
     /// command registry with
     /// its bound builtin context, the table entry with its retained
     /// history (the one build of a session,
-    /// ``registerSession(_:sessionId:parent:build:)``), the command-set
+    /// ``registerSession(_:sessionId:parent:build:events:)``), the command-set
     /// publication, the terminal projection, and
     /// the status report of the MCP servers.
     ///
@@ -801,7 +801,8 @@ extension RoutedACPAgent {
         // The announcer of the agent runs of the surface sends through this agent from now on. So
         // each run is announced on this root session.
         if let agents = composition.surface.agents {
-            agents.announcer.bind(makeSubagentOutlet(root: sessionId, runner: agents.runner))
+            agents.announcer.bind(
+                makeSubagentOutlet(root: sessionId, runner: agents.runner, holds: agents.announcer.holds))
         }
 
         // The response announces the first command list, and each registry

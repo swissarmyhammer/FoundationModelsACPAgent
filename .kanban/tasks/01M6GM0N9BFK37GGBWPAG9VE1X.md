@@ -69,8 +69,8 @@ comments:
   timestamp: 2026-11-03T18:49:20.191107+00:00
 depends_on:
 - 01M6GPCJ3CMS7YE71DQ3J33QC8
-position_column: review
-position_ordinal: '8180'
+position_column: done
+position_ordinal: ffff9980
 title: Resume sends the current-state sync (state_update snapshot, session info) after any replay and before the response, also without replayFrom
 ---
 ## What

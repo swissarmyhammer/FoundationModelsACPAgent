@@ -76,6 +76,9 @@ extension SubagentAnnouncerTests {
         /// The calls of an outlet, in order.
         private typealias Log = WatchedValue<[Delivery]>
 
+        /// The final reports that an outlet settled, in order.
+        private typealias Settlements = WatchedValue<[SubagentReport]>
+
         /// Makes an outlet that records each delivery and answers with
         /// `answer`.
         ///
@@ -86,7 +89,7 @@ extension SubagentAnnouncerTests {
         ///   - answer: What the outlet answers for a report.
         /// - Returns: The outlet.
         private static func makeOutlet(
-            log: Log, parents: [SubagentReport] = [],
+            log: Log, parents: [SubagentReport] = [], settlements: Settlements? = nil,
             link: @escaping @Sendable (SubagentReport) async -> SubagentLink = { _ in .none },
             answer: @escaping @Sendable (SubagentReport) async -> SubagentDelivery = {
                 .sent(SubagentAnnouncerTests.makeSnapshot(of: $0))
@@ -95,10 +98,12 @@ extension SubagentAnnouncerTests {
             SubagentOutlet(
                 root: root,
                 link: link,
-                deliver: { report, previous, link in
+                deliver: { report, previous, link, _ in
                     log.update { $0.append(Delivery(report: report, previous: previous, link: link)) }
                     return await answer(report)
                 },
+                session: { _ in nil },
+                settle: { report in settlements?.update { $0.append(report) } },
                 parentReport: { id in parents.first { $0.runID == id } })
         }
 
@@ -654,6 +659,45 @@ extension SubagentAnnouncerTests {
             await announcer.stop()
         }
 
+
+        /// The final report of a run settles the run once, after the outlet delivered the final
+        /// report. The outlet then sends the last updates of the child and ends it.
+        @Test
+        func theFinalReportSettlesTheRunAfterItsDelivery() async throws {
+            let announcer = SubagentAnnouncer()
+            let log = Log([])
+            let settlements = Settlements([])
+            announcer.bind(Self.makeOutlet(log: log, settlements: settlements))
+            let running = SubagentAnnouncerTests.makeReport()
+            announcer.observe(running)
+            _ = try await Self.wait(log, for: running.runID)
+            let ended = SubagentAnnouncerTests.makeReport(
+                runID: running.runID, state: SubagentAnnouncerTests.endedState)
+
+            announcer.observe(ended, isFinal: true)
+
+            let settled = try await settlements.wait(for: "the settlement of the run") { !$0.isEmpty }
+            #expect(settled == [ended])
+            #expect(Self.deliveryCount(log, of: running.runID) == 2)
+            await announcer.stop()
+        }
+
+        /// A run that ended with a blocked outlet settles too: its child must end although the
+        /// client never learned of it.
+        @Test
+        func aFinalRunWhoseOutletBlocksSettles() async throws {
+            let announcer = SubagentAnnouncer()
+            let log = Log([])
+            let settlements = Settlements([])
+            announcer.bind(Self.makeOutlet(log: log, settlements: settlements, answer: { _ in .blocked }))
+            let ended = SubagentAnnouncerTests.makeReport(state: SubagentAnnouncerTests.endedState)
+
+            announcer.observe(ended, isFinal: true)
+
+            let settled = try await settlements.wait(for: "the settlement of the run") { !$0.isEmpty }
+            #expect(settled == [ended])
+            await announcer.stop()
+        }
 
         /// A final run whose last try ends blocked holds no state. A nested
         /// run of an `agents` call has no parent entry, so each try ends so.

@@ -35,8 +35,10 @@ import Synchronization
 ///   capability of the root session, but its tool records go to the event
 ///   stream of the agent run, not to the root prompt. The run event observer
 ///   of the agent environment gives each of those events to this table. The
-///   agent run sends no wire update of its tool runs, so "no join" is the
-///   correct entry for them.
+///   projector of the child session sends the wire updates of those tool
+///   runs, under the child id, through the table of that session. So no
+///   translator writes an entry for them in this table, and "no join" is the
+///   entry for the terminal stream of the surface.
 /// - the stop of the projection (``closeProjection()``): each waiting run
 ///   gets "no join". A run whose first event comes while no projection is
 ///   open gets "no join" at once. This rule stays: no translator writes an
@@ -48,6 +50,11 @@ import Synchronization
 /// after an agent run ended keeps the SDK id of its own open record, also
 /// when its first chunk comes before the projection handled the end of the
 /// agent run.
+///
+/// Each session has its own table, so the tool call ids of a child and of its
+/// parent never meet. The tables of the sessions of one surface share the holds
+/// on the final status of the `agents` calls (``holds``,
+/// ``deferringFinalStatus(of:)``).
 ///
 /// The session surface owns one table (``SessionSurface/runCallJoins``),
 /// because the terminal stream and the agent environment live for the whole
@@ -110,6 +117,45 @@ final class RunCallJoinTable: Sendable {
     /// The state of the table.
     private let state = Mutex(State())
 
+    /// The holds on the final status of the `agents` calls. The tables of the
+    /// sessions of one surface share one object.
+    let holds: AgentCallHolds
+
+    /// Makes a table.
+    ///
+    /// - Parameter holds: The holds of the surface. A table of a session that
+    ///   has no surface of its own gives the holds of its parent.
+    init(holds: AgentCallHolds = AgentCallHolds()) {
+        self.holds = holds
+    }
+
+    /// The sink that keeps the final status of each held `agents` call. The
+    /// rest of an update goes on to `sink` at once. The end of the child
+    /// gives the kept statuses out (``AgentCallHolds/release(_:)``).
+    ///
+    /// - Parameter sink: The sink of the session.
+    /// - Returns: The sink that holds the final status of the held calls.
+    func deferringFinalStatus(of sink: @escaping SessionUpdateSink) -> SessionUpdateSink {
+        { [self] update in
+            await send(update, through: sink)
+        }
+    }
+
+    /// Sends an update to a sink, without the final status of a held call.
+    ///
+    /// - Parameters:
+    ///   - update: The update.
+    ///   - sink: The sink of the session.
+    private func send(_ update: SessionUpdate, through sink: SessionUpdateSink) async {
+        guard case .toolCallUpdate(let call) = update else {
+            await sink(update)
+            return
+        }
+        if let now = holds.deferFinal(call, joinedTo: { toolCallId(for: $0) }) {
+            await sink(.toolCallUpdate(now))
+        }
+    }
+
     /// Writes the join of the open record of a run, when the run has no entry
     /// yet.
     ///
@@ -145,16 +191,19 @@ final class RunCallJoinTable: Sendable {
     }
 
     /// Writes "no join" for the run of an open record in the event stream of
-    /// an agent run. Each other event writes nothing.
+    /// an agent run. Each other event writes nothing. The table of the child
+    /// session has the entry of the run for the wire updates of the child.
     ///
     /// The run event observer of the agent environment calls this
     /// synchronously in the follow loop of each agent run
     /// (``AgentsComposition/makeRunEventObserver(runCallJoins:announcer:)``). Thus it
     /// only takes the lock, and it does not wait.
     ///
-    /// An agent run sends no wire update of its tool runs. So a tool run of an
-    /// agent run keeps its completion token. This holds also when Router of
-    /// the agent run joined the record to an SDK call of the agent run.
+    /// The projector of the child session joins the tool runs of an agent run
+    /// to the SDK calls of the child in its own table. So in this table, a
+    /// tool run of an agent run keeps its completion token. This holds also
+    /// when Router of the agent run joined the record to an SDK call of the
+    /// agent run.
     ///
     /// - Parameter output: One session output of an agent run.
     func recordAgentRunEvent(_ output: SessionOutput) {

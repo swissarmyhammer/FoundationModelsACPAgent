@@ -143,6 +143,11 @@ actor CloseCountingRoutedSession: RoutedSession {
         wrapped.cancelAll()
     }
 
+    /// Tells the real session that its host quits, so a run stays open in the journal.
+    nonisolated func suspend() {
+        wrapped.suspend()
+    }
+
     /// Sends the replace signal to the real session.
     ///
     /// - Parameters:

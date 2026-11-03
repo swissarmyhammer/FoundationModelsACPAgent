@@ -74,6 +74,16 @@ comments:
     4. The original call of the failed child ends as lost (the Router claim API closes an open claim as lost).
     Add acceptance criteria and a test for items 1 and 2 (a failed child and its descendants announced unknown with the reason, the root still resumes).
   timestamp: 2026-11-03T15:25:23.106541+00:00
+- actor: wballard
+  id: 01m6hccr0sn2wr8135zk7b3ak6
+  text: |-
+    MULTITOOL AUDIT (read-only, 2026-11-03) items for the restore in this task:
+    (a) Shell records are memory only: after a restore, handles of earlier shell commands are gone (getLines(oldToken) throws unknownCommand). The continue message to a restored run must say: earlier shell command handles and background shell output are no longer available; start the command again if you still need it.
+    (b) The snapshot verbs need the session key reopened after a restore: SnapshotsContext reads HookSession.current and the default key is the session id; if the host does not reopen it the verb returns unavailable. The host must reopen the key (SnapshotSessionKeys.record for the restored session and for each restored child, with the hook lineage of its root) BEFORE the first submission of each restored session. Add a test.
+    (c) The Registry (MCP servers, shell store, file context) is rebuilt in the new process before makeSessionTools: the agent package builds its registry at startup, so restored runs are built from the CURRENT registry; a Multitool accessor for the current registry is being added on the Multitool board (card pending): use it when it lands.
+    (d) A restored run must not reuse the completion tokens of Multitool inner runs (status and cancel of an old token answer "no run under that handle"). The restored agents call keeps ITS OWN old token (that is the claim); inner shell and runCode tokens are not restored.
+    (e) A crash can leave shell child processes and stdio MCP servers running; a Multitool card reaps them at store init.
+  timestamp: 2026-11-03T18:57:52.153831+00:00
 depends_on:
 - 01M6GH2K0VV6RWV5R6SN3HB9SV
 position_column: todo

@@ -87,7 +87,7 @@ enum AgentsComposition {
     ) async throws -> AgentsMount {
         let registry = makeAgentRegistry(context: context, marketplaces: skills.marketplaces)
         try await registry.load()
-        let announcer = SubagentAnnouncer()
+        let announcer = SubagentAnnouncer(holds: runCallJoins.holds)
         let environment = try await AgentEnvironment.make(
             profile: context.profile,
             skills: skills.registry,
@@ -103,9 +103,11 @@ enum AgentsComposition {
 
     /// Makes the observer of the session events of each agent run of the session (task ^zbcrex8).
     /// It gives each event to `runCallJoins`. The open record of a tool run then writes "no join"
-    /// for that run (``RunCallJoinTable/recordAgentRunEvent(_:)``). It also gives the run to
-    /// `announcer`. The announcer queues the `subagent_update` of the run before any message that
-    /// uses the id of the child (``SubagentAnnouncer``).
+    /// for that run (``RunCallJoinTable/recordAgentRunEvent(_:)``). It also gives the run and the
+    /// event to `announcer`. The announcer queues the `subagent_update` of the run before any
+    /// message that uses the id of the child, and it keeps the events for the projector of the
+    /// child session (``SubagentAnnouncer/observe(_:output:)``). The observer sends nothing
+    /// itself, so each event of a child goes to the wire once, through its own projector.
     ///
     /// An agent run uses the shell capability of the root session. The output of its shell runs
     /// comes on the shell output stream of the session. Its tool records go to the event stream of
@@ -127,7 +129,7 @@ enum AgentsComposition {
     ) -> AgentEnvironment.RunEventObserver {
         { run, output in
             runCallJoins.recordAgentRunEvent(output)
-            announcer.observe(run)
+            announcer.observe(run, output: output)
         }
     }
 

@@ -1,4 +1,13 @@
 ---
+comments:
+- actor: claude-code
+  id: 01m6hcxam9c490zs06kyq2mscn
+  text: 'implement - changed. Branch worktree-agent-afd80ab03c692a6dd. The scripted pass steps now live in the library (ScriptedPassStep, ScriptedSessionBackend, ScriptedPlaybook, ScriptedLLMContainer, ScriptedHold). The test support keeps only the recorder, the delivery hooks and an observer. The stub path reads ACP_AGENT_STUB_SCRIPT (ScriptedStubScript parses the JSON, a bad file throws ScriptedStubScriptError before the wire opens). New step: gate(path) waits for a file or one byte of a named pipe. Tests: ScriptedStubModelTests (23 pass), IntegrationTests ScriptedStubProcessTests (2 pass), root swift test 1343 pass, 1 known issue. Notes: the worktree resolved a newer Router, so Package.resolved was copied from the main checkout. CloseCountingRoutedSession got the missing completeClaimedRun forwarder, because the test target did not build without it.'
+  timestamp: 2026-11-03T19:06:55.497283+00:00
+- actor: claude-code
+  id: 01m6hd4zakx0rh8920fpm76kyk
+  text: 'Landed on origin/main as commit 753dd02. Root tests: 136 passed. Integration ScriptedStubProcessTests: 2 passed.'
+  timestamp: 2026-11-03T19:11:06.067767+00:00
 position_column: todo
 position_ordinal: '9180'
 title: 'Scripted stub model for the spawned acp-agent: ACP_AGENT_STUB_SCRIPT'

@@ -3,7 +3,7 @@ import FoundationModelsACP
 import FoundationModelsRouter
 
 /// What the one build of a session reads
-/// (``RoutedACPAgent/registerSession(_:sessionId:parent:build:)``): the parts
+/// (``RoutedACPAgent/registerSession(_:sessionId:parent:build:events:)``): the parts
 /// of the entry that the caller decides.
 ///
 /// A root session takes the parts from its composition and its placement. A
@@ -90,7 +90,11 @@ struct SessionBuild {
     /// surface from its parent, and it starts with an empty history and a
     /// join table of its own. The join table is its own because the stop of
     /// the projector of the nested session closes its table, and that close
-    /// must not seal the runs that the parent waits for.
+    /// must not seal the runs that the parent waits for. The tool call ids of
+    /// the nested session and of its parent never meet, because each session
+    /// has its own table. The two tables share the holds on the final status
+    /// of the `agents` calls (``AgentCallHolds``), because the runs of the
+    /// whole surface are held in one place.
     ///
     /// - Parameter parent: The entry of the parent session.
     init(borrowingFrom parent: ActiveSession) {
@@ -108,7 +112,7 @@ struct SessionBuild {
         // prompt of the agent never writes its title.
         titleRecorded = true
         history = SessionMergeEngine()
-        runCallJoins = RunCallJoinTable()
+        runCallJoins = RunCallJoinTable(holds: parent.surface.runCallJoins.holds)
     }
 }
 
@@ -140,11 +144,17 @@ extension RoutedACPAgent {
     ///   - sessionId: The ACP session id: the ULID of `session`.
     ///   - parent: The session that this session is nested in, or `nil`.
     ///   - build: The parts that the entry takes from the caller.
+    ///   - events: The outputs that the projector reads in place of a new
+    ///     subscription to `session`, or `nil` to subscribe. The announcer
+    ///     keeps the outputs of a run from its first event
+    ///     (``SubagentAnnouncer/observe(_:output:)``), so the projector of a
+    ///     child misses no event that the run sent before the registration.
     /// - Throws: `RequestError.unknownSession` when `parent` is not in the
     ///   table, and ``SessionTreeError`` when the link is refused. A refused
     ///   build stops its projector and leaves no entry and no link.
     func registerSession(
-        _ session: any RoutedSession, sessionId: SessionId, parent: SessionId?, build: SessionBuild
+        _ session: any RoutedSession, sessionId: SessionId, parent: SessionId?, build: SessionBuild,
+        events: AsyncStream<SessionOutput>? = nil
     ) async throws {
         // The gate is the one object that the announcer opens, and it exists
         // before the first suspension. So an announcement that goes out at any
@@ -167,7 +177,11 @@ extension RoutedACPAgent {
             relay: ElicitationRelay(sessionId: sessionId, stateLedger: stateLedger) { table.path(forSession: sessionId) },
             runCallJoins: build.runCallJoins,
             stateLedger: stateLedger)
-        await projector.attach(session)
+        if let events {
+            await projector.attach(events, from: SessionProjector.Source(id: session.id, session: session))
+        } else {
+            await projector.attach(session)
+        }
         // No `await` stands between the link and the entry, so the parent
         // cannot leave the table between them.
         do {
@@ -227,7 +241,7 @@ extension RoutedACPAgent {
     /// session, as for a root session. No table maps one id to another.
     ///
     /// The build is the one of a root session
-    /// (``registerSession(_:sessionId:parent:build:)``), with the surface of
+    /// (``registerSession(_:sessionId:parent:build:events:)``), with the surface of
     /// the parent borrowed. The gate of the nested session starts closed, so
     /// nothing leaves for it before its announcement, unless the announcement
     /// went out already.
@@ -236,17 +250,22 @@ extension RoutedACPAgent {
     ///   - session: The Router session of the sub-agent.
     ///   - parent: The session that started the sub-agent: a root session,
     ///     or a nested session that is in the table.
+    ///   - events: The outputs that the projector reads, or `nil` to
+    ///     subscribe to `session` (``registerSession(_:sessionId:parent:build:events:)``).
     /// - Returns: The ACP session id of the nested session.
-    /// - Throws: Whatever ``registerSession(_:sessionId:parent:build:)``
+    /// - Throws: Whatever ``registerSession(_:sessionId:parent:build:events:)``
     ///   throws.
     @discardableResult
-    func registerNestedSession(_ session: any RoutedSession, parent: SessionId) async throws -> SessionId {
+    func registerNestedSession(
+        _ session: any RoutedSession, parent: SessionId, events: AsyncStream<SessionOutput>? = nil
+    ) async throws -> SessionId {
         guard let parentEntry = sessions[parent] else {
             throw RequestError.unknownSession(id: parent)
         }
         let sessionId = SessionId(rawValue: session.id.description)
         try await registerSession(
-            session, sessionId: sessionId, parent: parent, build: SessionBuild(borrowingFrom: parentEntry))
+            session, sessionId: sessionId, parent: parent, build: SessionBuild(borrowingFrom: parentEntry),
+            events: events)
         return sessionId
     }
 

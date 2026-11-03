@@ -107,6 +107,19 @@ enum SubagentLink: Equatable, Sendable {
     }
 }
 
+/// Where the events of a child come from: its live Router session, and the
+/// outputs of its run from the first event. The session is for the answers
+/// that go back to it. The outputs are for the projector of the child, which
+/// misses no event of the run that came before its registration.
+struct SubagentSource: Sendable {
+    /// The live Router session of the run.
+    let session: any RoutedSession
+
+    /// The outputs of the run, from its first event. The announcer finishes
+    /// the stream when the run ends.
+    let outputs: AsyncStream<SessionOutput>
+}
+
 /// What an outlet did with a report.
 enum SubagentDelivery: Equatable, Sendable {
     /// The outlet sent an update. The value is the full snapshot of the child
@@ -138,9 +151,25 @@ struct SubagentOutlet: Sendable {
 
     /// Sends the announcement of a report, as a patch of the snapshot that
     /// the earlier delivery of the run made. The link is the wire id of the
-    /// `agents` call, or `nil` when the run has none.
+    /// `agents` call, or `nil` when the run has none. The source is given
+    /// until the client knows the child (`previous` is `nil`), and it is `nil`
+    /// for a run whose session the outlet could not find. The outlet registers
+    /// the child session from the source before it sends the announcement.
     let deliver:
-        @Sendable (_ report: SubagentReport, _ previous: SubagentUpdate?, _ link: ToolCallId?) async -> SubagentDelivery
+        @Sendable (
+            _ report: SubagentReport, _ previous: SubagentUpdate?, _ link: ToolCallId?,
+            _ source: SubagentSource?
+        ) async -> SubagentDelivery
+
+    /// The live Router session of a run, or `nil` when the directory has none. The announcer asks
+    /// at the first event of the run, while the run still holds its session.
+    let session: @Sendable (_ runID: ULID) -> (any RoutedSession)?
+
+    /// Ends the child of a run that ended. The announcer calls it once, after it handled the final
+    /// report and finished the outputs of the run. The outlet sends the last updates of the child
+    /// and its final state, retires the child session, and then gives out the final status of the
+    /// `agents` call.
+    let settle: @Sendable (_ report: SubagentReport) async -> Void
 
     /// The report of a run that is in operation or finished. It is `nil` when the runner does not
     /// know the id.
@@ -205,9 +234,9 @@ final class SubagentAnnouncer: Sendable {
         /// Start the wait for the link of the run.
         case resolve(SubagentReport)
 
-        /// Deliver the report, with the snapshot that the client holds and
-        /// the link.
-        case deliver(SubagentReport, SubagentUpdate?, ToolCallId?)
+        /// Deliver the report, with the snapshot that the client holds, the
+        /// link and the source of the child.
+        case deliver(SubagentReport, SubagentUpdate?, ToolCallId?, SubagentSource?)
     }
 
     /// The state of one run.
@@ -215,6 +244,30 @@ final class SubagentAnnouncer: Sendable {
         /// The gate of the session of the run. It opens after the first sent
         /// announcement.
         let gate = SessionAnnouncementGate(isOpen: false)
+
+        /// The outputs of the run, from its first event. The projector of the
+        /// child session reads them.
+        let outputs: AsyncStream<SessionOutput>
+
+        /// The end that puts an output in ``outputs``.
+        let outputSink: AsyncStream<SessionOutput>.Continuation
+
+        /// The live Router session of the run, from the first event.
+        var session: (any RoutedSession)?
+
+        /// Whether the announcer looked for the session already.
+        var hasLookedUpSession = false
+
+        /// Makes the state of a run that nothing was reported for.
+        init() {
+            (outputs, outputSink) = AsyncStream.makeStream(of: SessionOutput.self)
+        }
+
+        /// Where the events of the child come from, or `nil` when the session
+        /// is not known.
+        var source: SubagentSource? {
+            session.map { SubagentSource(session: $0, outputs: outputs) }
+        }
 
         /// The newest report that the observer gave.
         var latest: SubagentReport?
@@ -275,7 +328,7 @@ final class SubagentAnnouncer: Sendable {
             attemptEpoch = epoch
             handled = report
             isDelivering = true
-            return .deliver(report, sent, callId)
+            return .deliver(report, sent, callId, sent == nil ? source : nil)
         }
 
         /// Whether the run has a report that the outlet did not handle, and
@@ -321,6 +374,18 @@ final class SubagentAnnouncer: Sendable {
         }
     }
 
+    /// What the state of a run that ended held.
+    private struct Pruned {
+        /// Whether the client knew the run: the announcement was sent.
+        let wasAnnounced: Bool
+
+        /// The newest report of the run, which is its final report.
+        let report: SubagentReport?
+
+        /// The end of the outputs of the run, to finish.
+        let outputs: AsyncStream<SessionOutput>.Continuation?
+    }
+
     /// The state that the lock guards.
     private struct State {
         /// The state of each live run.
@@ -339,15 +404,23 @@ final class SubagentAnnouncer: Sendable {
         /// run does nothing.
         var finished = FinishedRuns()
 
+        /// Where the announcements go, from the bind.
+        var outlet: SubagentOutlet?
+
+        /// The tasks that settle a run that ended, by their ticket.
+        var settlements: [Int: Task<Void, Never>] = [:]
+
+        /// The ticket of the next settlement.
+        var nextSettlement = 0
+
         /// Drops the state of a run that ended, and remembers its id.
         ///
         /// - Parameter runID: The id of the run.
-        /// - Returns: Whether the client knew the run: the announcement was
-        ///   sent.
-        mutating func prune(_ runID: ULID) -> Bool {
-            let wasAnnounced = runs.removeValue(forKey: runID)?.sent != nil
+        /// - Returns: What the state held that the end of the run needs.
+        mutating func prune(_ runID: ULID) -> Pruned {
+            let run = runs.removeValue(forKey: runID)
             finished.insert(runID)
-            return wasAnnounced
+            return Pruned(wasAnnounced: run?.sent != nil, report: run?.latest, outputs: run?.outputSink)
         }
 
         /// Blocks a run after an attempt that could not go on. When a retry
@@ -387,8 +460,15 @@ final class SubagentAnnouncer: Sendable {
     /// The end that puts an id in ``runs``.
     private let queue: AsyncStream<ULID>.Continuation
 
+    /// The holds on the final status of the `agents` calls of the runs. The announcer holds the
+    /// call of a run from its first event. The end of the child releases the hold.
+    let holds: AgentCallHolds
+
     /// Makes an announcer with an empty queue and no outlet.
-    init() {
+    ///
+    /// - Parameter holds: The holds that the join tables of the surface share.
+    init(holds: AgentCallHolds = AgentCallHolds()) {
+        self.holds = holds
         (runs, queue) = AsyncStream.makeStream(of: ULID.self)
     }
 
@@ -433,16 +513,45 @@ final class SubagentAnnouncer: Sendable {
         }
     }
 
-    /// Queues the report of a run, as the run is now. It is the hook of the
-    /// observer of the run events. It does not wait.
+    /// Queues the report of a run, as the run is now, and keeps the output of
+    /// the run. It is the hook of the observer of the run events. It does not
+    /// wait.
     ///
-    /// The first call for a run also starts to watch the end of the run. A
-    /// run that waits for a retry costs only a lock: the call builds no
-    /// report.
+    /// The first call for a run also starts to watch the end of the run, finds the live session
+    /// of the run, and holds the final status of its `agents` call (``holds``). A run that waits
+    /// for a retry costs only a lock: the call builds no report. The output goes into the stream
+    /// of the run (``SubagentSource/outputs``) in the order of the calls, so the projector of the
+    /// child session gets each event from the first one.
     ///
-    /// - Parameter run: The run that gave an event.
-    func observe(_ run: AgentRun) {
+    /// - Parameters:
+    ///   - run: The run that gave an event.
+    ///   - output: The event.
+    func observe(_ run: AgentRun, output: SessionOutput) {
         observe(runID: run.id, watchEnd: { watchEnd(of: run) }, makeReport: { SubagentReport(run: run) })
+        keep(output, of: run.id)
+    }
+
+    /// Puts an output in the stream of its run. The first output of a run
+    /// also finds the live session of the run.
+    ///
+    /// - Parameters:
+    ///   - output: The event.
+    ///   - runID: The id of the run.
+    private func keep(_ output: SessionOutput, of runID: ULID) {
+        let lookup = state.withLock { state -> (isFirst: Bool, outlet: SubagentOutlet?) in
+            guard let run = state.runs[runID], !run.hasLookedUpSession else {
+                return (false, nil)
+            }
+            state.runs[runID]?.hasLookedUpSession = true
+            return (true, state.outlet)
+        }
+        let session = lookup.isFirst ? lookup.outlet?.session(runID) : nil
+        state.withLock { state in
+            if let session {
+                state.runs[runID]?.session = session
+            }
+            _ = state.runs[runID]?.outputSink.yield(output)
+        }
     }
 
     /// Queues the report of a run. The run is a pair of closures, so a test can
@@ -472,7 +581,11 @@ final class SubagentAnnouncer: Sendable {
         if watch {
             watchEnd()
         }
-        observe(makeReport())
+        let report = makeReport()
+        if watch, let token = report.completionToken {
+            holds.hold(token)
+        }
+        observe(report)
     }
 
     /// Queues a report. It does nothing in four cases. The announcer stopped, or the run ended and
@@ -484,7 +597,7 @@ final class SubagentAnnouncer: Sendable {
     ///   - isFinal: Whether the run ended and this is its last report.
     func observe(_ report: SubagentReport, isFinal: Bool = false) {
         let runID = report.runID
-        let pruned = state.withLock { state -> Bool? in
+        let pruned = state.withLock { state -> Pruned? in
             guard !state.isStopped, !state.finished.contains(runID) else {
                 return nil
             }
@@ -501,23 +614,48 @@ final class SubagentAnnouncer: Sendable {
             return state.prune(runID)
         }
         if let pruned {
-            didPrune(runID, wasAnnounced: pruned)
+            didPrune(runID, pruned)
         }
     }
 
-    /// Does what follows the drop of the state of a run. The run is out of the
-    /// way of the runs that wait for it, so they get a new try.
+    /// Does what follows the drop of the state of a run. The outputs of the run end, so the
+    /// projector of its session reads to the end. The run is out of the way of the runs that wait
+    /// for it, so they get a new try. The child of the run settles.
     ///
     /// - Parameters:
     ///   - runID: The id of the run.
-    ///   - wasAnnounced: Whether the client knew the run.
-    private func didPrune(_ runID: ULID, wasAnnounced: Bool) {
-        if !wasAnnounced {
+    ///   - pruned: What the state of the run held.
+    private func didPrune(_ runID: ULID, _ pruned: Pruned) {
+        pruned.outputs?.finish()
+        if !pruned.wasAnnounced {
             ACPAgentTelemetry.logger(.subagentAnnouncement).notice(
                 "An agent run ended and the client never learned of it. The announcer drops its state.",
                 metadata: ["run_id": "\(runID)"])
         }
         retryBlocked()
+        if let report = pruned.report {
+            settle(report)
+        }
+    }
+
+    /// Starts the end of the child of a run. The outlet sends the last updates of the child,
+    /// retires its session, and gives out the final status of the `agents` call. The task is
+    /// tracked, so ``stop()`` waits for it. The end of a run needs the queue, and the bind starts
+    /// the queue, so the outlet is always there.
+    ///
+    /// - Parameter report: The final report of the run.
+    private func settle(_ report: SubagentReport) {
+        state.withLock { locked in
+            guard let outlet = locked.outlet else {
+                return
+            }
+            let ticket = locked.nextSettlement
+            locked.nextSettlement += 1
+            locked.settlements[ticket] = Task { [self] in
+                await outlet.settle(report)
+                state.withLock { _ = $0.settlements.removeValue(forKey: ticket) }
+            }
+        }
     }
 
     /// Makes each blocked run ready for a new try. Call it when something that could unblock a run
@@ -544,6 +682,7 @@ final class SubagentAnnouncer: Sendable {
             guard state.consumer == nil, !state.isStopped else {
                 return
             }
+            state.outlet = outlet
             state.consumer = Task { await self.deliverRuns(through: outlet) }
         }
     }
@@ -552,17 +691,26 @@ final class SubagentAnnouncer: Sendable {
     /// that is running. A run that waits in the queue is not delivered, and
     /// a later report is not queued. A second call does nothing more.
     func stop() async {
-        let (consumer, linkTasks) = state.withLock { state -> (Task<Void, Never>?, [Task<Void, Never>]) in
+        let (consumer, linkTasks, outputs) = state.withLock {
+            state -> (Task<Void, Never>?, [Task<Void, Never>], [AsyncStream<SessionOutput>.Continuation]) in
             state.isStopped = true
-            return (state.consumer, state.runs.values.compactMap(\.linkTask))
+            return (state.consumer, state.runs.values.compactMap(\.linkTask), state.runs.values.map(\.outputSink))
         }
         queue.finish()
         consumer?.cancel()
         for task in linkTasks {
             task.cancel()
         }
+        // The outputs end, so the projector of each child reads to the end.
+        for sink in outputs {
+            sink.finish()
+        }
         await consumer?.value
         for task in linkTasks {
+            await task.value
+        }
+        let settlements = state.withLock { Array($0.settlements.values) }
+        for task in settlements {
             await task.value
         }
     }
@@ -595,8 +743,8 @@ final class SubagentAnnouncer: Sendable {
                 break
             case .resolve(let report):
                 resolveLink(of: report, through: outlet)
-            case .deliver(let report, let previous, let callId):
-                await deliver(report, replacing: previous, link: callId, through: outlet)
+            case .deliver(let report, let previous, let callId, let source):
+                await deliver(report, replacing: previous, link: callId, source: source, through: outlet)
             }
         }
     }
@@ -627,7 +775,7 @@ final class SubagentAnnouncer: Sendable {
     ///   - link: What the outlet found.
     ///   - runID: The id of the run.
     private func finishLink(_ link: SubagentLink, of runID: ULID) {
-        let pruned = state.withLock { state -> Bool? in
+        let pruned = state.withLock { state -> Pruned? in
             guard !state.isStopped, state.runs[runID]?.link == .resolving else {
                 return nil
             }
@@ -646,7 +794,7 @@ final class SubagentAnnouncer: Sendable {
             return nil
         }
         if let pruned {
-            didPrune(runID, wasAnnounced: pruned)
+            didPrune(runID, pruned)
         }
     }
 
@@ -666,15 +814,16 @@ final class SubagentAnnouncer: Sendable {
     ///   - report: The report.
     ///   - previous: The snapshot that the client holds, or `nil`.
     ///   - callId: The wire id of the `agents` call, or `nil`.
+    ///   - source: Where the events of the child come from, or `nil`.
     ///   - outlet: Where the announcements go.
     private func deliver(
         _ report: SubagentReport, replacing previous: SubagentUpdate?, link callId: ToolCallId?,
-        through outlet: SubagentOutlet
+        source: SubagentSource?, through outlet: SubagentOutlet
     ) async {
         guard await !waitsForParent(of: report, through: outlet) else {
             return
         }
-        complete(report, with: await outlet.deliver(report, previous, callId))
+        await complete(report, with: await outlet.deliver(report, previous, callId, source))
     }
 
     /// Makes a run wait for its parent run. This holds when the caller is a run that the client
@@ -703,18 +852,17 @@ final class SubagentAnnouncer: Sendable {
     /// - Parameters:
     ///   - report: The report.
     ///   - delivery: What the outlet did.
-    private func complete(_ report: SubagentReport, with delivery: SubagentDelivery) {
-        let outcome = state.withLock { state -> (wasSent: Bool, pruned: Bool?) in
+    private func complete(_ report: SubagentReport, with delivery: SubagentDelivery) async {
+        let outcome = state.withLock { state -> (gate: SessionAnnouncementGate?, pruned: Pruned?) in
             guard state.runs[report.runID] != nil else {
-                return (false, nil)
+                return (nil, nil)
             }
             state.runs[report.runID]?.isDelivering = false
-            var wasSent = false
+            var gate: SessionAnnouncementGate?
             switch delivery {
             case .sent(let snapshot):
                 state.runs[report.runID]?.sent = snapshot
-                state.runs[report.runID]?.gate.open()
-                wasSent = true
+                gate = state.runs[report.runID]?.gate
             case .unchanged:
                 break
             case .blocked:
@@ -723,13 +871,15 @@ final class SubagentAnnouncer: Sendable {
             // The last try for the final report ends the run, whatever the outlet said. No later
             // event can change the answer.
             if let run = state.runs[report.runID], run.isFinal, run.latest == report {
-                return (wasSent, state.prune(report.runID))
+                return (gate, state.prune(report.runID))
             }
-            return (wasSent, nil)
+            return (gate, nil)
         }
+        // The open sends the updates of the child that the gate kept, in order.
+        await outcome.gate?.open()
         if let pruned = outcome.pruned {
-            didPrune(report.runID, wasAnnounced: pruned)
-        } else if outcome.wasSent {
+            didPrune(report.runID, pruned)
+        } else if outcome.gate != nil {
             retryBlocked()
         }
     }

@@ -86,6 +86,14 @@ actor SessionProjector {
         /// One update of a slash command, which sends no Router event, and
         /// the wait of the sender for its send.
         case update(SessionUpdate, sent: CheckedContinuation<Void, Never>?)
+
+        /// The run of the session ended, with this `idle`. It comes after the
+        /// last output of each source, and the sender waits for its handling.
+        case runEnded(IdleStateUpdate, handled: CheckedContinuation<Void, Never>)
+
+        /// The hold on the final status of an `agents` call ends. The projector
+        /// sends the statuses that the hold kept, in its own order.
+        case releaseHold(token: String, handled: CheckedContinuation<Void, Never>)
     }
 
     /// The id of the ACP session, for the logs.
@@ -135,6 +143,9 @@ actor SessionProjector {
         self.sessionId = sessionId
         self.relay = relay
         self.runCallJoins = runCallJoins
+        // The final status of an `agents` call waits for the end of its child
+        // (``AgentCallHolds``). Each send of the session goes through the hold.
+        let send = runCallJoins.deferringFinalStatus(of: send)
         let (stream, inbox) = AsyncStream.makeStream(of: Input.self)
         self.inbox = inbox
         runCallJoins.openProjection()
@@ -144,6 +155,7 @@ actor SessionProjector {
                     sessionId: sessionId, send: send, modelName: modelName, shellSnapshot: shellSnapshot,
                     runCallJoins: runCallJoins),
                 send: send,
+                holds: runCallJoins.holds,
                 relay: relay,
                 stateLedger: stateLedger)
             if let relay {
@@ -253,6 +265,39 @@ actor SessionProjector {
         }
     }
 
+    /// Ends the session of a run: waits until each source sent its last
+    /// output, and then reports the end of the run with `idle`. The `idle`
+    /// goes out after each update that the session sent, and it carries the
+    /// stop reason of the run. The caller finishes the outputs of each source
+    /// first: a source that never ends holds this call.
+    ///
+    /// - Parameter idle: The `idle` that tells how the run ended.
+    func end(with idle: IdleStateUpdate) async {
+        for reader in Array(readers.values) {
+            await reader.value
+        }
+        await withCheckedContinuation { handled in
+            if case .terminated = inbox.yield(.runEnded(idle, handled: handled)) {
+                handled.resume()
+            }
+        }
+    }
+
+    /// Ends the hold on the final status of the `agents` call of a run, and sends the statuses
+    /// that the hold kept. They go through the inbox, so each update that came before stays before
+    /// them and each update that comes after goes after them. After ``stop()``, the hold ends and
+    /// the kept statuses go nowhere.
+    ///
+    /// - Parameter token: The completion token of the call that started the run.
+    nonisolated func releaseHold(of token: String) async {
+        await withCheckedContinuation { handled in
+            if case .terminated = inbox.yield(.releaseHold(token: token, handled: handled)) {
+                _ = runCallJoins.holds.release(token)
+                handled.resume()
+            }
+        }
+    }
+
     /// Stops the projector after each item in the inbox. A prompt that is
     /// still open ends as `cancelled`. Safe to call more than one time.
     ///
@@ -311,6 +356,9 @@ private struct ProjectionState {
 
     /// The history sink of the session.
     let send: SessionUpdateSink
+
+    /// The holds on the final status of the `agents` calls of the surface.
+    let holds: AgentCallHolds
 
     /// The relay of the elicitations of the session, or `nil`.
     let relay: ElicitationRelay?
@@ -376,6 +424,14 @@ private struct ProjectionState {
         case .update(let update, let sent):
             await send(update)
             sent?.resume()
+        case .runEnded(let idle, let handled):
+            await stateLedger?.promptEnded(idle, started: false)
+            handled.resume()
+        case .releaseHold(let token, let handled):
+            for update in holds.release(token) {
+                await send(.toolCallUpdate(update))
+            }
+            handled.resume()
         }
     }
 

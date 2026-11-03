@@ -48,6 +48,16 @@ comments:
     EFFECT: this task and the re-drive task are BLOCKED by that card for the rule "finished children are not restored". Until it is done, the only way to find interrupted children is the orphan scan of the parent, which misses a child that crashed before its first journal event. Other Router needs of the restore (not decided, no card yet): a public lookup of recorded children by agentSpawn.parentToolCallId and a public orphan scan that does not need the restore of the parent; restore parameters for parentCall, the compaction settings and mailOnlyAnswerLimit (these come from the recording today, against the user rule that config comes from the current config).
     The chain to find the child of an orphan run is shorter than first written: orphan RunKey.correlationID (the completion token) equals the child agentSpawn.parentToolCallId, with parentSessionId equal to the parent. The SDK tool call id is not part of it.
   timestamp: 2026-11-03T12:40:51.014175+00:00
+- actor: wballard
+  id: 01m6hccrf8cbrwt2mm1zwg2014
+  text: |-
+    MULTITOOL AUDIT (read-only, 2026-11-03) items for the restore in this task:
+    (a) Shell records are memory only: after a restore, handles of earlier shell commands are gone (getLines(oldToken) throws unknownCommand). The continue message to a restored run must say: earlier shell command handles and background shell output are no longer available; start the command again if you still need it.
+    (b) The snapshot verbs need the session key reopened after a restore: SnapshotsContext reads HookSession.current and the default key is the session id; if the host does not reopen it the verb returns unavailable. The host must reopen the key (SnapshotSessionKeys.record for the restored session and for each restored child, with the hook lineage of its root) BEFORE the first submission of each restored session. Add a test.
+    (c) The Registry (MCP servers, shell store, file context) is rebuilt in the new process before makeSessionTools: the agent package builds its registry at startup, so restored runs are built from the CURRENT registry; a Multitool accessor for the current registry is being added on the Multitool board (card pending): use it when it lands.
+    (d) A restored run must not reuse the completion tokens of Multitool inner runs (status and cancel of an old token answer "no run under that handle"). The restored agents call keeps ITS OWN old token (that is the claim); inner shell and runCode tokens are not restored.
+    (e) A crash can leave shell child processes and stdio MCP servers running; a Multitool card reaps them at store init.
+  timestamp: 2026-11-03T18:57:52.616149+00:00
 depends_on:
 - 01M6GJPPXWKQJ9E6SK5WD0CWZ7
 - 01M6GM17VHZSWD4G2J27WTA3JT

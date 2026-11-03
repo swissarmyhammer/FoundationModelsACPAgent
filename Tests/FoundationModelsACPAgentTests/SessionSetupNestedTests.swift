@@ -183,7 +183,7 @@ import Testing
         let agent = fixture.harness.agent
         let childId = try await Self.openNestedSession(in: fixture, below: fixture.sessionId)
         let child = try #require(await agent.sessions[childId])
-        child.announcement.open()
+        await child.announcement.open()
 
         await child.projector.commandSink(Self.makeMessageUpdate())
 

@@ -48,8 +48,10 @@ extension RoutedACPAgent {
     ///   - root: The ACP id of the root session of the surface.
     ///   - runner: The runner of the surface, which finds the parent run of a
     ///     run.
+    ///   - holds: The holds on the final status of the `agents` calls of the
+    ///     surface. The end of a child releases its hold.
     /// - Returns: The outlet.
-    nonisolated func makeSubagentOutlet(root: SessionId, runner: AgentRunner) -> SubagentOutlet {
+    nonisolated func makeSubagentOutlet(root: SessionId, runner: AgentRunner, holds: AgentCallHolds) -> SubagentOutlet {
         SubagentOutlet(
             root: root,
             link: { [weak self] report in
@@ -58,11 +60,18 @@ extension RoutedACPAgent {
                 }
                 return await resolveAgentCallLink(of: report, root: root)
             },
-            deliver: { [weak self] report, previous, link in
+            deliver: { [weak self] report, previous, link, source in
                 guard let self else {
                     return .blocked
                 }
-                return await deliverSubagentReport(report, replacing: previous, link: link, root: root)
+                return await deliverSubagentReport(
+                    report, replacing: previous, link: link, root: root, source: source)
+            },
+            session: { [weak self] runID in
+                self?.sessionDirectory.session(id: runID)
+            },
+            settle: { [weak self] report in
+                await self?.settleSubagent(report, root: root, holds: holds)
             },
             parentReport: { runID in
                 await runner.run(id: runID).map(SubagentReport.init(run:))
@@ -72,6 +81,12 @@ extension RoutedACPAgent {
     /// Sends one `subagent_update` for a report, on the session of the parent of the run. It goes
     /// through the history sink of that session. The update is in the retained history of the
     /// parent, so a resume replays it.
+    ///
+    /// The first delivery of a run also registers the child session as a session nested in the
+    /// parent (``registerNestedSession(_:parent:events:)``), before it sends the announcement. The
+    /// child projector reads the outputs of the run, and its gate opens after the announcement. So
+    /// each update of the child goes out after the announcement, in order. The first delivery also
+    /// links the `agents` call to the child: one `tool_call_update` with `_meta.sah.agentRun`.
     ///
     /// The update carries all fields when the client does not know the child (`previous` is `nil`).
     /// After that, it carries only the changed fields. The parent is the session that started the
@@ -86,9 +101,12 @@ extension RoutedACPAgent {
     ///   - link: The wire id of the `agents` call that started the run. It is `nil` when the run
     ///     has none or the id is not known.
     ///   - root: The ACP id of the root session of the surface.
+    ///   - source: Where the events of the child come from, or `nil` when the session of the run
+    ///     is not known. A child with no source is announced and has no session of its own.
     /// - Returns: What was done.
     func deliverSubagentReport(
-        _ report: SubagentReport, replacing previous: SubagentUpdate?, link: ToolCallId?, root: SessionId
+        _ report: SubagentReport, replacing previous: SubagentUpdate?, link: ToolCallId?, root: SessionId,
+        source: SubagentSource? = nil
     ) async -> SubagentDelivery {
         let parentId = parentSessionId(of: report, root: root)
         guard let parent = announcingParent(parentId) else {
@@ -98,8 +116,90 @@ extension RoutedACPAgent {
         guard let patch = target.patch(replacing: previous) else {
             return .unchanged
         }
-        await historySink(for: parentId, gate: parent.announcement)(.subagentUpdate(patch))
+        let child = SessionId(rawValue: report.runID.description)
+        if previous == nil {
+            await registerChild(child, source: source, under: parentId)
+        }
+        let send = historySink(for: parentId, gate: parent.announcement)
+        await send(.subagentUpdate(patch))
+        if previous == nil, let link {
+            await send(linkUpdate(of: link, to: child, on: parent))
+        }
         return .sent(target)
+    }
+
+    /// Registers the child session of a run as a session nested in its parent. A child that has
+    /// an entry already, and a child with no source, change nothing. A refused registration is
+    /// logged: the child is still announced, and it has no session of its own.
+    ///
+    /// - Parameters:
+    ///   - child: The ACP id of the child.
+    ///   - source: Where the events of the child come from, or `nil`.
+    ///   - parent: The ACP id of the session that started the run.
+    private func registerChild(_ child: SessionId, source: SubagentSource?, under parent: SessionId) async {
+        guard let source, sessions[child] == nil else {
+            return
+        }
+        do {
+            try await registerNestedSession(source.session, parent: parent, events: source.outputs)
+        } catch {
+            ACPAgentTelemetry.logger(.subagentAnnouncement).error(
+                "The session of an agent run did not register. The run has an announcement and no session.",
+                metadata: ACPAgentTelemetry.errorMetadata(error))
+        }
+    }
+
+    /// The `tool_call_update` that links an `agents` call to its child: the whole `_meta.sah` object
+    /// with `agentRun.sessionId`. ACP patches `_meta` by top-level key, so the object is never
+    /// partial. The translator sends no `_meta` for a tool call, so the held `_meta` is empty and
+    /// the object holds the link alone. The update carries the name of the tool: it is a valid
+    /// first update of the call, and the same value as each other update of the call.
+    ///
+    /// - Parameters:
+    ///   - call: The wire id of the `agents` call.
+    ///   - child: The ACP id of the child.
+    ///   - parent: The entry of the session that holds the call.
+    /// - Returns: The update. It carries no `_meta` when the link did not encode.
+    private func linkUpdate(of call: ToolCallId, to child: SessionId, on parent: ActiveSession) -> SessionUpdate {
+        var update = ToolCallUpdate(toolCallId: call)
+        if let name = parent.surface.agents?.tool.name {
+            update.name = .value(name)
+        }
+        do {
+            update.meta = .value(try SAH.AgentRun(sessionId: child).inject(into: nil))
+        } catch {
+            ACPAgentTelemetry.logger(.subagentAnnouncement).error(
+                "The link of an agents call to its child did not encode. The call has no link.",
+                metadata: ACPAgentTelemetry.errorMetadata(error))
+        }
+        return .toolCallUpdate(update)
+    }
+
+    /// Ends the child of a run that ended, in the order that the wire rules ask for. The child
+    /// session sends its last updates and its final `idle` with the stop reason. The session
+    /// retires. Then the hold on the `agents` call ends, and the final status of the call goes out
+    /// on the session of the parent. So the final status comes after each update of the child.
+    ///
+    /// - Parameters:
+    ///   - report: The final report of the run.
+    ///   - root: The ACP id of the root session of the surface.
+    ///   - holds: The holds on the final status of the `agents` calls.
+    func settleSubagent(_ report: SubagentReport, root: SessionId, holds: AgentCallHolds) async {
+        let child = SessionId(rawValue: report.runID.description)
+        if let entry = sessions[child] {
+            if case .idle(let idle) = report.state {
+                await entry.projector.end(with: idle)
+            }
+            await retireSession(child)
+        }
+        guard let token = report.completionToken else {
+            return
+        }
+        guard let parent = sessions[parentSessionId(of: report, root: root)] else {
+            _ = holds.release(token)
+            return
+        }
+        await parent.projector.releaseHold(of: token)
     }
 
     /// Finds the link of a run to the `agents` call that started it. The link

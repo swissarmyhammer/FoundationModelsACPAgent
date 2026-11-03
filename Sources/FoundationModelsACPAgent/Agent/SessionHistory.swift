@@ -228,9 +228,9 @@ extension RoutedACPAgent {
     /// read from the table for this update, strongly for the send.
     ///
     /// A session with a gate (``SessionAnnouncementGate``) keeps each update
-    /// in its history, and sends it only when the gate is open. The gate is
-    /// read for each update, so an update that goes out after the gate
-    /// opens is sent, and one that goes before it is not.
+    /// in its history, and gives the send to the gate. The gate sends it when
+    /// it is open. An update that goes out before the gate opens waits in the
+    /// gate, and goes out in order when the gate opens.
     ///
     /// - Parameters:
     ///   - sessionId: The session the updates belong to.
@@ -259,11 +259,28 @@ extension RoutedACPAgent {
     /// - Returns: The sink.
     nonisolated func unrecordedSink(for sessionId: SessionId, gate: SessionAnnouncementGate? = nil) -> SessionUpdateSink {
         { [weak self] update in
-            guard let self, gate?.isOpen ?? true else {
-                return
-            }
-            await connections.path(forSession: sessionId)?.connection.post(update, in: sessionId)
+            await self?.post(update, of: sessionId, through: gate)
         }
+    }
+
+    /// Posts one update through the connection of its session. A session with a gate gives the
+    /// post to the gate, which keeps it until the client knows the session.
+    ///
+    /// - Parameters:
+    ///   - update: The update.
+    ///   - sessionId: The session the update belongs to.
+    ///   - gate: The gate of the session, or `nil` for a session that the client knows already.
+    private nonisolated func post(
+        _ update: SessionUpdate, of sessionId: SessionId, through gate: SessionAnnouncementGate?
+    ) async {
+        let send: SessionAnnouncementGate.Send = { [weak self] in
+            await self?.connections.path(forSession: sessionId)?.connection.post(update, in: sessionId)
+        }
+        guard let gate else {
+            await send()
+            return
+        }
+        await gate.submit(send)
     }
 
     /// Inserts the prompt of `params` as the user message of its session

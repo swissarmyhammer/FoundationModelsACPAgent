@@ -85,14 +85,17 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     /// - Parameters:
     ///   - name: The id of the agent, which is also the folder name.
     ///   - cwd: The session working directory.
+    ///   - tools: The value of the `tools` key of the agent, or `nil` for an agent with no such key.
+    ///     A run gets the `agents` tool only with an explicit grant.
     /// - Throws: The directory-creation or write error.
-    static func writeAgent(named name: String, in cwd: URL) throws {
+    static func writeAgent(named name: String, in cwd: URL, tools: String? = nil) throws {
         let folder = cwd
             .appendingPathComponent(".\(SurfaceCatalog.agentsDotfolderName)", isDirectory: true)
             .appendingPathComponent(agentsFolderName, isDirectory: true)
             .appendingPathComponent(name, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let document = "---\nname: \(name)\ndescription: The \(name) test agent.\n---\n\nDo the task.\n"
+        let toolsLine = tools.map { "tools: \($0)\n" } ?? ""
+        let document = "---\nname: \(name)\ndescription: The \(name) test agent.\n\(toolsLine)---\n\nDo the task.\n"
         try document.write(
             to: folder.appendingPathComponent(agentDocumentName, isDirectory: false),
             atomically: true, encoding: .utf8)
