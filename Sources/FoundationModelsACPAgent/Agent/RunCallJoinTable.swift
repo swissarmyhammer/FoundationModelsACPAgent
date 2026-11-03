@@ -72,6 +72,17 @@ final class RunCallJoinTable: Sendable {
         case unjoined
     }
 
+    /// One caller that waits for the entry of a run
+    /// (``RunCallJoinTable/awaitToolCallId(for:)``).
+    private struct EntryWaiter {
+        /// The completion token of the run.
+        let token: String
+
+        /// Resumes the caller when the entry is written, when the projection
+        /// stops, or when the caller is cancelled.
+        let continuation: CheckedContinuation<Void, Never>
+    }
+
     /// The entries and the waiting runs, under one lock.
     private struct State {
         /// The join of each run that has an entry, keyed by the completion
@@ -88,6 +99,12 @@ final class RunCallJoinTable: Sendable {
         /// Whether the projector of the session reads its events, so that
         /// its translator can write an entry.
         var isProjectionOpen = false
+
+        /// The callers that wait for the entry of a run, by their ticket.
+        var entryWaiters: [Int: EntryWaiter] = [:]
+
+        /// The ticket of the next caller that waits for an entry.
+        var nextTicket = 0
     }
 
     /// The state of the table.
@@ -164,6 +181,26 @@ final class RunCallJoinTable: Sendable {
         Self.toolCallId(of: state.withLock { $0.joins[token] }, token: token)
     }
 
+    /// The wire id of a run, after the entry of the run was written.
+    ///
+    /// A caller that must name the wire id of a tool call that the projection
+    /// sends reads it here: the observer of an agent run can see the first
+    /// event of a run before the projection handled the open record of the
+    /// `agents` call that started it. A run with an entry gives it at once.
+    /// While no projection is open, no entry can come, so the run gets
+    /// "no join" at once, the same rule as ``announceToolCallId(for:)``. Else
+    /// the call waits until the entry is written. The stop of the projection
+    /// (``closeProjection()``) and the cancel of the calling task end the wait,
+    /// so the wait never outlives the session. No time decides the entry.
+    ///
+    /// - Parameter token: The completion token of the run.
+    /// - Returns: The tool call id, as ``toolCallId(for:)`` gives it after the
+    ///   wait.
+    func awaitToolCallId(for token: String) async -> ToolCallId {
+        await awaitEntry(for: token)
+        return toolCallId(for: token)
+    }
+
     /// The wire id of the `Terminal` announce of a run, or `nil` when the run
     /// must wait for its entry.
     ///
@@ -203,30 +240,84 @@ final class RunCallJoinTable: Sendable {
         return ToolCallId(rawValue: toolCallID)
     }
 
-    /// Writes "no join" for each waiting run.
+    /// Writes "no join" for each waiting run, and for each run that a caller
+    /// of ``awaitToolCallId(for:)`` waits for.
     private func sealWaitingRuns() {
-        for token in state.withLock({ Array($0.waitingRuns) }) {
+        let tokens = state.withLock { state in
+            state.waitingRuns.union(state.entryWaiters.values.map(\.token))
+        }
+        for token in tokens {
             seal(token)
         }
     }
 
-    /// Writes `join` for a run that has no entry yet, and tells the observer
-    /// when the run waited for it. A run that has an entry keeps it.
+    /// Waits until the run has an entry, until no projection can write one,
+    /// or until the calling task is cancelled.
+    ///
+    /// - Parameter token: The completion token of the run.
+    private func awaitEntry(for token: String) async {
+        let ticket = state.withLock { state in
+            defer { state.nextTicket += 1 }
+            return state.nextTicket
+        }
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                if !admitWaiter(EntryWaiter(token: token, continuation: continuation), ticket: ticket) {
+                    continuation.resume()
+                }
+            }
+        } onCancel: {
+            state.withLock { $0.entryWaiters.removeValue(forKey: ticket) }?.continuation.resume()
+        }
+    }
+
+    /// Records a caller that waits for an entry, unless the wait is over
+    /// already. The check and the record are one locked step, so a write or a
+    /// cancel between them cannot be lost.
+    ///
+    /// - Parameters:
+    ///   - waiter: The caller.
+    ///   - ticket: The ticket of the caller.
+    /// - Returns: `true` when the caller waits, and `false` when its wait is
+    ///   over: the run has an entry, no projection is open, or the task is
+    ///   cancelled.
+    private func admitWaiter(_ waiter: EntryWaiter, ticket: Int) -> Bool {
+        state.withLock { state in
+            if state.joins[waiter.token] != nil || Task.isCancelled {
+                return false
+            }
+            guard state.isProjectionOpen else {
+                state.joins[waiter.token] = .unjoined
+                return false
+            }
+            state.entryWaiters[ticket] = waiter
+            return true
+        }
+    }
+
+    /// Writes `join` for a run that has no entry yet, tells the observer when
+    /// the run waited for it, and ends the wait of each caller of
+    /// ``awaitToolCallId(for:)`` for it. A run that has an entry keeps it.
     ///
     /// - Parameters:
     ///   - join: The entry to write.
     ///   - token: The completion token of the run.
     private func store(_ join: Join, for token: String) {
-        let observer = state.withLock { state -> JoinObserver? in
+        let (observer, waiters) = state.withLock { state -> (JoinObserver?, [EntryWaiter]) in
             guard state.joins[token] == nil else {
-                return nil
+                return (nil, [])
             }
             state.joins[token] = join
+            let tickets = state.entryWaiters.filter { $0.value.token == token }.map(\.key)
+            let waiters = tickets.compactMap { state.entryWaiters.removeValue(forKey: $0) }
             guard state.waitingRuns.remove(token) != nil else {
-                return nil
+                return (nil, waiters)
             }
-            return state.joinObserver
+            return (state.joinObserver, waiters)
         }
         observer?(token)
+        for waiter in waiters {
+            waiter.continuation.resume()
+        }
     }
 }

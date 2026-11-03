@@ -798,6 +798,12 @@ extension RoutedACPAgent {
                 selectedSlot: ConfigOptions.defaultSlot, announcedConfigOptions: configOptions,
                 titleRecorded: titleRecorded, history: history))
 
+        // The announcer of the agent runs of the surface sends through this
+        // agent from now on, so each run is announced on this root session.
+        if let agents = composition.surface.agents {
+            agents.announcer.bind(makeSubagentOutlet(root: sessionId, runner: agents.runner))
+        }
+
         // The response announces the first command list, and each registry
         // change after it publishes the new list.
         publishAvailableCommands(from: commands, sessionId: sessionId)

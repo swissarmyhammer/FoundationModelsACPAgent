@@ -21,6 +21,11 @@ struct AgentsMount: Sendable {
     /// `skills` tool of the root session and of the runs, the tools of the
     /// runs, and the settle period.
     let environment: AgentEnvironment
+
+    /// The queue that announces each run of the session to the client with a
+    /// `subagent_update`. The agent binds its outlet when it mounts the root
+    /// session, and the stop of the runs ends the queue.
+    let announcer: SubagentAnnouncer
 }
 
 /// The composition of the standalone `agents` tool of FoundationModelsAgents
@@ -72,7 +77,7 @@ enum AgentsComposition {
     ///   - runTools: The tools that a run can get, by name.
     ///   - runCallJoins: The join table of the session. The environment
     ///     writes the entry of each tool run of each agent run into it
-    ///     (``makeRunEventObserver(runCallJoins:)``).
+    ///     (``makeRunEventObserver(runCallJoins:announcer:)``).
     /// - Returns: The mount.
     /// - Throws: Whatever `AgentRegistry.load()`, `AgentEnvironment.make`
     ///   or `AgentsTool.make(context:)` throws.
@@ -82,6 +87,7 @@ enum AgentsComposition {
     ) async throws -> AgentsMount {
         let registry = makeAgentRegistry(context: context, marketplaces: skills.marketplaces)
         try await registry.load()
+        let announcer = SubagentAnnouncer()
         let environment = try await AgentEnvironment.make(
             profile: context.profile,
             skills: skills.registry,
@@ -89,16 +95,19 @@ enum AgentsComposition {
             workingDirectory: context.workingDirectory,
             tools: runTools,
             inlineSettleGrace: context.inlineSettleGrace,
-            runEventObserver: makeRunEventObserver(runCallJoins: runCallJoins))
+            runEventObserver: makeRunEventObserver(runCallJoins: runCallJoins, announcer: announcer))
         let runner = AgentRunner(registry: registry, environment: environment)
         let tool = try await AgentsTool.make(context: AgentsToolContext(runner: runner))
-        return AgentsMount(tool: tool, runner: runner, environment: environment)
+        return AgentsMount(tool: tool, runner: runner, environment: environment, announcer: announcer)
     }
 
     /// Makes the observer of the session events of each agent run of the
     /// session (task ^zbcrex8). It gives each event to `runCallJoins`, and
     /// the open record of a tool run writes "no join" for that run
-    /// (``RunCallJoinTable/recordAgentRunEvent(_:)``).
+    /// (``RunCallJoinTable/recordAgentRunEvent(_:)``). It also gives the run
+    /// to `announcer`, which queues the `subagent_update` of the run before
+    /// any message that uses the id of the child
+    /// (``SubagentAnnouncer/observe(_:)``).
     ///
     /// An agent run uses the shell capability of the root session, so the
     /// output of its shell runs comes on the shell output stream of the
@@ -110,13 +119,19 @@ enum AgentsComposition {
     /// same surface, so the observer needs no lookup from the run to the
     /// session. Each run calls the observer synchronously in its follow loop,
     /// child runs too, and two runs can call it at the same time. Thus the
-    /// observer only takes the lock of the table, and it does not wait.
+    /// observer only takes the lock of the table and the lock of the announcer,
+    /// and it does not wait.
     ///
-    /// - Parameter runCallJoins: The join table of the session.
+    /// - Parameters:
+    ///   - runCallJoins: The join table of the session.
+    ///   - announcer: The announcer of the session.
     /// - Returns: The observer for `AgentEnvironment.make(runEventObserver:)`.
-    static func makeRunEventObserver(runCallJoins: RunCallJoinTable) -> AgentEnvironment.RunEventObserver {
-        { _, output in
+    static func makeRunEventObserver(
+        runCallJoins: RunCallJoinTable, announcer: SubagentAnnouncer
+    ) -> AgentEnvironment.RunEventObserver {
+        { run, output in
             runCallJoins.recordAgentRunEvent(output)
+            announcer.observe(run)
         }
     }
 

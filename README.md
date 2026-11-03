@@ -430,6 +430,15 @@ code gives the local detail.
   can drift and a resume then restores the wrong conversation. A fork or a
   sub-agent is never an ACP session: `session/list` does not show it, and it
   does not accept `session/prompt`.
+- **An agent run is announced with `subagent_update`.** The agent sends one
+  `subagent_update` on the parent session before any message that uses the id
+  of the child. The id of the child is the id of its run. The update has the
+  agent name as `title`, the agent description, the `cancel` capability, the
+  `state`, the `cwd` and the `additionalDirectories`. When an `agents` tool
+  call started the run, `_meta.sah.agentRun.toolCallId` names the ACP tool call
+  of that call. Later updates carry only the fields that changed. A run of a
+  run is announced on its parent run, after the parent. The agent sends
+  nothing for a closed session or a closed connection.
 - **A prompt is mail.** `session/prompt` puts the prompt into the mailbox of
   the Router session, and the response comes at once: its `messageId` is the
   `MailID` of the prompt. A prompt that comes while another one is open is

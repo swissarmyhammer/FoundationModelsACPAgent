@@ -32,7 +32,7 @@ import Testing
     ///
     /// - Parameter parentSession: The Router session of the parent.
     /// - Returns: The new session.
-    private static func makeNestedRouterSession(below parentSession: any RoutedSession) -> any RoutedSession {
+    static func makeNestedRouterSession(below parentSession: any RoutedSession) -> any RoutedSession {
         parentSession.profile.standard.makeSession(
             workingDirectory: parentSession.workingDirectory,
             recordingRoot: parentSession.recordingDirectory.deletingLastPathComponent(),
@@ -46,7 +46,7 @@ import Testing
     ///   - parentId: The session that is the parent.
     /// - Returns: The id of the nested session.
     /// - Throws: Whatever the registration throws.
-    private static func openNestedSession(
+    static func openNestedSession(
         in fixture: ScriptedPromptFixture, below parentId: SessionId
     ) async throws -> SessionId {
         let agent = fixture.harness.agent
@@ -58,7 +58,7 @@ import Testing
     /// One message chunk, as a session sends it.
     ///
     /// - Returns: The update.
-    private static func makeMessageUpdate() -> SessionUpdate {
+    static func makeMessageUpdate() -> SessionUpdate {
         .agentMessageChunk(
             ContentChunk(
                 content: .text(TextContent(text: answerText)), messageId: ACPEventTranslator.makeMessageId()))

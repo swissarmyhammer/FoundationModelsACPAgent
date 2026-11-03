@@ -121,9 +121,10 @@ extension RoutedACPAgent {
     /// A root session has no parent (`parent` is `nil`), and its gate is open
     /// (``SessionAnnouncementGate``). A session with a parent is linked in the
     /// ``sessionTree``, takes the owner of its parent
-    /// (``ConnectionTable/owner(of:)``), and starts with a closed
-    /// gate. The parts that a nested session borrows or owns are in
-    /// ``ActiveSession``.
+    /// (``ConnectionTable/owner(of:)``), and starts with a closed gate, unless
+    /// the announcer sent its announcement already
+    /// (``SubagentAnnouncer/hasAnnounced(_:)``). The parts that a nested
+    /// session borrows or owns are in ``ActiveSession``.
     ///
     /// The steps that belong to the mounted surface of a root session only
     /// (the record of the placement, the bind of the shell identity, the
@@ -144,7 +145,10 @@ extension RoutedACPAgent {
     func registerSession(
         _ session: any RoutedSession, sessionId: SessionId, parent: SessionId?, build: SessionBuild
     ) async throws {
-        let announcement = SessionAnnouncementGate(isOpen: parent == nil)
+        // A session starts open when the client knows it: the root session, or
+        // a session whose announcement went out before its entry was made.
+        let announcement = SessionAnnouncementGate(
+            isOpen: parent == nil || build.surface.agents?.announcer.hasAnnounced(session.id) == true)
         let send = historySink(for: sessionId, gate: announcement)
         let stateLedger = SessionStateLedger(
             send: send, announce: unrecordedSink(for: sessionId, gate: announcement))
@@ -218,7 +222,8 @@ extension RoutedACPAgent {
     /// The build is the one of a root session
     /// (``registerSession(_:sessionId:parent:build:)``), with the surface of
     /// the parent borrowed. The gate of the nested session starts closed, so
-    /// nothing leaves for it before its announcement.
+    /// nothing leaves for it before its announcement, unless the announcement
+    /// went out already.
     ///
     /// - Parameters:
     ///   - session: The Router session of the sub-agent.

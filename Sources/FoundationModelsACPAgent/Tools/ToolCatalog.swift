@@ -198,8 +198,11 @@ public struct SessionSurface: Sendable {
     ///
     /// `RoutedSession.close()` does not know the runs that a `start agent`
     /// call started, thus the session lifecycle calls this before it closes
-    /// the root session. A second call does nothing more.
+    /// the root session. The announcer of the runs stops first, so no
+    /// announcement leaves for a session that is closing. A second call does
+    /// nothing more.
     public func stopAgentRuns() async {
+        await agents?.announcer.stop()
         await agents?.runner.stop()
     }
 
