@@ -453,8 +453,10 @@ code gives the local detail.
   work it has no stop reason. A run that waits only for the user is no work,
   so an open question does not keep the session `running`. While a question
   of the session waits for the user, the agent sends `requires_action`. When
-  the question ends, it sends `running` or `idle`. The copy of a question of
-  a child session sends nothing. A `session/resume` sends the current state
+  the question ends, it sends `running` or `idle`. An accepted URL-mode
+  question ends only when its flow completes or ends, so the session stays
+  `requires_action` while the user works in the browser. The copy of a
+  question of a child session sends nothing. A `session/resume` sends the current state
   after the replay and before the response.
 - **`session/cancel` is a signal.** It sends `cancelAll()` to the Router
   session. Each open prompt ends `cancelled` at once, and its response says

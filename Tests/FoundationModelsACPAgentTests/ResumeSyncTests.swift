@@ -19,22 +19,6 @@ import Testing
 @Suite(.closesHarnesses) struct ResumeSyncTests {
     // MARK: - Readers
 
-    /// A sink that keeps each update it gets, in the order of the calls.
-    private final class RecordingSink: Sendable {
-        /// The updates that the sink got.
-        private let kept = Mutex<[SessionUpdate]>([])
-
-        /// The updates that the sink got, in order.
-        var updates: [SessionUpdate] {
-            kept.withLock { $0 }
-        }
-
-        /// The sink function of the recorder.
-        var send: SessionUpdateSink {
-            { update in self.kept.withLock { $0.append(update) } }
-        }
-    }
-
     /// A sink that holds its first update until the test opens the gate. It
     /// keeps each update when the update is done, so the order of the kept
     /// updates is the order in which the sends finished.
@@ -78,6 +62,43 @@ import Testing
     /// - Returns: The kinds, in order.
     private static func kinds(of updates: [SessionUpdate]) -> [WireItem] {
         updates.map(WireItem.of(update:))
+    }
+
+    /// Resumes the session and returns the updates that the resume sent.
+    ///
+    /// - Parameters:
+    ///   - resume: The fixture of the session.
+    ///   - replayFrom: The replay cursor of the request, or `nil` for none.
+    /// - Returns: The updates that came after the call began, in order.
+    /// - Throws: Whatever the request throws.
+    private static func resumeAndCollect(
+        _ resume: ResumeSessionFixture, replayFrom: ReplayFrom? = nil
+    ) async throws -> [SessionUpdate] {
+        let countBefore = await resume.fixture.collector.updates.count
+        _ = try await resume.fixture.harness.connection.resumeSession(
+            resume.makeResumeRequest(replayFrom: replayFrom))
+        return Array(await resume.fixture.collector.updates.dropFirst(countBefore)).map(\.update)
+    }
+
+    /// Runs ``RoutedACPAgent/syncCurrentState(of:)`` and returns the
+    /// snapshot that the client got.
+    ///
+    /// - Parameters:
+    ///   - fixture: The fixture of the session.
+    ///   - count: The number of updates that match `isState` when the
+    ///     snapshot arrived. The live change before it counts as one.
+    ///   - isState: Tells whether an update is the state under test.
+    /// - Returns: The updates that came after the call began, in order.
+    /// - Throws: Whatever the wait throws.
+    private static func syncAndCollect(
+        in fixture: ScriptedPromptFixture, count: Int, isState: @escaping @Sendable (SessionUpdate?) -> Bool
+    ) async throws -> [SessionUpdate] {
+        let countBefore = await fixture.collector.updates.count
+        await fixture.harness.agent.syncCurrentState(of: fixture.sessionId)
+        let received = try await fixture.collector.wait(for: "the snapshot reaches the client") { updates in
+            updates.count { isState($0.update) } >= count
+        }
+        return Array(received.dropFirst(countBefore)).map(\.update)
     }
 
     /// Resumes the session of `resume` and returns what the agent sent from
@@ -286,10 +307,7 @@ import Testing
         try await resume.runPrompt("a question before the idle resume")
         await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
 
-        let countBefore = await resume.fixture.collector.updates.count
-        _ = try await resume.fixture.harness.connection.resumeSession(
-            resume.makeResumeRequest(replayFrom: .start(ReplayFromStart())))
-        let updates = Array(await resume.fixture.collector.updates.dropFirst(countBefore)).map(\.update)
+        let updates = try await Self.resumeAndCollect(resume, replayFrom: .start(ReplayFromStart()))
         await resume.fixture.close()
 
         #expect(stateNames(of: updates) == ["idle"])
@@ -304,9 +322,7 @@ import Testing
         let resume = try await ResumeSessionFixture.make(label: "ResumeSyncTests-no-info")
         await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
 
-        let countBefore = await resume.fixture.collector.updates.count
-        _ = try await resume.fixture.harness.connection.resumeSession(resume.makeResumeRequest())
-        let updates = Array(await resume.fixture.collector.updates.dropFirst(countBefore)).map(\.update)
+        let updates = try await Self.resumeAndCollect(resume)
         await resume.fixture.close()
 
         #expect(stateNames(of: updates) == ["idle"])
@@ -357,12 +373,7 @@ import Testing
         await ledger.promptStarted()
         try await ScriptedPromptFixture.waitForRunning(resume.fixture.collector)
 
-        let countBefore = await resume.fixture.collector.updates.count
-        await agent.syncCurrentState(of: sessionId)
-        let received = try await resume.fixture.collector.wait(for: "the snapshot reaches the client") { updates in
-            updates.count { isRunningState($0.update) } >= 2
-        }
-        let updates = Array(received.dropFirst(countBefore)).map(\.update)
+        let updates = try await Self.syncAndCollect(in: resume.fixture, count: 2, isState: isRunningState)
         await ledger.promptEnded(IdleStateUpdate(stopReason: .cancelled), started: true)
         await resume.fixture.close()
 
@@ -382,12 +393,7 @@ import Testing
             updates.contains { isRequiresActionState($0.update) }
         }
 
-        let countBefore = await fixture.collector.updates.count
-        await fixture.harness.agent.syncCurrentState(of: fixture.sessionId)
-        let received = try await fixture.collector.wait(for: "the snapshot reaches the client") { updates in
-            updates.count { isRequiresActionState($0.update) } >= 2
-        }
-        let updates = Array(received.dropFirst(countBefore)).map(\.update)
+        let updates = try await Self.syncAndCollect(in: fixture, count: 2, isState: isRequiresActionState)
         await question.cancel()
         await fixture.close()
 

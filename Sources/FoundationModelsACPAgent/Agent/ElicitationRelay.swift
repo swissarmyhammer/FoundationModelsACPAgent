@@ -53,7 +53,9 @@ typealias ElicitationCompletionHandler = @Sendable (ElicitationCompletion) async
 /// ended (task ^az53ay4): at `SessionEvent.elicitationCompleted`
 /// (``complete(_:)``), from the client or from the tool, or at
 /// `SessionEvent.elicitationEnded` (``end(_:)``), so the client leaves its
-/// waiting state.
+/// waiting state. The question stays open until then. So the user wait of
+/// the ledger ends with the flow, not at the accept, and the session stays
+/// `requires_action` while the user works in the browser.
 ///
 /// The outbound path: each question goes to the connection of the session
 /// as it is when the question comes (ACPA-5), with the capabilities of that
@@ -160,6 +162,13 @@ actor ElicitationRelay {
     /// relay sends `elicitation/complete` for each one time, at
     /// ``complete(_:)`` or at ``end(_:)``.
     private var awaitingCompletion: Set<String> = []
+
+    /// The accepted URL-mode flows whose question of this session still
+    /// holds the user wait of the ledger. Router holds such a question until
+    /// the flow completes or ends, so the wait ends with the flow, not at
+    /// the accept. ``finishURLFlow(elicitationId:)`` and
+    /// ``drainOpenRoundTrips()`` end these waits.
+    private var heldURLWaits: Set<String> = []
 
     /// The ids of the URL-mode flows that completed before their round trip
     /// knew of the accept. Router can send the completion while the relay
@@ -296,11 +305,16 @@ actor ElicitationRelay {
         let outcome = await deliverRoundTrip(
             wireRequest, elicitationId: elicitationId, mode: request.mode, over: path?.connection, on: session)
         let resumeMark = resumedAnswerMarks.removeValue(forKey: elicitationId)
+        let flowStillOpen = awaitingCompletion.contains(elicitationId)
         if holdsQuestion {
-            await stateLedger?.userWaitEnded(
-                elicitationId, resumedWork: resumeMark != nil, since: resumeMark ?? 0)
+            if flowStillOpen {
+                heldURLWaits.insert(elicitationId)
+            } else {
+                await stateLedger?.userWaitEnded(
+                    elicitationId, resumedWork: resumeMark != nil, since: resumeMark ?? 0)
+            }
         }
-        if !awaitingCompletion.contains(elicitationId) {
+        if !flowStillOpen {
             endURLFlowIfNeeded(mode: request.mode, elicitationId: elicitationId)
         }
         earlyEnds.removeValue(forKey: elicitationId)
@@ -367,8 +381,9 @@ actor ElicitationRelay {
     /// each accepted URL-mode flow before the feed ends. Thus a flow that
     /// still waits for its completion here is a defect too: the relay
     /// releases its id and writes a warning, and sends no
-    /// `elicitation/complete`.
-    func drainOpenRoundTrips() {
+    /// `elicitation/complete`. The relay also ends the user wait that the
+    /// flow held, so the ledger leaves `requires_action`.
+    func drainOpenRoundTrips() async {
         feedEnded = true
         for elicitationId in Array(answerTasks.keys) {
             cancelWireRequest(elicitationId, reason: Self.feedEndedCancelReason)
@@ -379,6 +394,8 @@ actor ElicitationRelay {
                 metadata: elicitationMetadata(elicitationId))
         }
         awaitingCompletion = []
+        let heldWaits = heldURLWaits
+        heldURLWaits = []
         earlyCompletions = []
         outstandingURLElicitationIds = []
         flowConnections = [:]
@@ -389,6 +406,9 @@ actor ElicitationRelay {
                 "A client request was still in flight at the end of the feed. The relay delivers cancel.",
                 metadata: elicitationMetadata(elicitationId))
             continuation.resume(returning: .answered(.cancel(reason: Self.feedEndedCancelReason)))
+        }
+        for elicitationId in heldWaits {
+            await stateLedger?.userWaitEnded(elicitationId)
         }
     }
 
@@ -618,6 +638,9 @@ actor ElicitationRelay {
         }
         outstandingURLElicitationIds.remove(elicitationId)
         let connection = flowConnections.removeValue(forKey: elicitationId)?.connection
+        if heldURLWaits.remove(elicitationId) != nil {
+            await stateLedger?.userWaitEnded(elicitationId)
+        }
         do {
             guard let connection else {
                 throw CancellationError()

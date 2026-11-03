@@ -30,6 +30,19 @@ actor CloseCountingRoutedSession: RoutedSession {
     /// in call order.
     private(set) var responses: [(elicitationId: String, response: ElicitationResponse)] = []
 
+    /// The delivery that ``respond(elicitationId:response:)`` reports instead
+    /// of the one of the real session, or `nil` to use the real one. A test
+    /// sets it to hold a URL-mode question open after the accept, with no
+    /// run behind it.
+    private var answerDelivery: ElicitationAnswerDelivery?
+
+    /// Sets the delivery that ``respond(elicitationId:response:)`` reports.
+    ///
+    /// - Parameter delivery: The delivery, or `nil` for the real one.
+    func setAnswerDelivery(_ delivery: ElicitationAnswerDelivery?) {
+        answerDelivery = delivery
+    }
+
     /// Wraps `wrapped`.
     ///
     /// - Parameter wrapped: The real session that each call goes to.
@@ -210,6 +223,9 @@ actor CloseCountingRoutedSession: RoutedSession {
     /// - Returns: The result of the real session.
     func respond(elicitationId: String, response: ElicitationResponse) async -> ElicitationAnswerDelivery {
         responses.append((elicitationId: elicitationId, response: response))
+        if let answerDelivery {
+            return answerDelivery
+        }
         return await wrapped.respond(elicitationId: elicitationId, response: response)
     }
 

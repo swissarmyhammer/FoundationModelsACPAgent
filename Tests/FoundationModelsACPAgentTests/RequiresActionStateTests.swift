@@ -11,27 +11,6 @@ import Testing
 /// `requires_action`. When the question ends, the session reports `running`
 /// or `idle`. The copy of a child question reports nothing.
 @Suite(.closesHarnesses) struct RequiresActionStateTests {
-    /// A sink that keeps each update it gets.
-    private final class RecordingSink: Sendable {
-        /// The updates that the sink got.
-        private let kept = Mutex<[SessionUpdate]>([])
-
-        /// The updates that the sink got, in order.
-        var updates: [SessionUpdate] {
-            kept.withLock { $0 }
-        }
-
-        /// The names of the states that the sink got, in order.
-        var names: [String] {
-            stateNames(of: updates)
-        }
-
-        /// The sink function of the recorder.
-        var send: SessionUpdateSink {
-            { update in self.kept.withLock { $0.append(update) } }
-        }
-    }
-
     // MARK: - The ledger
 
     /// A question that waits while the session is idle sends
@@ -165,5 +144,26 @@ import Testing
 
         #expect(stateNames(of: updates).isEmpty)
         #expect(ScriptedPromptFixture.isIdle(snapshot))
+    }
+
+    /// An accepted URL-mode question stays open until its flow ends. With no
+    /// prompt open, the session stays `requires_action` after the accept, and
+    /// it goes `idle` when the flow completes.
+    @Test
+    func anAcceptedURLQuestionKeepsRequiresActionUntilItsFlowEnds() async throws {
+        let question = try await OpenQuestion.open(
+            label: "RequiresActionStateTests-url-accept", answerDelivery: .acceptedAwaitingCompletion
+        ) { try OpenQuestion.makeURLRequest(elicitationId: $0) }
+        let fixture = question.fixture
+        let ledger = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.stateLedger)
+
+        await question.accept()
+        let afterAccept = await ledger.currentSnapshot()
+        await question.relay.complete(ElicitationCompletion(elicitationId: question.elicitationId))
+        let afterFlow = await ledger.currentSnapshot()
+        await fixture.close()
+
+        #expect(isRequiresActionState(.stateUpdate(afterAccept)))
+        #expect(ScriptedPromptFixture.isIdle(afterFlow))
     }
 }
