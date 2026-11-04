@@ -202,16 +202,21 @@ import Testing
   ///   - rootWarmupCalls: The number of `runCode` calls that the root makes before its `agents`
   ///     call.
   ///   - childTools: The `tools` key of the child agent, or `nil` for the default tools.
+  ///   - holdingTheLeaf: Whether the leaf waits until its call waits on the clock of the runs.
   /// - Returns: The wire.
   /// - Throws: Whatever the fixture or a wait throws.
   private static func run(
-    childPlay: [ScriptedPassStep], rootWarmupCalls: Int = 0, childTools: String? = nil
+    childPlay: [ScriptedPassStep], rootWarmupCalls: Int = 0, childTools: String? = nil,
+    holdingTheLeaf: Bool = false
   ) async throws -> Wire {
     let cwd = makeResolvedDirectory(label: "\(label)-repo")
     try AgentsToolTests.writeAgent(named: childAgent, in: cwd, tools: childTools)
     try AgentsToolTests.writeAgent(named: leafAgent, in: cwd)
+    let leafHold = ScriptedHold()
+    let leafPlay: [ScriptedPassStep] =
+      (holdingTheLeaf ? [.holdUntilReleased(leafHold)] : []) + [.textDelta(leafText), .endPass]
     let script: [ScriptedPassStep] = [
-      .onPrompt(containing: leafPrompt, play: [.textDelta(leafText), .endPass]),
+      .onPrompt(containing: leafPrompt, play: leafPlay),
       .onPrompt(containing: childPrompt, play: childPlay),
       .onPrompt(
         containing: rootPrompt,
@@ -220,10 +225,24 @@ import Testing
         ]),
       .endPass,
     ]
+    let clock = ManualRunClock()
     let fixture = try await ScriptedPromptFixture.make(
-      script: script, label: label, workingDirectory: cwd)
-    _ = try await fixture.harness.connection.prompt(
-      AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: rootPrompt))
+      script: script, label: label, workingDirectory: cwd, runClock: clock)
+    let prompt = Task {
+      try await fixture.harness.connection.prompt(
+        AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: rootPrompt))
+    }
+    if holdingTheLeaf {
+      _ = try await fixture.collector.wait(for: "the leaf is announced on the child") { updates in
+        guard let child = AnnouncedChild.first(in: updates, on: fixture.sessionId) else {
+          return false
+        }
+        return AnnouncedChild.first(in: updates, on: child) != nil
+      }
+      await clock.waitForSleepers(atLeast: 2)
+      leafHold.release()
+    }
+    _ = try await prompt.value
     let updates = try await fixture.collector.wait(for: "the final status of the agents call") {
       updates in
       guard let call = agentsCall(in: updates, of: fixture.sessionId) else { return false }
@@ -488,6 +507,27 @@ import Testing
       !ScriptedPromptFixture.agentText(in: wire.updates(of: wire.child)).contains(Self.leafText))
     let violations = SubagentWireTraceValidator().validate(wire.trace)
     #expect(violations.isEmpty, "\(violations)")
+    await wire.fixture.close()
+  }
+
+  /// A leaf that is slow keeps its call inline: the settle period of the runs does not pass
+  /// by itself, because the test owns the clock of the runs. So the final message of the leaf
+  /// never comes to the child as mail, and the scripted model of the child never answers a
+  /// mail. (A mail prompt holds the earlier prompts, so it would match the marker of the leaf and
+  /// play the text of the leaf in the child.) The test holds the leaf until its call waits on the
+  /// clock, and then lets it end.
+  @Test
+  func aSlowLeafKeepsItsTextOutOfTheChildWhileItsCallIsInline() async throws {
+    let wire = try await Self.run(
+      childPlay: [
+        AgentsToolTests.startAgentCall(agent: Self.leafAgent, prompt: Self.leafPrompt),
+        .textDelta(Self.childText), .endPass,
+      ], childTools: AgentsToolTests.agentsToolName, holdingTheLeaf: true)
+
+    let leaf = try #require(AnnouncedChild.first(in: wire.updates, on: wire.child))
+
+    #expect(ScriptedPromptFixture.agentText(in: wire.updates(of: leaf)) == Self.leafText)
+    #expect(ScriptedPromptFixture.agentText(in: wire.updates(of: wire.child)) == Self.childText)
     await wire.fixture.close()
   }
 
