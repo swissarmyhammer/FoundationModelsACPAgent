@@ -462,14 +462,10 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
         try await ScriptedGate.wait(atPath: path)
         let argumentsJSON = try String(contentsOfFile: path, encoding: .utf8)
         try await invokeTool(named: name, argumentsJSON: argumentsJSON, turn: turn)
-      case .elicit(let message):
-        let arguments = try ScriptedElicitation.runCodeArguments(asking: message)
-        if try await askUser(runCodeArguments: arguments, turn: turn, yield: yield) {
-          return true
-        }
-      case .permission(let title):
-        let arguments = try ScriptedPermission.runCodeArguments(asking: title)
-        if try await askUser(runCodeArguments: arguments, turn: turn, yield: yield) {
+      case .elicit, .permission:
+        if let arguments = try Self.questionArguments(of: step),
+          try await askUser(runCodeArguments: arguments, turn: turn, yield: yield)
+        {
           return true
         }
       case .fail(let failure):
@@ -492,6 +488,20 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
       }
     }
     return false
+  }
+
+  /// The arguments of the `runCode` call of a question step.
+  ///
+  /// - Parameter step: An ``ScriptedPassStep/elicit(message:)`` or
+  ///   ``ScriptedPassStep/permission(title:)`` step.
+  /// - Returns: The arguments, as JSON, or `nil` for any other step.
+  /// - Throws: The encoding error.
+  private static func questionArguments(of step: ScriptedPassStep) throws -> String? {
+    switch step {
+    case .elicit(let message): try ScriptedElicitation.runCodeArguments(asking: message)
+    case .permission(let title): try ScriptedPermission.runCodeArguments(asking: title)
+    default: nil
+    }
   }
 
   /// Plays one question step: the `runCode` call that asks the user, as

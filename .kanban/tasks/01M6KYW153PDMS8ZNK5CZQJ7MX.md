@@ -79,8 +79,15 @@ comments:
     - files: Recordings/interrupted-nested-child/make.py
     - next: ready for /review
   timestamp: 2026-11-04T19:15:46.504536+00:00
-position_column: review
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m6kzw9a01xx6erka6619wk7a
+  text: |-
+    ### review — clean
+    - evidence: review sha afa130d~1..afa130d, 0 findings (0 confirmed, 0 refuted, 8 attempted, 0 failed, 0 skipped). The earlier finding at make.py:11 is checked.
+    - next: none. The task is in done.
+  timestamp: 2026-11-04T19:16:53.184357+00:00
+position_column: done
+position_ordinal: ffffba80
 title: Remake the interrupted nested recording with the mxfp4 standard model and answer how a cold resume uses the recorded cwd
 ---
 ## What

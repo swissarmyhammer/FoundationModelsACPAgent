@@ -1,8 +1,39 @@
 ---
 assignees:
 - claude-code
-position_column: doing
-position_ordinal: '8180'
+comments:
+- actor: claude-code
+  id: 01m6m07ed44pa065gzjf68fg86
+  text: |-
+    ### implement — changed
+    - evidence: commit c05075c on branch wt-perm (worktree FoundationModelsACPAgent-wt-perm), 10 files. RED: one build of the new tests failed because `.permission` and `ScriptedPermission` did not exist. GREEN: one run of the new tests and the touched suites passed (119 tests, 13 suites, 0 failures; 1 known issue in HarnessSmokeTests that was there before).
+    - design: the host has no way to reach the connection from the scripted backend, so the step rides the `elicit` path. The step plays a `runCode` call whose snippet asks a form question with the one required field `scriptedPermission`. `ElicitationRelay` knows this field (`ScriptedPermission.isPermission`) and sends `session/request_permission` (options allow once and reject once) in place of `elicitation/create`, under the session id of the relay (child id for a child run). Claims, the user wait of the ledger, `session/cancel` (Router ends the question, the relay cancels the wire task with `$/cancel_request`) and the move to a new owner work as for `elicit`. A selected option is an accept (the snippet returns the option id). A cancelled outcome is a cancel (the pass ends with the cancel text). An option that was not offered is a decline. The relay wire code now holds a `WireCall` (elicitation or permission).
+    - FoundationModelsACP had everything needed (`AgentSideConnection.requestPermission(_:cancellation:)`, `RequestPermissionRequest`, `RequestPermissionOutcome`). No sibling package changed.
+    - files: Sources/FoundationModelsACPAgent/Configuration/ScriptedPermission.swift (new), ScriptedPassStep.swift, ScriptedStubScript.swift (grammar comment and parser key), ScriptedSessionBackend.swift, Agent/ElicitationRelay.swift, Tools/SandboxComposition.swift (doc), README.md, Tests/FoundationModelsACPAgentTests/ScriptedPermissionStepTests.swift (new), ScriptedStubModelTests.swift, Tests/FoundationModelsACPAgentTestSupport/RecordingClient.swift (records permission requests).
+    - limit: the step needs a client that answers form questions (same capability gate as `elicit`). The IntegrationTests package cannot build inside the worktree folder (its dependency name is the main folder name), so it was not built here. CI proves that build.
+    - next: review.
+  timestamp: 2026-11-04T19:22:58.852242+00:00
+- actor: claude-code
+  id: 01m6m0g6se2bkxghqt1wszyjgb
+  text: |-
+    ### review — findings
+    - evidence: review sha ebd9069~1..ebd9069: 7 findings (ScriptedPermission.swift:62, :74; ScriptedSessionBackend.swift:466; RecordingClient.swift:105, :119; ScriptedPermissionStepTests.swift:80, :208). Run complete: 0 failed, 0 skipped rules. README.md has no validator; I checked it by hand against ScriptedPermission.swift, ElicitationRelay.swift and ScriptedElicitation.swift: every statement holds. IntegrationTests not run (CI only).
+    - next: implementer fixes the 7 items, then /review again.
+  timestamp: 2026-11-04T19:27:45.966532+00:00
+- actor: claude-code
+  id: 01m6m0n30xbcqzpn24f69z4qa5
+  text: |-
+    ### implement — changed
+    - evidence: all 7 findings fixed and boxes flipped. Build: `swift build --build-tests` ok; `swift build --build-tests --package-path IntegrationTests` ok (not run). Unit run (ScriptedPermissionStepTests, ChildPermissionTests, ScriptedStubModelTests, ElicitationRelay*, ChildElicitation*, ScriptedElicitation, HotResumeTests, SubagentSessionsReplayTests): 109 tests, 10 suites, 0 failures.
+    - ScriptedPermission.swift:62 and :74: ScriptedElicitation.runCodeArguments now takes requestedSchema and acceptedValue; the snippet builder is private there and is the only one. ScriptedPermission.runCodeArguments only gives its schema and accepted value.
+    - ScriptedSessionBackend.swift:466: `.elicit` and `.permission` share one case and one askUser call; a private questionArguments(of:) maps the step to its arguments.
+    - RecordingClient.swift:105 and :119: private generic record(_:into:) and waitForCount(_:in:label:) serve both create and permission recorders.
+    - ScriptedPermissionStepTests.swift:80: `permissions(of:)` helper unwraps with #require (all 3 uses). :208: the root prompt Task is stored on AskingRun; waitForTheEndOfTheChild awaits it, AskingRun.close() cancels it before the fixture closes; the pending-request cancel test also waits for the child end.
+    - files: Sources/FoundationModelsACPAgent/Configuration/ScriptedElicitation.swift, ScriptedPermission.swift, ScriptedSessionBackend.swift, Tests/FoundationModelsACPAgentTestSupport/RecordingClient.swift, Tests/FoundationModelsACPAgentTests/ScriptedPermissionStepTests.swift
+    - next: /review.
+  timestamp: 2026-11-04T19:30:25.949826+00:00
+position_column: review
+position_ordinal: '80'
 title: 'Stub script step "permission": the run sends session/request_permission and waits for the outcome, also in a child run'
 ---
 ## What
@@ -18,15 +49,30 @@ Needed: a step `{"permission": "<title>"}`. The run sends `session/request_permi
 5. Docs: add the step to the stub script section of README.md (ASD-STE100 Simplified Technical English).
 
 ## Acceptance Criteria
-- [ ] A script with `{"permission":"..."}` in the root session sends exactly one `session/request_permission` under the root id, waits, and plays the rest after a selected outcome.
-- [ ] A cancelled outcome ends the pass.
-- [ ] In a child run, the request shows under the child session id exactly once and never under the root id.
-- [ ] `session/cancel` of the child while a request is pending ends the request with the cancelled outcome.
-- [ ] The grammar comment and the README name the step.
+- [x] A script with `{"permission":"..."}` in the root session sends exactly one `session/request_permission` under the root id, waits, and plays the rest after a selected outcome.
+- [x] A cancelled outcome ends the pass.
+- [x] In a child run, the request shows under the child session id exactly once and never under the root id.
+- [x] `session/cancel` of the child while a request is pending ends the request with the cancelled outcome.
+- [x] The grammar comment and the README name the step.
 
 ## Tests
-- [ ] Unit tests over the in-process wire (the existing fixtures with a scripted client that answers or cancels the request), including a child run with a gate/hold so that the request is pending when the cancel arrives.
-- [ ] Run the touched unit suites. Do NOT run the IntegrationTests package (CI only).
+- [x] Unit tests over the in-process wire (the existing fixtures with a scripted client that answers or cancels the request), including a child run with a gate/hold so that the request is pending when the cancel arrives.
+- [x] Run the touched unit suites. Do NOT run the IntegrationTests package (CI only).
 
 ## Workflow
 - Use `/tdd`. #subagents
+
+## Review Findings (2026-11-04 13:23)
+
+> Scope: `review sha ebd9069~1..ebd9069` — reviewed the diffs only — lines this change added or modified. 9 file(s) reviewed, 1 not reviewed.
+
+> 1 file(s) not reviewed — no validator matched:
+> - `README.md` — no validator matches this file
+
+- [x] `Sources/FoundationModelsACPAgent/Configuration/ScriptedPermission.swift:62` `reuse/reuse` — ScriptedPermission.runCodeArguments(asking:) repeats the behavior of ScriptedElicitation.runCodeArguments(asking:). Both encode the title or message as a JSON literal, wrap the snippet in a runCode arguments dictionary, and return the JSON text. The duplicate is a parallel copy of an existing function that is almost what this step needs, so a later fix to one path would not reach the other. Generalize ScriptedElicitation.runCodeArguments so it takes the question's schema and reply handling as parameters, or move the shared encoding and dictionary wrapping into one helper that both ScriptedElicitation and ScriptedPermission call. Keep each case's specific snippet text in its own file.
+- [x] `Sources/FoundationModelsACPAgent/Configuration/ScriptedPermission.swift:74` `reuse/reuse` — ScriptedPermission.snippet(asking:) is a near-copy of ScriptedElicitation.snippet(asking:). Both check for the elicit global, return the refusal marker with Refusal.unavailable, encode the title or message, call elicit, and map a non-accept reply to the refusal marker. Only the request shape and the accepted value differ, so the copy diverges from the canonical sandbox-question path. Parameterize the snippet builder in ScriptedElicitation with the requestedSchema and the accepted-value expression, then call that shared builder from ScriptedPermission with the permission field and its schema. This keeps one implementation of the refusal and marker logic.
+- [x] `Sources/FoundationModelsACPAgent/Configuration/ScriptedSessionBackend.swift:466` `duplication/duplication` — The new `.permission` case in `play` repeats the `.elicit` case. Both compute the `runCode` arguments, call `askUser`, and return when the user gave no answer. Only the argument builder differs. Two copies of the same control flow can drift apart, for example if one later gains a yield or a lock. Merge the two cases into one helper or one case. For example, add a private function that maps a question step (`elicit` or `permission`) to its `runCode` arguments, then run one `askUser` call for both. This keeps the control flow in one place. The step-to-arguments mapping can stay per step.
+- [x] `Tests/FoundationModelsACPAgentTestSupport/RecordingClient.swift:105` `reuse/reuse` — ElicitationWireRecorder.recordPermission(request:) repeats the append-under-watch pattern of recordCreate(request:). Both append to a WatchedValue through update, so the same behavior is written twice in one actor. Add one generic private helper, for example record(_:into:) over a WatchedValue<[Element]>, and call it from both recordCreate and recordPermission. Alternatively, keep the two one-line methods and note that they share the pattern.
+- [x] `Tests/FoundationModelsACPAgentTestSupport/RecordingClient.swift:119` `reuse/reuse` — ElicitationWireRecorder.waitForPermissions(count:) repeats the count-based wait of waitForCreates(count:) on a different WatchedValue. The two waits differ only in the element type and the label, so the same wait logic lives in two places. Make one generic helper, for example waitForCount<Element>(_ watched: WatchedValue<[Element]>, count: Int, label: String), and let both waitForCreates and waitForPermissions call it.
+- [x] `Tests/FoundationModelsACPAgentTests/ScriptedPermissionStepTests.swift:80` `swift/optionals` — A test reads the recorder with `?? []`. If the recorder is nil, the test uses an empty list instead of stopping with a clear failure. The rule asks for an unwrap with an assertion in a test. Replace the fallback with `let recorder = try #require(run.fixture.harness.elicitations)` and read `await recorder.permissions` from it.
+- [x] `Tests/FoundationModelsACPAgentTests/ScriptedPermissionStepTests.swift:208` `swift/concurrency` — The root prompt runs in an unstructured `Task` whose handle is discarded (`_ = Task { … }`). The task is never stored, awaited, or cancelled, and any error it throws is lost. The prompt stays open until the child ends, so the test cannot tell whether the prompt failed. Store the handle (for example `let rootPrompt = Task { … }`) on `AskingRun`. Cancel it in the fixture close path, and await `rootPrompt.value` after the child ends, so a thrown error fails the test.

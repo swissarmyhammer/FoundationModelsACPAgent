@@ -53,27 +53,52 @@ enum ScriptedElicitation {
 
   /// The arguments of the `runCode` call that asks `message`.
   ///
-  /// - Parameter message: The message of the question.
+  /// One implementation serves each question step: the `elicit` step asks the
+  /// plain question, and the `permission` step (``ScriptedPermission``)
+  /// asks a form question with its own schema and its own accepted value.
+  ///
+  /// - Parameters:
+  ///   - message: The message of the question.
+  ///   - requestedSchema: The source of the schema of a form question, or
+  ///     `nil` for the plain question.
+  ///   - acceptedValue: The source of the expression that gives the output
+  ///     of an accepted answer. The expression reads the `reply` variable.
   /// - Returns: The arguments, as JSON.
   /// - Throws: The encoding error.
-  static func runCodeArguments(asking message: String) throws -> String {
-    let arguments = [NoOpToolCall.snippetProperty: try snippet(asking: message)]
+  static func runCodeArguments(
+    asking message: String, requestedSchema: String? = nil,
+    acceptedValue: String = defaultAcceptedValue
+  ) throws -> String {
+    let source = try snippet(
+      asking: message, requestedSchema: requestedSchema, acceptedValue: acceptedValue)
+    let arguments = [NoOpToolCall.snippetProperty: source]
     return String(decoding: try JSONEncoder().encode(arguments), as: UTF8.self)
   }
 
-  /// The snippet that asks `message` and returns the answer text. It
-  /// returns a refusal when the user gives no answer, and when the
-  /// sandbox has no `elicit` global.
+  /// The expression that gives the output of an accepted plain question.
+  static let defaultAcceptedValue = "reply.content"
+
+  /// The snippet that asks `message` and returns the answer. It returns a
+  /// refusal when the user gives no answer, and when the sandbox has no
+  /// `elicit` global.
   ///
-  /// - Parameter message: The message of the question.
+  /// - Parameters:
+  ///   - message: The message of the question.
+  ///   - requestedSchema: The source of the schema of a form question, or
+  ///     `nil` for the plain question.
+  ///   - acceptedValue: The source of the output of an accepted answer.
   /// - Returns: The source of the snippet.
   /// - Throws: The encoding error of the message.
-  private static func snippet(asking message: String) throws -> String {
+  private static func snippet(
+    asking message: String, requestedSchema: String?, acceptedValue: String
+  ) throws -> String {
     let literal = String(decoding: try JSONEncoder().encode(message), as: UTF8.self)
+    let question =
+      requestedSchema.map { "{ message: \(literal), requestedSchema: \($0) }" } ?? literal
     return """
       if (typeof elicit !== "function") { return "\(refusalMarker)\(Refusal.unavailable.rawValue)"; }
-      const reply = await elicit(\(literal));
-      return reply.action === "accept" ? reply.content : "\(refusalMarker)" + reply.action;
+      const reply = await elicit(\(question));
+      return reply.action === "accept" ? \(acceptedValue) : "\(refusalMarker)" + reply.action;
       """
   }
 

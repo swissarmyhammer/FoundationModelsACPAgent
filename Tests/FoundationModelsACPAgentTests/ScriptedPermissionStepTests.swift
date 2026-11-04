@@ -71,13 +71,25 @@ import Testing
     return (fixture, updates)
   }
 
+  /// The permission requests that the client got.
+  ///
+  /// - Parameter fixture: The fixture of the run.
+  /// - Returns: The requests, in arrival order.
+  /// - Throws: A failed expectation when the harness has no recorder.
+  private static func permissions(of fixture: ScriptedPromptFixture) async throws
+    -> [RequestPermissionRequest]
+  {
+    let recorder = try #require(fixture.harness.elicitations)
+    return await recorder.permissions
+  }
+
   // MARK: - The request
 
   /// One step makes one request at the client, and it names the session of
   /// the run.
   @Test func theRequestGoesOutOnceUnderTheSessionOfTheRun() async throws {
     let run = try await Self.run(resolving: .select(ScriptedPermission.allowOptionId))
-    let requests = await run.fixture.harness.elicitations?.permissions ?? []
+    let requests = try await Self.permissions(of: run.fixture)
 
     #expect(requests.map(\.sessionId) == [run.fixture.sessionId])
     await run.fixture.close()
@@ -86,7 +98,7 @@ import Testing
   /// The request carries the title of the step.
   @Test func theRequestCarriesTheTitleOfTheStep() async throws {
     let run = try await Self.run(resolving: .select(ScriptedPermission.allowOptionId))
-    let requests = await run.fixture.harness.elicitations?.permissions ?? []
+    let requests = try await Self.permissions(of: run.fixture)
 
     #expect(requests.map(\.title) == [Self.title])
     await run.fixture.close()
@@ -95,7 +107,7 @@ import Testing
   /// The request offers allow once and reject once.
   @Test func theRequestOffersAllowOnceAndRejectOnce() async throws {
     let run = try await Self.run(resolving: .select(ScriptedPermission.allowOptionId))
-    let requests = await run.fixture.harness.elicitations?.permissions ?? []
+    let requests = try await Self.permissions(of: run.fixture)
 
     #expect(requests.first?.options.map(\.kind) == [.allowOnce, .rejectOnce])
     await run.fixture.close()
@@ -178,11 +190,20 @@ import Testing
     /// The client model of the child session.
     let child: SessionModel
 
+    /// The prompt of the root session. It stays open until the child ends.
+    let rootPrompt: Task<Void, any Error>
+
     /// The id of the child session.
     var childId: SessionId { child.sessionId }
 
     /// The id of the root session.
     var rootId: SessionId { fixture.sessionId }
+
+    /// Cancels the prompt of the root session, then closes the fixture.
+    func close() async {
+      rootPrompt.cancel()
+      await fixture.close()
+    }
   }
 
   /// Starts the root session with a child that asks permission, and waits
@@ -205,8 +226,8 @@ import Testing
     let fixture = try await ScriptedPromptFixture.make(
       script: script, label: label, workingDirectory: cwd)
     let root = fixture.sessionId
-    _ = Task {
-      try await fixture.harness.connection.prompt(
+    let rootPrompt = Task {
+      _ = try await fixture.harness.connection.prompt(
         AgentClientHarness.makePromptRequest(sessionId: root, text: rootMarker))
     }
     let rootModel = fixture.session
@@ -214,7 +235,7 @@ import Testing
       rootModel.children.first?.pendingPermissions.isEmpty == false
     }
     let child = try #require(await rootModel.children.first)
-    return AskingRun(fixture: fixture, child: child)
+    return AskingRun(fixture: fixture, child: child, rootPrompt: rootPrompt)
   }
 
   /// Waits for the end of the turn of the child, then gives the
@@ -227,9 +248,11 @@ import Testing
     -> [UpdateSessionNotification]
   {
     let root = run.rootId
-    return try await run.fixture.collector.wait(for: "the child ends") { updates in
+    let updates = try await run.fixture.collector.wait(for: "the child ends") { updates in
       endStopReason(in: updates.filter { $0.sessionId != root }) != nil
     }
+    try await run.rootPrompt.value
+    return updates
   }
 
   /// The stop reason of the first `idle` that has one.
@@ -257,7 +280,7 @@ import Testing
 
     #expect(requests.first?.sessionId == run.childId)
     #expect(all.map(\.sessionId) == [run.childId])
-    await run.fixture.close()
+    await run.close()
   }
 
   /// The root session does not hold the request of its child.
@@ -270,7 +293,7 @@ import Testing
     _ = try await Self.waitForTheEndOfTheChild(run)
 
     #expect(rootHeld == 0)
-    await run.fixture.close()
+    await run.close()
   }
 
   /// The answer of the user reaches the child run. The run goes on and plays
@@ -286,7 +309,7 @@ import Testing
     let childText = ScriptedPromptFixture.agentText(
       in: updates.filter { $0.sessionId == run.childId })
     #expect(childText.contains(Self.afterText))
-    await run.fixture.close()
+    await run.close()
   }
 
   /// A cancel of the child while the request waits ends the request: the
@@ -297,9 +320,10 @@ import Testing
     try await run.fixture.harness.connection.sessionCancel(
       CancelSessionNotification(sessionId: run.childId))
     try await PermissionWait.waitUntilNoPendingPermission(in: run.child)
+    _ = try await Self.waitForTheEndOfTheChild(run)
 
     #expect(await run.child.pendingPermissions.isEmpty)
-    await run.fixture.close()
+    await run.close()
   }
 
   /// A cancel of the child ends the pass of the child as cancelled.
@@ -312,7 +336,7 @@ import Testing
 
     let childUpdates = updates.filter { $0.sessionId == run.childId }
     #expect(Self.endStopReason(in: childUpdates) == .cancelled)
-    await run.fixture.close()
+    await run.close()
   }
 }
 

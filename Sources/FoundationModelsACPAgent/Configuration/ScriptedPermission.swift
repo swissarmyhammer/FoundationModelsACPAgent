@@ -54,33 +54,22 @@ enum ScriptedPermission {
     ]
   }
 
-  /// The arguments of the `runCode` call that asks for permission.
+  /// The arguments of the `runCode` call that asks for permission. The
+  /// call is the question of ``ScriptedElicitation``, with a schema that has
+  /// the field ``answerField`` and an output that is the id of the selected
+  /// option. The refusal and the marker logic stay in ``ScriptedElicitation``.
   ///
   /// - Parameter title: The title of the request.
   /// - Returns: The arguments, as JSON.
   /// - Throws: The encoding error.
   static func runCodeArguments(asking title: String) throws -> String {
-    let arguments = [NoOpToolCall.snippetProperty: try snippet(asking: title)]
-    return String(decoding: try JSONEncoder().encode(arguments), as: UTF8.self)
-  }
-
-  /// The snippet that asks for permission and returns the id of the
-  /// selected option. It returns a refusal when the user selects nothing, and
-  /// when the sandbox has no `elicit` global.
-  ///
-  /// - Parameter title: The title of the request.
-  /// - Returns: The source of the snippet.
-  /// - Throws: The encoding error of the title.
-  private static func snippet(asking title: String) throws -> String {
-    let literal = String(decoding: try JSONEncoder().encode(title), as: UTF8.self)
-    let marker = ScriptedElicitation.refusalMarker
-    let unavailable = ScriptedElicitation.Refusal.unavailable.rawValue
-    return """
-      if (typeof elicit !== "function") { return "\(marker)\(unavailable)"; }
-      const reply = await elicit({ message: \(literal), requestedSchema: { type: "object", \
-      properties: { \(answerField): { type: "string" } }, required: ["\(answerField)"] } });
-      return reply.action === "accept" ? reply.content.\(answerField) : "\(marker)" + reply.action;
-      """
+    try ScriptedElicitation.runCodeArguments(
+      asking: title,
+      requestedSchema: """
+        { type: "object", properties: { \(answerField): { type: "string" } }, \
+        required: ["\(answerField)"] }
+        """,
+      acceptedValue: "reply.content.\(answerField)")
   }
 
   /// Whether a question is the question of a permission step.

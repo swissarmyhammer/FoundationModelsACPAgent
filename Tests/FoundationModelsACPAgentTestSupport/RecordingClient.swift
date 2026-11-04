@@ -82,7 +82,7 @@ public actor ElicitationWireRecorder {
   ///
   /// - Parameter request: The request to record.
   public func recordCreate(request: CreateElicitationRequest) {
-    recordedCreates.update { $0.append(request) }
+    Self.record(request, into: recordedCreates)
   }
 
   /// Waits until at least `count` create requests were recorded. Returns
@@ -94,16 +94,15 @@ public actor ElicitationWireRecorder {
   /// - Throws: ``ConditionWaitCancelled`` when the task of the wait is
   ///   cancelled before the requests come.
   public nonisolated func waitForCreates(count: Int) async throws -> [CreateElicitationRequest] {
-    try await recordedCreates.wait(for: "\(count) elicitation create request(s)") {
-      $0.count >= count
-    }
+    try await Self.waitForCount(
+      count, in: recordedCreates, label: "elicitation create request(s)")
   }
 
   /// Appends one permission request.
   ///
   /// - Parameter request: The request to record.
   public func recordPermission(request: RequestPermissionRequest) {
-    recordedPermissions.update { $0.append(request) }
+    Self.record(request, into: recordedPermissions)
   }
 
   /// Waits until at least `count` permission requests were recorded.
@@ -116,9 +115,35 @@ public actor ElicitationWireRecorder {
   ///   cancelled before the requests come.
   public nonisolated func waitForPermissions(count: Int) async throws -> [RequestPermissionRequest]
   {
-    try await recordedPermissions.wait(for: "\(count) permission request(s)") {
-      $0.count >= count
-    }
+    try await Self.waitForCount(count, in: recordedPermissions, label: "permission request(s)")
+  }
+
+  /// Appends one element to a watched list, and resumes each wait whose
+  /// condition is now true.
+  ///
+  /// - Parameters:
+  ///   - element: The element to record.
+  ///   - watched: The list that holds the recorded elements.
+  private static func record<Element: Sendable>(
+    _ element: Element, into watched: WatchedValue<[Element]>
+  ) {
+    watched.update { $0.append(element) }
+  }
+
+  /// Waits until a watched list holds at least `count` elements. Returns at
+  /// once when it does now.
+  ///
+  /// - Parameters:
+  ///   - count: The number of elements to wait for.
+  ///   - watched: The list that holds the recorded elements.
+  ///   - label: The name of the elements, for the error of a cancelled wait.
+  /// - Returns: The recorded elements, in arrival order.
+  /// - Throws: ``ConditionWaitCancelled`` when the task of the wait is
+  ///   cancelled before the elements come.
+  private static func waitForCount<Element: Sendable>(
+    _ count: Int, in watched: WatchedValue<[Element]>, label: String
+  ) async throws -> [Element] {
+    try await watched.wait(for: "\(count) \(label)") { $0.count >= count }
   }
 
   /// Appends one completion notification.
