@@ -25,9 +25,37 @@ struct ReplayedSession {
   /// The announcements of the children of the whole tree, the parent before the child. Each
   /// session announces its own children, so the order of the sessions is the order of the
   /// announcements.
+  ///
+  /// The announcement of a child that the replay covers carries the idle state of that child, if
+  /// its own history ends in one (``endedState(of:)``). A shutdown stops the runs and sends no
+  /// final announcement of them, so the history of the parent can hold the state `running` for a
+  /// child that went idle. The replay sends no `state_update` of a child, and the final status of
+  /// the `agents` call of the child is in the history of the parent, so the announcement is the
+  /// only place that tells the idle state of the child before that final status.
   var announcements: [Announcement] {
-    let own = history.replayAnnouncements.map { Announcement(sessionId: sessionId, update: $0) }
+    let own = history.replayAnnouncements.map { update -> Announcement in
+      Announcement(sessionId: sessionId, update: endedState(of: update))
+    }
     return own + children.flatMap(\.announcements)
+  }
+
+  /// The announcement of a child, with the idle state of the child when the history of the child
+  /// ends in one.
+  ///
+  /// - Parameter announcement: An announcement from the history of this session.
+  /// - Returns: The announcement with the idle state of the child. The announcement as it is when
+  ///   the child is not in the replay, when its history holds no state, or when that state is not
+  ///   idle.
+  private func endedState(of announcement: SessionUpdate) -> SessionUpdate {
+    guard case .subagentUpdate(var update) = announcement,
+      let child = children.first(where: { $0.sessionId == update.sessionId }),
+      case .idle(var idle)? = child.history.agentState
+    else {
+      return announcement
+    }
+    idle.background = nil
+    update.state = .value(.idle(idle))
+    return .subagentUpdate(update)
   }
 
   /// The child that an update ends, if the update is the final status of the `agents` call that

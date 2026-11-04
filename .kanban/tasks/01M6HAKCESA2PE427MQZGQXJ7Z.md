@@ -24,8 +24,8 @@ comments:
 
     Checked, no finding: the `kind` and `ts` keys are removed from the payload; the `ts` instant keeps the millisecond; the cache is an actor and is safe for the threads; a deleted folder that is checked before the read gives `notFound`; an id that no root holds is not cached, so a new project is found at the next read; the session directory of Router is flat, so a child session folder is under the same root; the three call sites (`SessionSetup.swift:699`, `SessionResume.swift:435`, `ConfigOptions.swift:261`) pass the reader, and the parameter has no default, so a missing call site fails to compile.
   timestamp: 2026-11-04T06:42:26.072080+00:00
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: ffffa680
 title: Give ToolContext a session transcript reader from TranscriptStore
 ---
 ## What

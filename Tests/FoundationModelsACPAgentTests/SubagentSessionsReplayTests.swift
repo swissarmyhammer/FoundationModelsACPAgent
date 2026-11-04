@@ -58,6 +58,37 @@ import Testing
         return false
       }
     }
+
+    /// Every announcement on the wire, in wire order.
+    var announcements: [SubagentUpdate] {
+      updates.compactMap { notification in
+        if case .subagentUpdate(let update) = notification.update {
+          return update
+        }
+        return nil
+      }
+    }
+
+    /// Proves that the replay sent something to check, so a check that nothing of a kind went
+    /// out cannot pass on an empty wire. The replay announced the child and the grandchild, and
+    /// sent history under the id of each of the three sessions.
+    ///
+    /// - Throws: An issue when the wire holds no announcement or no history of a session.
+    func requireReplayed() throws {
+      _ = try #require(announcement(of: recording.leaf))
+      try requireHistory()
+      try #require(!updates(of: recording.leaf).isEmpty)
+    }
+
+    /// Proves that the wire holds history of the root, and the announcement and history of its
+    /// child.
+    ///
+    /// - Throws: An issue when one of them is missing.
+    func requireHistory() throws {
+      _ = try #require(announcement(of: recording.child))
+      try #require(!updates(of: recording.root).isEmpty)
+      try #require(!updates(of: recording.child).isEmpty)
+    }
   }
 
   // MARK: - Fixtures
@@ -78,6 +109,18 @@ import Testing
         replayFrom: replayFrom))
     let updates = Array(await fixture.collector.updates.dropFirst(countBefore))
     return ResumedWire(fixture: fixture, recording: recording, updates: updates)
+  }
+
+  /// The control of the checks that a resume with no `replayFrom` sends nothing. It resumes a
+  /// second recording of the chain with the replay from the start, and proves that the same
+  /// agent does send history then. So an empty result of the other request proves the request,
+  /// and not a wire that never carries anything.
+  ///
+  /// - Throws: An issue when the replay sends no history, or whatever the fixture throws.
+  private static func requireAReplayToSendHistory() async throws {
+    let control = try await resume(replayFrom: .start(ReplayFromStart()))
+    try control.requireHistory()
+    await control.fixture.close()
   }
 
   /// The text of an update, as the JSON that goes on the wire.
@@ -147,14 +190,10 @@ import Testing
   func aReplayedAnnouncementCarriesNoCapabilities() async throws {
     let wire = try await Self.resume(replayFrom: .start(ReplayFromStart()))
 
-    let carried = wire.updates.contains { notification in
-      if case .subagentUpdate(let update) = notification.update {
-        return update.capabilities != .unchanged
-      }
-      return false
-    }
+    let announced = wire.announcements
+    try #require(!announced.isEmpty)
 
-    #expect(!carried)
+    #expect(announced.allSatisfy { $0.capabilities == .unchanged })
     await wire.fixture.close()
   }
 
@@ -187,6 +226,8 @@ import Testing
   func theHistoryOfTheGrandchildIsNotOnTheStreamOfTheRoot() async throws {
     let wire = try await Self.resume(replayFrom: .start(ReplayFromStart()))
 
+    try wire.requireReplayed()
+
     let texts = wire.updates(of: wire.recording.root).map { Self.json(of: $0.update) }
 
     #expect(!texts.contains { $0.contains(Self.leafText) })
@@ -200,6 +241,8 @@ import Testing
   func theReplaySendsNoElicitationRequest() async throws {
     let wire = try await Self.resume(replayFrom: .start(ReplayFromStart()))
 
+    try wire.requireReplayed()
+
     let requests = await wire.fixture.harness.elicitations?.creates
 
     #expect(requests?.isEmpty == true)
@@ -212,6 +255,7 @@ import Testing
   func theReplaySendsNoStateOfAChild() async throws {
     let wire = try await Self.resume(replayFrom: .start(ReplayFromStart()))
     let root = wire.recording.root
+    try wire.requireReplayed()
 
     let childStates = wire.updates.filter { notification in
       notification.sessionId != root && notification.update.isStateUpdate
@@ -221,10 +265,43 @@ import Testing
     await wire.fixture.close()
   }
 
+  /// The shutdown stops the runs and ends no announcement of them, so the history of the root
+  /// can hold the state `running` for a child that went idle. The child itself went idle: its own
+  /// history holds that state. The replayed announcement carries the idle state of the child, so
+  /// the final status of the `agents` call comes after the idle state of the child.
+  @Test
+  func theReplayedAnnouncementCarriesTheIdleStateOfTheChild() throws {
+    let child = SessionId(rawValue: "child")
+    var parentHistory = SessionMergeEngine()
+    parentHistory.apply(
+      .subagentUpdate(
+        SubagentUpdate(sessionId: child, state: .value(.running(RunningStateUpdate())))))
+    var childHistory = SessionMergeEngine()
+    childHistory.apply(.stateUpdate(.idle(IdleStateUpdate(background: [], stopReason: .cancelled))))
+    let tree = ReplayedSession(
+      sessionId: SessionId(rawValue: "root"), history: parentHistory,
+      children: [
+        ReplayedSession(sessionId: child, history: childHistory, children: [])
+      ])
+
+    let announced = try #require(tree.announcements.first)
+
+    guard case .subagentUpdate(let update) = announced.update,
+      case .value(.idle(let idle)) = update.state
+    else {
+      Issue.record("The announcement of the child does not carry an idle state.")
+      return
+    }
+    #expect(idle.stopReason == .cancelled)
+    #expect(idle.background == nil)
+  }
+
   /// The trace of the whole resume follows the rules of the validator for sub-agent sessions.
   @Test
   func theWireOfTheResumeFollowsTheRulesOfTheValidator() async throws {
     let wire = try await Self.resume(replayFrom: .start(ReplayFromStart()))
+
+    try wire.requireReplayed()
 
     let violations = SubagentWireTraceValidator().validate(wire.trace)
 
@@ -239,6 +316,7 @@ import Testing
   func aResumeWithNoReplayFromSendsNoHistoryOfTheChildren() async throws {
     let wire = try await Self.resume(replayFrom: nil)
     let recording = wire.recording
+    try await Self.requireAReplayToSendHistory()
 
     #expect(wire.updates(of: recording.child).isEmpty)
     #expect(wire.updates(of: recording.leaf).isEmpty)
@@ -249,6 +327,7 @@ import Testing
   @Test
   func aResumeWithNoReplayFromSendsNoMessageOfTheRoot() async throws {
     let wire = try await Self.resume(replayFrom: nil)
+    try await Self.requireAReplayToSendHistory()
 
     let messages = wire.updates.filter { WireItem.of(update: $0.update) == .message }
 

@@ -54,6 +54,36 @@ comments:
     - note: with the user-close quit helper (recordInterruptedChain) the history has a cancelled agents call and a running child, which breaks validator rule 8; the new test records with the orderly shutdown instead.
     - next: /review
   timestamp: 2026-11-04T06:57:17.528837+00:00
+- actor: claude-code
+  id: 01m6jnzrb37c0afjh1qptm34nm
+  text: |-
+    ### review — findings
+    - evidence: review sha 6bd4e84~1..6bd4e84, run twice. 3 findings: SessionHistory.swift:245, SubagentSessionsReplayTests.swift:157, SubagentSessionsReplayTests.swift:220. Rule code-hygiene/dead-code-swift failed on both runs (build error at RecordedSessionTranscriptReader.swift:85, 'TranscriptEvent' has no member 'read', file not in this commit), so the dead-code check did not run.
+    - known blocker, not a finding: ShellSessionOwnerTests.aCommandAfterAModelSlotSwitchRecordsTheACPSessionID
+    - next: fix the 3 findings, then run review again.
+  timestamp: 2026-11-04T07:04:46.691189+00:00
+- actor: claude-code
+  id: 01m6jpnf58j25k0j3b31x2rm7f
+  text: |-
+    ### implement — changed
+    - evidence: 2 files. Sources/FoundationModelsACPAgent/Agent/SessionHistory.swift, Tests/FoundationModelsACPAgentTests/SubagentSessionsReplayTests.swift.
+    - build: `swift build` failed first at RecordedSessionTranscriptReader.swift:85 (TranscriptEvent has no member read). `swift package update` moved the sibling packages to main (Router 6331c9c, Agents 5e8d090, Extras 0b45545, Multitool bf3f072). `swift build` then passed. No sibling file and no RecordedSessionTranscriptReader.swift change.
+    - finding SessionHistory.swift isReplayedState: the `default:` is gone. Every SessionUpdate case is listed. Same cause in the commit: no other `default:` on SessionUpdate in the source files of 6bd4e84.
+    - findings at SubagentSessionsReplayTests :157 and :220: both tests now require their precondition before the negative check. Same cause removed from the whole file: the tests for the history of the grandchild not on the root stream, the elicitation request, the validator trace, and the two no-replay tests now call `requireReplayed()` (announcements and history of all three sessions on the wire). The two no-replay tests also run a control (`requireAReplayToSendHistory()`): the same agent with `replayFrom: start` does send history, so an empty result proves the request. A second resume of the same root on the same agent sends no child history (a second root resume does not replay the children), so the control uses a second recording.
+    - tests: SubagentSessionsReplayTests 11 of 12 pass. SessionHistoryTests 4, ResumeSyncTests 16, ResumeNestedSessionsTests 8 all pass.
+    - RED, not from this change: `theWireOfTheResumeFollowsTheRulesOfTheValidator` fails when it runs alone (3 of 3): rule finalToolCallLast, "final tool call before the final idle state of <child>". It passed only in runs where the whole suite ran in parallel. Cause: the recorded history has the root `agents` call `cancelled` while the child state is `running` (shutdown order). Product order problem, new task added on the board. I did not change SessionLifecycle or ToolCatalog.
+    - known blocker, not touched: ShellSessionOwnerTests.aCommandAfterAModelSlotSwitchRecordsTheACPSessionID. SessionSetup.swift and ConfigOptions.swift not edited.
+    - boxes: the 3 findings are [x]. Task stays in doing.
+    - next: decide the shutdown-order task, then /test and /review.
+  timestamp: 2026-11-04T07:16:38.184847+00:00
+- actor: claude-code
+  id: 01m6jqk7v17exfb8jr8dfqhhmc
+  text: |-
+    ### implement — changed
+    - The red test `theWireOfTheResumeFollowsTheRulesOfTheValidator` is fixed by ^xyw6858: the replayed announcement of a child now carries the idle state of the child (SessionResumeReplay.swift). The edits for the 3 review findings stay as they were.
+    - tests: SubagentSessionsReplayTests 13 of 13 pass. Full `swift test`: only the known blocker ShellSessionOwnerTests.aCommandAfterAModelSlotSwitchRecordsTheACPSessionID fails, plus one load-only flake of noEventOfAChildComesBeforeItsAnnouncement (new task ^ntmvnnz).
+    - next: /test and /review.
+  timestamp: 2026-11-04T07:32:53.729428+00:00
 depends_on:
 - 01M6GJPPXWKQJ9E6SK5WD0CWZ7
 - 01M6GH30709S58BK3AQ1VMBAM7
@@ -87,3 +117,19 @@ Where: `Sources/FoundationModelsACPAgent/Agent/SessionResume.swift` (`replayHist
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #subagents
+
+## Review Findings (2026-11-04 01:01)
+
+> Scope: `review sha 6bd4e84~1..6bd4e84` — reviewed the diffs only — lines this change added or modified. 10 file(s) reviewed, 10 not reviewed.
+
+> 10 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 10 file(s)
+
+> ⚠️ tool rule 'code-hygiene/dead-code-swift' failed on two runs — the tool judged nothing, so its findings are missing. The build stopped with this error (the full compile command is trimmed):
+> `Sources/FoundationModelsACPAgent/Transcripts/RecordedSessionTranscriptReader.swift:85:38: error: type 'TranscriptEvent' has no member 'read'`
+> `error: Build failed`
+> That file is not part of this commit (last changed in 3a9e864, ^zgqxj7z).
+
+- [x] `Sources/FoundationModelsACPAgent/Agent/SessionHistory.swift:245` `swift/state-modeling` — The `default:` in `isReplayedState` silently classifies every current and future `SessionUpdate` case as replayed. A new state-like case added to the enum would reach the replay with no compiler prompt to decide. List every `SessionUpdate` case explicitly and return `false` or `true` for each, so the compiler flags any new case that is added to the enum.
+- [x] `Tests/FoundationModelsACPAgentTests/SubagentSessionsReplayTests.swift:157` `test-integrity/no-test-cheating` — The test aReplayedAnnouncementCarriesNoCapabilities checks only that no replayed subagent_update carries capabilities (#expect(!carried)). It does not first check that the replay sent any subagent_update. If the replay sends no announcement at all, the check passes with nothing proved. The test can therefore pass even when the announcement path is broken, which is the weakened-assertion pattern. Before the negative check, require that the announcement exists, for example `let announced = try #require(wire.announcement(of: wire.recording.child))`, and then check that the announced update at that position has `capabilities == .unchanged`. This keeps the test from passing vacuously.
+- [x] `Tests/FoundationModelsACPAgentTests/SubagentSessionsReplayTests.swift:220` `test-integrity/no-test-cheating` — The test theReplaySendsNoStateOfAChild checks only #expect(childStates.isEmpty). It does not first confirm that the child has any updates on the wire. If the child produces no update at all, the check passes with nothing proved. This is the same missing-precondition pattern as the finding at line 157. Add a precondition before the negative check, for example `#require(!wire.updates(of: wire.recording.child).isEmpty)`, so the test fails if the child sends nothing. Then assert that no child update is a stateUpdate.

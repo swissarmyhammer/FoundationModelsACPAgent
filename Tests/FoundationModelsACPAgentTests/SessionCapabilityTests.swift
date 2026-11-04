@@ -277,7 +277,7 @@ import Testing
     let (fixture, childId) = try await Self.makeFixtureWithChild()
     try await ScriptedPromptFixture.runPrompt(on: fixture, text: Self.rootPromptText)
     let child = try #require(await fixture.harness.agent.sessions[childId])
-    _ = try await child.session.send(Self.childPromptText)
+    _ = try child.session.send(Self.childPromptText)
     try await Self.waitForActivity(of: childId, in: fixture)
 
     let listed = try await fixture.harness.connection.listSessions(

@@ -242,7 +242,11 @@ extension SessionUpdate {
     switch self {
     case .stateUpdate, .subagentUpdate, .sessionInfoUpdate:
       return false
-    default:
+    case .userMessageChunk, .userMessage, .agentMessageChunk, .agentMessage, .agentThoughtChunk,
+      .agentThought, .toolCallContentChunk, .toolCallUpdate, .terminalUpdate,
+      .terminalOutputChunk, .planUpdate, .availableCommandsUpdate, .configOptionUpdate,
+      .usageUpdate, .notice, .compactionUpdate, .compactionSummaryChunk, .sessionMessage,
+      .sessionMessageChunk, .unknown:
       return true
     }
   }

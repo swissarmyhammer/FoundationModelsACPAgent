@@ -233,8 +233,14 @@ extension RoutedACPAgent {
   private func closeSessions(
     where isSelected: (SessionId) -> Bool, isShutdown: Bool = false
   ) async {
-    for (sessionId, entry) in sessions where !entry.isClosed && isSelected(sessionId) {
-      await tearDownSession(sessionId, entry: entry, isShutdown: isShutdown)
+    let open = sessions.filter { !$0.value.isClosed && isSelected($0.key) }
+    let parents = open.compactMapValues(\.parentSessionId)
+    for sessionId in Self.parentsFirst(Array(open.keys), parents: parents) {
+      // The teardown of a parent retires the sessions nested in it, so a nested one is closed
+      // when its turn comes.
+      if let entry = open[sessionId], !entry.isClosed {
+        await tearDownSession(sessionId, entry: entry, isShutdown: isShutdown)
+      }
     }
     await hooks.dispatcher.drain()
   }
@@ -251,6 +257,45 @@ extension RoutedACPAgent {
     case .transportFailed: "transportFailed"
     case .closedLocally: "closedLocally"
     }
+  }
+
+  // MARK: - The closing order
+
+  /// Puts the sessions of a close in the order of the visit: a session before the sessions nested
+  /// in it. The session that owns the surface stops the agent runs first, and then it retires the
+  /// sessions nested in it (``tearDownSession(_:entry:isShutdown:)``). A nested session that closes
+  /// before that would end its run as cancelled, and the result of the run would go to the
+  /// caller. The table has no order, so the visit sorts by the depth of each session. The ids
+  /// break a tie, so the order is the same on each call.
+  ///
+  /// - Parameters:
+  ///   - sessionIds: The sessions to visit.
+  ///   - parents: The parent of each nested session. A session with no key has no parent.
+  /// - Returns: Each session of `sessionIds` once, the less nested one first.
+  static func parentsFirst(_ sessionIds: [SessionId], parents: [SessionId: SessionId])
+    -> [SessionId]
+  {
+    sessionIds.sorted { lhs, rhs in
+      let (lhsDepth, rhsDepth) = (depth(of: lhs, in: parents), depth(of: rhs, in: parents))
+      return lhsDepth == rhsDepth ? lhs.rawValue < rhs.rawValue : lhsDepth < rhsDepth
+    }
+  }
+
+  /// The number of parents above a session. The walk ends after one step for each parent link, so
+  /// a cycle of links gives a number and does not loop without end.
+  ///
+  /// - Parameters:
+  ///   - sessionId: The session.
+  ///   - parents: The parent of each nested session.
+  /// - Returns: `0` for a session with no parent.
+  private static func depth(of sessionId: SessionId, in parents: [SessionId: SessionId]) -> Int {
+    var depth = 0
+    var current = sessionId
+    while depth < parents.count, let parent = parents[current] {
+      depth += 1
+      current = parent
+    }
+    return depth
   }
 
   // MARK: - The teardown
