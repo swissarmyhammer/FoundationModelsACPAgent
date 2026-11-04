@@ -15,8 +15,23 @@ comments:
     - boxes: all 3 ticked. Task stays in doing. SessionSetup.swift and ConfigOptions.swift not edited.
     - next: /test and /review.
   timestamp: 2026-11-04T07:32:51.537574+00:00
-position_column: doing
-position_ordinal: '8580'
+- actor: claude-code
+  id: 01m6jszrkz34fz2mcxxczag9xh
+  text: |-
+    ### review — findings
+    - evidence: review sha 4e7ec52~1..4e7ec52: 1 finding (attempted 7, failed 0), Tests/FoundationModelsACPAgentTests/SubagentSessionsReplayTests.swift:63
+    - next: fix the finding, then run /review again. Known blocker ShellSessionOwnerTests.aCommandAfterAModelSlotSwitchRecordsTheACPSessionID is not a finding.
+  timestamp: 2026-11-04T08:14:41.279712+00:00
+- actor: claude-code
+  id: 01m6jt1mwr6c26jpf4vdesgdce
+  text: |-
+    ### implement — changed
+    - finding fixed: one private static helper `announcement(in:)` in `ResumedWire` now holds the `.subagentUpdate` match. `announcement(of:)` and `announcements` both use it. No other copy of the match was in the file (`isAgentsCall` matches `.toolCallUpdate`, a different case).
+    - evidence: `swift test --filter SubagentSessionsReplayTests` - 13 tests in 1 suite passed. Changed file: Tests/FoundationModelsACPAgentTests/SubagentSessionsReplayTests.swift
+    - next: task stays in doing; ready for /review
+  timestamp: 2026-11-04T08:15:43.000349+00:00
+position_column: review
+position_ordinal: '80'
 title: 'Shutdown cancels the agents call of the root before the child state is idle: replay test of the validator fails alone'
 ---
 ## What
@@ -34,3 +49,12 @@ Look at: `tearDownSession` in `SessionLifecycle.swift` (open prompts are cancell
 - [x] Add a test that records the chain, shuts down, and checks the order. Run `swift test --filter SubagentSessionsReplayTests`.
 
 Found while working on ^awnkj0k. #subagents
+
+## Review Findings (2026-11-04 02:13)
+
+> Scope: `review sha 4e7ec52~1..4e7ec52` — reviewed the diffs only — lines this change added or modified. 6 file(s) reviewed, 10 not reviewed.
+
+> 10 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 10 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTests/SubagentSessionsReplayTests.swift:63` `reuse/reuse` — The new `announcements` property repeats the `.subagentUpdate` match that `announcement(of:)` already does at lines 53-60 of the same helper type. Two copies of the same match can drift apart, and a later fix to one would miss the other. Build one private helper that extracts the `SubagentUpdate` from a notification, then use it in both `announcements` and `announcement(of:)`. Alternatively, define `announcement(of:)` as a lookup over `announcements`, so the match lives in one place.

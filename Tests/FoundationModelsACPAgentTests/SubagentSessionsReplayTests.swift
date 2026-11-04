@@ -51,22 +51,23 @@ import Testing
     /// - Parameter child: The announced child.
     /// - Returns: The position, or `nil` when the wire holds no announcement of it.
     func announcement(of child: SessionId) -> Int? {
-      updates.firstIndex { notification in
-        if case .subagentUpdate(let update) = notification.update {
-          return update.sessionId == child
-        }
-        return false
-      }
+      updates.firstIndex { Self.announcement(in: $0)?.sessionId == child }
     }
 
     /// Every announcement on the wire, in wire order.
     var announcements: [SubagentUpdate] {
-      updates.compactMap { notification in
-        if case .subagentUpdate(let update) = notification.update {
-          return update
-        }
-        return nil
+      updates.compactMap(Self.announcement(in:))
+    }
+
+    /// The one place that matches a notification as an announcement.
+    ///
+    /// - Parameter notification: The notification.
+    /// - Returns: The announcement it carries, or `nil` for any other update.
+    private static func announcement(in notification: UpdateSessionNotification) -> SubagentUpdate? {
+      if case .subagentUpdate(let update) = notification.update {
+        return update
       }
+      return nil
     }
 
     /// Proves that the replay sent something to check, so a check that nothing of a kind went

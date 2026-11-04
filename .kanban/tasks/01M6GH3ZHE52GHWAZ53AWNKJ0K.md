@@ -84,12 +84,19 @@ comments:
     - tests: SubagentSessionsReplayTests 13 of 13 pass. Full `swift test`: only the known blocker ShellSessionOwnerTests.aCommandAfterAModelSlotSwitchRecordsTheACPSessionID fails, plus one load-only flake of noEventOfAChildComesBeforeItsAnnouncement (new task ^ntmvnnz).
     - next: /test and /review.
   timestamp: 2026-11-04T07:32:53.729428+00:00
+- actor: claude-code
+  id: 01m6jsw7258pv9vjvyp0nxvtx3
+  text: |-
+    ### review — clean
+    - evidence: review sha 37d8bd4~1..4e7ec52. counts: findings 0, confirmed 0, refuted 1, attempted 7, failed 0, skipped 0. All 3 prior findings are checked.
+    - next: none. Task moved to done.
+  timestamp: 2026-11-04T08:12:44.997857+00:00
 depends_on:
 - 01M6GJPPXWKQJ9E6SK5WD0CWZ7
 - 01M6GH30709S58BK3AQ1VMBAM7
 - 01M6GM0N9BFK37GGBWPAG9VE1X
-position_column: doing
-position_ordinal: '8480'
+position_column: done
+position_ordinal: ffffa780
 title: 'Replay the nested tree on session/resume with replayFrom start: announcements and child history before the response'
 ---
 ## What
