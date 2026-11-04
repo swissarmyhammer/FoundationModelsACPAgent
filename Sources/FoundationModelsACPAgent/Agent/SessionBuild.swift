@@ -117,6 +117,30 @@ struct SessionBuild {
 }
 
 extension RoutedACPAgent {
+  /// The gate that holds the updates of a nested session until the announcer opens it.
+  ///
+  /// The agents tool starts a nested session, so its surface has an announcer. A surface with
+  /// none is an unexpected state: the session then gets a gate that discards each update, and
+  /// the surprise is recorded here, in the debug build and in the log of a release build.
+  ///
+  /// - Parameters:
+  ///   - session: The Router session.
+  ///   - sessionId: The ACP session id of `session`.
+  ///   - build: The parts that the entry takes from the caller.
+  /// - Returns: The gate of the announcer, or a gate that discards every update.
+  private func nestedAnnouncementGate(
+    for session: any RoutedSession, sessionId: SessionId, build: SessionBuild
+  ) -> SessionAnnouncementGate {
+    guard let announcer = build.surface.agents?.announcer else {
+      assertionFailure("a nested session has no announcer")
+      ACPAgentTelemetry.logger(.sessionLifecycle).error(
+        "A nested session has no announcer; the gate discards every update of the session.",
+        metadata: ACPAgentTelemetry.sessionMetadata(sessionId))
+      return .discarded(owner: "\(session.id)")
+    }
+    return announcer.gate(for: session.id)
+  }
+
   /// The one build of a session, for a root session and for a nested
   /// sub-agent session. It makes the state ledger, the projector with its
   /// elicitation relay, the history sink, and the entry of the table. The
@@ -163,7 +187,7 @@ extension RoutedACPAgent {
     let announcement =
       parent == nil
       ? SessionAnnouncementGate(isOpen: true)
-      : build.surface.agents?.announcer.gate(for: session.id) ?? .discarded(owner: "\(session.id)")
+      : nestedAnnouncementGate(for: session, sessionId: sessionId, build: build)
     let send = historySink(for: sessionId, gate: announcement)
     let stateLedger = SessionStateLedger(
       send: send, announce: unrecordedSink(for: sessionId, gate: announcement))

@@ -179,10 +179,20 @@ actor CodeContextLeases {
   ///   - key: The key of the manager of the lease.
   private func release(root: URL, key: ManagerKey) async {
     guard let entry = entries[key] else {
+      reportMissingManager()
       return
     }
     await entry.manager.value.release(root: root)
     giveBackLease(of: key)
+  }
+
+  /// Records that a release found no manager for its key. A held lease
+  /// keeps its manager in the table, so this state is unexpected. The debug
+  /// build stops, and the log records it in a release build.
+  private func reportMissingManager() {
+    assertionFailure("no manager for the key of a held lease")
+    ACPAgentTelemetry.logger(.codeContext).error(
+      "A lease was released for a manager that the table does not hold.")
   }
 
   /// Counts one lease less on the manager of `key`, and drops the manager
@@ -192,6 +202,7 @@ actor CodeContextLeases {
   /// - Parameter key: The key of the manager.
   private func giveBackLease(of key: ManagerKey) {
     guard var entry = entries[key] else {
+      reportMissingManager()
       return
     }
     entry.leaseCount -= 1

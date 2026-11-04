@@ -90,18 +90,6 @@ struct ConfigurationDoctorTests {
     return await component.runHealthChecks()
   }
 
-  /// The findings of `checks` that carry `status`.
-  ///
-  /// - Parameters:
-  ///   - status: The status to keep.
-  ///   - checks: The findings to filter.
-  /// - Returns: The findings that carry `status`.
-  private static func findings(
-    _ status: HealthStatus, in checks: [HealthCheck]
-  ) -> [HealthCheck] {
-    checks.filter { $0.status == status }
-  }
-
   // MARK: - The load
 
   /// A stack with no file in any layer passes every check: the builtin
@@ -125,7 +113,7 @@ struct ConfigurationDoctorTests {
 
     let checks = try await Self.checks(in: fixture)
 
-    let errors = Self.findings(.error, in: checks)
+    let errors = checks.findings(.error)
     let failure = try #require(errors.first)
     let fix = try #require(failure.fix)
     #expect(errors.count == Self.oneFinding)
@@ -144,14 +132,14 @@ struct ConfigurationDoctorTests {
 
     let checks = try await Self.checks(in: fixture)
 
-    let warnings = Self.findings(.warning, in: checks)
+    let warnings = checks.findings(.warning)
     let warning = try #require(warnings.first)
     let fix = try #require(warning.fix)
     #expect(warnings.count == Self.oneFinding)
     #expect(warning.message.contains(Self.unknownSectionName))
     #expect(fix.contains(Self.unknownSectionName))
     #expect(fix.contains(ConfigurationLoader.configFileName))
-    #expect(Self.findings(.error, in: checks).isEmpty)
+    #expect(checks.findings(.error).isEmpty)
   }
 
   // MARK: - The secret references
@@ -164,7 +152,7 @@ struct ConfigurationDoctorTests {
 
     let checks = try await Self.checks(in: fixture)
 
-    let warnings = Self.findings(.warning, in: checks)
+    let warnings = checks.findings(.warning)
     let warning = try #require(warnings.first)
     let fix = try #require(warning.fix)
     #expect(warnings.count == Self.oneFinding)
@@ -182,7 +170,7 @@ struct ConfigurationDoctorTests {
 
     let checks = try await Self.checks(in: fixture, secretStore: FailingSecretStore())
 
-    let warnings = Self.findings(.warning, in: checks)
+    let warnings = checks.findings(.warning)
     let warning = try #require(warnings.first)
     let fix = try #require(warning.fix)
     #expect(warnings.count == Self.oneFinding)
@@ -233,7 +221,7 @@ struct ConfigurationDoctorTests {
     let checks = try await Self.checks(in: fixture)
     try setPermissions(ownerOnlyPermissions, of: fixture.projectDirectory)
 
-    let errors = Self.findings(.error, in: checks)
+    let errors = checks.findings(.error)
     let failure = try #require(errors.first)
     let fix = try #require(failure.fix)
     #expect(errors.count == Self.oneFinding)

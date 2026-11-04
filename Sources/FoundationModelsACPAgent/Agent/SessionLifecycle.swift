@@ -176,10 +176,7 @@ extension RoutedACPAgent {
   /// The agent stays usable: a later `session/resume` brings a closed
   /// session back.
   public func closeOpenSessions() async {
-    for (sessionId, entry) in sessions where !entry.isClosed {
-      await tearDownSession(sessionId, entry: entry)
-    }
-    await hooks.dispatcher.drain()
+    await closeSessions { _ in true }
     await settingsStore.stopWatching()
   }
 
@@ -194,8 +191,16 @@ extension RoutedACPAgent {
   /// that harness end inside its test, while another harness on the same
   /// agent keeps its own sessions.
   public func closeSessionsWithNoOwner() async {
-    for (sessionId, entry) in sessions
-    where !entry.isClosed && connections.owner(of: sessionId) == nil {
+    await closeSessions { connections.owner(of: $0) == nil }
+  }
+
+  /// Closes each open session that `isSelected` accepts, as `session/close`
+  /// closes one, and then waits until the hook dispatcher delivered each
+  /// post event. A session already closed is skipped.
+  ///
+  /// - Parameter isSelected: Whether the session with this id is closed.
+  private func closeSessions(where isSelected: (SessionId) -> Bool) async {
+    for (sessionId, entry) in sessions where !entry.isClosed && isSelected(sessionId) {
       await tearDownSession(sessionId, entry: entry)
     }
     await hooks.dispatcher.drain()

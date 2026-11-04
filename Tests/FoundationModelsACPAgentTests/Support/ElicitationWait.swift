@@ -38,6 +38,16 @@ struct WaitEndedOnFailure: Error, CustomStringConvertible {
 /// session, and for the wait for a new elicitation, the settle of the run.
 /// Then the wait throws ``WaitEndedOnFailure``.
 enum ElicitationWait {
+  /// The content of the accept of a question that `elicit("question")`
+  /// asks: the one string field, `answer`.
+  static let acceptedContent: FoundationModelsACP.JSONValue = .object([
+    "answer": .string("blue")
+  ])
+
+  /// The text that a run result holds, with no white space, when the run
+  /// got the `accept` action.
+  static let acceptedActionText = #""action":"accept""#
+
   /// The elicitations that `session` did not answer yet.
   ///
   /// - Parameter session: The session model that received the
@@ -112,12 +122,20 @@ enum ElicitationWait {
 /// an idle state after a state of work.
 @MainActor
 final class RunSettleWatch {
-  /// Whether a read already came.
-  private var readOnce = false
+  /// How far the reads of the watch came.
+  private enum ReadProgress {
+    /// No read came.
+    case unread
 
-  /// Whether a read showed work: a state of `nil`, or a state that is not
-  /// idle.
-  private var sawWork = false
+    /// Reads came, and each one showed an idle state.
+    case idleOnly
+
+    /// A read showed work: a state of `nil`, or a state that is not idle.
+    case sawWork
+  }
+
+  /// How far the reads came.
+  private var progress = ReadProgress.unread
 
   /// Makes a watch with no read.
   init() {}
@@ -134,15 +152,14 @@ final class RunSettleWatch {
     } else {
       isIdle = false
     }
-    if !readOnce {
-      readOnce = true
-      sawWork = !isIdle
+    if progress == .unread {
+      progress = isIdle ? .idleOnly : .sawWork
       return false
     }
     if !isIdle {
-      sawWork = true
+      progress = .sawWork
       return false
     }
-    return sawWork
+    return progress == .sawWork
   }
 }

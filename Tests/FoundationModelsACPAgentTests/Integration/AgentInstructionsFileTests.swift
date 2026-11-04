@@ -93,16 +93,26 @@ import Testing
     let session = try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.session)
     let transcript = await session.transcript
     await fixture.close()
-    guard case .instructions(let instructions)? = Array(transcript).first else {
-      Issue.record("expected a leading .instructions entry")
-      return ""
-    }
+    let instructions = try #require(
+      Self.leadingInstructions(of: transcript), "expected a leading .instructions entry")
     return instructions.segments.compactMap { segment in
       if case .text(let text) = segment {
         return text.content
       }
       return nil
     }.joined()
+  }
+
+  /// The leading `.instructions` entry of a transcript.
+  ///
+  /// - Parameter transcript: The transcript of the session.
+  /// - Returns: The instructions, or `nil` when the first entry is not an
+  ///   `.instructions` entry.
+  private static func leadingInstructions(of transcript: Transcript) -> Transcript.Instructions? {
+    if case .instructions(let instructions)? = Array(transcript).first {
+      return instructions
+    }
+    return nil
   }
 
   // MARK: - The tests

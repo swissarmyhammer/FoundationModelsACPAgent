@@ -83,9 +83,6 @@ extension ConnectionTrust {
 /// One row of the ``ConnectionTable``: what the agent knows of one
 /// connection.
 struct ConnectionRow: Sendable {
-  /// The id of the connection.
-  let id: ConnectionId
-
   /// The trust of the connection.
   let trust: ConnectionTrust
 
@@ -163,7 +160,7 @@ final class ConnectionTable: Sendable {
   /// - Parameter tree: The parent links that the owner lookup reads.
   init(tree: SessionTree = SessionTree()) {
     self.tree = tree
-    let direct = ConnectionRow(id: .direct, trust: .userDevice, connection: nil)
+    let direct = ConnectionRow(trust: .userDevice, connection: nil)
     state = Mutex(State(rows: [.direct: direct]))
   }
 
@@ -174,7 +171,7 @@ final class ConnectionTable: Sendable {
   ///   - id: The id of the connection.
   ///   - trust: The trust of the connection.
   func add(_ connection: AgentSideConnection, id: ConnectionId, trust: ConnectionTrust) {
-    let row = ConnectionRow(id: id, trust: trust, connection: connection)
+    let row = ConnectionRow(trust: trust, connection: connection)
     state.withLock { $0.rows[id] = row }
   }
 

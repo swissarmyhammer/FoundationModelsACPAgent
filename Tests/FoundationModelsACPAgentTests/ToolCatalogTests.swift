@@ -334,7 +334,13 @@ import Testing
   /// so a catalog that waits for `start()` never returns. The release of
   /// the lease must return too: the last release cancels the start task
   /// before it stops the context.
-  @Test
+  ///
+  /// The time limit of one minute is the bound of the wait. The embedder
+  /// never answers, so a catalog that waits for the index does not return
+  /// and the test fails at the limit. A catalog that returns mounts the code
+  /// context group, and the first index pass ends only after the release
+  /// of the lease stopped the context.
+  @Test(.timeLimit(.minutes(1)))
   func theCatalogDoesNotWaitForTheCodeContextIndex() async throws {
     var loader = StubModelLoader()
     loader.makeEmbeddingContainer = { _ in NeverAnsweringEmbeddingContainer() }
@@ -345,8 +351,11 @@ import Testing
 
     let built = try await ToolCatalog.makeRegistry(context: context)
 
+    let prefix = "\(ToolCatalog.codeContextGroupName)."
+    #expect(built.registry.surface.entries.contains { $0.path.hasPrefix(prefix) })
     let lease = try #require(built.codeContextLease)
     await lease.release()
+    await lease.context.waitForFirstIndexPass()
   }
 
   /// With `semanticSearch` off, the index never calls the profile's

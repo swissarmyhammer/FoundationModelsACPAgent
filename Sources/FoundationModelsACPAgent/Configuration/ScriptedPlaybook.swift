@@ -194,20 +194,40 @@ public struct ScriptedLLMContainer: LoadedLLMContainer {
     self.observer = observer
   }
 
+  /// Makes a scripted backend that plays a sibling of the playbook.
+  ///
+  /// - Parameter instructions: The session instructions, or `nil` for none.
+  /// - Returns: A new scripted backend with no tools.
   public func makeSession(instructions: String?) -> any LanguageModelSessionBackend {
     makeBackend(tools: [], instructions: instructions)
   }
 
+  /// Makes a scripted backend that plays a sibling of the playbook.
+  ///
+  /// - Parameters:
+  ///   - instructions: The session instructions, or `nil` for none.
+  ///   - tools: The tools that the played tool calls reach.
+  /// - Returns: A new scripted backend.
   public func makeSession(
     instructions: String?, tools: [any Tool]
   ) -> any LanguageModelSessionBackend {
     makeBackend(tools: tools, instructions: instructions)
   }
 
+  /// Makes a scripted backend that starts from the entries of `transcript`.
+  ///
+  /// - Parameter transcript: The transcript of the restored session.
+  /// - Returns: A new scripted backend with no tools.
   public func makeSession(transcript: Transcript) -> any LanguageModelSessionBackend {
     makeBackend(tools: [], seededEntries: Array(transcript))
   }
 
+  /// Makes a scripted backend that starts from the entries of `transcript`.
+  ///
+  /// - Parameters:
+  ///   - transcript: The transcript of the restored session.
+  ///   - tools: The tools that the played tool calls reach.
+  /// - Returns: A new scripted backend.
   public func makeSession(
     transcript: Transcript, tools: [any Tool]
   ) -> any LanguageModelSessionBackend {
@@ -239,7 +259,10 @@ public struct ScriptedLLMContainer: LoadedLLMContainer {
 enum ScriptedGate {
   /// The time between two looks for a file that does not exist yet. A file
   /// that is not there has no event to wait on, thus the wait looks again.
-  private static let lookInterval = Duration.milliseconds(25)
+  private static let lookInterval = Duration.milliseconds(lookIntervalMilliseconds)
+
+  /// The length of ``lookInterval``, in milliseconds.
+  private static let lookIntervalMilliseconds = 25
 
   /// Waits until the file at `path` exists, or until one byte can be read
   /// from the named pipe at `path`.

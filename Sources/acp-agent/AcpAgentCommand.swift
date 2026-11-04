@@ -19,9 +19,18 @@ import Foundation
 /// stdout is data (§5.6): `--help` and `--version` write there, a usage
 /// error writes to stderr, and each subcommand writes what its own
 /// contract states.
-@main
-struct AcpAgentCommand: AsyncParsableCommand {
-  static let configuration = CommandConfiguration(
+///
+/// The type stands in a library target, and the executable targets start it:
+/// `acp-agent` through ``launch(modelChoice:)`` over the live loader, and the
+/// test-only `acp-agent-stub` through the same call over the stub model. So the shipped binary has no switch to a
+/// stub model.
+public struct AcpAgentCommand: AsyncParsableCommand {
+  /// Makes the root command, which the parser fills.
+  public init() {}
+
+  /// The name, the version and the subcommand tree of the CLI. `run` is the
+  /// default subcommand.
+  public static let configuration = CommandConfiguration(
     commandName: "acp-agent",
     abstract: "A headless coding agent over local models, and an ACP server.",
     version: AgentComposition.version,
@@ -78,7 +87,8 @@ struct AcpAgentCommand: AsyncParsableCommand {
     return ExitOutcome(code: code.rawValue, writesToStandardError: !code.isSuccess)
   }
 
-  /// The program entry: parse, run, and exit by ``exitOutcome(for:)``.
+  /// The program entry: parse, run, and exit by ``exitOutcome(for:)``, with
+  /// the model path of `modelChoice`.
   ///
   /// The library's own `main()` is not used because it exits a usage
   /// error with `EX_USAGE`. The help text, the version text and the
@@ -94,17 +104,22 @@ struct AcpAgentCommand: AsyncParsableCommand {
   /// they write no log record. This is the only call site: the unit test
   /// target links this target, and a test process must not bootstrap
   /// logging.
-  static func main() async {
-    do {
-      var command = try parseAsRoot()
-      try TelemetryBootstrap.bootstrap(telemetryFile: (command as? Acp)?.telemetryFile)
-      if var asyncCommand = command as? any AsyncParsableCommand {
-        try await asyncCommand.run()
-      } else {
-        try command.run()
+  ///
+  /// - Parameter modelChoice: The model path the whole run builds its agent
+  ///   over, bound as ``AgentComposition/modelChoice``.
+  public static func launch(modelChoice: AgentModelChoice) async {
+    await AgentComposition.$modelChoice.withValue(modelChoice) {
+      do {
+        var command = try parseAsRoot()
+        try TelemetryBootstrap.bootstrap(telemetryFile: (command as? Acp)?.telemetryFile)
+        if var asyncCommand = command as? any AsyncParsableCommand {
+          try await asyncCommand.run()
+        } else {
+          try command.run()
+        }
+      } catch {
+        exitAfterFailure(error)
       }
-    } catch {
-      exitAfterFailure(error)
     }
   }
 

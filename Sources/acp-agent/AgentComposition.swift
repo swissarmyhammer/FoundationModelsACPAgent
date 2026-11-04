@@ -3,7 +3,7 @@ import FoundationModelsACPAgent
 import FoundationModelsRouter
 
 /// The CLI choices every subcommand shares (cli-plan.md §5.10): the
-/// dotfolder name, and the model switch of the environment.
+/// dotfolder name, and the model choice of the executable.
 /// `run` and `acp` both build their agent through ``compose(workingDirectory:environment:reporting:)``,
 /// so the two modes cannot drift apart.
 ///
@@ -24,48 +24,14 @@ enum AgentComposition {
   /// of the user.
   static let dotfolderName = "acp-agent"
 
-  /// The environment variable that selects `ComposedAgent.ModelSource.stub` in place
-  /// of the live loader. Set it to ``stubModelEnabledValue``.
+  /// The model path of the current task: ``AgentModelChoice/live`` unless
+  /// the executable that started the CLI chose the stub.
   ///
-  /// It exists because a spawned-binary test has no other deterministic
-  /// model: the scripted model of the test support is in-process only,
-  /// and the one cross-process control before this was a real small
-  /// model whose sampling is not reproducible.
-  static let stubModelVariable = "ACP_AGENT_STUB_MODEL"
-
-  /// The value of ``stubModelVariable`` that selects the stub model. Any
-  /// other value, and an absent variable, select the live loader.
-  static let stubModelEnabledValue = "1"
-
-  /// The environment variable that gates the stub model: the path of a
-  /// named pipe that the stub reads one byte from before each chunk of
-  /// the echoed prompt.
-  ///
-  /// It exists for one reason. ``stubModelVariable`` gives a spawned
-  /// binary a deterministic model, but that model answers in one chunk
-  /// and in microseconds, so a prompt is over before a signal can reach
-  /// it. The interrupt of cli-plan.md §5.9 is a claim about a prompt
-  /// that is still running, and this is what holds one open across a
-  /// process boundary. The test lets each chunk go, so a signal always
-  /// lands before the chunks end, with no clock.
-  ///
-  /// It is read only on the stub path. An absent or empty value gates
-  /// nothing, and the library's one-chunk echo answers as before.
-  static let stubChunkGateVariable = "ACP_AGENT_STUB_CHUNK_GATE"
-
-  /// The environment variable that names the script of the stub model:
-  /// the absolute path of a JSON file (`ScriptedStubScript`).
-  ///
-  /// It exists so that a test over a process boundary can make a session
-  /// call a tool, as the scripted model of the in-process tests does. A
-  /// value selects the stub path, as ``stubModelVariable`` does, and the
-  /// scripted model on it. Each session plays the entry of the file that
-  /// its first prompt matches, and echoes when none matches. A file that
-  /// cannot be read, or is not valid, stops the composition with an
-  /// error.
-  ///
-  /// An absent or empty value changes nothing.
-  static let stubScriptVariable = "ACP_AGENT_STUB_SCRIPT"
+  /// The executable binds it with `withValue` around the whole run
+  /// (``AcpAgentCommand/launch(modelChoice:)``), and a task that the run
+  /// starts inherits it. A unit test binds it with a test trait. The
+  /// environment never selects the model.
+  @TaskLocal static var modelChoice: AgentModelChoice = .live
 
   /// The environment variable that names the folder of the home of the
   /// CLI (task ^98a44n7). `--home` sets it too (``HomeOptions``). With no
@@ -99,40 +65,38 @@ enum AgentComposition {
     URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
   }
 
-  /// Reads ``stubModelVariable`` out of `environment`.
+  /// Maps the model choice of the current task to the model path of the
+  /// library composition.
   ///
-  /// - Parameter environment: The environment to read.
-  /// - Returns: `ComposedAgent.ModelSource.stub` when the variable holds
-  ///   ``stubModelEnabledValue``, or when ``stubScriptVariable`` has a
-  ///   value; `ComposedAgent.ModelSource.live` otherwise.
-  static func modelSource(environment: [String: String]) -> ComposedAgent.ModelSource {
-    environment[stubModelVariable] == stubModelEnabledValue
-      || stubScript(environment: environment) != nil
-      ? .stub : .live
+  /// - Returns: `ComposedAgent.ModelSource.stub` for a stub choice, and
+  ///   `ComposedAgent.ModelSource.live` otherwise.
+  static func modelSource() -> ComposedAgent.ModelSource {
+    switch modelChoice {
+    case .live: .live
+    case .stub: .stub
+    }
   }
 
-  /// Reads ``stubScriptVariable`` out of `environment`.
+  /// The path of the chunk gate of the stub model of the current task.
   ///
-  /// - Parameter environment: The environment to read.
-  /// - Returns: The path of the script file of the stub model, or `nil`
-  ///   when the variable is absent or empty.
-  static func stubScript(environment: [String: String]) -> String? {
-    guard let path = environment[stubScriptVariable], !path.isEmpty else {
+  /// - Returns: The path of the named pipe, or `nil` for the live path and
+  ///   for a stub with no gate.
+  static func stubChunkGate() -> String? {
+    guard case .stub(let chunkGate, _) = modelChoice else {
       return nil
     }
-    return path
+    return chunkGate
   }
 
-  /// Reads ``stubChunkGateVariable`` out of `environment`.
+  /// The path of the script file of the stub model of the current task.
   ///
-  /// - Parameter environment: The environment to read.
-  /// - Returns: The path of the named pipe of a stub answer, or `nil`
-  ///   when the variable is absent or empty.
-  static func stubChunkGate(environment: [String: String]) -> String? {
-    guard let path = environment[stubChunkGateVariable], !path.isEmpty else {
+  /// - Returns: The path of the script file, or `nil` for the live path and
+  ///   for a stub with no script.
+  static func stubScript() -> String? {
+    guard case .stub(_, let script) = modelChoice else {
       return nil
     }
-    return path
+    return script
   }
 
   /// Reads the home of the CLI out of `environment` (task ^98a44n7).
@@ -168,7 +132,7 @@ enum AgentComposition {
   ///
   /// The CLI adds its own choices only: ``dotfolderName``, the home that
   /// ``home(environment:)`` reads, and the model path and the stub gate
-  /// that `environment` selects. The library does the composition, so the
+  /// that ``modelChoice`` selects. The library does the composition, so the
   /// CLI holds no copy of it.
   ///
   /// The CLI gives no secret store. The default store of the library is
@@ -190,9 +154,7 @@ enum AgentComposition {
   ///   - workingDirectory: The directory whose dotfolder stack the
   ///     start-up configuration loads from.
   ///   - environment: The environment that ``home(environment:)`` reads
-  ///     the home from, and ``modelSource(environment:)`` and
-  ///     ``stubChunkGate(environment:)`` and ``stubScript(environment:)``
-  ///     read the model switch from.
+  ///     the home from.
   ///   - progress: The progress object the resolution reports into, or
   ///     `nil` for a fresh unobserved one. A caller that draws the
   ///     download bar of cli-plan.md §5.7 makes the object first, hands
@@ -212,9 +174,9 @@ enum AgentComposition {
       workingDirectory: workingDirectory,
       home: try home(environment: environment),
       environment: environment,
-      modelSource: modelSource(environment: environment),
-      stubChunkGate: stubChunkGate(environment: environment),
-      stubScript: stubScript(environment: environment),
+      modelSource: modelSource(),
+      stubChunkGate: stubChunkGate(),
+      stubScript: stubScript(),
       reporting: progress)
   }
 

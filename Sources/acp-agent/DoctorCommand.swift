@@ -97,11 +97,12 @@ extension AcpAgentCommand {
     /// A component reports a failure as a ``HealthCheck`` with the
     /// `error` status, and never by throwing: `doctor` runs every
     /// check, so one broken component must not hide the rest. That is
-    /// why this function does not throw. The one refusal it cannot
-    /// report that way is a dotfolder name the stack rejects, and
-    /// ``AgentComposition/dotfolderName`` is a compiled-in bare word,
-    /// so that branch stands for a name a future edit could break and
-    /// is unreachable today.
+    /// why this function does not throw. The one refusal it reports
+    /// before any component can run is a dotfolder name the stack
+    /// rejects. ``AgentComposition/dotfolderName`` is a compiled-in bare
+    /// word, so that branch stands for a name a future edit could break
+    /// and is unreachable today. It gives ``LoaderFailureDoctor``, which
+    /// reports the error, so `doctor` exits 1 and not 0.
     ///
     /// - Parameters:
     ///   - workingDirectory: The directory `--cwd` names, which roots
@@ -128,11 +129,12 @@ extension AcpAgentCommand {
       memoryBytes: Int64 = MachineFigures.physicalMemoryBytes,
       freeDiskBytes: Int64? = nil
     ) -> [any Doctorable] {
-      guard
-        let loader = try? AgentComposition.makeConfigurationLoader(
+      let loader: ConfigurationLoader
+      do {
+        loader = try AgentComposition.makeConfigurationLoader(
           workingDirectory: workingDirectory, environment: environment)
-      else {
-        return []
+      } catch {
+        return [LoaderFailureDoctor(error: error)]
       }
       let home = loader.settingsFolders.home
       let outcome = ConfigurationLoadOutcome(of: loader)

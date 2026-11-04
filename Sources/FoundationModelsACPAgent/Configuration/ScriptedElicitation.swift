@@ -81,9 +81,12 @@ enum ScriptedElicitation {
   ///
   /// - Parameter output: The output of the call.
   /// - Returns: The refusal that the output holds, or `nil` for an answer.
+  ///   An output that carries the marker is always a refusal. A name that is
+  ///   no ``Refusal`` is read as ``Refusal/cancel``: the user gave no
+  ///   answer, and the pass must not go on with the marker as the answer.
   static func refusal(inOutput output: String) -> Refusal? {
     guard let marker = output.range(of: refusalMarker) else { return nil }
     let name = output[marker.upperBound...]
-    return Refusal.allCases.first { name.hasPrefix($0.rawValue) }
+    return Refusal.allCases.first { name.hasPrefix($0.rawValue) } ?? .cancel
   }
 }

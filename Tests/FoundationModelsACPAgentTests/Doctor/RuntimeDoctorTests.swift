@@ -53,18 +53,6 @@ struct RuntimeDoctorTests {
         environment: fixture.environment))
   }
 
-  /// The findings of `checks` that carry `status`.
-  ///
-  /// - Parameters:
-  ///   - status: The status to keep.
-  ///   - checks: The findings to filter.
-  /// - Returns: The findings that carry `status`.
-  private static func findings(
-    _ status: HealthStatus, in checks: [HealthCheck]
-  ) -> [HealthCheck] {
-    checks.filter { $0.status == status }
-  }
-
   /// The project skills layer of `fixture`, `<workspace>/.skills`.
   ///
   /// - Parameter fixture: The tree the layer roots in.
@@ -111,7 +99,7 @@ struct RuntimeDoctorTests {
     let checks = try await Self.doctor(in: fixture).runHealthChecks()
     try setPermissions(ownerOnlyPermissions, of: layer)
 
-    let errors = Self.findings(.error, in: checks)
+    let errors = checks.findings(.error)
     let failure = try #require(errors.first)
     let fix = try #require(failure.fix)
     #expect(errors.count == Self.oneFinding)

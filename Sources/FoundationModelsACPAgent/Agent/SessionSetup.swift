@@ -1185,11 +1185,11 @@ extension RoutedLLM {
         recordingRoot: recordingRoot,
         tools: tools,
         compaction: CompactionSettings(
-          budget: budget, prompt: .default, toolOutputProtection: SkillOutputProtection.rule),
+          budget: budget, prompt: .default, toolOutputProtection: HostRules.toolOutputProtection),
         repetitionDetection: repetition.detection,
         mailOnlyAnswerLimit: mailOnlyAnswerLimit,
         inlineSettleGrace: inlineSettleGrace,
-        isNoOpToolCall: NoOpToolCall.check,
+        isNoOpToolCall: HostRules.isNoOpToolCall,
         userPresence: userPresence,
         hookSessionKey: hookLineage?.sessionKey,
         hookOrigin: hookLineage?.origin))
@@ -1236,9 +1236,21 @@ extension RoutedLLM {
       recordingRoot: recordingRoot,
       instructions: instructions,
       tools: tools,
-      toolOutputProtection: SkillOutputProtection.rule,
-      isNoOpToolCall: NoOpToolCall.check,
+      toolOutputProtection: HostRules.toolOutputProtection,
+      isNoOpToolCall: HostRules.isNoOpToolCall,
       userPresence: userPresence,
       hookSessionKey: hookSessionKey)
   }
+}
+
+/// The host rules that every Router session of the agent carries. A new
+/// session (``RoutedACPAgent/makeBudgetedSession(instructions:workingDirectory:recordingRoot:tools:compaction:repetition:inlineSettleGrace:userPresence:mailOnlyAnswerLimit:hookLineage:)``)
+/// and a restored session (``RoutedACPAgent/restoreSessionWithHostChecks(id:recordingRoot:instructions:tools:userPresence:hookSessionKey:)``)
+/// both read the rules here, so the two cannot differ.
+private enum HostRules {
+  /// The rule that keeps the output of a skill tool call out of the fold.
+  static let toolOutputProtection: ToolOutputProtection = SkillOutputProtection.rule
+
+  /// The check that finds a tool call that changes nothing.
+  static let isNoOpToolCall: NoOpToolCallCheck = NoOpToolCall.check
 }

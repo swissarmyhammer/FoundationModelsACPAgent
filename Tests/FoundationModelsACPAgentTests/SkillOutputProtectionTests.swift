@@ -89,6 +89,17 @@ import Testing
     }.joined()
   }
 
+  /// The result of a completed compaction.
+  ///
+  /// - Parameter event: The terminal event of the compaction.
+  /// - Returns: The result, or `nil` when the event is not a compaction.
+  private static func compactionResult(of event: SessionEvent) -> CompactionResult? {
+    if case .compaction(let result) = event {
+      return result
+    }
+    return nil
+  }
+
   // MARK: The rule
 
   @Test(arguments: [
@@ -154,30 +165,27 @@ import Testing
     }
 
     let terminal = try await session.awaitTerminal(of: session.compact(budget: Self.foldBudget))
-    guard case .compaction(let result) = terminal else {
-      Issue.record("expected a completed compaction, got \(terminal)")
-      return
-    }
+    let result = try #require(
+      Self.compactionResult(of: terminal), "expected a completed compaction, got \(terminal)")
     // The fold must really fold: a shortfall leaves every output as it
     // was, and the assertions below would then prove nothing.
     #expect(result.shortfall == nil, "shortfall: \(String(describing: result.shortfall))")
     #expect(result.protectedTokens > 0)
 
-    var skillOutputs: [String] = []
-    var notesOutputs: [String] = []
-    for entry in await session.transcript {
-      guard case .toolOutput(let output) = entry else { continue }
-      let text = Self.text(of: output)
-      if output.toolName == SkillOutputProtection.skillsToolName {
-        skillOutputs.append(text)
-      } else {
-        notesOutputs.append(text)
+    let outputs = await session.transcript.compactMap { entry -> Transcript.ToolOutput? in
+      if case .toolOutput(let output) = entry {
+        return output
       }
+      return nil
     }
+    let skillOutputs = outputs.filter { $0.toolName == SkillOutputProtection.skillsToolName }
+      .map(Self.text(of:))
+    let notesOutputs = outputs.filter { $0.toolName != SkillOutputProtection.skillsToolName }
+      .map(Self.text(of:))
     #expect(skillOutputs.count == requestCount)
     #expect(skillOutputs.allSatisfy { $0 == Self.skillBody })
-    // The fold removed or elided the old notes outputs: fewer than one
-    // per request keep their text. Only the protected skill bodies all stay.
-    #expect(notesOutputs.filter { $0 == Self.notesText }.count < requestCount)
+    // The fold removed or elided each old notes output: none keeps its
+    // text. Only the protected skill bodies stay.
+    #expect(notesOutputs.filter { $0 == Self.notesText }.isEmpty)
   }
 }

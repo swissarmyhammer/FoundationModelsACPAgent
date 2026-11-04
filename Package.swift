@@ -111,6 +111,20 @@ private let clientDependencyName = "FoundationModelsACPClient"
 /// `StdioContractTests` spawns it.
 private let agentExecutableName = "acp-agent"
 
+/// The target of the entry point of the shipped `agentExecutableName`
+/// binary: one file that starts the command tree with the live model. The
+/// command tree itself stands in the library target `agentExecutableName`,
+/// so a second entry point can start the same tree over the stub model.
+private let agentLauncherTargetName = "acp-agent-launcher"
+
+/// The name of the test-only stub agent binary: the same command tree as
+/// `agentExecutableName`, started over the deterministic stub model of the
+/// library. The nested `IntegrationTests` package spawns it where a test
+/// needs a model that is deterministic across a process boundary. The shipped
+/// binary reads no environment variable to switch to a stub; the choice is
+/// the executable.
+private let stubAgentExecutableName = "acp-agent-stub"
+
 /// The one-shot client CLI example, in the shape of `claude --print`: send
 /// one prompt, run the turn, print the answer, exit. It links ONLY the client
 /// package and the wire — never this package's library — so every byte
@@ -385,7 +399,11 @@ let package = Package(
         .library(name: packageName, targets: [packageName]),
         // The agent CLI, published so `swift run acp-agent` and the
         // tier-3 spawn name one binary — see `agentExecutableName`.
-        .executable(name: agentExecutableName, targets: [agentExecutableName]),
+        .executable(name: agentExecutableName, targets: [agentLauncherTargetName]),
+        // The test-only stub agent, published so the nested
+        // `IntegrationTests` package spawns it — see
+        // `stubAgentExecutableName`.
+        .executable(name: stubAgentExecutableName, targets: [stubAgentExecutableName]),
         // The one-shot client CLI, published so `swift run acp-print` and
         // the tier-3 run name one binary — see `printExecutableName`.
         .executable(name: printExecutableName, targets: [printExecutableName]),
@@ -426,21 +444,23 @@ let package = Package(
             resources: [.copy(builtinConfigurationResource)]
         ),
         // The agent CLI (cli-plan.md §5, §8): the ArgumentParser subcommand
-        // tree over `AgentComposition`, and the tier-3 fixture. It links
+        // tree over `AgentComposition`. A library target, so the entry point
+        // of the shipped binary and the entry point of the stub binary start
+        // one tree — see `agentLauncherTargetName`. It links
         // the library, the wire and Router directly for what it imports,
         // and the client package and the parser (cli-plan.md §8). Router
         // gives the real model path: `LiveModelLoader()` loads each model
         // through the Extras `MLXModelLoader`, so this target links no MLX
         // or Hugging Face product of its own. The deterministic
-        // path `ACP_AGENT_STUB_MODEL=1` selects is the library's own
+        // path of the stub binary is the library's own
         // `EchoModel`, never the test support: that target links the
         // `Testing` framework, and a product that carried it would not
         // start outside a test host. It bootstraps the telemetry backend
-        // in `AcpAgentCommand.main()`, so it links all three telemetry APIs,
+        // in `AcpAgentCommand.launch(modelChoice:)`, so it links all three telemetry APIs,
         // and links no telemetry exporter — see `telemetryAPIProducts`. It
         // links Extras for `SpanIdentity`, the W3C `traceparent` format the
         // tracer of `acp --telemetry-file` injects and extracts.
-        .executableTarget(
+        .target(
             name: agentExecutableName,
             dependencies: [
                 .target(name: packageName),
@@ -452,6 +472,22 @@ let package = Package(
                 nooraProduct,
             ] + telemetryAPIProducts,
             path: "Sources/\(agentExecutableName)"
+        ),
+        // The entry point of the shipped `acp-agent` binary: it starts the
+        // command tree with the live model, and holds nothing else.
+        .executableTarget(
+            name: agentLauncherTargetName,
+            dependencies: [.target(name: agentExecutableName)],
+            path: "Sources/\(agentLauncherTargetName)"
+        ),
+        // The entry point of the test-only stub binary — see
+        // `stubAgentExecutableName`. It reads the path of the chunk gate and
+        // the path of the script of the stub model out of its environment,
+        // and starts the command tree over the stub model.
+        .executableTarget(
+            name: stubAgentExecutableName,
+            dependencies: [.target(name: agentExecutableName)],
+            path: "Tests/\(stubAgentExecutableName)"
         ),
         // The one-shot client CLI. It links ONLY the client package and
         // the wire — see `printExecutableName` — so every byte reaches the

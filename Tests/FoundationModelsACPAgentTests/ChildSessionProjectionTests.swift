@@ -408,7 +408,7 @@ import Testing
   ///
   /// - Parameters:
   ///   - hold: The hold that the child waits on.
-  ///   - label: The label of the folders of the fixture.
+  ///   - name: The label of the folders of the fixture.
   /// - Returns: The run, after the `agents` call returned and the child is still held.
   /// - Throws: Whatever the fixture or a wait throws.
   private static func startHeldBackgroundRun(hold: ScriptedHold, label name: String) async throws

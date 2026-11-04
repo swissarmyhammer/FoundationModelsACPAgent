@@ -21,6 +21,14 @@ private let testSupportProductName = "\(rootPackageName)TestSupport"
 /// and `StdioContractTests` spawns it in `acp` mode.
 private let agentExecutableName = "acp-agent"
 
+/// The test-only stub agent executable of the root package: the command tree
+/// of `agentExecutableName` over the deterministic stub model. It is a
+/// product dependency for the same reason as `agentExecutableName`. The suites
+/// that need a model that is deterministic across a process boundary spawn
+/// it, because the shipped binary reads no environment variable to switch to
+/// a stub.
+private let stubAgentExecutableName = "acp-agent-stub"
+
 /// The one-shot client CLI example of the root package, declared
 /// for the same reason as `agentExecutableName`: `ClientServerTests` runs
 /// the built binary.
@@ -82,6 +90,7 @@ let package = Package(
                 .product(name: rootPackageName, package: rootPackageName),
                 .product(name: testSupportProductName, package: rootPackageName),
                 .product(name: agentExecutableName, package: rootPackageName),
+                .product(name: stubAgentExecutableName, package: rootPackageName),
                 .product(name: printExecutableName, package: rootPackageName),
                 .product(name: wireDependencyName, package: wireDependencyName),
                 .product(name: clientDependencyName, package: clientDependencyName),

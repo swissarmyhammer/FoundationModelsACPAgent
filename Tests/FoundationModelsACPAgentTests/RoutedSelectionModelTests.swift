@@ -195,8 +195,13 @@ import Testing
     let log = MakerLog()
     let model = Self.makeCountingModel(profile: profile, log: log)
 
-    await #expect(throws: (any Error).self) {
+    await #expect {
       try await Self.select(on: model)
+    } throws: { error in
+      if case LanguageModelError.guardrailViolation = error {
+        return true
+      }
+      return false
     }
 
     let session = try #require(await log.sessions.first)

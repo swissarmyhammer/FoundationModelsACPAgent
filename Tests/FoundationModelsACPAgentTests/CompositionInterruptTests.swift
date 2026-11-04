@@ -92,7 +92,7 @@ private struct ParkingDownloadLoader: ModelLoader {
 /// The download is a real `Router.resolve(profile:reporting:)` over a loader
 /// that stops in the transfer, so what these cases cancel is the resolve
 /// itself and not a stand-in for it.
-struct CompositionInterruptTests {
+@Suite(.stubModel) struct CompositionInterruptTests {
   /// The prompt of every run here. It is never answered: each case ends in
   /// the composition, before a prompt begins.
   private static let promptText = "write a haiku"

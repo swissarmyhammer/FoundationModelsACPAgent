@@ -12,8 +12,8 @@ import Tracing
 // - The test support's stub agent and stub profile factories, so every
 //   unit suite resolves a profile without MLX, without a download, and
 //   without the network.
-// - The agent CLI's `ACP_AGENT_STUB_MODEL=1` composition, so a spawned
-//   `acp-agent` answers deterministically across a real process boundary.
+// - The test-only `acp-agent-stub` binary, so a spawned agent answers
+//   deterministically across a real process boundary.
 //   The scripted model of the test support is in-process only, and a
 //   real small model's sampling is not reproducible, so the product
 //   carries this path itself.
@@ -42,16 +42,36 @@ public final class EchoSessionBackend: LanguageModelSessionBackend {
   /// Creates a backend that echoes every prompt.
   public init() {}
 
+  /// Answers with the prompt itself.
+  ///
+  /// - Parameters:
+  ///   - prompt: The text to echo.
+  ///   - maxTokens: The token ceiling, which the echo ignores.
+  /// - Returns: `prompt`.
   public func respond(to prompt: String, maxTokens: Int?) async throws -> String {
     prompt
   }
 
+  /// Answers with the prompt itself. The echo has no sampler, so the grammar
+  /// does not restrict the answer.
+  ///
+  /// - Parameters:
+  ///   - prompt: The text to echo.
+  ///   - grammar: The grammar of the answer, which the echo ignores.
+  ///   - maxTokens: The token ceiling, which the echo ignores.
+  /// - Returns: `prompt`.
   public func respond(
     to prompt: String, following grammar: Grammar, maxTokens: Int?
   ) async throws -> String {
     try await respond(to: prompt, maxTokens: maxTokens)
   }
 
+  /// Streams the prompt itself as one chunk.
+  ///
+  /// - Parameters:
+  ///   - prompt: The text to echo.
+  ///   - maxTokens: The token ceiling, which the echo ignores.
+  /// - Returns: A stream with one chunk, `prompt`, and then its end.
   public func streamResponse(to prompt: String, maxTokens: Int?) -> AsyncThrowingStream<
     String, Error
   > {
@@ -61,14 +81,24 @@ public final class EchoSessionBackend: LanguageModelSessionBackend {
     }
   }
 
+  /// Makes a fork of the session. The echo holds no state, so a fork is a
+  /// new backend.
+  ///
+  /// - Returns: A new echo backend.
   public func makeFork() -> any LanguageModelSessionBackend {
     EchoSessionBackend()
   }
 
+  /// The transcript entries of the backend.
+  ///
+  /// - Returns: No entry, because the echo keeps no transcript.
   public func transcriptEntries() -> [Transcript.Entry] {
     []
   }
 
+  /// The token counts of the last answer.
+  ///
+  /// - Returns: One input token and one output token, a fixed pair.
   public func usageTokenCounts() -> (input: Int, output: Int)? {
     (1, 1)
   }
@@ -170,20 +200,40 @@ public struct EchoLLMContainer: LoadedLLMContainer {
   /// Creates a container that vends ``EchoSessionBackend``.
   public init() {}
 
+  /// Makes a session backend that echoes.
+  ///
+  /// - Parameter instructions: The instructions, which the echo ignores.
+  /// - Returns: A new echo backend.
   public func makeSession(instructions: String?) -> any LanguageModelSessionBackend {
     EchoSessionBackend()
   }
 
+  /// Makes a session backend that echoes.
+  ///
+  /// - Parameters:
+  ///   - instructions: The instructions, which the echo ignores.
+  ///   - tools: The tools, which the echo never calls.
+  /// - Returns: A new echo backend.
   public func makeSession(
     instructions: String?, tools: [any Tool]
   ) -> any LanguageModelSessionBackend {
     EchoSessionBackend()
   }
 
+  /// Makes a session backend that echoes.
+  ///
+  /// - Parameter transcript: The transcript to restore, which the echo ignores.
+  /// - Returns: A new echo backend.
   public func makeSession(transcript: Transcript) -> any LanguageModelSessionBackend {
     EchoSessionBackend()
   }
 
+  /// Makes a session backend that echoes.
+  ///
+  /// - Parameters:
+  ///   - transcript: The transcript to restore, which the echo ignores.
+  ///   - tools: The tools, which the echo never calls.
+  /// - Returns: A new echo backend.
   public func makeSession(
     transcript: Transcript, tools: [any Tool]
   ) -> any LanguageModelSessionBackend {
@@ -205,8 +255,13 @@ public struct StubEmbeddingContainer: LoadedEmbeddingContainer {
   /// The one value every component of every stub vector has.
   private static let stubComponent: Float = 0.5
 
+  /// The number of components in each stub vector.
   public let dimension = StubEmbeddingContainer.stubDimension
 
+  /// Embeds each text as the same constant vector.
+  ///
+  /// - Parameter texts: The texts to embed.
+  /// - Returns: One vector for each text, in order.
   public func embed(texts: [String]) async throws -> [[Float]] {
     texts.map { _ in
       [Float](repeating: Self.stubComponent, count: Self.stubDimension)
@@ -256,6 +311,14 @@ public struct StubModelLoader: ModelLoader {
     self.makeEmbeddingContainer = makeEmbeddingContainer
   }
 
+  /// Loads the LLM container of a slot. It downloads nothing.
+  ///
+  /// - Parameters:
+  ///   - ref: The model reference, which the stub ignores.
+  ///   - slot: The slot being loaded.
+  ///   - context: The context size, which the stub ignores.
+  ///   - reporting: The receiver of the progress. It gets one complete report.
+  /// - Returns: The container that ``makeLLMContainer`` makes for `slot`.
   public func loadLLM(
     ref: ModelRef,
     slot: ModelSlot,
@@ -266,6 +329,13 @@ public struct StubModelLoader: ModelLoader {
     return makeLLMContainer(slot)
   }
 
+  /// Loads the embedding container of a slot. It downloads nothing.
+  ///
+  /// - Parameters:
+  ///   - ref: The model reference, which the stub ignores.
+  ///   - slot: The slot being loaded.
+  ///   - reporting: The receiver of the progress. It gets one complete report.
+  /// - Returns: The container that ``makeEmbeddingContainer`` makes for `slot`.
   public func loadEmbedder(
     ref: ModelRef,
     slot: ModelSlot,
@@ -275,14 +345,14 @@ public struct StubModelLoader: ModelLoader {
     return makeEmbeddingContainer(slot)
   }
 
+  /// Warms a loaded container. The stub containers need no warm-up.
+  ///
+  /// - Parameter container: The container to warm.
   public func preload(container: any LoadedModelContainer) async throws {}
 }
 
 /// A machine large enough that slot fitting never becomes a variable.
 struct StubMachine: MachineProbe {
-  /// Creates a probe of the oversized stub machine.
-  init() {}
-
   let chip = "Apple Stub"
   let totalRAM: Int64 = 64 << 30
   let recommendedMaxWorkingSetSize: Int64 = 48 << 30
@@ -307,9 +377,6 @@ struct StubMetadata: MetadataSource {
   /// streamed shell proof of `TierTwoTests`: two terminals, one scripted
   /// prompt played twice).
   static let window = 32768
-
-  /// Creates a metadata source of one tiny model.
-  init() {}
 
   func fetchRawMetadata(repo: String, revision: String?) async throws -> RawRepoMetadata {
     RawRepoMetadata(

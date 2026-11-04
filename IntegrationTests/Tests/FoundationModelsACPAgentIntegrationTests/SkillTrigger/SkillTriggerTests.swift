@@ -25,11 +25,11 @@ let skillTriggerSamplesVariable = "ACP_AGENT_SKILL_TRIGGER_SAMPLES"
 
 /// The samples of this run, in report order.
 var skillTriggerSamples: [SkillTriggerSample] {
-    guard let text = ProcessInfo.processInfo.environment[skillTriggerSamplesVariable],
-        !text.isEmpty
-    else { return SkillTriggerDataset.gate }
-    let names = Set(text.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
-    return SkillTriggerDataset.samples.filter { names.contains($0.name) }
+  guard let text = ProcessInfo.processInfo.environment[skillTriggerSamplesVariable],
+    !text.isEmpty
+  else { return SkillTriggerDataset.gate }
+  let names = Set(text.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
+  return SkillTriggerDataset.samples.filter { names.contains($0.name) }
 }
 
 /// The default number of runs of each sample.
@@ -37,10 +37,10 @@ let skillTriggerDefaultRepeats = 1
 
 /// How many times each sample runs.
 var skillTriggerRepeats: Int {
-    guard let text = ProcessInfo.processInfo.environment[skillTriggerRepeatsVariable],
-        let count = Int(text), count > 0
-    else { return skillTriggerDefaultRepeats }
-    return count
+  guard let text = ProcessInfo.processInfo.environment[skillTriggerRepeatsVariable],
+    let count = Int(text), count > 0
+  else { return skillTriggerDefaultRepeats }
+  return count
 }
 
 // MARK: - The bar
@@ -62,31 +62,31 @@ let skillTriggerFloor = 0.5
 
 /// The rate of one sample over its runs.
 struct SkillTriggerRate: Sendable {
-    /// The sample.
-    let sample: SkillTriggerSample
+  /// The sample.
+  let sample: SkillTriggerSample
 
-    /// The runs of that sample.
-    let runs: [SkillTriggerRun]
+  /// The runs of that sample.
+  let runs: [SkillTriggerRun]
 
-    /// The share of runs that did what the sample asks.
-    var rate: Double {
-        guard !runs.isEmpty else { return 0 }
-        return Double(runs.filter(\.passed).count) / Double(runs.count)
-    }
+  /// The share of runs that did what the sample asks.
+  var rate: Double {
+    guard !runs.isEmpty else { return 0 }
+    return Double(runs.filter(\.passed).count) / Double(runs.count)
+  }
 
-    /// One line for the report.
-    var line: String {
-        let ids = Set(runs.flatMap(\.loadedSkillIDs)).sorted().joined(separator: ",")
-        let expected = sample.expectedSkillID ?? "(none)"
-        return
-            "\(sample.name) expected=\(expected) rate=\(rate) loaded=[\(ids)] "
-            + "skillsCalls=\(runs.map(\.skillsCallCount)) "
-            + "toolsSeen=\(Set(runs.flatMap(\.toolTitlesSeen)).sorted()) "
-            + "seconds=\(runs.map { Int($0.elapsedSeconds) })"
-            + runs.filter { !$0.passed }.map { run in
-                " stop=\(run.stopReason.map { "\($0)" } ?? "none") answer=\"\(run.answerPreview)\""
-            }.joined()
-    }
+  /// One line for the report.
+  var line: String {
+    let ids = Set(runs.flatMap(\.loadedSkillIDs)).sorted().joined(separator: ",")
+    let expected = sample.expectedSkillID ?? "(none)"
+    return
+      "\(sample.name) expected=\(expected) rate=\(rate) loaded=[\(ids)] "
+      + "skillsCalls=\(runs.map(\.skillsCallCount)) "
+      + "toolsSeen=\(Set(runs.flatMap(\.toolTitlesSeen)).sorted()) "
+      + "seconds=\(runs.map { Int($0.elapsedSeconds) })"
+      + runs.filter { !$0.passed }.map { run in
+        " stop=\(run.stopReason.map { "\($0)" } ?? "none") answer=\"\(run.answerPreview)\""
+      }.joined()
+  }
 }
 
 // MARK: - The suite
@@ -125,75 +125,76 @@ struct SkillTriggerRate: Sendable {
 /// ```
 @Suite(.serialized)
 struct SkillTriggerTests {
-    /// Runs the selected samples and asserts the bar for each one, then
-    /// asserts that the models left the pool.
-    @Test("A live model loads the skill that fits the task")
-    func aLiveModelLoadsTheSkillThatFitsTheTask() async throws {
-        for rate in try await Self.measureSelectedSamples() {
-            let sample = rate.sample
-            // The rate is the result of this suite, thus it goes to the
-            // reader whether the bar passes or fails.
-            print("SKILL TRIGGER \(rate.line)")
-            let message: Comment = """
-                the model loaded `\(sample.expectedSkillID ?? "(none)")` for \
-                `\(sample.name)` in \(rate.rate) of the runs, under the floor \
-                \(skillTriggerFloor): \(rate.line)
-                """
-            #expect(rate.rate >= skillTriggerFloor, message)
-        }
-        let resident = await ProcessModelPool.residentModelsAfterRelease()
-        #expect(
-            resident.isEmpty,
-            "the suite keeps models resident, so the next live-model suite cannot resolve: \(ProcessModelPool.describe(resident))")
+  /// Runs the selected samples and asserts the bar for each one, then
+  /// asserts that the models left the pool.
+  @Test("A live model loads the skill that fits the task")
+  func aLiveModelLoadsTheSkillThatFitsTheTask() async throws {
+    for rate in try await Self.measureSelectedSamples() {
+      let sample = rate.sample
+      // The rate is the result of this suite, thus it goes to the
+      // reader whether the bar passes or fails.
+      print("SKILL TRIGGER \(rate.line)")
+      let message: Comment = """
+        the model loaded `\(sample.expectedSkillID ?? "(none)")` for \
+        `\(sample.name)` in \(rate.rate) of the runs, under the floor \
+        \(skillTriggerFloor): \(rate.line)
+        """
+      #expect(rate.rate >= skillTriggerFloor, message)
     }
+    let resident = await ProcessModelPool.residentModelsAfterRelease()
+    #expect(
+      resident.isEmpty,
+      "the suite keeps models resident, so the next live-model suite cannot resolve: \(ProcessModelPool.describe(resident))"
+    )
+  }
 
-    /// Makes the subject, drives each selected sample, and closes the
-    /// subject, also when a run throws. The real models load one time, and
-    /// each sample runs its own session against them. At the return no
-    /// reference to the agent stays, so the pool can evict its models.
-    ///
-    /// - Returns: The rate of each selected sample, in report order.
-    /// - Throws: Whatever the subject or a run throws.
-    private static func measureSelectedSamples() async throws -> [SkillTriggerRate] {
-        let subject = try await SkillTriggerSubject.make()
-        do {
-            let rates = try await rates(of: subject)
-            await subject.close()
-            return rates
-        } catch {
-            await subject.close()
-            throw error
-        }
+  /// Makes the subject, drives each selected sample, and closes the
+  /// subject, also when a run throws. The real models load one time, and
+  /// each sample runs its own session against them. At the return no
+  /// reference to the agent stays, so the pool can evict its models.
+  ///
+  /// - Returns: The rate of each selected sample, in report order.
+  /// - Throws: Whatever the subject or a run throws.
+  private static func measureSelectedSamples() async throws -> [SkillTriggerRate] {
+    let subject = try await SkillTriggerSubject.make()
+    do {
+      let rates = try await rates(of: subject)
+      await subject.close()
+      return rates
+    } catch {
+      await subject.close()
+      throw error
     }
+  }
 
-    /// Drives each selected sample ``skillTriggerRepeats`` times.
-    ///
-    /// - Parameter subject: The live subject.
-    /// - Returns: The rate of each selected sample, in report order.
-    /// - Throws: Whatever a run throws.
-    private static func rates(of subject: SkillTriggerSubject) async throws -> [SkillTriggerRate] {
-        try await skillTriggerSamples.asyncMap { sample in
-            SkillTriggerRate(
-                sample: sample,
-                runs: try await (0..<skillTriggerRepeats).asyncMap { _ in
-                    try await subject.run(sample: sample)
-                })
-        }
+  /// Drives each selected sample ``skillTriggerRepeats`` times.
+  ///
+  /// - Parameter subject: The live subject.
+  /// - Returns: The rate of each selected sample, in report order.
+  /// - Throws: Whatever a run throws.
+  private static func rates(of subject: SkillTriggerSubject) async throws -> [SkillTriggerRate] {
+    try await skillTriggerSamples.asyncMap { sample in
+      SkillTriggerRate(
+        sample: sample,
+        runs: try await (0..<skillTriggerRepeats).asyncMap { _ in
+          try await subject.run(sample: sample)
+        })
     }
+  }
 }
 
 extension Collection {
-    /// The results of `transform` for each element, in order. Each call
-    /// ends before the next one starts, so the live runs never overlap.
-    ///
-    /// - Parameter transform: The work for one element.
-    /// - Returns: The results, in the order of the elements.
-    /// - Throws: The first error that `transform` throws.
-    fileprivate func asyncMap<Result>(
-        _ transform: (Element) async throws -> Result
-    ) async rethrows -> [Result] {
-        guard let first else { return [] }
-        let head = try await transform(first)
-        return try await [head] + dropFirst().asyncMap(transform)
-    }
+  /// The results of `transform` for each element, in order. Each call
+  /// ends before the next one starts, so the live runs never overlap.
+  ///
+  /// - Parameter transform: The work for one element.
+  /// - Returns: The results, in the order of the elements.
+  /// - Throws: The first error that `transform` throws.
+  fileprivate func asyncMap<Result>(
+    _ transform: (Element) async throws -> Result
+  ) async rethrows -> [Result] {
+    guard let first else { return [] }
+    let head = try await transform(first)
+    return try await [head] + dropFirst().asyncMap(transform)
+  }
 }

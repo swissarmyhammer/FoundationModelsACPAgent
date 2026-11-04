@@ -473,10 +473,10 @@ struct SinkedShellSession {
   ///
   /// - Parameters:
   ///   - runCallJoins: The join table of the session.
-  ///   - snapshot: The reader of the stored output of a run; the default
+  ///   - snapshot: The reader of the stored output of a run, for the prompt and for the terminal stream alike; the default
   ///     finds no run.
   init(runCallJoins: RunCallJoinTable, snapshot: @escaping ShellSnapshotProvider = { _ in nil }) {
-    let (sinkedExecution, recorder) = makeSinkedExecution()
+    let (sinkedExecution, recorder) = makeSinkedExecution(shellSnapshot: snapshot)
     var execution = sinkedExecution
     execution.runCallJoins = runCallJoins
     runCallJoins.openProjection()

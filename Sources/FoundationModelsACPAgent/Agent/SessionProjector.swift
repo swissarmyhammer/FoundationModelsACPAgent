@@ -96,9 +96,6 @@ actor SessionProjector {
     case releaseHold(token: String, handled: CheckedContinuation<Void, Never>)
   }
 
-  /// The id of the ACP session, for the logs.
-  nonisolated let sessionId: SessionId
-
   /// The relay of the elicitations of the session, or `nil` when the agent
   /// has no bound connection.
   nonisolated let relay: ElicitationRelay?
@@ -140,7 +137,6 @@ actor SessionProjector {
     runCallJoins: RunCallJoinTable,
     stateLedger: SessionStateLedger? = nil
   ) {
-    self.sessionId = sessionId
     self.relay = relay
     self.runCallJoins = runCallJoins
     // The final status of an `agents` call waits for the end of its child
@@ -257,10 +253,29 @@ actor SessionProjector {
   /// After ``stop()``, an update goes nowhere.
   nonisolated var commandSink: SessionUpdateSink {
     { [inbox] update in
-      await withCheckedContinuation { sent in
-        if case .terminated = inbox.yield(.update(update, sent: sent)) {
-          sent.resume()
-        }
+      await Self.yieldAndWait(to: inbox) { .update(update, sent: $0) }
+    }
+  }
+
+  /// Offers one item to the inbox, and suspends until the consumer handled
+  /// it. The three senders that wait for their item (the command sink, the
+  /// end of a run and the end of a hold) use this one handshake.
+  ///
+  /// - Parameters:
+  ///   - inbox: The input end of the inbox.
+  ///   - ifTerminated: The work to do when the inbox is terminated and the
+  ///     item went nowhere. It runs before the wait ends. Nothing by default.
+  ///   - makeInput: Makes the item from the continuation that the consumer
+  ///     resumes when it handled the item.
+  private nonisolated static func yieldAndWait(
+    to inbox: AsyncStream<Input>.Continuation,
+    ifTerminated: () -> Void = {},
+    _ makeInput: (CheckedContinuation<Void, Never>) -> Input
+  ) async {
+    await withCheckedContinuation { handled in
+      if case .terminated = inbox.yield(makeInput(handled)) {
+        ifTerminated()
+        handled.resume()
       }
     }
   }
@@ -276,11 +291,7 @@ actor SessionProjector {
     for reader in Array(readers.values) {
       await reader.value
     }
-    await withCheckedContinuation { handled in
-      if case .terminated = inbox.yield(.runEnded(idle, handled: handled)) {
-        handled.resume()
-      }
-    }
+    await Self.yieldAndWait(to: inbox) { .runEnded(idle, handled: $0) }
   }
 
   /// Ends the hold on the final status of the `agents` call of a run, and sends the statuses
@@ -290,12 +301,9 @@ actor SessionProjector {
   ///
   /// - Parameter token: The completion token of the call that started the run.
   nonisolated func releaseHold(of token: String) async {
-    await withCheckedContinuation { handled in
-      if case .terminated = inbox.yield(.releaseHold(token: token, handled: handled)) {
-        _ = runCallJoins.holds.release(token)
-        handled.resume()
-      }
-    }
+    await Self.yieldAndWait(
+      to: inbox, ifTerminated: { _ = runCallJoins.holds.release(token) },
+      { .releaseHold(token: token, handled: $0) })
   }
 
   /// Stops the projector after each item in the inbox. A prompt that is

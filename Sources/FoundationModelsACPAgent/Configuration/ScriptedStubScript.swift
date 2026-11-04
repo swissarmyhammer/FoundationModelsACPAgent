@@ -131,6 +131,7 @@ public enum ScriptedStubScriptError: Error, Equatable, CustomStringConvertible, 
     }
   }
 
+  /// The message of the error: the file, the place and the problem.
   public var description: String {
     switch self {
     case .unreadable(let path, let reason):
@@ -140,6 +141,7 @@ public enum ScriptedStubScriptError: Error, Equatable, CustomStringConvertible, 
     }
   }
 
+  /// The message that a `LocalizedError` shows, the same as ``description``.
   public var errorDescription: String? {
     description
   }

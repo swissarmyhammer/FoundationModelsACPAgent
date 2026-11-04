@@ -20,12 +20,6 @@ struct ProfileDoctorTests {
   /// The number of findings a test that expects exactly one gets.
   private static let oneFinding = 1
 
-  /// A memory figure far above the floor, so the memory row passes.
-  private static let generousMemoryBytes: Int64 = 68_719_476_736
-
-  /// A free-disk figure far above any download, so the disk row passes.
-  private static let generousDiskBytes: Int64 = 1_099_511_627_776
-
   /// A memory figure below the floor: 16 GB, the machine cli-plan.md §7
   /// names as too small.
   private static let smallMemoryBytes: Int64 = 17_179_869_184
@@ -105,25 +99,13 @@ struct ProfileDoctorTests {
   private static func doctor(
     configuration: AgentConfiguration = AgentConfiguration(),
     resolver: StubModelResolver = StubModelResolver(),
-    memoryBytes: Int64 = ProfileDoctorTests.generousMemoryBytes,
-    freeDiskBytes: Int64 = ProfileDoctorTests.generousDiskBytes,
+    memoryBytes: Int64 = DoctorMachineFigures.generousMemoryBytes,
+    freeDiskBytes: Int64 = DoctorMachineFigures.generousDiskBytes,
     timeoutSeconds: Double = ProfileDoctor.resolveTimeoutSeconds
   ) -> ProfileDoctor {
     ProfileDoctor(
       configuration: configuration, resolver: resolver, memoryBytes: memoryBytes,
       freeDiskBytes: freeDiskBytes, timeoutSeconds: timeoutSeconds)
-  }
-
-  /// The findings of `checks` that carry `status`.
-  ///
-  /// - Parameters:
-  ///   - status: The status to keep.
-  ///   - checks: The findings to filter.
-  /// - Returns: The findings that carry `status`.
-  private static func findings(
-    _ status: HealthStatus, in checks: [HealthCheck]
-  ) -> [HealthCheck] {
-    checks.filter { $0.status == status }
   }
 
   /// A configuration whose `standard` slot names one reference.
@@ -134,18 +116,6 @@ struct ProfileDoctorTests {
     var configuration = AgentConfiguration()
     configuration.profile.standard = [reference]
     return configuration
-  }
-
-  /// A lookup table that finds every reference of `references`, each one
-  /// already in the cache.
-  ///
-  /// - Parameter references: The references the table names.
-  /// - Returns: The table.
-  private static func foundLookups(of references: [ModelRef]) -> [String: ModelLookup] {
-    Dictionary(
-      uniqueKeysWithValues: references.map {
-        ($0.stringValue, ModelLookup.found(downloadBytes: 0))
-      })
   }
 
   // MARK: - The shipped defaults
@@ -169,7 +139,7 @@ struct ProfileDoctorTests {
       configuration: Self.configuration(standard: Self.malformedReference)
     ).runHealthChecks()
 
-    let errors = Self.findings(.error, in: checks)
+    let errors = checks.findings(.error)
     let failure = try #require(errors.first)
     #expect(errors.count == Self.oneFinding)
     #expect(failure.name.contains(Self.standardKey))
@@ -182,7 +152,7 @@ struct ProfileDoctorTests {
   /// know adds no second failure for it.
   @Test func aMalformedReferenceIsNeverLookedUp() async {
     let resolver = StubModelResolver(
-      namedLookups: Self.foundLookups(
+      namedLookups: StubModelResolver.foundLookups(
         of: ProfileConfiguration.defaultFlash + ProfileConfiguration.defaultEmbedding),
       lookup: .notFound)
 
@@ -191,7 +161,7 @@ struct ProfileDoctorTests {
       resolver: resolver
     ).runHealthChecks()
 
-    #expect(Self.findings(.error, in: checks).count == Self.oneFinding)
+    #expect(checks.findings(.error).count == Self.oneFinding)
   }
 
   // MARK: - The resolve check
@@ -204,7 +174,7 @@ struct ProfileDoctorTests {
 
     let checks = await Self.doctor(resolver: resolver).runHealthChecks()
 
-    let errors = Self.findings(.error, in: checks)
+    let errors = checks.findings(.error)
     let failure = try #require(errors.first)
     let fix = try #require(failure.fix)
     #expect(errors.count == Self.oneFinding)
@@ -224,12 +194,12 @@ struct ProfileDoctorTests {
 
     let checks = await Self.doctor(resolver: resolver).runHealthChecks()
 
-    let warnings = Self.findings(.warning, in: checks)
+    let warnings = checks.findings(.warning)
     let warning = try #require(warnings.first)
     #expect(warnings.count == Self.oneFinding)
     #expect(warning.message.contains(Self.unreachableReason))
     #expect(warning.fix != nil)
-    #expect(Self.findings(.error, in: checks).isEmpty)
+    #expect(checks.findings(.error).isEmpty)
   }
 
   /// A resolver that does not answer in time gives one `.warning`, and
@@ -249,7 +219,7 @@ struct ProfileDoctorTests {
     ).runHealthChecks()
     await resolver.lateAnswers.open()
 
-    let warnings = Self.findings(.warning, in: checks)
+    let warnings = checks.findings(.warning)
     let warning = try #require(warnings.first)
     #expect(warnings.count == Self.oneFinding)
     #expect(warning.message.contains(reference.stringValue))
@@ -262,7 +232,8 @@ struct ProfileDoctorTests {
   @Test func theDefaultTimeoutIsTheNamedResolveTimeout() {
     let component = ProfileDoctor(
       configuration: AgentConfiguration(), resolver: StubModelResolver(),
-      memoryBytes: Self.generousMemoryBytes, freeDiskBytes: Self.generousDiskBytes)
+      memoryBytes: DoctorMachineFigures.generousMemoryBytes,
+      freeDiskBytes: DoctorMachineFigures.generousDiskBytes)
 
     #expect(component.timeoutSeconds == ProfileDoctor.resolveTimeoutSeconds)
   }
@@ -296,7 +267,7 @@ struct ProfileDoctorTests {
   @Test func aMemoryFigureBelowTheFloorGivesOneErrorWithBothFigures() async throws {
     let checks = await Self.doctor(memoryBytes: Self.smallMemoryBytes).runHealthChecks()
 
-    let errors = Self.findings(.error, in: checks)
+    let errors = checks.findings(.error)
     let failure = try #require(errors.first)
     let fix = try #require(failure.fix)
     #expect(errors.count == Self.oneFinding)
@@ -316,7 +287,7 @@ struct ProfileDoctorTests {
       resolver: resolver, freeDiskBytes: Self.smallDiskBytes
     ).runHealthChecks()
 
-    let errors = Self.findings(.error, in: checks)
+    let errors = checks.findings(.error)
     let failure = try #require(errors.first)
     #expect(errors.count == Self.oneFinding)
     #expect(failure.message.contains(Self.smallDiskText))
@@ -335,7 +306,7 @@ struct ProfileDoctorTests {
 
     let checks = await Self.doctor(configuration: configuration).runHealthChecks()
 
-    let warnings = Self.findings(.warning, in: checks)
+    let warnings = checks.findings(.warning)
     let warning = try #require(warnings.first)
     let fix = try #require(warning.fix)
     #expect(warnings.count == Self.oneFinding)
@@ -352,7 +323,7 @@ struct ProfileDoctorTests {
         standard: ModelRef(repo: Self.mtpReference.repo, drafter: Self.mtpReference))
     ).runHealthChecks()
 
-    #expect(Self.findings(.warning, in: checks).isEmpty)
+    checks.expectNoWarning()
   }
 
   /// The drafter of a reference is looked up as a model of its own: a
@@ -369,7 +340,7 @@ struct ProfileDoctorTests {
       resolver: resolver
     ).runHealthChecks()
 
-    let errors = Self.findings(.error, in: checks)
+    let errors = checks.findings(.error)
     let failure = try #require(errors.first)
     #expect(errors.count == Self.oneFinding)
     #expect(failure.name.contains(Self.standardDrafterKey))
@@ -381,7 +352,7 @@ struct ProfileDoctorTests {
   @Test func theShippedDefaultsGiveNoMTPWarning() async {
     let checks = await Self.doctor().runHealthChecks()
 
-    #expect(Self.findings(.warning, in: checks).isEmpty)
+    checks.expectNoWarning()
   }
 
   // MARK: - The fix rule

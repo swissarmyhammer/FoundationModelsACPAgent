@@ -102,6 +102,25 @@ public struct RepetitionConfiguration: Codable, Equatable, Sendable, KeyCheckedS
     }
   }
 
+  /// Encodes each key. A limit that is `nil` is written as an explicit
+  /// `null`, because the decoder reads a `null` as "no limit" and an absent
+  /// key as Router's default limit. So a write and a read keep "no limit".
+  ///
+  /// - Parameter encoder: The encoder of the section.
+  /// - Throws: `EncodingError` when a value cannot be written.
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(isEnabled, forKey: .isEnabled)
+    try container.encode(windowTokens, forKey: .windowTokens)
+    try container.encode(minimumLineLength, forKey: .minimumLineLength)
+    try container.encode(recoveriesPerAnswer, forKey: .recoveriesPerAnswer)
+    try container.encode(passTokenLimit, forKey: .passTokenLimit)
+    try container.encode(comparesLineShapes, forKey: .comparesLineShapes)
+    try container.encode(shortLineRepeatThreshold, forKey: .shortLineRepeatThreshold)
+    try container.encode(reasoningTokenLimit, forKey: .reasoningTokenLimit)
+    try container.encode(identicalToolCallLimit, forKey: .identicalToolCallLimit)
+  }
+
   /// The detection a session gets from this section.
   public var detection: RepetitionDetection {
     RepetitionDetection(

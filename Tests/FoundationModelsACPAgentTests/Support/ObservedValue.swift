@@ -57,30 +57,32 @@ enum ObservedValue {
 /// ``fire(_:)``. A change of the observed state, the read that finds the
 /// condition true, and a cancel can each call it, from different threads.
 final class OneShot: Sendable {
-  /// The armed continuation, and the value of a fire that came before the
-  /// arm.
-  private struct State {
-    /// The continuation to resume, or `nil` before the arm and after the
-    /// fire.
-    var continuation: CheckedContinuation<Bool, Never>?
+  /// The state of the shot. Only the valid states can be written: a
+  /// continuation waits only before the fire, and a value exists only after
+  /// the fire.
+  private enum State {
+    /// No arm and no fire came.
+    case unarmed
 
-    /// Whether a fire already came.
-    var fired = false
+    /// The continuation waits for the fire.
+    case armed(CheckedContinuation<Bool, Never>)
 
-    /// The value of the first fire.
-    var value = false
+    /// The first fire came, with this value.
+    case fired(Bool)
   }
 
   /// The state, under one lock.
-  private let state = Mutex(State())
+  private let state = Mutex(State.unarmed)
 
   /// Keeps `continuation`. A fire that already came resumes it at once.
   ///
   /// - Parameter continuation: The continuation of the wait.
   func arm(_ continuation: CheckedContinuation<Bool, Never>) {
     let firedValue = state.withLock { state -> Bool? in
-      guard !state.fired else { return state.value }
-      state.continuation = continuation
+      if case .fired(let value) = state {
+        return value
+      }
+      state = .armed(continuation)
       return nil
     }
     if let firedValue {
@@ -93,11 +95,14 @@ final class OneShot: Sendable {
   /// - Parameter value: Whether the condition is true.
   func fire(_ value: Bool) {
     let continuation = state.withLock { state -> CheckedContinuation<Bool, Never>? in
-      guard !state.fired else { return nil }
-      state.fired = true
-      state.value = value
-      defer { state.continuation = nil }
-      return state.continuation
+      if case .fired = state {
+        return nil
+      }
+      defer { state = .fired(value) }
+      if case .armed(let continuation) = state {
+        return continuation
+      }
+      return nil
     }
     continuation?.resume(returning: value)
   }

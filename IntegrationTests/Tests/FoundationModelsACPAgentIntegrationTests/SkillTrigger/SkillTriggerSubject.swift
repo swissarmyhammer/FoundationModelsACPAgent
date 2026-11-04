@@ -8,37 +8,37 @@ import FoundationModelsRouter
 /// What one sample run observed: which skills the model loaded, and how the
 /// prompt ended.
 struct SkillTriggerRun: Sendable {
-    /// The sample that was driven.
-    let sample: SkillTriggerSample
+  /// The sample that was driven.
+  let sample: SkillTriggerSample
 
-    /// The ids the model loaded with `use skill`, in call order.
-    let loadedSkillIDs: [String]
+  /// The ids the model loaded with `use skill`, in call order.
+  let loadedSkillIDs: [String]
 
-    /// How many `skills` calls of any operation the model made.
-    let skillsCallCount: Int
+  /// How many `skills` calls of any operation the model made.
+  let skillsCallCount: Int
 
-    /// The stop reason of the prompt, or `nil` when no idle came.
-    let stopReason: StopReason?
+  /// The stop reason of the prompt, or `nil` when no idle came.
+  let stopReason: StopReason?
 
-    /// The wall-clock seconds of the prompt.
-    let elapsedSeconds: Double
+  /// The wall-clock seconds of the prompt.
+  let elapsedSeconds: Double
 
-    /// The title of every tool call the wire carried, which names the tool.
-    /// A run that saw no `skills` call says here what it did see instead.
-    let toolTitlesSeen: [String]
+  /// The title of every tool call the wire carried, which names the tool.
+  /// A run that saw no `skills` call says here what it did see instead.
+  let toolTitlesSeen: [String]
 
-    /// The start of the text the model wrote in the prompt. A run that loaded
-    /// no skill says here what the model did instead.
-    let answerPreview: String
+  /// The start of the text the model wrote in the prompt. A run that loaded
+  /// no skill says here what the model did instead.
+  let answerPreview: String
 
-    /// Whether the run did what the sample asks: the expected skill is
-    /// loaded, or no skill is loaded when the sample expects none.
-    var passed: Bool {
-        guard let expected = sample.expectedSkillID else {
-            return loadedSkillIDs.isEmpty
-        }
-        return loadedSkillIDs.contains(expected)
+  /// Whether the run did what the sample asks: the expected skill is
+  /// loaded, or no skill is loaded when the sample expects none.
+  var passed: Bool {
+    guard let expected = sample.expectedSkillID else {
+      return loadedSkillIDs.isEmpty
     }
+    return loadedSkillIDs.contains(expected)
+  }
 }
 
 /// The model of the standard slot of a live run.
@@ -48,12 +48,12 @@ struct SkillTriggerRun: Sendable {
 /// that the shipped model uses skills. The test follows a change of that
 /// default with no edit. `ACP_AGENT_SKILL_TRIGGER_MODEL` pins another model.
 let skillTriggerModel: String = {
-    let variable = "ACP_AGENT_SKILL_TRIGGER_MODEL"
-    let value = ProcessInfo.processInfo.environment[variable]
-    guard let shipped = ProfileConfiguration.defaultStandard.first?.stringValue else {
-        preconditionFailure("ProfileConfiguration.defaultStandard names no model")
-    }
-    return (value?.isEmpty == false ? value : nil) ?? shipped
+  let variable = "ACP_AGENT_SKILL_TRIGGER_MODEL"
+  let value = ProcessInfo.processInfo.environment[variable]
+  guard let shipped = ProfileConfiguration.defaultStandard.first?.stringValue else {
+    preconditionFailure("ProfileConfiguration.defaultStandard names no model")
+  }
+  return (value?.isEmpty == false ? value : nil) ?? shipped
 }()
 
 /// The live subject of the skill trigger gate: one composed agent, one
@@ -65,267 +65,270 @@ let skillTriggerModel: String = {
 /// package (`SkillsLibraryTests`); nothing here would fail because a tool is
 /// unmounted, and nothing there tells us what a model chooses.
 struct SkillTriggerSubject {
-    // The measurement is the FIRST move: does the model load a skill for
-    // this task? It measures what the model chose, not when. A run stops at
-    // the decision: the first `use skill` call that reaches the wire, or
-    // the idle of the prompt when the model ended with no skill. Then it
-    // cancels the prompt. Each wait is an event wait on the collector, with
-    // no clock: a sample that no skill covers runs until its prompt ends.
-    //
-    // Measured on 2026-09-19 with `mlx-community/Qwen3.8-27B-mxfp4`: the
-    // five covered tasks each made their `use skill` call inside the first
-    // minute of a prompt that then ran for 202 to 297 seconds. Waiting for
-    // the idle terminator thus paid three to four minutes for a fact the
-    // first minute already held.
+  // The measurement is the FIRST move: does the model load a skill for
+  // this task? It measures what the model chose, not when. A run stops at
+  // the decision: the first `use skill` call that reaches the wire, or
+  // the idle of the prompt when the model ended with no skill. Then it
+  // cancels the prompt. Each wait is an event wait on the collector, with
+  // no clock: a sample that no skill covers runs until its prompt ends.
+  //
+  // Measured on 2026-09-19 with `mlx-community/Qwen3.8-27B-mxfp4`: the
+  // five covered tasks each made their `use skill` call inside the first
+  // minute of a prompt that then ran for 202 to 297 seconds. Waiting for
+  // the idle terminator thus paid three to four minutes for a fact the
+  // first minute already held.
 
-    /// The user-layer `config.yaml`: the transcripts record under the user
-    /// directory, outside the workspace, so a removed workspace keeps its
-    /// transcript. The shell and the code context stay off, because no
-    /// sample needs them and each one makes a prompt slower. The skills
-    /// marketplace list is empty: the gate measures the skills of its own
-    /// samples, and the skills of the default marketplace would change that
-    /// set and need the network.
-    ///
-    /// The standard slot is ``skillTriggerModel``, which is the shipped
-    /// standard model unless `ACP_AGENT_SKILL_TRIGGER_MODEL` pins another
-    /// one.
-    static var userConfigYAML: String {
-        """
-        transcripts:
-          location: home
-        tools:
-          shell: false
-          codeContext: false
-          skills:
-            marketplaces: []
-        profile:
-          standard: ["\(skillTriggerModel)"]
-        """
+  /// The user-layer `config.yaml`: the transcripts record under the user
+  /// directory, outside the workspace, so a removed workspace keeps its
+  /// transcript. The shell and the code context stay off, because no
+  /// sample needs them and each one makes a prompt slower. The skills
+  /// marketplace list is empty: the gate measures the skills of its own
+  /// samples, and the skills of the default marketplace would change that
+  /// set and need the network.
+  ///
+  /// The standard slot is ``skillTriggerModel``, which is the shipped
+  /// standard model unless `ACP_AGENT_SKILL_TRIGGER_MODEL` pins another
+  /// one.
+  static var userConfigYAML: String {
+    """
+    transcripts:
+      location: home
+    tools:
+      shell: false
+      codeContext: false
+      skills:
+        marketplaces: []
+    profile:
+      standard: ["\(skillTriggerModel)"]
+    """
+  }
+
+  /// The wired harness of the run.
+  let harness: AgentClientHarness
+
+  /// The recorder of the notification sequence.
+  let collector: UpdateCollector
+
+  /// Composes the live agent of a run and opens the wire to it.
+  ///
+  /// The agent resolves its profile here, thus the real models load here.
+  /// The caller closes the subject with ``close()`` at the end of the run,
+  /// and keeps no reference to it after that.
+  ///
+  /// - Returns: The subject.
+  /// - Throws: Whatever the composition (``LiveAgent``) or the handshake
+  ///   throws.
+  static func make() async throws -> SkillTriggerSubject {
+    let harness = try await LiveAgent.makeHarness(
+      label: "SkillTrigger", userConfigYAML: userConfigYAML)
+    do {
+      _ = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())
+    } catch {
+      await harness.close()
+      throw error
     }
-
-    /// The wired harness of the run.
-    let harness: AgentClientHarness
-
-    /// The recorder of the notification sequence.
-    let collector: UpdateCollector
-
-    /// Composes the live agent of a run and opens the wire to it.
-    ///
-    /// The agent resolves its profile here, thus the real models load here.
-    /// The caller closes the subject with ``close()`` at the end of the run,
-    /// and keeps no reference to it after that.
-    ///
-    /// - Returns: The subject.
-    /// - Throws: Whatever the composition (``LiveAgent``) or the handshake
-    ///   throws.
-    static func make() async throws -> SkillTriggerSubject {
-        let harness = try await LiveAgent.makeHarness(
-            label: "SkillTrigger", userConfigYAML: userConfigYAML)
-        do {
-            _ = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())
-        } catch {
-            await harness.close()
-            throw error
-        }
-        guard let collector = harness.collector else {
-            preconditionFailure("makeRecording always wires a collector")
-        }
-        return SkillTriggerSubject(harness: harness, collector: collector)
+    guard let collector = harness.collector else {
+      preconditionFailure("makeRecording always wires a collector")
     }
+    return SkillTriggerSubject(harness: harness, collector: collector)
+  }
 
-    /// Closes the wire to the agent. After the last reference to the subject
-    /// goes, no reference to the agent stays, and the agent gives back the
-    /// hold of each model of its profile.
-    func close() async {
-        await harness.close()
+  /// Closes the wire to the agent. After the last reference to the subject
+  /// goes, no reference to the agent stays, and the agent gives back the
+  /// hold of each model of its profile.
+  func close() async {
+    await harness.close()
+  }
+
+  /// The skills library of the root package.
+  ///
+  /// - Parameter filePath: The calling file, which anchors the walk to the
+  ///   repository root.
+  /// - Returns: The library directory.
+  static func libraryDirectory(fromFile filePath: StaticString = #filePath) -> URL {
+    var candidate = URL(fileURLWithPath: "\(filePath)").deletingLastPathComponent()
+    while candidate.path != "/" {
+      let library = candidate.appendingPathComponent("Tests/Fixtures/skills", isDirectory: true)
+      if FileManager.default.fileExists(atPath: library.path) {
+        return library
+      }
+      candidate = candidate.deletingLastPathComponent()
     }
+    preconditionFailure("no ancestor of \(filePath) holds Tests/Fixtures/skills")
+  }
 
-    /// The skills library of the root package.
-    ///
-    /// - Parameter filePath: The calling file, which anchors the walk to the
-    ///   repository root.
-    /// - Returns: The library directory.
-    static func libraryDirectory(fromFile filePath: StaticString = #filePath) -> URL {
-        var candidate = URL(fileURLWithPath: "\(filePath)").deletingLastPathComponent()
-        while candidate.path != "/" {
-            let library = candidate.appendingPathComponent("Tests/Fixtures/skills", isDirectory: true)
-            if FileManager.default.fileExists(atPath: library.path) {
-                return library
-            }
-            candidate = candidate.deletingLastPathComponent()
-        }
-        preconditionFailure("no ancestor of \(filePath) holds Tests/Fixtures/skills")
+  /// Makes a fresh workspace whose project layer holds the skills library.
+  ///
+  /// - Returns: The workspace directory.
+  /// - Throws: Whatever the copy throws.
+  static func makeWorkspace() throws -> URL {
+    let workspace = makeResolvedDirectory(label: "SkillTrigger-workspace")
+    try FileManager.default.copyItem(
+      at: libraryDirectory(),
+      to: workspace.appendingPathComponent(".skills", isDirectory: true))
+    return workspace
+  }
+
+  /// Drives one sample in its own session and reads what it loaded.
+  ///
+  /// - Parameter sample: The sample to drive.
+  /// - Returns: What the run observed.
+  /// - Throws: Whatever the session or the prompt throws.
+  func run(sample: SkillTriggerSample) async throws -> SkillTriggerRun {
+    let workspace = try Self.makeWorkspace()
+    let response = try await harness.connection.newSession(
+      NewSessionRequest(cwd: AbsolutePath(rawValue: workspace.path)))
+    let sessionId = response.sessionId
+    let start = ContinuousClock.now
+    _ = try await harness.connection.prompt(
+      AgentClientHarness.makePromptRequest(sessionId: sessionId, text: sample.prompt))
+    let decision = try await Self.waitForDecision(collector: collector, sessionId: sessionId)
+    let elapsed = start.duration(to: ContinuousClock.now)
+    // The prompt goes on doing the work of the task, and the work is not
+    // the measurement. Cancel it, and wait for the idle the cancel
+    // gives, so the next sample starts on a quiet session.
+    try await harness.connection.sessionCancel(
+      CancelSessionNotification(sessionId: sessionId))
+    let stopReason = try await Self.waitForIdle(collector: collector, sessionId: sessionId)
+    await harness.flushPendingChunks()
+    let answer = await Self.answerText(of: collector, sessionId: sessionId)
+    // The cancel ends the prompt, but a model call or a background run of
+    // the session can still be at work. Drain the session and close it,
+    // so no generation of this sample runs when the next sample starts,
+    // or when the process exits.
+    try await SessionDrain.drainAndClose(sessionId, in: harness)
+    return SkillTriggerRun(
+      sample: sample,
+      loadedSkillIDs: decision.loadedIDs,
+      skillsCallCount: decision.skillsCallCount,
+      stopReason: stopReason,
+      elapsedSeconds: Double(elapsed.components.seconds),
+      toolTitlesSeen: decision.toolTitlesSeen,
+      answerPreview: String(answer.prefix(Self.answerPreviewLength)))
+  }
+
+  /// The characters of the answer that a report line shows.
+  static let answerPreviewLength = 240
+
+  /// The text the model wrote in one session, joined in wire order.
+  ///
+  /// - Parameters:
+  ///   - collector: The recorder of the sequence.
+  ///   - sessionId: The session to read.
+  /// - Returns: The answer text, with its line breaks as spaces.
+  private static func answerText(
+    of collector: UpdateCollector, sessionId: SessionId
+  ) async -> String {
+    let chunks = await collector.updates.compactMap { notification -> String? in
+      guard notification.sessionId == sessionId,
+        case .agentMessageChunk(let chunk) = notification.update,
+        case .text(let content) = chunk.content
+      else { return nil }
+      return content.text
     }
+    return chunks.joined().replacingOccurrences(of: "\n", with: " ")
+  }
 
-    /// Makes a fresh workspace whose project layer holds the skills library.
-    ///
-    /// - Returns: The workspace directory.
-    /// - Throws: Whatever the copy throws.
-    static func makeWorkspace() throws -> URL {
-        let workspace = makeResolvedDirectory(label: "SkillTrigger-workspace")
-        try FileManager.default.copyItem(
-            at: libraryDirectory(),
-            to: workspace.appendingPathComponent(".skills", isDirectory: true))
-        return workspace
+  /// What one run saw before it stopped: the ids the model loaded, and
+  /// how many `skills` calls it made.
+  struct SkillsDecision: Sendable {
+    /// The ids of every `use skill` call, in call order.
+    let loadedIDs: [String]
+
+    /// The `skills` calls of any operation.
+    let skillsCallCount: Int
+
+    /// The title of every tool call the wire carried.
+    let toolTitlesSeen: [String]
+  }
+
+  /// Waits for the first `use skill` call of one session, or for the idle
+  /// of its prompt. Each update that the collector gets checks the
+  /// sequence again, so the wait uses no clock and no poll.
+  ///
+  /// The wire carries the name of each tool call in `title` and its
+  /// arguments in `rawInput`, so a run reads the decision as it happens
+  /// and does not wait for the recorded transcript at the end of a prompt.
+  ///
+  /// - Parameters:
+  ///   - collector: The recorder of the sequence.
+  ///   - sessionId: The session to watch.
+  /// - Returns: What the run saw.
+  /// - Throws: ``ConditionWaitCancelled`` when the test is cancelled
+  ///   first.
+  private static func waitForDecision(
+    collector: UpdateCollector, sessionId: SessionId
+  ) async throws -> SkillsDecision {
+    let updates = try await collector.wait(for: "the decision of \(sessionId.rawValue)") {
+      updates in
+      !skillsDecision(in: updates, sessionId: sessionId).loadedIDs.isEmpty
+        || updates.contains { stopReason(of: $0, in: sessionId) != nil }
     }
+    return skillsDecision(in: updates, sessionId: sessionId)
+  }
 
-    /// Drives one sample in its own session and reads what it loaded.
-    ///
-    /// - Parameter sample: The sample to drive.
-    /// - Returns: What the run observed.
-    /// - Throws: Whatever the session or the prompt throws.
-    func run(sample: SkillTriggerSample) async throws -> SkillTriggerRun {
-        let workspace = try Self.makeWorkspace()
-        let response = try await harness.connection.newSession(
-            NewSessionRequest(cwd: AbsolutePath(rawValue: workspace.path)))
-        let sessionId = response.sessionId
-        let start = ContinuousClock.now
-        _ = try await harness.connection.prompt(
-            AgentClientHarness.makePromptRequest(sessionId: sessionId, text: sample.prompt))
-        let decision = try await Self.waitForDecision(collector: collector, sessionId: sessionId)
-        let elapsed = start.duration(to: ContinuousClock.now)
-        // The prompt goes on doing the work of the task, and the work is not
-        // the measurement. Cancel it, and wait for the idle the cancel
-        // gives, so the next sample starts on a quiet session.
-        try await harness.connection.sessionCancel(
-            CancelSessionNotification(sessionId: sessionId))
-        let stopReason = try await Self.waitForIdle(collector: collector, sessionId: sessionId)
-        await harness.flushPendingChunks()
-        let answer = await Self.answerText(of: collector, sessionId: sessionId)
-        // The cancel ends the prompt, but a model call or a background run of
-        // the session can still be at work. Drain the session and close it,
-        // so no generation of this sample runs when the next sample starts,
-        // or when the process exits.
-        try await SessionDrain.drainAndClose(sessionId, in: harness)
-        return SkillTriggerRun(
-            sample: sample,
-            loadedSkillIDs: decision.loadedIDs,
-            skillsCallCount: decision.skillsCallCount,
-            stopReason: stopReason,
-            elapsedSeconds: Double(elapsed.components.seconds),
-            toolTitlesSeen: decision.toolTitlesSeen,
-            answerPreview: String(answer.prefix(Self.answerPreviewLength)))
+  /// The `skills` calls the wire carries for one session.
+  ///
+  /// - Parameters:
+  ///   - updates: The collected sequence.
+  ///   - sessionId: The session to read.
+  /// - Returns: The ids the model loaded, and the count of `skills` calls.
+  private static func skillsDecision(
+    in updates: [UpdateSessionNotification], sessionId: SessionId
+  ) -> SkillsDecision {
+    var loadedIDs: [String] = []
+    var callCount = 0
+    var titles: [String] = []
+    for notification in updates where notification.sessionId == sessionId {
+      guard case .toolCallUpdate(let update) = notification.update,
+        case .value(let title) = update.title
+      else { continue }
+      titles.append(title)
+      guard title == "skills", case .value(let rawInput) = update.rawInput,
+        case .object(let arguments) = rawInput
+      else { continue }
+      callCount += 1
+      guard case .string(let operation)? = arguments["op"],
+        operation.lowercased().contains("use"),
+        case .string(let id)? = arguments["id"]
+      else { continue }
+      loadedIDs.append(id)
     }
+    return SkillsDecision(
+      loadedIDs: loadedIDs, skillsCallCount: callCount, toolTitlesSeen: titles)
+  }
 
-    /// The characters of the answer that a report line shows.
-    static let answerPreviewLength = 240
-
-    /// The text the model wrote in one session, joined in wire order.
-    ///
-    /// - Parameters:
-    ///   - collector: The recorder of the sequence.
-    ///   - sessionId: The session to read.
-    /// - Returns: The answer text, with its line breaks as spaces.
-    private static func answerText(
-        of collector: UpdateCollector, sessionId: SessionId
-    ) async -> String {
-        let chunks = await collector.updates.compactMap { notification -> String? in
-            guard notification.sessionId == sessionId,
-                case .agentMessageChunk(let chunk) = notification.update,
-                case .text(let content) = chunk.content
-            else { return nil }
-            return content.text
-        }
-        return chunks.joined().replacingOccurrences(of: "\n", with: " ")
+  /// Waits for the idle terminator of one session. Each update that the
+  /// collector gets checks the sequence again, so the wait uses no clock
+  /// and no poll.
+  ///
+  /// - Parameters:
+  ///   - collector: The recorder of the sequence.
+  ///   - sessionId: The session to watch.
+  /// - Returns: The stop reason.
+  /// - Throws: ``ConditionWaitCancelled`` when the test is cancelled
+  ///   first.
+  private static func waitForIdle(
+    collector: UpdateCollector, sessionId: SessionId
+  ) async throws -> StopReason? {
+    let updates = try await collector.wait(for: "the idle of \(sessionId.rawValue)") { updates in
+      updates.contains { Self.stopReason(of: $0, in: sessionId) != nil }
     }
+    return updates.compactMap { Self.stopReason(of: $0, in: sessionId) }.last
+  }
 
-    /// What one run saw before it stopped: the ids the model loaded, and
-    /// how many `skills` calls it made.
-    struct SkillsDecision: Sendable {
-        /// The ids of every `use skill` call, in call order.
-        let loadedIDs: [String]
-
-        /// The `skills` calls of any operation.
-        let skillsCallCount: Int
-
-        /// The title of every tool call the wire carried.
-        let toolTitlesSeen: [String]
-    }
-
-    /// Waits for the first `use skill` call of one session, or for the idle
-    /// of its prompt. Each update that the collector gets checks the
-    /// sequence again, so the wait uses no clock and no poll.
-    ///
-    /// The wire carries the name of each tool call in `title` and its
-    /// arguments in `rawInput`, so a run reads the decision as it happens
-    /// and does not wait for the recorded transcript at the end of a prompt.
-    ///
-    /// - Parameters:
-    ///   - collector: The recorder of the sequence.
-    ///   - sessionId: The session to watch.
-    /// - Returns: What the run saw.
-    /// - Throws: ``ConditionWaitCancelled`` when the test is cancelled
-    ///   first.
-    private static func waitForDecision(
-        collector: UpdateCollector, sessionId: SessionId
-    ) async throws -> SkillsDecision {
-        let updates = try await collector.wait(for: "the decision of \(sessionId.rawValue)") { updates in
-            !skillsDecision(in: updates, sessionId: sessionId).loadedIDs.isEmpty
-                || updates.contains { stopReason(of: $0, in: sessionId) != nil }
-        }
-        return skillsDecision(in: updates, sessionId: sessionId)
-    }
-
-    /// The `skills` calls the wire carries for one session.
-    ///
-    /// - Parameters:
-    ///   - updates: The collected sequence.
-    ///   - sessionId: The session to read.
-    /// - Returns: The ids the model loaded, and the count of `skills` calls.
-    private static func skillsDecision(
-        in updates: [UpdateSessionNotification], sessionId: SessionId
-    ) -> SkillsDecision {
-        var loadedIDs: [String] = []
-        var callCount = 0
-        var titles: [String] = []
-        for notification in updates where notification.sessionId == sessionId {
-            guard case .toolCallUpdate(let update) = notification.update,
-                case .value(let title) = update.title
-            else { continue }
-            titles.append(title)
-            guard title == "skills", case .value(let rawInput) = update.rawInput,
-                case .object(let arguments) = rawInput
-            else { continue }
-            callCount += 1
-            guard case .string(let operation)? = arguments["op"],
-                operation.lowercased().contains("use"),
-                case .string(let id)? = arguments["id"]
-            else { continue }
-            loadedIDs.append(id)
-        }
-        return SkillsDecision(
-            loadedIDs: loadedIDs, skillsCallCount: callCount, toolTitlesSeen: titles)
-    }
-
-    /// Waits for the idle terminator of one session. Each update that the
-    /// collector gets checks the sequence again, so the wait uses no clock
-    /// and no poll.
-    ///
-    /// - Parameters:
-    ///   - collector: The recorder of the sequence.
-    ///   - sessionId: The session to watch.
-    /// - Returns: The stop reason.
-    /// - Throws: ``ConditionWaitCancelled`` when the test is cancelled
-    ///   first.
-    private static func waitForIdle(
-        collector: UpdateCollector, sessionId: SessionId
-    ) async throws -> StopReason? {
-        let updates = try await collector.wait(for: "the idle of \(sessionId.rawValue)") { updates in
-            updates.contains { Self.stopReason(of: $0, in: sessionId) != nil }
-        }
-        return updates.compactMap { Self.stopReason(of: $0, in: sessionId) }.last
-    }
-
-    /// The stop reason of an idle state update of one session, or `nil`.
-    ///
-    /// - Parameters:
-    ///   - notification: The update.
-    ///   - sessionId: The session to read.
-    /// - Returns: The stop reason.
-    private static func stopReason(of notification: UpdateSessionNotification, in sessionId: SessionId) -> StopReason? {
-        guard notification.sessionId == sessionId,
-            case .stateUpdate(.idle(let idle)) = notification.update
-        else { return nil }
-        return idle.stopReason
-    }
+  /// The stop reason of an idle state update of one session, or `nil`.
+  ///
+  /// - Parameters:
+  ///   - notification: The update.
+  ///   - sessionId: The session to read.
+  /// - Returns: The stop reason.
+  private static func stopReason(
+    of notification: UpdateSessionNotification, in sessionId: SessionId
+  ) -> StopReason? {
+    guard notification.sessionId == sessionId,
+      case .stateUpdate(.idle(let idle)) = notification.update
+    else { return nil }
+    return idle.stopReason
+  }
 }

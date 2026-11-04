@@ -26,153 +26,152 @@ private let sessionsPerRun = 1
 
 /// The recorded transcript of one spawned `acp-agent run`.
 struct TranscriptRecordingTests {
-    // MARK: - Constants
+  // MARK: - Constants
 
-    /// The text of the one prompt. The stub model answers with the prompt
-    /// it received, so the answer text carries it.
-    private static let promptText = "record this prompt"
+  /// The text of the one prompt. The stub model answers with the prompt
+  /// it received, so the answer text carries it.
+  private static let promptText = "record this prompt"
 
-    /// The text of the resumed prompt. It differs from ``promptText`` so
-    /// the recorded file says which prompt wrote which line.
-    private static let resumedPromptText = "record the second prompt too"
+  /// The text of the resumed prompt. It differs from ``promptText`` so
+  /// the recorded file says which prompt wrote which line.
+  private static let resumedPromptText = "record the second prompt too"
 
-    /// The subcommand that runs one prompt (cli-plan.md §5.4).
-    private static let runSubcommand = "run"
+  /// The subcommand that runs one prompt (cli-plan.md §5.4).
+  private static let runSubcommand = "run"
 
-    /// The option that names the working directory of the run.
-    private static let workingDirectoryOption = "--cwd"
+  /// The option that names the working directory of the run.
+  private static let workingDirectoryOption = "--cwd"
 
-    /// The option that continues a recorded session (cli-plan.md §5.4).
-    private static let resumeOption = "--resume"
+  /// The option that continues a recorded session (cli-plan.md §5.4).
+  private static let resumeOption = "--resume"
 
-    // MARK: - The contract
+  // MARK: - The contract
 
-    /// `acp-agent run` writes the events of its prompt to
-    /// `<cwd>/.acp-agent/transcripts/<sessionId>/transcript.jsonl`.
-    ///
-    /// The run opens one session, so the root holds one session directory,
-    /// and that directory holds the recorded file.
-    @Test
-    func theRunRecordsThePromptUnderTheProjectTranscriptsRoot() async throws {
-        let workspace = makeResolvedDirectory(label: "TranscriptRecording-repo")
-        let configHome = makeResolvedDirectory(label: "TranscriptRecording-config")
+  /// `acp-agent run` writes the events of its prompt to
+  /// `<cwd>/.acp-agent/transcripts/<sessionId>/transcript.jsonl`.
+  ///
+  /// The run opens one session, so the root holds one session directory,
+  /// and that directory holds the recorded file.
+  @Test
+  func theRunRecordsThePromptUnderTheProjectTranscriptsRoot() async throws {
+    let workspace = makeResolvedDirectory(label: "TranscriptRecording-repo")
+    let configHome = makeResolvedDirectory(label: "TranscriptRecording-config")
 
-        let run = try await Self.runAgent(
-            arguments: [
-                Self.runSubcommand, Self.workingDirectoryOption, workspace.path, Self.promptText,
-            ],
-            workspace: workspace,
-            configHome: configHome)
+    let run = try await Self.runAgent(
+      arguments: [
+        Self.runSubcommand, Self.workingDirectoryOption, workspace.path, Self.promptText,
+      ],
+      workspace: workspace,
+      configHome: configHome)
 
-        #expect(run.exitCode == 0, "stderr: \(run.standardError)")
-        #expect(run.standardOutput.contains(Self.promptText), "stdout: \(run.standardOutput)")
-        let root = try Self.recordingRoot(of: workspace)
-        let sessionDirectories = try Self.sessionDirectories(under: root)
-        #expect(
-            sessionDirectories.count == sessionsPerRun,
-            "the run left \(sessionDirectories.count) session directories under \(root.path)")
-        let file = try #require(sessionDirectories.first)
-            .appendingPathComponent(transcriptFileName, isDirectory: false)
-        let recorded = try String(contentsOf: file, encoding: .utf8)
-        #expect(!recorded.isEmpty, "the recorded transcript at \(file.path) is empty")
-        #expect(
-            recorded.contains(file.deletingLastPathComponent().lastPathComponent),
-            "the recorded events do not name their own session")
-    }
+    #expect(run.exitCode == 0, "stderr: \(run.standardError)")
+    #expect(run.standardOutput.contains(Self.promptText), "stdout: \(run.standardOutput)")
+    let root = try Self.recordingRoot(of: workspace)
+    let sessionDirectories = try Self.sessionDirectories(under: root)
+    #expect(
+      sessionDirectories.count == sessionsPerRun,
+      "the run left \(sessionDirectories.count) session directories under \(root.path)")
+    let file = try #require(sessionDirectories.first)
+      .appendingPathComponent(transcriptFileName, isDirectory: false)
+    let recorded = try String(contentsOf: file, encoding: .utf8)
+    #expect(!recorded.isEmpty, "the recorded transcript at \(file.path) is empty")
+    #expect(
+      recorded.contains(file.deletingLastPathComponent().lastPathComponent),
+      "the recorded events do not name their own session")
+  }
 
-    /// `--resume` continues the session the first run recorded: the second
-    /// prompt runs in the same id, and the recorded file grows.
-    ///
-    /// The run that resumes carries no `--cwd`, because the stored session
-    /// already has a working directory and it wins (cli-plan.md §5.4). The
-    /// spawn starts in `workspace`, so the composition reads that stack.
-    @Test
-    func resumeContinuesTheSessionTheFirstRunRecorded() async throws {
-        let workspace = makeResolvedDirectory(label: "TranscriptRecording-resume-repo")
-        let configHome = makeResolvedDirectory(label: "TranscriptRecording-resume-config")
-        _ = try await Self.runAgent(
-            arguments: [
-                Self.runSubcommand, Self.workingDirectoryOption, workspace.path, Self.promptText,
-            ],
-            workspace: workspace,
-            configHome: configHome)
-        let root = try Self.recordingRoot(of: workspace)
-        let recordedDirectory = try #require(try Self.sessionDirectories(under: root).first)
-        let file = recordedDirectory.appendingPathComponent(
-            transcriptFileName, isDirectory: false)
-        let afterFirstPrompt = try String(contentsOf: file, encoding: .utf8)
+  /// `--resume` continues the session the first run recorded: the second
+  /// prompt runs in the same id, and the recorded file grows.
+  ///
+  /// The run that resumes carries no `--cwd`, because the stored session
+  /// already has a working directory and it wins (cli-plan.md §5.4). The
+  /// spawn starts in `workspace`, so the composition reads that stack.
+  @Test
+  func resumeContinuesTheSessionTheFirstRunRecorded() async throws {
+    let workspace = makeResolvedDirectory(label: "TranscriptRecording-resume-repo")
+    let configHome = makeResolvedDirectory(label: "TranscriptRecording-resume-config")
+    _ = try await Self.runAgent(
+      arguments: [
+        Self.runSubcommand, Self.workingDirectoryOption, workspace.path, Self.promptText,
+      ],
+      workspace: workspace,
+      configHome: configHome)
+    let root = try Self.recordingRoot(of: workspace)
+    let recordedDirectory = try #require(try Self.sessionDirectories(under: root).first)
+    let file = recordedDirectory.appendingPathComponent(
+      transcriptFileName, isDirectory: false)
+    let afterFirstPrompt = try String(contentsOf: file, encoding: .utf8)
 
-        let resumed = try await Self.runAgent(
-            arguments: [
-                Self.runSubcommand, Self.resumeOption, recordedDirectory.lastPathComponent,
-                Self.resumedPromptText,
-            ],
-            workspace: workspace,
-            configHome: configHome)
+    let resumed = try await Self.runAgent(
+      arguments: [
+        Self.runSubcommand, Self.resumeOption, recordedDirectory.lastPathComponent,
+        Self.resumedPromptText,
+      ],
+      workspace: workspace,
+      configHome: configHome)
 
-        #expect(resumed.exitCode == 0, "stderr: \(resumed.standardError)")
-        #expect(
-            resumed.standardOutput.contains(Self.resumedPromptText),
-            "stdout: \(resumed.standardOutput)")
-        #expect(
-            try Self.sessionDirectories(under: root).count == sessionsPerRun,
-            "the resumed run opened a second session")
-        let afterSecondPrompt = try String(contentsOf: file, encoding: .utf8)
-        #expect(
-            afterSecondPrompt.count > afterFirstPrompt.count,
-            "the resumed prompt recorded nothing at \(file.path)")
-    }
+    #expect(resumed.exitCode == 0, "stderr: \(resumed.standardError)")
+    #expect(
+      resumed.standardOutput.contains(Self.resumedPromptText),
+      "stdout: \(resumed.standardOutput)")
+    #expect(
+      try Self.sessionDirectories(under: root).count == sessionsPerRun,
+      "the resumed run opened a second session")
+    let afterSecondPrompt = try String(contentsOf: file, encoding: .utf8)
+    #expect(
+      afterSecondPrompt.count > afterFirstPrompt.count,
+      "the resumed prompt recorded nothing at \(file.path)")
+  }
 
-    // MARK: - The subprocess driver
+  // MARK: - The subprocess driver
 
-    /// Runs the built `acp-agent` with the stub model selected.
-    ///
-    /// - Parameters:
-    ///   - arguments: The command-line arguments for `acp-agent`.
-    ///   - workspace: The working directory of the run.
-    ///   - configHome: The injected `XDG_CONFIG_HOME` root.
-    /// - Returns: The finished run.
-    /// - Throws: The locator or spawn error.
-    private static func runAgent(
-        arguments: [String], workspace: URL, configHome: URL
-    ) async throws -> BuiltExecutableRun {
-        try await BuiltExecutableRun.run(
-            executableNamed: TierThreeFixture.agentExecutableName,
-            arguments: arguments,
-            workspace: workspace,
-            configHome: configHome,
-            environment: TierThreeFixture.stubModelEnvironment)
-    }
+  /// Runs the built `acp-agent-stub`, the agent over the stub model.
+  ///
+  /// - Parameters:
+  ///   - arguments: The command-line arguments for `acp-agent`.
+  ///   - workspace: The working directory of the run.
+  ///   - configHome: The injected `XDG_CONFIG_HOME` root.
+  /// - Returns: The finished run.
+  /// - Throws: The locator or spawn error.
+  private static func runAgent(
+    arguments: [String], workspace: URL, configHome: URL
+  ) async throws -> BuiltExecutableRun {
+    try await BuiltExecutableRun.run(
+      executableNamed: TierThreeFixture.stubAgentExecutableName,
+      arguments: arguments,
+      workspace: workspace,
+      configHome: configHome)
+  }
 
-    // MARK: - Reading the recording root
+  // MARK: - Reading the recording root
 
-    /// The `project` recording root of `workspace`, the default location:
-    /// `<workspace>/.acp-agent/transcripts/`. A transcript is project
-    /// context, so it lives in the repository.
-    ///
-    /// The shared helper builds the path, so this suite and the unit
-    /// suites cannot disagree about where a project records.
-    ///
-    /// - Parameter workspace: The working directory of the run.
-    /// - Returns: The recording root.
-    private static func recordingRoot(of workspace: URL) throws -> URL {
-        try projectRecordingRoot(
-            of: workspace, dotfolderName: TierThreeFixture.agentDotfolderName)
-    }
+  /// The `project` recording root of `workspace`, the default location:
+  /// `<workspace>/.acp-agent/transcripts/`. A transcript is project
+  /// context, so it lives in the repository.
+  ///
+  /// The shared helper builds the path, so this suite and the unit
+  /// suites cannot disagree about where a project records.
+  ///
+  /// - Parameter workspace: The working directory of the run.
+  /// - Returns: The recording root.
+  private static func recordingRoot(of workspace: URL) throws -> URL {
+    try projectRecordingRoot(
+      of: workspace, dotfolderName: TierThreeFixture.agentDotfolderName)
+  }
 
-    /// The session directories under `root`: the entries that hold a
-    /// recorded transcript file.
-    ///
-    /// - Parameter root: The recording root to read.
-    /// - Returns: The session directories, in name order.
-    /// - Throws: The directory-read error, when the root itself is absent.
-    private static func sessionDirectories(under root: URL) throws -> [URL] {
-        try FileManager.default
-            .contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
-            .filter {
-                FileManager.default.fileExists(
-                    atPath: $0.appendingPathComponent(transcriptFileName).path)
-            }
-            .sorted { $0.lastPathComponent < $1.lastPathComponent }
-    }
+  /// The session directories under `root`: the entries that hold a
+  /// recorded transcript file.
+  ///
+  /// - Parameter root: The recording root to read.
+  /// - Returns: The session directories, in name order.
+  /// - Throws: The directory-read error, when the root itself is absent.
+  private static func sessionDirectories(under root: URL) throws -> [URL] {
+    try FileManager.default
+      .contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+      .filter {
+        FileManager.default.fileExists(
+          atPath: $0.appendingPathComponent(transcriptFileName).path)
+      }
+      .sorted { $0.lastPathComponent < $1.lastPathComponent }
+  }
 }

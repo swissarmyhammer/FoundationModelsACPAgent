@@ -37,16 +37,15 @@ struct LocalModelPathTests {
     var configuration = AgentConfiguration()
     configuration.profile.embedding = [reference]
     let resolver = StubModelResolver(
-      namedLookups: Dictionary(
-        uniqueKeysWithValues: (ProfileConfiguration.defaultStandard
+      namedLookups: StubModelResolver.foundLookups(
+        of: ProfileConfiguration.defaultStandard
           + ProfileConfiguration.defaultFlash
-          + (ProfileConfiguration.defaultStandard.compactMap(\.drafter))).map {
-            ($0.stringValue, ModelLookup.found(downloadBytes: 0))
-          }),
+          + ProfileConfiguration.defaultStandard.compactMap(\.drafter)),
       lookup: .notFound)
     return await ProfileDoctor(
-      configuration: configuration, resolver: resolver, memoryBytes: 68_719_476_736,
-      freeDiskBytes: 1_099_511_627_776
+      configuration: configuration, resolver: resolver,
+      memoryBytes: DoctorMachineFigures.generousMemoryBytes,
+      freeDiskBytes: DoctorMachineFigures.generousDiskBytes
     ).runHealthChecks()
   }
 

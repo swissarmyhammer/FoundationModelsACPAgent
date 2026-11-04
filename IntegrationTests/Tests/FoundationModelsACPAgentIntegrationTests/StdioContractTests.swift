@@ -33,76 +33,76 @@ import Testing
 /// MUSTs: the codec's own decode is not trusted to prove them, because
 /// the codec would also repair what it can.
 final class InboundTapTransport: ACPTransport, Sendable {
-    /// The guarded byte record one tap and its forwarding task share.
-    /// A class, because `Mutex` is noncopyable: the forwarding task's
-    /// escaping closure captures this reference, not the lock itself.
-    private final class TapRecord: Sendable {
-        /// The recorded bytes, guarded for the reader against the
-        /// forwarding task's appends.
-        private let guardedBytes = Mutex(Data())
+  /// The guarded byte record one tap and its forwarding task share.
+  /// A class, because `Mutex` is noncopyable: the forwarding task's
+  /// escaping closure captures this reference, not the lock itself.
+  private final class TapRecord: Sendable {
+    /// The recorded bytes, guarded for the reader against the
+    /// forwarding task's appends.
+    private let guardedBytes = Mutex(Data())
 
-        /// Appends one recorded chunk.
-        ///
-        /// - Parameter chunk: The inbound bytes to record.
-        func append(_ chunk: Data) {
-            guardedBytes.withLock { $0.append(chunk) }
-        }
-
-        /// The bytes recorded so far.
-        var snapshot: Data {
-            guardedBytes.withLock { $0 }
-        }
-    }
-
-    /// The forwarded inbound stream the connection consumes.
-    let bytes: AsyncThrowingStream<Data, any Error>
-
-    /// The wrapped transport the writes go to.
-    private let upstream: any ACPTransport
-
-    /// The raw inbound bytes recorded so far.
-    private let record: TapRecord
-
-    /// Wraps `upstream`, forwarding its inbound stream while recording
-    /// every chunk.
+    /// Appends one recorded chunk.
     ///
-    /// Cancelling the forwarded stream cancels the read of the wrapped
-    /// stream, so the wrapped transport's own termination teardown — the
-    /// group kill of `AgentProcess` — still runs.
-    ///
-    /// - Parameter upstream: The transport to wrap.
-    init(wrapping upstream: any ACPTransport) {
-        self.upstream = upstream
-        let record = TapRecord()
-        self.record = record
-        let (stream, continuation) = AsyncThrowingStream<Data, any Error>.makeStream()
-        self.bytes = stream
-        let forwarding = Task {
-            do {
-                for try await chunk in upstream.bytes {
-                    record.append(chunk)
-                    continuation.yield(chunk)
-                }
-                continuation.finish()
-            } catch {
-                continuation.finish(throwing: error)
-            }
+    /// - Parameter chunk: The inbound bytes to record.
+    func append(_ chunk: Data) {
+      guardedBytes.withLock { $0.append(chunk) }
+    }
+
+    /// The bytes recorded so far.
+    var snapshot: Data {
+      guardedBytes.withLock { $0 }
+    }
+  }
+
+  /// The forwarded inbound stream the connection consumes.
+  let bytes: AsyncThrowingStream<Data, any Error>
+
+  /// The wrapped transport the writes go to.
+  private let upstream: any ACPTransport
+
+  /// The raw inbound bytes recorded so far.
+  private let record: TapRecord
+
+  /// Wraps `upstream`, forwarding its inbound stream while recording
+  /// every chunk.
+  ///
+  /// Cancelling the forwarded stream cancels the read of the wrapped
+  /// stream, so the wrapped transport's own termination teardown — the
+  /// group kill of `AgentProcess` — still runs.
+  ///
+  /// - Parameter upstream: The transport to wrap.
+  init(wrapping upstream: any ACPTransport) {
+    self.upstream = upstream
+    let record = TapRecord()
+    self.record = record
+    let (stream, continuation) = AsyncThrowingStream<Data, any Error>.makeStream()
+    self.bytes = stream
+    let forwarding = Task {
+      do {
+        for try await chunk in upstream.bytes {
+          record.append(chunk)
+          continuation.yield(chunk)
         }
-        continuation.onTermination = { _ in forwarding.cancel() }
+        continuation.finish()
+      } catch {
+        continuation.finish(throwing: error)
+      }
     }
+    continuation.onTermination = { _ in forwarding.cancel() }
+  }
 
-    /// The raw inbound bytes recorded so far.
-    var recordedBytes: Data {
-        record.snapshot
-    }
+  /// The raw inbound bytes recorded so far.
+  var recordedBytes: Data {
+    record.snapshot
+  }
 
-    /// Forwards one outgoing chunk to the wrapped transport.
-    ///
-    /// - Parameter data: The framed bytes to send.
-    /// - Throws: Whatever the wrapped transport throws.
-    func write(_ data: Data) async throws {
-        try await upstream.write(data)
-    }
+  /// Forwards one outgoing chunk to the wrapped transport.
+  ///
+  /// - Parameter data: The framed bytes to send.
+  /// - Throws: Whatever the wrapped transport throws.
+  func write(_ data: Data) async throws {
+    try await upstream.write(data)
+  }
 }
 
 /// The tier-3 contract: one end-to-end drive of the spawned example,
@@ -115,175 +115,175 @@ final class InboundTapTransport: ACPTransport, Sendable {
 ///
 @Suite(.serialized)
 struct StdioContractTests {
-    // MARK: - Constants
+  // MARK: - Constants
 
-    /// The id of the probe skill, and so its `/probe` command name.
-    private static let probeSkillID = "probe"
+  /// The id of the probe skill, and so its `/probe` command name.
+  private static let probeSkillID = "probe"
 
-    /// The project-layer skills directory name of a session working
-    /// directory (`ToolCatalog.skillsDotfolderName`, project layer).
-    private static let projectSkillsDirectoryName = ".skills"
+  /// The project-layer skills directory name of a session working
+  /// directory (`ToolCatalog.skillsDotfolderName`, project layer).
+  private static let projectSkillsDirectoryName = ".skills"
 
-    /// The marker the probe's shell child writes to ITS stdout. It must
-    /// never appear on the agent's stdout outside a JSON frame.
-    private static let probeMarker = "tier3-stdout-probe"
+  /// The marker the probe's shell child writes to ITS stdout. It must
+  /// never appear on the agent's stdout outside a JSON frame.
+  private static let probeMarker = "tier3-stdout-probe"
 
-    /// The file the probe's shell child also writes the marker to, in
-    /// the skill's own directory. The disk is the proof the child ran:
-    /// check the filesystem, never the transcript, because a test that
-    /// believes a report catches a broken report and not a broken tool.
-    private static let probeWitnessFileName = "tier3-probe-ran.txt"
+  /// The file the probe's shell child also writes the marker to, in
+  /// the skill's own directory. The disk is the proof the child ran:
+  /// check the filesystem, never the transcript, because a test that
+  /// believes a report catches a broken report and not a broken tool.
+  private static let probeWitnessFileName = "tier3-probe-ran.txt"
 
-    /// The one prompt the suite sends: the probe skill command.
-    private static let promptText = "/" + probeSkillID
+  /// The one prompt the suite sends: the probe skill command.
+  private static let promptText = "/" + probeSkillID
 
-    /// The `SKILL.md` of the probe skill. The body's first line is a
-    /// shell injection: the render pass runs it through `/bin/sh -c`
-    /// with captured output, so a real child writes the marker to ITS
-    /// stdout during the prompt, with no dependence on the model's tool
-    /// choice. The `tee` copy is the on-disk witness that the child ran.
-    private static let probeSkillMarkdown = """
-        ---
-        name: \(probeSkillID)
-        description: Runs one probe command through the shell pass.
-        ---
-        !`echo \(probeMarker) | tee \(probeWitnessFileName)`
+  /// The `SKILL.md` of the probe skill. The body's first line is a
+  /// shell injection: the render pass runs it through `/bin/sh -c`
+  /// with captured output, so a real child writes the marker to ITS
+  /// stdout during the prompt, with no dependence on the model's tool
+  /// choice. The `tee` copy is the on-disk witness that the child ran.
+  private static let probeSkillMarkdown = """
+    ---
+    name: \(probeSkillID)
+    description: Runs one probe command through the shell pass.
+    ---
+    !`echo \(probeMarker) | tee \(probeWitnessFileName)`
 
-        Answer with one short sentence.
-        """
+    Answer with one short sentence.
+    """
 
-    // MARK: - Fixtures
+  // MARK: - Fixtures
 
-    /// Writes the probe skill into the session working directory's
-    /// project skills layer, `<cwd>/.skills/probe/SKILL.md`.
-    ///
-    /// - Parameter workspace: The session working directory.
-    /// - Returns: The skill's own directory, where the witness file
-    ///   lands — the shell injection runs with it as the child's
-    ///   working directory.
-    /// - Throws: The directory-creation or write error.
-    private static func writeProbeSkill(under workspace: URL) throws -> URL {
-        let skillDirectory =
-            workspace
-            .appendingPathComponent(projectSkillsDirectoryName, isDirectory: true)
-            .appendingPathComponent(probeSkillID, isDirectory: true)
-        try FileManager.default.createDirectory(
-            at: skillDirectory, withIntermediateDirectories: true)
-        try probeSkillMarkdown.write(
-            to: skillDirectory.appendingPathComponent("SKILL.md"),
-            atomically: true, encoding: .utf8)
-        return skillDirectory
+  /// Writes the probe skill into the session working directory's
+  /// project skills layer, `<cwd>/.skills/probe/SKILL.md`.
+  ///
+  /// - Parameter workspace: The session working directory.
+  /// - Returns: The skill's own directory, where the witness file
+  ///   lands — the shell injection runs with it as the child's
+  ///   working directory.
+  /// - Throws: The directory-creation or write error.
+  private static func writeProbeSkill(under workspace: URL) throws -> URL {
+    let skillDirectory =
+      workspace
+      .appendingPathComponent(projectSkillsDirectoryName, isDirectory: true)
+      .appendingPathComponent(probeSkillID, isDirectory: true)
+    try FileManager.default.createDirectory(
+      at: skillDirectory, withIntermediateDirectories: true)
+    try probeSkillMarkdown.write(
+      to: skillDirectory.appendingPathComponent("SKILL.md"),
+      atomically: true, encoding: .utf8)
+    return skillDirectory
+  }
+
+  /// Sets `TierThreeFixture.configHomeVariable` and the offline defaults
+  /// layer of `TierThreeFixture` for this process — and so for every
+  /// child it spawns — and returns the restorer for the prior values.
+  ///
+  /// `AgentProcess` spawns with the environment of this process, not
+  /// through `PipedChildProcess`, so this suite sets the offline defaults
+  /// layer itself: the child fetches no skills marketplace.
+  ///
+  /// - Parameter configHome: The directory to point the variable at.
+  /// - Returns: The closure that puts the prior values back.
+  /// - Throws: The write error of the defaults layer.
+  private static func pointEnvironment(at configHome: URL) throws -> () -> Void {
+    var pairs = try TierThreeFixture.makeOfflineDefaultsEnvironment()
+    pairs[TierThreeFixture.configHomeVariable] = configHome.path
+    let previous = pairs.keys.map { ($0, ProcessInfo.processInfo.environment[$0]) }
+    for (variable, value) in pairs {
+      setenv(variable, value, 1)
     }
-
-    /// Sets `TierThreeFixture.configHomeVariable` and the offline defaults
-    /// layer of `TierThreeFixture` for this process — and so for every
-    /// child it spawns — and returns the restorer for the prior values.
-    ///
-    /// `AgentProcess` spawns with the environment of this process, not
-    /// through `PipedChildProcess`, so this suite sets the offline defaults
-    /// layer itself: the child fetches no skills marketplace.
-    ///
-    /// - Parameter configHome: The directory to point the variable at.
-    /// - Returns: The closure that puts the prior values back.
-    /// - Throws: The write error of the defaults layer.
-    private static func pointEnvironment(at configHome: URL) throws -> () -> Void {
-        var pairs = try TierThreeFixture.makeOfflineDefaultsEnvironment()
-        pairs[TierThreeFixture.configHomeVariable] = configHome.path
-        let previous = pairs.keys.map { ($0, ProcessInfo.processInfo.environment[$0]) }
-        for (variable, value) in pairs {
-            setenv(variable, value, 1)
-        }
-        return {
-            for (variable, value) in previous {
-                restore(variable, to: value)
-            }
-        }
+    return {
+      for (variable, value) in previous {
+        restore(variable, to: value)
+      }
     }
+  }
 
-    /// Puts one environment variable of this process back to its prior
-    /// value.
-    ///
-    /// - Parameters:
-    ///   - variable: The environment variable.
-    ///   - value: The prior value, or `nil` when the variable was not set.
-    private static func restore(_ variable: String, to value: String?) {
-        if let value {
-            setenv(variable, value, 1)
-        } else {
-            unsetenv(variable)
-        }
+  /// Puts one environment variable of this process back to its prior
+  /// value.
+  ///
+  /// - Parameters:
+  ///   - variable: The environment variable.
+  ///   - value: The prior value, or `nil` when the variable was not set.
+  private static func restore(_ variable: String, to value: String?) {
+    if let value {
+      setenv(variable, value, 1)
+    } else {
+      unsetenv(variable)
     }
+  }
 
-    // MARK: - The contract
+  // MARK: - The contract
 
-    /// The whole tier-3 drive, in one case on purpose, because the
-    /// integration level stays small: spawn the built
-    /// example, initialize, open a session, run one prompt whose shell
-    /// child writes to ITS stdout, then assert the stdio framing MUSTs on
-    /// the tapped bytes and the reaped child on teardown.
-    @Test func framingSurvivesTheProcessBoundaryWhileAShellChildRuns() async throws {
-        let workspace = makeResolvedDirectory(label: "StdioContract-repo")
-        let configHome = makeResolvedDirectory(label: "StdioContract-config")
-        try TierThreeFixture.writeUserConfig(under: configHome)
-        let skillDirectory = try Self.writeProbeSkill(under: workspace)
-        let restoreEnvironment = try Self.pointEnvironment(at: configHome)
-        defer { restoreEnvironment() }
+  /// The whole tier-3 drive, in one case on purpose, because the
+  /// integration level stays small: spawn the built
+  /// example, initialize, open a session, run one prompt whose shell
+  /// child writes to ITS stdout, then assert the stdio framing MUSTs on
+  /// the tapped bytes and the reaped child on teardown.
+  @Test func framingSurvivesTheProcessBoundaryWhileAShellChildRuns() async throws {
+    let workspace = makeResolvedDirectory(label: "StdioContract-repo")
+    let configHome = makeResolvedDirectory(label: "StdioContract-config")
+    try TierThreeFixture.writeUserConfig(under: configHome)
+    let skillDirectory = try Self.writeProbeSkill(under: workspace)
+    let restoreEnvironment = try Self.pointEnvironment(at: configHome)
+    defer { restoreEnvironment() }
 
-        // Spawn the built agent in `acp` mode through the client package's
-        // process owner, with the absolute path it requires. Bare
-        // `acp-agent` is `run` (cli-plan.md §5.3), so the
-        // subcommand is named.
-        let command = try BuiltProductLocator.executableURL(
-            named: TierThreeFixture.agentExecutableName)
-        let agent = try AgentProcess(
-            command: command.path, arguments: [TierThreeFixture.acpSubcommand])
-        let tap = InboundTapTransport(wrapping: agent.transport)
-        let model = await ConnectionModel()
-        let connection = await model.connect(over: tap)
+    // Spawn the built agent in `acp` mode through the client package's
+    // process owner, with the absolute path it requires. Bare
+    // `acp-agent` is `run` (cli-plan.md §5.3), so the
+    // subcommand is named.
+    let command = try BuiltProductLocator.executableURL(
+      named: TierThreeFixture.agentExecutableName)
+    let agent = try AgentProcess(
+      command: command.path, arguments: [TierThreeFixture.acpSubcommand])
+    let tap = InboundTapTransport(wrapping: agent.transport)
+    let model = await ConnectionModel()
+    let connection = await model.connect(over: tap)
 
-        // `acp-agent acp` starts and answers `initialize` over stdio —
-        // asserted here, not by hand. The await also covers the agent's
-        // construction-time profile resolution.
-        let initialized = try await connection.initialize(
-            AgentClientHarness.makeInitializeRequest())
-        #expect(initialized.info.name == RoutedACPAgent.implementation.name)
-        #expect(initialized.protocolVersion == RoutedACPAgent.latestProtocolVersion)
+    // `acp-agent acp` starts and answers `initialize` over stdio —
+    // asserted here, not by hand. The await also covers the agent's
+    // construction-time profile resolution.
+    let initialized = try await connection.initialize(
+      AgentClientHarness.makeInitializeRequest())
+    #expect(initialized.info.name == RoutedACPAgent.implementation.name)
+    #expect(initialized.protocolVersion == RoutedACPAgent.latestProtocolVersion)
 
-        let session = try await connection.newSession(
-            NewSessionRequest(cwd: AbsolutePath(rawValue: workspace.path)))
+    let session = try await connection.newSession(
+      NewSessionRequest(cwd: AbsolutePath(rawValue: workspace.path)))
 
-        // Subscribe before the prompt, so the stream holds each update of
-        // the prompt in order.
-        let updates = connection.subscribe(to: session.sessionId).updates
-        _ = try await connection.prompt(
-            AgentClientHarness.makePromptRequest(
-                sessionId: session.sessionId, text: Self.promptText))
-        let stopReason = await StdoutFrameChecks.waitForIdle(on: updates)
-        #expect(stopReason != nil, "the prompt never reached an idle state update")
+    // Subscribe before the prompt, so the stream holds each update of
+    // the prompt in order.
+    let updates = connection.subscribe(to: session.sessionId).updates
+    _ = try await connection.prompt(
+      AgentClientHarness.makePromptRequest(
+        sessionId: session.sessionId, text: Self.promptText))
+    let stopReason = await StdoutFrameChecks.waitForIdle(on: updates)
+    #expect(stopReason != nil, "the prompt never reached an idle state update")
 
-        // The child ran, proven on the file system: the probe's `tee`
-        // wrote the marker beside the skill. Check the filesystem, never
-        // the transcript.
-        let witness = try textOnDisk(
-            at: skillDirectory.appendingPathComponent(Self.probeWitnessFileName))
-        #expect(witness.contains(Self.probeMarker))
+    // The child ran, proven on the file system: the probe's `tee`
+    // wrote the marker beside the skill. Check the filesystem, never
+    // the transcript.
+    let witness = try textOnDisk(
+      at: skillDirectory.appendingPathComponent(Self.probeWitnessFileName))
+    #expect(witness.contains(Self.probeMarker))
 
-        // Teardown: close the wire, then prove the reap by pid — the
-        // group kill leaves no child behind.
-        await connection.close()
-        agent.shutdown()
-        #expect(agent.processIdentifier == nil)
+    // Teardown: close the wire, then prove the reap by pid — the
+    // group kill leaves no child behind.
+    await connection.close()
+    agent.shutdown()
+    #expect(agent.processIdentifier == nil)
 
-        // The stdio framing MUSTs, on the tapped raw bytes. The marker crossed a
-        // captured pipe into the render, never the agent's stdout: a
-        // leak would stand as a bare non-JSON line and fail the parse
-        // assertion.
-        let recordedBytes = tap.recordedBytes
-        try StdoutFrameChecks.assertFramesArePureJSONRPC(in: recordedBytes)
-        let rawLines = recordedBytes.split(
-            separator: StdoutFrameChecks.newlineByte, omittingEmptySubsequences: true)
-        #expect(
-            !rawLines.contains(Data(Self.probeMarker.utf8)),
-            "the shell child's stdout leaked raw into the frame stream")
-    }
+    // The stdio framing MUSTs, on the tapped raw bytes. The marker crossed a
+    // captured pipe into the render, never the agent's stdout: a
+    // leak would stand as a bare non-JSON line and fail the parse
+    // assertion.
+    let recordedBytes = tap.recordedBytes
+    try StdoutFrameChecks.assertFramesArePureJSONRPC(in: recordedBytes)
+    let rawLines = recordedBytes.split(
+      separator: StdoutFrameChecks.newlineByte, omittingEmptySubsequences: true)
+    #expect(
+      !rawLines.contains(Data(Self.probeMarker.utf8)),
+      "the shell child's stdout leaked raw into the frame stream")
+  }
 }

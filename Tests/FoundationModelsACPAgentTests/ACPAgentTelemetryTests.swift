@@ -32,18 +32,30 @@ import Testing
     ACPAgentTelemetry.MetricName.mcpConnectFailures,
   ]
 
-  /// Each span name starts with the module prefix and has a word after it.
-  @Test(arguments: spanNames)
-  func spanNameHasTheModulePrefix(name: String) {
-    #expect(name.hasPrefix(Self.spanNamePrefix))
-    #expect(name.count > Self.spanNamePrefix.count)
+  /// One telemetry name with the prefix that its family must start with.
+  struct PrefixedName: Sendable, CustomTestStringConvertible {
+    /// The name that the agent uses.
+    let name: String
+
+    /// The prefix that the name must start with.
+    let prefix: String
+
+    /// The name, so a failed case tells which name broke the rule.
+    var testDescription: String { name }
   }
 
-  /// Each metric name starts with the module prefix and has a word after it.
-  @Test(arguments: metricNames)
-  func metricNameHasTheModulePrefix(name: String) {
-    #expect(name.hasPrefix(Self.metricNamePrefix))
-    #expect(name.count > Self.metricNamePrefix.count)
+  /// Each span name with the span prefix, and each metric name with the
+  /// metric prefix.
+  private static let prefixedNames =
+    spanNames.map { PrefixedName(name: $0, prefix: spanNamePrefix) }
+    + metricNames.map { PrefixedName(name: $0, prefix: metricNamePrefix) }
+
+  /// Each span name and each metric name starts with the prefix of its
+  /// family and has a word after it.
+  @Test(arguments: prefixedNames)
+  func nameHasThePrefixOfItsFamily(entry: PrefixedName) {
+    #expect(entry.name.hasPrefix(entry.prefix))
+    #expect(entry.name.count > entry.prefix.count)
   }
 
   /// No span name and no metric name is written two times.

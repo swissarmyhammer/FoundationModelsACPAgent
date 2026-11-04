@@ -318,7 +318,7 @@ struct ACPEventTranslator {
       tally.sawOutput = true
       // A settled run that has no join entry gets "no join", so a
       // terminal announce that waits for the run stops waiting.
-      runCallJoins.seal(operationEvent.correlationID)
+      runCallJoins.seal(RunToken(operationEvent.correlationID))
       await projectSettlement(of: operationEvent)
     case .runProgress(let operationEvent):
       // A report of a run, not output of the model: it does not set
@@ -510,10 +510,8 @@ struct ACPEventTranslator {
     if let value = Self.jsonValue(from: argumentsJSON) {
       rawInput = .value(value)
     } else {
-      var metadata = ACPAgentTelemetry.sessionMetadata(sessionId)
-      metadata[ACPAgentTelemetry.LogMetadataKey.toolCallId] = "\(id)"
       ACPAgentTelemetry.logger(.promptExecution).warning(
-        "The arguments of a tool call did not parse as JSON.", metadata: metadata)
+        "The arguments of a tool call did not parse as JSON.", metadata: runMetadata(id))
       rawInput = .unchanged
     }
     let toolCallId = ToolCallId(rawValue: id)
@@ -631,7 +629,7 @@ struct ACPEventTranslator {
   /// - Parameter correlationID: The correlation token of the run.
   /// - Returns: The tool call id.
   private func runCallId(_ correlationID: String) -> ToolCallId {
-    runCallJoins.toolCallId(for: correlationID)
+    runCallJoins.toolCallId(for: RunToken(correlationID))
   }
 
   /// Builds one `tool_call_update` for the wire call of a run. This is the

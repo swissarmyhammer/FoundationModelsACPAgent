@@ -78,13 +78,22 @@ import Testing
     #expect(cancelRecords.count == 1)
     let record = try #require(cancelRecords.first)
     #expect(record.level == .info)
-    guard case .string(let signal) = record.metadata[cancelSignalKey] else {
-      Issue.record("expected the signal id as a string")
-      return
-    }
+    let signal = try #require(
+      Self.text(of: record.metadata[cancelSignalKey]), "expected the signal id as a string")
     #expect(ULID(ulidString: signal) != nil)
     #expect(
       record.metadata[ACPAgentTelemetry.LogMetadataKey.sessionId] == .string(records.sessionId))
+  }
+
+  /// The text of a string metadata value.
+  ///
+  /// - Parameter value: The metadata value, or `nil` when the key is absent.
+  /// - Returns: The text, or `nil` when the value is absent or not a string.
+  private static func text(of value: Logger.MetadataValue?) -> String? {
+    if case .string(let text)? = value {
+      return text
+    }
+    return nil
   }
 
   /// The logger of the prompt execution has the module label and the

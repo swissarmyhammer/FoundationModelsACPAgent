@@ -684,7 +684,7 @@ private final class SnapshotSequence: Sendable {
       stdout: Self.makeRawOutput(bytes: stored), stderr: Self.makeRawOutput(bytes: []))
     let table = RunCallJoinTable()
     table.openProjection()
-    table.record(toolCallID: Self.joinedSdkCallId, for: Self.joinedRunToken)
+    table.record(toolCallID: Self.joinedSdkCallId, for: RunToken(Self.joinedRunToken))
     let recorder = SinkRecorder()
     let (events, input) = AsyncStream<ShellOutputEvent>.makeStream()
     let reader = Task {
@@ -704,7 +704,7 @@ private final class SnapshotSequence: Sendable {
       terminalChunks(in: updates).contains { $0.terminalId.rawValue == Self.joinedRunToken }
     }
 
-    table.record(toolCallID: nil, for: Self.completionToken)
+    table.record(toolCallID: nil, for: RunToken(Self.completionToken))
     let updates = try await recorder.updates(until: "the exit update of the released run") {
       updates in
       terminalUpdates(in: updates).contains { terminal in
@@ -731,7 +731,7 @@ private final class SnapshotSequence: Sendable {
     let stored = Self.firstChunk + Self.secondChunk
     let table = RunCallJoinTable()
     table.openProjection()
-    table.record(toolCallID: Self.joinedSdkCallId, for: Self.joinedRunToken)
+    table.record(toolCallID: Self.joinedSdkCallId, for: RunToken(Self.joinedRunToken))
     let recorder = SinkRecorder()
     let (events, input) = AsyncStream<ShellOutputEvent>.makeStream()
     let reader = Task {
@@ -750,7 +750,7 @@ private final class SnapshotSequence: Sendable {
       terminalChunks(in: updates).contains { $0.terminalId.rawValue == Self.joinedRunToken }
     }
 
-    table.record(toolCallID: nil, for: Self.completionToken)
+    table.record(toolCallID: nil, for: RunToken(Self.completionToken))
     _ = try await recorder.updates(until: "the release update of the waiting run") { updates in
       terminalUpdates(in: updates).contains { $0.terminalId.rawValue == Self.completionToken }
     }

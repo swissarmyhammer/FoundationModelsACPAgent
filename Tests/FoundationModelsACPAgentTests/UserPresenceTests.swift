@@ -74,21 +74,30 @@ import Testing
 
   /// Records a session with a client of `recordedWith`, then resumes it in
   /// a new agent with a client of `resumedWith`, over the same working
-  /// directory.
+  /// directory, and reads the recorded and the resumed session with
+  /// `projection`.
   ///
   /// - Parameters:
   ///   - recordedWith: The capabilities of the client that records.
   ///   - resumedWith: The capabilities of the client that resumes.
   ///   - label: The directory label of the proof.
-  /// - Returns: The presence of the recorded session and of the resumed one.
-  /// - Throws: Whatever the fixtures, the prompt or the resume throws.
-  private static func recordAndResume(
-    recordedWith: ClientCapabilities, resumedWith: ClientCapabilities, label: String
-  ) async throws -> (recorded: UserPresence?, resumed: UserPresence?) {
+  ///   - projectConfigYAML: The project `config.yaml` to write under the
+  ///     working directory, or `nil` (the default) for none.
+  ///   - projection: What to read of a session, given the agent that holds
+  ///     it and its id.
+  /// - Returns: The reading of the recorded session and of the resumed one.
+  /// - Throws: Whatever the fixtures, the prompt, the resume or the
+  ///   projection throws.
+  private static func recordAndResume<Reading>(
+    recordedWith: ClientCapabilities, resumedWith: ClientCapabilities, label: String,
+    projectConfigYAML: String? = nil,
+    projection: (RoutedACPAgent, SessionId) async throws -> Reading
+  ) async throws -> (recorded: Reading, resumed: Reading) {
     let first = try await ScriptedPromptFixture.make(
-      script: [.textDelta("recorded"), .endPass], label: label, capabilities: recordedWith)
+      script: [.textDelta("recorded"), .endPass], label: label, capabilities: recordedWith,
+      projectConfigYAML: projectConfigYAML)
     try await ScriptedPromptFixture.runPrompt(on: first, text: "record this session")
-    let recorded = try await presence(of: first)
+    let recorded = try await projection(first.harness.agent, first.sessionId)
     _ = try await first.harness.connection.closeSession(
       CloseSessionRequest(sessionId: first.sessionId))
     await first.close()
@@ -100,10 +109,23 @@ import Testing
       ResumeSessionRequest(
         cwd: AbsolutePath(rawValue: first.cwd.path), sessionId: first.sessionId,
         replayFrom: .start(ReplayFromStart())))
-    let session = try #require(await second.harness.agent.sessions[first.sessionId]?.session)
-    let resumed = runPlanePresence(of: session)
+    let resumed = try await projection(second.harness.agent, first.sessionId)
     await second.close()
     return (recorded, resumed)
+  }
+
+  /// The presence of the run plane of the session `sessionId`.
+  ///
+  /// - Parameters:
+  ///   - agent: The agent that holds the session.
+  ///   - sessionId: The session.
+  /// - Returns: The presence of its run plane.
+  /// - Throws: When the session is missing.
+  private static func presence(
+    of agent: RoutedACPAgent, sessionId: SessionId
+  ) async throws -> UserPresence? {
+    let session = try #require(await agent.sessions[sessionId]?.session)
+    return runPlanePresence(of: session)
   }
 
   /// A session recorded by an interactive client and resumed by a client
@@ -113,7 +135,7 @@ import Testing
   func aSessionRecordedInteractiveAndResumedWithNoElicitationIsHeadless() async throws {
     let presences = try await Self.recordAndResume(
       recordedWith: ACPClient.advertisedCapabilities, resumedWith: ClientCapabilities(),
-      label: "UserPresenceTests-resume-headless")
+      label: "UserPresenceTests-resume-headless", projection: Self.presence(of:sessionId:))
 
     #expect(presences.recorded == .interactive)
     #expect(presences.resumed == .headless)
@@ -125,7 +147,7 @@ import Testing
   func aSessionRecordedHeadlessAndResumedByAnInteractiveClientIsInteractive() async throws {
     let presences = try await Self.recordAndResume(
       recordedWith: ClientCapabilities(), resumedWith: ACPClient.advertisedCapabilities,
-      label: "UserPresenceTests-resume-interactive")
+      label: "UserPresenceTests-resume-interactive", projection: Self.presence(of:sessionId:))
 
     #expect(presences.recorded == .headless)
     #expect(presences.resumed == .interactive)
@@ -188,27 +210,12 @@ import Testing
     recordedWith: ClientCapabilities, resumedWith: ClientCapabilities,
     recordedPresence: UserPresence, resumedPresence: UserPresence
   ) async throws {
-    let label = "UserPresenceTests-mcp-\(recordedPresence)"
-    let first = try await ScriptedPromptFixture.make(
-      script: [.textDelta("recorded"), .endPass], label: label, capabilities: recordedWith,
-      projectConfigYAML: try Self.mcpConfigYAML())
-    try await ScriptedPromptFixture.runPrompt(on: first, text: "record this session")
-    let recorded = try await Self.mcpPresences(of: first.harness.agent, sessionId: first.sessionId)
-    _ = try await first.harness.connection.closeSession(
-      CloseSessionRequest(sessionId: first.sessionId))
-    await first.close()
+    let presences = try await Self.recordAndResume(
+      recordedWith: recordedWith, resumedWith: resumedWith,
+      label: "UserPresenceTests-mcp-\(recordedPresence)",
+      projectConfigYAML: try Self.mcpConfigYAML(), projection: Self.mcpPresences(of:sessionId:))
 
-    let second = try await ScriptedPromptFixture.make(
-      script: [.endPass], label: "\(label)-second", capabilities: resumedWith,
-      workingDirectory: first.cwd)
-    _ = try await second.harness.connection.resumeSession(
-      ResumeSessionRequest(
-        cwd: AbsolutePath(rawValue: first.cwd.path), sessionId: first.sessionId,
-        replayFrom: .start(ReplayFromStart())))
-    let resumed = try await Self.mcpPresences(of: second.harness.agent, sessionId: first.sessionId)
-    await second.close()
-
-    #expect(recorded == [recordedPresence])
-    #expect(resumed == [resumedPresence])
+    #expect(presences.recorded == [recordedPresence])
+    #expect(presences.resumed == [resumedPresence])
   }
 }

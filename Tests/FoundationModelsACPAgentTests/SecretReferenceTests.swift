@@ -185,6 +185,22 @@ import Testing
     #expect(!yaml.contains(Self.literalValue))
   }
 
+  /// The document that the writer makes in the `omitted` form loads back
+  /// through the loader to the same reference, and to the same value in the
+  /// environment of the web tool. The write and the read of the reference
+  /// form are inverse.
+  @Test func theWrittenReferenceLoadsBackToTheSameReference() throws {
+    let first = try Self.load(Self.referenceYAML, store: Self.storeWithItem)
+    let written = try ConfigurationYAML.documentText(
+      for: first.configuration, secrets: .omitted)
+
+    let second = try Self.load(written, store: Self.storeWithItem)
+
+    let options = try Self.webOptions(of: second)
+    #expect(options.apiKeys[.tavily]?.reference == Self.referenceName)
+    #expect(options.environment(mergedOver: [:])[Self.tavilyVariable] == Self.secretValue)
+  }
+
   /// The JSON form encodes a reference as `keychain:<name>`.
   @Test func theJSONFormEncodesTheReference() throws {
     let loaded = try Self.load(Self.referenceYAML, store: Self.storeWithItem)

@@ -24,24 +24,23 @@ struct DoctorRegistryTests {
   /// The number of components the registry states.
   private static let registeredComponentCount = 6
 
-  /// A memory figure far above the profile floor, so the profile
-  /// component does not report the machine this suite runs on.
-  private static let generousMemoryBytes: Int64 = 68_719_476_736
-
-  /// A free-disk figure far above any download, for the same reason.
-  private static let generousDiskBytes: Int64 = 1_099_511_627_776
-
   // MARK: - Helpers
 
   /// The registered components over `fixture`'s stack.
   ///
-  /// - Parameter fixture: The two-layer tree the components read.
+  /// - Parameters:
+  ///   - fixture: The two-layer tree the components read.
+  ///   - environment: The environment the components read, or `nil` (the
+  ///     default) for the environment of `fixture`.
   /// - Returns: The components, in registration order.
-  private static func components(in fixture: ConfigCommandFixture) -> [any Doctorable] {
+  private static func components(
+    in fixture: ConfigCommandFixture, environment: [String: String]? = nil
+  ) -> [any Doctorable] {
     AcpAgentCommand.Doctor.components(
-      workingDirectory: fixture.workspace, environment: fixture.environment,
+      workingDirectory: fixture.workspace, environment: environment ?? fixture.environment,
       prober: StubToolsProber(), resolver: StubModelResolver(),
-      memoryBytes: generousMemoryBytes, freeDiskBytes: generousDiskBytes)
+      memoryBytes: DoctorMachineFigures.generousMemoryBytes,
+      freeDiskBytes: DoctorMachineFigures.generousDiskBytes)
   }
 
   // MARK: - The registry
@@ -72,10 +71,7 @@ struct DoctorRegistryTests {
       [AgentComposition.homeVariable: homeFolder.path]) { _, new in new }
     let home = try AgentComposition.home(environment: environment)
 
-    let components = AcpAgentCommand.Doctor.components(
-      workingDirectory: fixture.workspace, environment: environment,
-      prober: StubToolsProber(), resolver: StubModelResolver(),
-      memoryBytes: Self.generousMemoryBytes, freeDiskBytes: Self.generousDiskBytes)
+    let components = Self.components(in: fixture, environment: environment)
     let homeDoctor = try #require(components.lazy.compactMap { $0 as? HomeDoctor }.first)
     let checks = await homeDoctor.runHealthChecks()
 

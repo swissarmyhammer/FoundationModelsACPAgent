@@ -137,16 +137,40 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     synthesized.withLock { $0.entries = opening }
   }
 
+  /// Plays one pass of the script for `prompt`.
+  ///
+  /// - Parameters:
+  ///   - prompt: The prompt the pass answers.
+  ///   - maxTokens: The token ceiling, which the script ignores.
+  /// - Returns: The text that the pass played.
+  /// - Throws: What the play throws, for example a step that fails.
   public func respond(to prompt: String, maxTokens: Int?) async throws -> String {
     try await playPass(prompt: prompt) { _ in }
   }
 
+  /// Plays one pass of the script for `prompt`. The script has no sampler,
+  /// so the grammar does not restrict the answer.
+  ///
+  /// - Parameters:
+  ///   - prompt: The prompt the pass answers.
+  ///   - grammar: The grammar of the answer, which the script ignores.
+  ///   - maxTokens: The token ceiling, which the script ignores.
+  /// - Returns: The text that the pass played.
+  /// - Throws: What the play throws, for example a step that fails.
   public func respond(
     to prompt: String, following grammar: Grammar, maxTokens: Int?
   ) async throws -> String {
     try await respond(to: prompt, maxTokens: maxTokens)
   }
 
+  /// Plays one pass of the script for `prompt`, and streams the text of the
+  /// pass as it plays.
+  ///
+  /// - Parameters:
+  ///   - prompt: The prompt the pass answers.
+  ///   - maxTokens: The token ceiling, which the script ignores.
+  /// - Returns: A stream of the text chunks of the pass. It ends with the
+  ///   error of a play that throws.
   public func streamResponse(to prompt: String, maxTokens: Int?) -> AsyncThrowingStream<
     String, Error
   > {
@@ -163,6 +187,9 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     }
   }
 
+  /// Makes a fork that starts from the entries of this backend now.
+  ///
+  /// - Returns: A new backend with a sibling of the playbook.
   public func makeFork() -> any LanguageModelSessionBackend {
     makeSibling(seededEntries: transcriptEntries())
   }
@@ -200,6 +227,10 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     observer?.backendReleased()
   }
 
+  /// The transcript entries of the backend now.
+  ///
+  /// - Returns: The opening entry and the entries that the played passes
+  ///   appended.
   public func transcriptEntries() -> [Transcript.Entry] {
     // The SDK entries the played tool calls appended. Router's
     // transcript diff reads them and derives the `toolCall` and
@@ -240,6 +271,9 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     return stream
   }
 
+  /// The token counts of the last answer.
+  ///
+  /// - Returns: The fixed counts of a scripted pass.
   public func usageTokenCounts() -> (input: Int, output: Int)? {
     Self.scriptedUsage
   }

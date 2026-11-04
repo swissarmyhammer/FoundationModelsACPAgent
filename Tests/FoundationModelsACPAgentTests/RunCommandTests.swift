@@ -20,7 +20,7 @@ import Testing
 /// the CLI names the agent type outside the composition, which pins the
 /// one architecture rule: the CLI reaches the agent through an ACP
 /// connection, and only the transport changes.
-struct RunCommandTests {
+@Suite(.stubModel) struct RunCommandTests {
   // MARK: - Constants
 
   /// The text of the first prompt of every test here.

@@ -40,6 +40,12 @@ public final class RecordingEmbeddingContainer: LoadedEmbeddingContainer {
     received.withLock { $0 }
   }
 
+  /// Records `texts` as one batch, and answers it with the wrapped
+  /// container.
+  ///
+  /// - Parameter texts: The texts to embed.
+  /// - Returns: The vectors of the wrapped container.
+  /// - Throws: Whatever the wrapped container throws.
   public func embed(texts: [String]) async throws -> [[Float]] {
     received.withLock { $0.append(texts) }
     return try await wrapped.embed(texts: texts)

@@ -45,223 +45,229 @@ import Testing
 /// ```
 @Suite(.serialized)
 struct ToolCallingTests {
-    /// The text the model writes into ``probeFileName``.
-    private static let marker = "tool-calling-ok"
+  /// The text the model writes into ``probeFileName``.
+  private static let marker = "tool-calling-ok"
 
-    /// The file the `files` tool writes.
-    private static let probeFileName = "probe.txt"
+  /// The file the `files` tool writes.
+  private static let probeFileName = "probe.txt"
 
-    /// The file the `shell` command writes.
-    private static let hashFileName = "probe.sha256"
+  /// The file the `shell` command writes.
+  private static let hashFileName = "probe.sha256"
 
-    /// The user-layer `config.yaml`. The shell is on, because the gate
-    /// needs it. The code context is off, because the gate does not need
-    /// it and it makes a prompt slower. The skills marketplace list is
-    /// empty: the gate measures the tool calls of a fixed tool set, and the
-    /// skills of the default marketplace would change that set and need the
-    /// network.
-    private static var userConfigYAML: String {
-        """
-        transcripts:
-          location: home
-        tools:
-          shell: true
-          codeContext: false
-          skills:
-            marketplaces: []
-        profile:
-          standard: ["\(shippedStandardModel)"]
-        """
+  /// The user-layer `config.yaml`. The shell is on, because the gate
+  /// needs it. The code context is off, because the gate does not need
+  /// it and it makes a prompt slower. The skills marketplace list is
+  /// empty: the gate measures the tool calls of a fixed tool set, and the
+  /// skills of the default marketplace would change that set and need the
+  /// network.
+  private static var userConfigYAML: String {
+    """
+    transcripts:
+      location: home
+    tools:
+      shell: true
+      codeContext: false
+      skills:
+        marketplaces: []
+    profile:
+      standard: ["\(shippedStandardModel)"]
+    """
+  }
+
+  /// The standard model the agent ships with. The gate follows a change
+  /// of that default with no edit.
+  private static var shippedStandardModel: String {
+    guard let shipped = ProfileConfiguration.defaultStandard.first?.stringValue else {
+      preconditionFailure("ProfileConfiguration.defaultStandard names no model")
     }
+    return shipped
+  }
 
-    /// The standard model the agent ships with. The gate follows a change
-    /// of that default with no edit.
-    private static var shippedStandardModel: String {
-        guard let shipped = ProfileConfiguration.defaultStandard.first?.stringValue else {
-            preconditionFailure("ProfileConfiguration.defaultStandard names no model")
-        }
-        return shipped
+  /// The prompt text. It names the two verb paths and the
+  /// workspace, so the gate measures the tool calls and not a search for
+  /// the tools.
+  ///
+  /// - Parameter workspace: The session working directory.
+  /// - Returns: The prompt.
+  private static func prompt(workspace: URL) -> String {
+    """
+    Do these two steps with the runCode tool, in the workspace \(workspace.path).
+    1. With tools.files.write, write the file \(probeFileName) with exactly this \
+    content: \(marker)
+    2. With tools.shell.execute, run this command in the workspace: \
+    shasum -a 256 \(probeFileName) > \(hashFileName)
+    Then tell me the hash.
+    """
+  }
+
+  @Test("The shipped model writes a file and runs a shell command")
+  func theShippedModelWritesAFileAndRunsAShellCommand() async throws {
+    let residentBefore = await ProcessModelPool.residentModelsAfterRelease()
+    try #require(
+      residentBefore.isEmpty,
+      "an earlier suite keeps models resident, so the profile cannot resolve: \(ProcessModelPool.describe(residentBefore))"
+    )
+    let workspace = makeResolvedDirectory(label: "ToolCalling-workspace")
+    let run = try await Self.runPrompt(in: workspace)
+    #expect(run.drained, "the session closed before it had no work")
+
+    // The report goes to the reader whether the gate passes or fails.
+    let report =
+      "TOOL CALLING seconds=\(run.elapsed.components.seconds) "
+      + "stop=\(run.stopReason.map { "\($0)" } ?? "none") tools=\(run.toolTitles)"
+    print(report)
+
+    #expect(run.stopReason == .endTurn, "the prompt did not end with end_turn: \(report)")
+
+    let probe = workspace.appendingPathComponent(Self.probeFileName)
+    let probeData = try #require(
+      FileManager.default.contents(atPath: probe.path),
+      "the files tool wrote no \(Self.probeFileName): \(report)")
+    let probeText = String(decoding: probeData, as: UTF8.self)
+    #expect(
+      probeText.trimmingCharacters(in: .whitespacesAndNewlines) == Self.marker,
+      "\(Self.probeFileName) holds \"\(probeText)\": \(report)")
+
+    let hashFile = workspace.appendingPathComponent(Self.hashFileName)
+    let hashData = try #require(
+      FileManager.default.contents(atPath: hashFile.path),
+      "the shell tool wrote no \(Self.hashFileName): \(report)")
+    let hashText = String(decoding: hashData, as: UTF8.self)
+    let expectedHash = SHA256.hash(data: probeData)
+      .map { String(format: "%02x", $0) }
+      .joined()
+    #expect(
+      hashText.hasPrefix(expectedHash),
+      "\(Self.hashFileName) holds \"\(hashText)\", not \(expectedHash): \(report)")
+
+    let residentAfter = await ProcessModelPool.residentModelsAfterRelease()
+    #expect(
+      residentAfter.isEmpty,
+      "the gate keeps models resident, so the next live-model suite cannot resolve: \(ProcessModelPool.describe(residentAfter))"
+    )
+  }
+
+  // MARK: - The run
+
+  /// What the run of the prompt observed.
+  private struct PromptRun {
+    /// The stop reason of the prompt.
+    let stopReason: StopReason?
+
+    /// The time from the prompt request to its end.
+    let elapsed: Duration
+
+    /// The title of every tool call the wire carried, in wire order.
+    let toolTitles: [String]
+
+    /// Whether the session became idle before it closed.
+    let drained: Bool
+  }
+
+  /// Composes the live agent, sends the prompt, waits for its end, and
+  /// drains and closes the session and the wire. At the return no
+  /// reference to the agent stays, so the pool can evict its models
+  /// (``ProcessModelPool``).
+  ///
+  /// - Parameter workspace: The session working directory.
+  /// - Returns: What the run observed.
+  /// - Throws: Whatever the configuration load, the agent, the handshake,
+  ///   the session or the prompt throws.
+  private static func runPrompt(in workspace: URL) async throws -> PromptRun {
+    let harness = try await LiveAgent.makeHarness(
+      label: "ToolCalling", userConfigYAML: userConfigYAML)
+    do {
+      let run = try await prompt(over: harness, in: workspace)
+      await harness.close()
+      return run
+    } catch {
+      await harness.close()
+      throw error
     }
+  }
 
-    /// The prompt text. It names the two verb paths and the
-    /// workspace, so the gate measures the tool calls and not a search for
-    /// the tools.
-    ///
-    /// - Parameter workspace: The session working directory.
-    /// - Returns: The prompt.
-    private static func prompt(workspace: URL) -> String {
-        """
-        Do these two steps with the runCode tool, in the workspace \(workspace.path).
-        1. With tools.files.write, write the file \(probeFileName) with exactly this \
-        content: \(marker)
-        2. With tools.shell.execute, run this command in the workspace: \
-        shasum -a 256 \(probeFileName) > \(hashFileName)
-        Then tell me the hash.
-        """
+  /// Opens a session, sends the prompt, waits for its end, and drains and
+  /// closes the session.
+  ///
+  /// - Parameters:
+  ///   - harness: The wired harness of the live agent.
+  ///   - workspace: The session working directory.
+  /// - Returns: What the run observed.
+  /// - Throws: Whatever the handshake, the session or the prompt throws.
+  private static func prompt(over harness: AgentClientHarness, in workspace: URL) async throws
+    -> PromptRun
+  {
+    _ = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())
+    let collector = try #require(harness.collector)
+    let session = try await harness.connection.newSession(
+      NewSessionRequest(cwd: AbsolutePath(rawValue: workspace.path)))
+    let sessionId = session.sessionId
+    let start = ContinuousClock.now
+    _ = try await harness.connection.prompt(
+      AgentClientHarness.makePromptRequest(
+        sessionId: sessionId, text: prompt(workspace: workspace)))
+    let stopReason = try await waitForIdle(collector: collector, sessionId: sessionId)
+    let elapsed = start.duration(to: ContinuousClock.now)
+    await harness.flushPendingChunks()
+    let titles = await toolTitles(of: collector, sessionId: sessionId)
+    let drained = try await SessionDrain.drainAndClose(sessionId, in: harness)
+    return PromptRun(stopReason: stopReason, elapsed: elapsed, toolTitles: titles, drained: drained)
+  }
+
+  // MARK: - Waiting
+
+  /// Waits for the idle terminator of one session. Each update that the
+  /// collector gets checks the sequence again, so the wait uses no clock
+  /// and no poll. The first run of a process also loads the model, so the
+  /// wait can be long; a hang holds the test, and a sample of the test
+  /// process shows where it waits.
+  ///
+  /// - Parameters:
+  ///   - collector: The recorder of the sequence.
+  ///   - sessionId: The session to watch.
+  /// - Returns: The stop reason.
+  /// - Throws: ``ConditionWaitCancelled`` when the test is cancelled
+  ///   first.
+  private static func waitForIdle(
+    collector: UpdateCollector, sessionId: SessionId
+  ) async throws -> StopReason? {
+    let updates = try await collector.wait(for: "the idle of \(sessionId.rawValue)") { updates in
+      updates.contains { Self.stopReason(of: $0, in: sessionId) != nil }
     }
+    return updates.compactMap { Self.stopReason(of: $0, in: sessionId) }.last
+  }
 
-    @Test("The shipped model writes a file and runs a shell command")
-    func theShippedModelWritesAFileAndRunsAShellCommand() async throws {
-        let residentBefore = await ProcessModelPool.residentModelsAfterRelease()
-        try #require(
-            residentBefore.isEmpty,
-            "an earlier suite keeps models resident, so the profile cannot resolve: \(ProcessModelPool.describe(residentBefore))")
-        let workspace = makeResolvedDirectory(label: "ToolCalling-workspace")
-        let run = try await Self.runPrompt(in: workspace)
-        #expect(run.drained, "the session closed before it had no work")
+  /// The stop reason of an idle state update of one session, or `nil`.
+  ///
+  /// - Parameters:
+  ///   - notification: The update.
+  ///   - sessionId: The session to read.
+  /// - Returns: The stop reason.
+  private static func stopReason(
+    of notification: UpdateSessionNotification, in sessionId: SessionId
+  ) -> StopReason? {
+    guard notification.sessionId == sessionId,
+      case .stateUpdate(.idle(let idle)) = notification.update
+    else { return nil }
+    return idle.stopReason
+  }
 
-        // The report goes to the reader whether the gate passes or fails.
-        let report =
-            "TOOL CALLING seconds=\(run.elapsed.components.seconds) "
-            + "stop=\(run.stopReason.map { "\($0)" } ?? "none") tools=\(run.toolTitles)"
-        print(report)
-
-        #expect(run.stopReason == .endTurn, "the prompt did not end with end_turn: \(report)")
-
-        let probe = workspace.appendingPathComponent(Self.probeFileName)
-        let probeData = try #require(
-            FileManager.default.contents(atPath: probe.path),
-            "the files tool wrote no \(Self.probeFileName): \(report)")
-        let probeText = String(decoding: probeData, as: UTF8.self)
-        #expect(
-            probeText.trimmingCharacters(in: .whitespacesAndNewlines) == Self.marker,
-            "\(Self.probeFileName) holds \"\(probeText)\": \(report)")
-
-        let hashFile = workspace.appendingPathComponent(Self.hashFileName)
-        let hashData = try #require(
-            FileManager.default.contents(atPath: hashFile.path),
-            "the shell tool wrote no \(Self.hashFileName): \(report)")
-        let hashText = String(decoding: hashData, as: UTF8.self)
-        let expectedHash = SHA256.hash(data: probeData)
-            .map { String(format: "%02x", $0) }
-            .joined()
-        #expect(
-            hashText.hasPrefix(expectedHash),
-            "\(Self.hashFileName) holds \"\(hashText)\", not \(expectedHash): \(report)")
-
-        let residentAfter = await ProcessModelPool.residentModelsAfterRelease()
-        #expect(
-            residentAfter.isEmpty,
-            "the gate keeps models resident, so the next live-model suite cannot resolve: \(ProcessModelPool.describe(residentAfter))")
+  /// The title of every tool call the wire carried for one session. A
+  /// failed run says here what the model did instead.
+  ///
+  /// - Parameters:
+  ///   - collector: The recorder of the sequence.
+  ///   - sessionId: The session to read.
+  /// - Returns: The titles, in wire order.
+  private static func toolTitles(
+    of collector: UpdateCollector, sessionId: SessionId
+  ) async -> [String] {
+    await collector.updates.compactMap { notification -> String? in
+      guard notification.sessionId == sessionId,
+        case .toolCallUpdate(let update) = notification.update,
+        case .value(let title) = update.title
+      else { return nil }
+      return title
     }
-
-    // MARK: - The run
-
-    /// What the run of the prompt observed.
-    private struct PromptRun {
-        /// The stop reason of the prompt.
-        let stopReason: StopReason?
-
-        /// The time from the prompt request to its end.
-        let elapsed: Duration
-
-        /// The title of every tool call the wire carried, in wire order.
-        let toolTitles: [String]
-
-        /// Whether the session became idle before it closed.
-        let drained: Bool
-    }
-
-    /// Composes the live agent, sends the prompt, waits for its end, and
-    /// drains and closes the session and the wire. At the return no
-    /// reference to the agent stays, so the pool can evict its models
-    /// (``ProcessModelPool``).
-    ///
-    /// - Parameter workspace: The session working directory.
-    /// - Returns: What the run observed.
-    /// - Throws: Whatever the configuration load, the agent, the handshake,
-    ///   the session or the prompt throws.
-    private static func runPrompt(in workspace: URL) async throws -> PromptRun {
-        let harness = try await LiveAgent.makeHarness(
-            label: "ToolCalling", userConfigYAML: userConfigYAML)
-        do {
-            let run = try await prompt(over: harness, in: workspace)
-            await harness.close()
-            return run
-        } catch {
-            await harness.close()
-            throw error
-        }
-    }
-
-    /// Opens a session, sends the prompt, waits for its end, and drains and
-    /// closes the session.
-    ///
-    /// - Parameters:
-    ///   - harness: The wired harness of the live agent.
-    ///   - workspace: The session working directory.
-    /// - Returns: What the run observed.
-    /// - Throws: Whatever the handshake, the session or the prompt throws.
-    private static func prompt(over harness: AgentClientHarness, in workspace: URL) async throws -> PromptRun {
-        _ = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())
-        let collector = try #require(harness.collector)
-        let session = try await harness.connection.newSession(
-            NewSessionRequest(cwd: AbsolutePath(rawValue: workspace.path)))
-        let sessionId = session.sessionId
-        let start = ContinuousClock.now
-        _ = try await harness.connection.prompt(
-            AgentClientHarness.makePromptRequest(
-                sessionId: sessionId, text: prompt(workspace: workspace)))
-        let stopReason = try await waitForIdle(collector: collector, sessionId: sessionId)
-        let elapsed = start.duration(to: ContinuousClock.now)
-        await harness.flushPendingChunks()
-        let titles = await toolTitles(of: collector, sessionId: sessionId)
-        let drained = try await SessionDrain.drainAndClose(sessionId, in: harness)
-        return PromptRun(stopReason: stopReason, elapsed: elapsed, toolTitles: titles, drained: drained)
-    }
-
-    // MARK: - Waiting
-
-    /// Waits for the idle terminator of one session. Each update that the
-    /// collector gets checks the sequence again, so the wait uses no clock
-    /// and no poll. The first run of a process also loads the model, so the
-    /// wait can be long; a hang holds the test, and a sample of the test
-    /// process shows where it waits.
-    ///
-    /// - Parameters:
-    ///   - collector: The recorder of the sequence.
-    ///   - sessionId: The session to watch.
-    /// - Returns: The stop reason.
-    /// - Throws: ``ConditionWaitCancelled`` when the test is cancelled
-    ///   first.
-    private static func waitForIdle(
-        collector: UpdateCollector, sessionId: SessionId
-    ) async throws -> StopReason? {
-        let updates = try await collector.wait(for: "the idle of \(sessionId.rawValue)") { updates in
-            updates.contains { Self.stopReason(of: $0, in: sessionId) != nil }
-        }
-        return updates.compactMap { Self.stopReason(of: $0, in: sessionId) }.last
-    }
-
-    /// The stop reason of an idle state update of one session, or `nil`.
-    ///
-    /// - Parameters:
-    ///   - notification: The update.
-    ///   - sessionId: The session to read.
-    /// - Returns: The stop reason.
-    private static func stopReason(of notification: UpdateSessionNotification, in sessionId: SessionId) -> StopReason? {
-        guard notification.sessionId == sessionId,
-            case .stateUpdate(.idle(let idle)) = notification.update
-        else { return nil }
-        return idle.stopReason
-    }
-
-    /// The title of every tool call the wire carried for one session. A
-    /// failed run says here what the model did instead.
-    ///
-    /// - Parameters:
-    ///   - collector: The recorder of the sequence.
-    ///   - sessionId: The session to read.
-    /// - Returns: The titles, in wire order.
-    private static func toolTitles(
-        of collector: UpdateCollector, sessionId: SessionId
-    ) async -> [String] {
-        await collector.updates.compactMap { notification -> String? in
-            guard notification.sessionId == sessionId,
-                case .toolCallUpdate(let update) = notification.update,
-                case .value(let title) = update.title
-            else { return nil }
-            return title
-        }
-    }
+  }
 }

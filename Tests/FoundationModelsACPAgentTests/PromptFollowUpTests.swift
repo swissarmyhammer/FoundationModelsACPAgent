@@ -211,16 +211,6 @@ import Tracing
   /// background when the settle period of the call ends.
   private static let askingSnippet = #"return await elicit("Which colour do you want?");"#
 
-  /// The content of the accept: `elicit("question")` asks for one string
-  /// field, `answer`.
-  private static let acceptedContent: FoundationModelsACP.JSONValue = .object([
-    "answer": .string("blue")
-  ])
-
-  /// The text that a run result holds, with no white space, when the run
-  /// got the `accept` action.
-  private static let acceptedActionText = #""action":"accept""#
-
   /// Whether a prompt that the model got holds a run result that got the
   /// `accept` action.
   ///
@@ -232,7 +222,7 @@ import Tracing
   /// - Returns: `true` when a prompt holds the `accept` action.
   private static func aRunGotAccept(in recorder: PromptRecorder) async -> Bool {
     await recorder.prompts.contains { prompt in
-      prompt.filter { !$0.isWhitespace }.contains(acceptedActionText)
+      prompt.filter { !$0.isWhitespace }.contains(ElicitationWait.acceptedActionText)
     }
   }
 
@@ -315,7 +305,8 @@ import Tracing
       label: "PromptFollowUpTests-background-work", recorder: recorder)
 
     await MainActor.run {
-      asked.fixture.session.acceptElicitation(asked.question.id, content: Self.acceptedContent)
+      asked.fixture.session.acceptElicitation(
+        asked.question.id, content: ElicitationWait.acceptedContent)
     }
     _ = try await ScriptedPromptFixture.waitForUpdatesBeforeSettle(
       of: asked.fixture.collector, toReach: "the mail reply"

@@ -245,6 +245,17 @@ extension RoutedACPAgent {
 
   // MARK: - The pre-checks
 
+  /// Records that the agent refuses a resume. Each refusal of the pre-checks
+  /// writes the same record, with the session id as its only metadata.
+  ///
+  /// - Parameters:
+  ///   - message: Why the agent refuses the resume.
+  ///   - sessionId: The session of the refused resume.
+  private func warnRefusedResume(_ message: Logger.Message, sessionId: SessionId) {
+    ACPAgentTelemetry.logger(.sessionResume).warning(
+      message, metadata: ACPAgentTelemetry.sessionMetadata(sessionId))
+  }
+
   /// Takes a session for the connection of a resume (D120 c): the
   /// connection becomes the owner (``ConnectionTable/take(_:by:)``). A
   /// `userDevice` connection takes each session; an `external` connection
@@ -257,9 +268,9 @@ extension RoutedACPAgent {
   ///   the take.
   private func takeSession(_ sessionId: SessionId, for caller: ConnectionId) throws {
     guard connections.take(sessionId, by: caller) else {
-      ACPAgentTelemetry.logger(.sessionResume).warning(
+      warnRefusedResume(
         "An external connection tried to take a session that has an owner. The agent refuses the resume.",
-        metadata: ACPAgentTelemetry.sessionMetadata(sessionId))
+        sessionId: sessionId)
       throw RequestError.sessionHasOwner(id: sessionId)
     }
   }
@@ -313,9 +324,9 @@ extension RoutedACPAgent {
     let requestedPath = workingDirectory.standardizedFileURL.path
     guard recordedPath == requestedPath else {
       // The record holds no path. The refusal gives both paths to the client.
-      ACPAgentTelemetry.logger(.sessionResume).warning(
+      warnRefusedResume(
         "The resume cwd does not equal the recorded cwd. The agent refuses the resume.",
-        metadata: ACPAgentTelemetry.sessionMetadata(sessionId))
+        sessionId: sessionId)
       throw RequestError.mismatchedWorkingDirectory(
         id: sessionId, requested: requestedPath, recorded: recordedPath)
     }

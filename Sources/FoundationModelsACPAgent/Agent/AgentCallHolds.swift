@@ -53,6 +53,15 @@ final class AgentCallHolds: Sendable {
 
     /// The tokens whose run ended. A hold for such a token is not placed.
     var ended = RecentIDSet<String>(limit: AgentCallHolds.endedLimit)
+
+    /// Remembers that the run of `token` ended, and takes its held updates.
+    ///
+    /// - Parameter token: The completion token of the call that started the run.
+    /// - Returns: The updates that the hold kept, in order. Empty for a run that held nothing.
+    mutating func endHold(_ token: String) -> [ToolCallUpdate] {
+      ended.insert(token)
+      return held.removeValue(forKey: token) ?? []
+    }
   }
 
   /// The state, under its lock.
@@ -125,8 +134,7 @@ final class AgentCallHolds: Sendable {
   func release(_ token: String) -> [ToolCallUpdate] {
     state.withLock { state in
       state.runs.remove(token)
-      state.ended.insert(token)
-      return state.held.removeValue(forKey: token) ?? []
+      return state.endHold(token)
     }
   }
 
@@ -142,7 +150,7 @@ final class AgentCallHolds: Sendable {
   ///
   /// - Parameters:
   ///   - update: The update of a tool call.
-  ///   - joinedTo: The wire id that the join table gives a completion token.
+  ///   - wireId: The wire id that the join table gives a completion token.
   /// - Returns: The part of the update to send now, and the token of a call that the object kept.
   func deferFinal(_ update: ToolCallUpdate, joinedTo wireId: (String) -> ToolCallId) -> Deferral {
     guard case .value(let status) = update.status, Self.isFinal(status) else {
@@ -181,8 +189,7 @@ final class AgentCallHolds: Sendable {
       guard state.held[token] != nil, !state.runs.contains(token) else {
         return []
       }
-      state.ended.insert(token)
-      return state.held.removeValue(forKey: token) ?? []
+      return state.endHold(token)
     }
   }
 

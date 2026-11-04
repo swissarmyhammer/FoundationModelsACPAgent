@@ -61,8 +61,8 @@ extension AcpAgentCommand {
       ///   refused, or what ``LayerFileWriter/write(_:named:into:of:overwrites:)``
       ///   throws — above all the refusal to overwrite.
       func report(environment: [String: String]) throws -> CommandReport {
-        let stack = try AgentComposition.makeConfigurationLoader(
-          workingDirectory: workingDirectoryOptions.directoryURL, environment: environment
+        let stack = try Config.makeLoader(
+          for: workingDirectoryOptions, environment: environment
         ).stack
         let url = try LayerFileWriter.write(
           BuiltinInstructions.text,

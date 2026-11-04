@@ -23,7 +23,7 @@ import Testing
 /// The `5` row belongs to `doctor`, and `DoctorCommandTests` drives it:
 /// that suite runs stub components through the Extras runner and asserts
 /// the code of each of the three health statuses.
-struct ExitCodeTests {
+@Suite(.stubModel) struct ExitCodeTests {
   // MARK: - Constants
 
   /// The prompt text of every case here.
@@ -83,7 +83,7 @@ struct ExitCodeTests {
   private static let tableFileName = "ExitCode.swift"
 
   /// The line that opens the stop-reason switch.
-  private static let switchOpeningLine = "self = switch stopReason {"
+  private static let switchOpeningLine = "switch stopReason {"
 
   /// The line that closes the stop-reason switch.
   private static let switchClosingLine = "}"

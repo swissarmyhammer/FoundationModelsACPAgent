@@ -72,6 +72,17 @@ public final class WatchedValue<Value: Sendable>: Sendable {
     state.withLock { $0.value }
   }
 
+  /// Gives the token of a new wait, and counts the next one. The read and the
+  /// count are one locked step, so two waits never share a token.
+  ///
+  /// - Returns: The token of the wait.
+  private func nextWaitToken() -> Int {
+    state.withLock { state in
+      defer { state.nextToken += 1 }
+      return state.nextToken
+    }
+  }
+
   /// The count of waits that are kept now: each wait that checked its
   /// condition, found it false, and is suspended until a change or a
   /// cancellation resumes it. A test reads this count to know that a wait
@@ -92,10 +103,7 @@ public final class WatchedValue<Value: Sendable>: Sendable {
   ///   cancelled before the count is kept.
   public func waitUntilKept(atLeast count: Int) async throws {
     let condition = "\(count) kept wait(s)"
-    let token = state.withLock { state in
-      defer { state.nextToken += 1 }
-      return state.nextToken
-    }
+    let token = nextWaitToken()
     try await withTaskCancellationHandler {
       try await withCheckedThrowingContinuation {
         (continuation: CheckedContinuation<Void, any Error>) in
@@ -147,10 +155,7 @@ public final class WatchedValue<Value: Sendable>: Sendable {
   public func wait(
     for condition: String, until isMet: @escaping @Sendable (Value) -> Bool
   ) async throws -> Value {
-    let token = state.withLock { state in
-      defer { state.nextToken += 1 }
-      return state.nextToken
-    }
+    let token = nextWaitToken()
     return try await withTaskCancellationHandler {
       try await withCheckedThrowingContinuation { continuation in
         admit(Wait(isMet: isMet, continuation: continuation), token: token, condition: condition)

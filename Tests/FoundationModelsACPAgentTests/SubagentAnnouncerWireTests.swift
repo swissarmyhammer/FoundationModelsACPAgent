@@ -364,7 +364,7 @@ extension SubagentAnnouncerTests {
       let early = try await Self.barrier(held.fixture, count: 1)
       #expect(Self.announcements(of: held.child, in: early).isEmpty)
 
-      held.joins.record(toolCallID: Self.sdkCallId, for: Self.token)
+      held.joins.record(toolCallID: Self.sdkCallId, for: RunToken(Self.token))
 
       let updates = try await held.fixture.collector.wait(for: "the announcement") {
         !Self.announcements(of: held.child, in: $0).isEmpty
@@ -450,7 +450,7 @@ extension SubagentAnnouncerTests {
         in: fixture, below: child)
       let childRun = try #require(ULID(ulidString: child.rawValue))
       try await Self.joins(of: child, in: fixture).record(
-        toolCallID: Self.sdkCallId, for: Self.token)
+        toolCallID: Self.sdkCallId, for: RunToken(Self.token))
       announcer.observe(
         SubagentAnnouncerTests.makeReport(runID: childRun, caller: try Self.rootRun(of: fixture)))
       announcer.observe(
@@ -681,7 +681,7 @@ extension SubagentAnnouncerTests {
       let early = try await Self.barrier(held.fixture, count: 1)
       #expect(!early.contains { Self.names($0, child: held.child) })
 
-      held.joins.record(toolCallID: Self.sdkCallId, for: Self.token)
+      held.joins.record(toolCallID: Self.sdkCallId, for: RunToken(Self.token))
       _ = try await held.fixture.collector.wait(for: "the announcement") {
         !Self.announcements(of: held.child, in: $0).isEmpty
       }

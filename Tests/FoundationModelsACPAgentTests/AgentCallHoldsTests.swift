@@ -45,7 +45,7 @@ import ULID
   /// - Returns: The table.
   private static func makeHeldTable() -> RunCallJoinTable {
     let table = RunCallJoinTable()
-    table.record(toolCallID: callId.rawValue, for: token)
+    table.record(toolCallID: callId.rawValue, for: RunToken(token))
     table.holds.runObserved(token)
     table.holds.hold(token)
     return table
@@ -142,7 +142,7 @@ import ULID
   @Test
   func aRunWithNoHoldGoesThrough() async {
     let table = RunCallJoinTable()
-    table.record(toolCallID: Self.callId.rawValue, for: Self.token)
+    table.record(toolCallID: Self.callId.rawValue, for: RunToken(Self.token))
     let sent = Sent()
 
     await table.deferringFinalStatus(of: sent.sink)(Self.statusUpdate(.completed))
@@ -156,7 +156,7 @@ import ULID
   func aNestedTableSharesTheHoldsOfItsParent() async {
     let parent = RunCallJoinTable()
     let nested = RunCallJoinTable(holds: parent.holds)
-    nested.record(toolCallID: Self.callId.rawValue, for: Self.token)
+    nested.record(toolCallID: Self.callId.rawValue, for: RunToken(Self.token))
     parent.holds.runObserved(Self.token)
     parent.holds.hold(Self.token)
     let sent = Sent()
@@ -228,7 +228,7 @@ import ULID
   @Test
   func aHoldRequestedAfterTheEndOfTheRunIsNotPlaced() async {
     let table = RunCallJoinTable()
-    table.record(toolCallID: Self.callId.rawValue, for: Self.token)
+    table.record(toolCallID: Self.callId.rawValue, for: RunToken(Self.token))
     _ = table.holds.release(Self.token)
     let sent = Sent()
 
@@ -243,7 +243,7 @@ import ULID
   @Test
   func aHoldRequestedBeforeTheEndOfTheRunKeepsTheStatusUntilTheEnd() async {
     let table = RunCallJoinTable()
-    table.record(toolCallID: Self.callId.rawValue, for: Self.token)
+    table.record(toolCallID: Self.callId.rawValue, for: RunToken(Self.token))
     table.holds.runObserved(Self.token)
     let sent = Sent()
 

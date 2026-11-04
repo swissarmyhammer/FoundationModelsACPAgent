@@ -128,16 +128,16 @@ struct ToolsDoctorTests {
     try #require(checks.first { $0.name == name })
   }
 
-  /// The findings of `checks` that carry `status`.
+  /// The one warning of `checks`. The helper asserts that there is exactly
+  /// one warning.
   ///
-  /// - Parameters:
-  ///   - status: The status to keep.
-  ///   - checks: The findings to filter.
-  /// - Returns: The findings that carry `status`.
-  private static func findings(
-    _ status: HealthStatus, in checks: [HealthCheck]
-  ) -> [HealthCheck] {
-    checks.filter { $0.status == status }
+  /// - Parameter checks: The findings to read.
+  /// - Returns: The warning.
+  /// - Throws: The `#require` failure when `checks` hold no warning.
+  private static func singleWarning(in checks: [HealthCheck]) throws -> HealthCheck {
+    let warnings = checks.findings(.warning)
+    #expect(warnings.count == oneFinding)
+    return try #require(warnings.first)
   }
 
   /// A configuration whose `mcp:` section names one stdio server called
@@ -180,7 +180,7 @@ struct ToolsDoctorTests {
       configuration: AgentConfiguration(), workingDirectory: workspace, prober: prober
     ).runHealthChecks()
 
-    let errors = Self.findings(.error, in: checks)
+    let errors = checks.findings(.error)
     let failure = try #require(errors.first)
     #expect(errors.count == Self.oneFinding)
     #expect(failure.message.contains(Self.sandboxRefusedReason))
@@ -201,13 +201,11 @@ struct ToolsDoctorTests {
       configuration: configuration, workingDirectory: workspace
     ).runHealthChecks()
 
-    let warnings = Self.findings(.warning, in: checks)
-    let warning = try #require(warnings.first)
+    let warning = try Self.singleWarning(in: checks)
     let fix = try #require(warning.fix)
-    #expect(warnings.count == Self.oneFinding)
     #expect(warning.message.contains(missing.path))
     #expect(fix.contains(Self.extraWritePathsKey))
-    #expect(Self.findings(.error, in: checks).isEmpty)
+    #expect(checks.findings(.error).isEmpty)
   }
 
   // MARK: - The shell store directory
@@ -227,7 +225,7 @@ struct ToolsDoctorTests {
     ).runHealthChecks()
     try setPermissions(ownerOnlyPermissions, of: parent)
 
-    let errors = Self.findings(.error, in: checks)
+    let errors = checks.findings(.error)
     let failure = try #require(errors.first)
     let fix = try #require(failure.fix)
     #expect(errors.count == Self.oneFinding)
@@ -430,7 +428,7 @@ struct ToolsDoctorTests {
       prober: prober
     ).runHealthChecks()
 
-    let errors = Self.findings(.error, in: checks)
+    let errors = checks.findings(.error)
     let failure = try #require(errors.first)
     let fix = try #require(failure.fix)
     #expect(errors.count == Self.oneFinding)
@@ -458,9 +456,7 @@ struct ToolsDoctorTests {
     ).runHealthChecks()
     await prober.lateAnswers.open()
 
-    let warnings = Self.findings(.warning, in: checks)
-    let warning = try #require(warnings.first)
-    #expect(warnings.count == Self.oneFinding)
+    let warning = try Self.singleWarning(in: checks)
     #expect(warning.message.contains(Self.serverName))
     #expect(warning.fix != nil)
   }

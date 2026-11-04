@@ -433,12 +433,12 @@ import Testing
   @Test
   func aJoinedRunFlowsWhileAnUnjoinedRunWaitsForItsEntry() async throws {
     let session = LiveShellSession()
-    session.runCallJoins.record(toolCallID: Self.sdkCallId, for: Self.runToken)
+    session.runCallJoins.record(toolCallID: Self.sdkCallId, for: RunToken(Self.runToken))
     session.send(Self.outputChunk(Self.secondRunToken))
     session.send(Self.outputChunk(Self.runToken))
 
     let joinedRunUpdates = try await Self.updatesUntilOutput(of: Self.runToken, in: session)
-    session.runCallJoins.record(toolCallID: nil, for: Self.secondRunToken)
+    session.runCallJoins.record(toolCallID: nil, for: RunToken(Self.secondRunToken))
     let updates = await session.finish()
 
     #expect(Self.terminalAnnounceIds(in: joinedRunUpdates) == [Self.sdkCallId])
@@ -501,7 +501,7 @@ import Testing
     runCallJoins.recordAgentRunEvent(
       SessionOutput(origin: .system, event: Self.progress(Self.agentShellRunToken)))
 
-    #expect(runCallJoins.announceToolCallId(for: Self.agentShellRunToken) == nil)
+    #expect(runCallJoins.announceToolCallId(for: RunToken(Self.agentShellRunToken)) == nil)
   }
 
   /// A root shell run that starts after an agent run ended keeps its SDK id.
@@ -513,7 +513,8 @@ import Testing
   @Test
   func aRootShellRunThatStartsAfterAnAgentRunEndedKeepsItsSdkId() async throws {
     let session = LiveShellSession()
-    session.runCallJoins.record(toolCallID: Self.secondSdkCallId, for: Self.secondRunToken)
+    session.runCallJoins.record(
+      toolCallID: Self.secondSdkCallId, for: RunToken(Self.secondRunToken))
     session.send(Self.outputChunk(Self.runToken))
     // The chunk of the joined second run goes out only after the terminal
     // stream read the chunk of the root run, which then waits.

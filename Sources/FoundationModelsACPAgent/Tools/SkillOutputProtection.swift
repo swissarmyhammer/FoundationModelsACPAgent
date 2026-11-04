@@ -40,6 +40,10 @@ enum SkillOutputProtection {
   /// `use` itself and the aliases of its resolver.
   static let useVerbs: Set<String> = ["use", "call", "invoke", "get"]
 
+  /// The number of words of an operation that loads a skill: a verb of
+  /// ``useVerbs`` and the noun ``skillNoun``.
+  static let skillLoadWordCount = 2
+
   /// The rule Router applies to each tool output at a compaction.
   static let rule: ToolOutputProtection = { call, _ in
     isSkillLoad(call)
@@ -57,7 +61,7 @@ enum SkillOutputProtection {
       return false
     }
     let words = operation.lowercased().split(whereSeparator: { !$0.isLetter }).map(String.init)
-    guard words.count == 2 else {
+    guard words.count == skillLoadWordCount else {
       return false
     }
     return useVerbs.contains(words[0]) && words[1] == skillNoun

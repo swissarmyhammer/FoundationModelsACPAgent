@@ -15,15 +15,15 @@ import Darwin
 import Foundation
 
 extension Pipe {
-    /// Sets `FD_CLOEXEC` on both ends of this pipe, so no child that this
-    /// process spawns later gets a copy of them.
-    ///
-    /// Call it before the `Process` that uses the pipe starts. `Process` puts
-    /// the child end on descriptor 0, 1 or 2 with `dup2`, which clears the
-    /// flag there, so the child of this pipe still gets its stream.
-    func markCloseOnExec() {
-        for handle in [fileHandleForReading, fileHandleForWriting] {
-            _ = fcntl(handle.fileDescriptor, F_SETFD, FD_CLOEXEC)
-        }
+  /// Sets `FD_CLOEXEC` on both ends of this pipe, so no child that this
+  /// process spawns later gets a copy of them.
+  ///
+  /// Call it before the `Process` that uses the pipe starts. `Process` puts
+  /// the child end on descriptor 0, 1 or 2 with `dup2`, which clears the
+  /// flag there, so the child of this pipe still gets its stream.
+  func markCloseOnExec() {
+    for handle in [fileHandleForReading, fileHandleForWriting] {
+      _ = fcntl(handle.fileDescriptor, F_SETFD, FD_CLOEXEC)
     }
+  }
 }

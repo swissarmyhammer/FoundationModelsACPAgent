@@ -124,6 +124,19 @@ extension SubagentAnnouncerTests {
       }
     }
 
+    /// Waits until the test opens the release gate of an outlet. A wait that
+    /// fails is a failed test: it records an issue, so an answer after a failed
+    /// wait is never read as an answer after the release.
+    ///
+    /// - Parameter released: The gate. It is `true` after the release.
+    private static func waitForRelease(of released: WatchedValue<Bool>) async {
+      do {
+        _ = try await released.wait(for: "the release") { $0 }
+      } catch {
+        Issue.record("the wait for the release failed: \(error)")
+      }
+    }
+
     /// Waits until the announcer holds no state of any run. The wait has a
     /// limit, so a state that stays gives a failed test and no hang.
     ///
@@ -200,7 +213,7 @@ extension SubagentAnnouncerTests {
           log: log,
           answer: { report in
             if report == running {
-              _ = try? await released.wait(for: "the release") { $0 }
+              await Self.waitForRelease(of: released)
             }
             return .sent(SubagentAnnouncerTests.makeSnapshot(of: report))
           }))
@@ -301,7 +314,7 @@ extension SubagentAnnouncerTests {
         Self.makeOutlet(
           log: log,
           answer: { report in
-            _ = try? await released.wait(for: "the release") { $0 }
+            await Self.waitForRelease(of: released)
             return .sent(SubagentAnnouncerTests.makeSnapshot(of: report))
           }))
       announcer.observe(first)
@@ -433,7 +446,7 @@ extension SubagentAnnouncerTests {
             attempt = $0
           }
           guard attempt > 1 else {
-            _ = try? await released.wait(for: "the release") { $0 }
+            await Self.waitForRelease(of: released)
             return .unavailable
           }
           return .callId(ToolCallId(rawValue: "wire-id"))
@@ -462,7 +475,7 @@ extension SubagentAnnouncerTests {
           log: log,
           answer: { report in
             guard log.value.count > 1 else {
-              _ = try? await released.wait(for: "the release") { $0 }
+              await Self.waitForRelease(of: released)
               return .blocked
             }
             return .sent(SubagentAnnouncerTests.makeSnapshot(of: report))
@@ -554,7 +567,7 @@ extension SubagentAnnouncerTests {
             guard isFirst else {
               return .sent(SubagentAnnouncerTests.makeSnapshot(of: report))
             }
-            _ = try? await released.wait(for: "the release") { $0 }
+            await Self.waitForRelease(of: released)
             return .blocked
           }))
       let report = SubagentAnnouncerTests.makeReport()
@@ -1120,10 +1133,10 @@ extension SubagentAnnouncerTests {
     func theWaitGivesTheSdkIdThatTheProjectionWrote() async {
       let joins = RunCallJoinTable()
       joins.openProjection()
-      let waiting = Task { await joins.awaitToolCallId(for: Self.token) }
+      let waiting = Task { await joins.awaitToolCallId(for: RunToken(Self.token)) }
       await waitForWaiter(in: joins)
 
-      joins.record(toolCallID: Self.sdkCallId, for: Self.token)
+      joins.record(toolCallID: Self.sdkCallId, for: RunToken(Self.token))
 
       #expect(await waiting.value == ToolCallId(rawValue: Self.sdkCallId))
     }
@@ -1134,7 +1147,7 @@ extension SubagentAnnouncerTests {
     func theWaitGivesTheTokenWhenNoProjectionIsOpen() async {
       let joins = RunCallJoinTable()
 
-      let id = await joins.awaitToolCallId(for: Self.token)
+      let id = await joins.awaitToolCallId(for: RunToken(Self.token))
 
       #expect(id == ToolCallId(rawValue: Self.token))
     }
@@ -1145,7 +1158,7 @@ extension SubagentAnnouncerTests {
     func theStopOfTheProjectionEndsTheWait() async {
       let joins = RunCallJoinTable()
       joins.openProjection()
-      let waiting = Task { await joins.awaitToolCallId(for: Self.token) }
+      let waiting = Task { await joins.awaitToolCallId(for: RunToken(Self.token)) }
       await waitForWaiter(in: joins)
 
       joins.closeProjection()
@@ -1159,7 +1172,7 @@ extension SubagentAnnouncerTests {
     func aCancelledWaitGivesNoId() async {
       let joins = RunCallJoinTable()
       joins.openProjection()
-      let waiting = Task { await joins.awaitToolCallId(for: Self.token) }
+      let waiting = Task { await joins.awaitToolCallId(for: RunToken(Self.token)) }
       await waitForWaiter(in: joins)
 
       waiting.cancel()
@@ -1173,9 +1186,9 @@ extension SubagentAnnouncerTests {
     func aRunWithAnEntryGivesItAtOnce() async {
       let joins = RunCallJoinTable()
       joins.openProjection()
-      joins.record(toolCallID: Self.sdkCallId, for: Self.token)
+      joins.record(toolCallID: Self.sdkCallId, for: RunToken(Self.token))
 
-      let id = await joins.awaitToolCallId(for: Self.token)
+      let id = await joins.awaitToolCallId(for: RunToken(Self.token))
 
       #expect(id == ToolCallId(rawValue: Self.sdkCallId))
     }
@@ -1185,11 +1198,11 @@ extension SubagentAnnouncerTests {
     func theWaiterCountFollowsTheWaiters() async {
       let joins = RunCallJoinTable()
       joins.openProjection()
-      let waiting = Task { await joins.awaitToolCallId(for: Self.token) }
+      let waiting = Task { await joins.awaitToolCallId(for: RunToken(Self.token)) }
       await waitForWaiter(in: joins)
       #expect(joins.waiterCount == 1)
 
-      joins.record(toolCallID: Self.sdkCallId, for: Self.token)
+      joins.record(toolCallID: Self.sdkCallId, for: RunToken(Self.token))
       _ = await waiting.value
 
       #expect(joins.waiterCount == 0)

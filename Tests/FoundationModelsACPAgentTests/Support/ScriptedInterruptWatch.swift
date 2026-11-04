@@ -31,9 +31,11 @@ enum ScriptedArrival {
   ) -> (arrivals: AsyncStream<Element>, disarm: @Sendable () -> Void) {
     let (arrivals, continuation) = AsyncStream<Element>.makeStream()
     let waiting = Task {
+      // The stream finishes on each path: after the element, and when the
+      // gate throws.
+      defer { continuation.finish() }
       try await gate()
       continuation.yield(element)
-      continuation.finish()
     }
     return (
       arrivals,

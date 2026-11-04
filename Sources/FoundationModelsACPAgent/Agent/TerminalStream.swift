@@ -196,8 +196,8 @@ struct TerminalStream {
   ) async {
     let (inputs, continuation) = AsyncStream.makeStream(of: Input.self)
     let gate = ShellEventGate()
-    runCallJoins.observeJoins { commandID in
-      continuation.yield(.joined(commandID))
+    runCallJoins.observeJoins { token in
+      continuation.yield(.joined(token.rawValue))
     }
     let observe = forwarderObserver ?? { _ in }
     let forwarder = Task {
@@ -262,7 +262,7 @@ struct TerminalStream {
       return
     }
     if !announcedRuns.contains(commandID) {
-      guard let toolCallId = runCallJoins.announceToolCallId(for: commandID) else {
+      guard let toolCallId = runCallJoins.announceToolCallId(for: RunToken(commandID)) else {
         var waitingRun = WaitingRun()
         waitingRun.note(event.kind)
         waitingRuns[commandID] = waitingRun
@@ -287,7 +287,7 @@ struct TerminalStream {
         metadata: [ACPAgentTelemetry.LogMetadataKey.toolCallId: "\(commandID)"])
       return
     }
-    await announce(commandID, on: runCallJoins.toolCallId(for: commandID))
+    await announce(commandID, on: runCallJoins.toolCallId(for: RunToken(commandID)))
     if waitingRun.hasExited {
       await reportExit(of: commandID)
     } else if waitingRun.hasOutput {
@@ -300,7 +300,7 @@ struct TerminalStream {
   /// whose entry the table wrote before the seal keeps that entry.
   private mutating func releaseWaitingRuns() async {
     for commandID in Array(waitingRuns.keys) {
-      runCallJoins.seal(commandID)
+      runCallJoins.seal(RunToken(commandID))
       await announceWaitingRun(commandID)
     }
   }

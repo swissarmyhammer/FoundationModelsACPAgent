@@ -552,6 +552,10 @@ enum ACPAgentTelemetry {
 
     /// The instructions assembler: the files that do not read as text.
     case instructions = "Instructions"
+
+    /// The code context leases: a release for a manager that the table does
+    /// not hold.
+    case codeContext = "CodeContext"
   }
 
   /// Makes a new logger for `category`.

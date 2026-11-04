@@ -38,18 +38,27 @@ struct ReplayedMessage: Equatable {
     updates.compactMap { update in
       switch update {
       case .userMessage(let message):
-        return ReplayedMessage(
-          kind: .user, id: message.messageId.rawValue, text: text(of: message.content))
+        return make(.user, id: message.messageId.rawValue, text: text(of: message.content))
       case .agentMessage(let message):
-        return ReplayedMessage(
-          kind: .agent, id: message.messageId.rawValue, text: text(of: message.content))
+        return make(.agent, id: message.messageId.rawValue, text: text(of: message.content))
       case .agentThought(let message):
-        return ReplayedMessage(
-          kind: .thought, id: message.messageId.rawValue, text: text(of: message.content))
+        return make(.thought, id: message.messageId.rawValue, text: text(of: message.content))
       default:
         return nil
       }
     }
+  }
+
+  /// Makes the message of one update: the one place that maps the kind, the
+  /// id and the text of an update to a ``ReplayedMessage``.
+  ///
+  /// - Parameters:
+  ///   - kind: The kind of the update.
+  ///   - id: The raw id of the message.
+  ///   - text: The joined text of the content of the update.
+  /// - Returns: The message.
+  private static func make(_ kind: Kind, id: String, text: String) -> ReplayedMessage {
+    ReplayedMessage(kind: kind, id: id, text: text)
   }
 
   /// The messages that a live update sequence carries: one row for each
@@ -84,20 +93,11 @@ struct ReplayedMessage: Equatable {
   )? {
     switch update {
     case .userMessageChunk(let chunk):
-      return (
-        ReplayedMessage(kind: .user, id: chunk.messageId.rawValue, text: text(of: chunk.content)),
-        false
-      )
+      return (make(.user, id: chunk.messageId.rawValue, text: text(of: chunk.content)), false)
     case .agentMessageChunk(let chunk):
-      return (
-        ReplayedMessage(kind: .agent, id: chunk.messageId.rawValue, text: text(of: chunk.content)),
-        false
-      )
+      return (make(.agent, id: chunk.messageId.rawValue, text: text(of: chunk.content)), false)
     case .agentThoughtChunk(let chunk):
-      return (
-        ReplayedMessage(
-          kind: .thought, id: chunk.messageId.rawValue, text: text(of: chunk.content)), false
-      )
+      return (make(.thought, id: chunk.messageId.rawValue, text: text(of: chunk.content)), false)
     default:
       return replayed(in: [update]).first.map { ($0, true) }
     }

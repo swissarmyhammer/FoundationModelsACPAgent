@@ -311,7 +311,8 @@ import Testing
     let prompt = await PromptContent.modelPrompt(
       from: blocks, resolver: ResourceLinkResolver(readVerb: nil))
 
-    #expect(!prompt.isEmpty)
+    #expect(prompt.contains(Self.embeddedURI))
+    #expect(prompt.contains("carries no text and no blob"))
   }
 
   /// Image and audio blocks fold nothing, because the roster cannot

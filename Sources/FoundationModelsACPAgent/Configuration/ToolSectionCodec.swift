@@ -33,6 +33,25 @@ extension SingleValueDecodingContainer {
   }
 }
 
+extension Encoder {
+  /// Encodes one `tools:` entry: `false` for an entry that is off, and the
+  /// body for an entry that is on. The entry types (``ToolSection`` and
+  /// ``MCPToolSection``) share this one write, so the way a disabled entry
+  /// is written cannot differ.
+  ///
+  /// - Parameter body: The body of an entry that is on, or `nil` for an
+  ///   entry that is off.
+  /// - Throws: The error of the encoder.
+  func encodeToolSection<Body: Encodable>(body: Body?) throws {
+    var container = singleValueContainer()
+    if let body {
+      try container.encode(body)
+    } else {
+      try container.encode(false)
+    }
+  }
+}
+
 /// One tool's decoded `tools:` entry. One rule, five
 /// shapes: an absent key, `{}`, null and `true` each give `.enabled` with
 /// the option defaults; a mapping body gives `.enabled` with the decoded
@@ -58,12 +77,11 @@ public enum ToolSection<Options: ToolSectionOptions>: Codable, Equatable, Sendab
 
   /// Encodes `false` for `.disabled` and the option body for `.enabled`.
   public func encode(to encoder: any Encoder) throws {
-    var container = encoder.singleValueContainer()
     switch self {
     case .disabled:
-      try container.encode(false)
+      try encoder.encodeToolSection(body: Options?.none)
     case .enabled(let options):
-      try container.encode(options)
+      try encoder.encodeToolSection(body: options)
     }
   }
 }
@@ -764,12 +782,11 @@ public enum MCPToolSection: Codable, Equatable, Sendable {
 
   /// Encodes `false` for `.disabled` and the server list for `.enabled`.
   public func encode(to encoder: any Encoder) throws {
-    var container = encoder.singleValueContainer()
     switch self {
     case .disabled:
-      try container.encode(false)
+      try encoder.encodeToolSection(body: [MCPServerConfiguration]?.none)
     case .enabled(let servers):
-      try container.encode(servers)
+      try encoder.encodeToolSection(body: servers)
     }
   }
 

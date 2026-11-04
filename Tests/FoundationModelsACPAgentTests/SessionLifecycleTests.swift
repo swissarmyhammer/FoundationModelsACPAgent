@@ -77,9 +77,10 @@ import Testing
 
     _ = try await fixture.harness.connection.closeSession(
       CloseSessionRequest(sessionId: fixture.sessionId))
-    _ = try await fixture.harness.connection.closeSession(
+    let second = try await fixture.harness.connection.closeSession(
       CloseSessionRequest(sessionId: fixture.sessionId))
 
+    #expect(second == CloseSessionResponse())
     #expect(await fixture.harness.agent.sessions[fixture.sessionId]?.availability == .closed)
     await fixture.close()
   }
@@ -180,7 +181,7 @@ import Testing
     // No read follows the waits, because after the exit event the process
     // can be not yet a zombie, or its pid can belong to a new process.
     for pid in serverProcesses {
-      await ProcessExitWatch.waitForExit(of: pid) { ProcessExitWatch.hasExited(pid) }
+      await ProcessExitWatch.waitForExit(of: pid) { ProcessState.hasExited(pid) }
     }
     await fixture.close()
   }

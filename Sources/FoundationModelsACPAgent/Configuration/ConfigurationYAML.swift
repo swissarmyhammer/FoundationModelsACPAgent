@@ -255,12 +255,34 @@ public enum ConfigurationYAML {
   /// - Returns: The lines of the entry.
   private static func entryLines(key: String, value: Any, keyPath: [String]?, indent: Int) -> [Line]
   {
+    leadLines(
+      lead: "\(key):", value: value, keyPath: keyPath,
+      declaredKeyPath: keyPath?.joined(separator: LoadedConfiguration.keyPathSeparator),
+      indent: indent)
+  }
+
+  /// A line that opens with `lead`: a scalar rides the lead on the same
+  /// line, and any other value hangs under a bare lead on the following
+  /// lines. The mapping entry (`key:`) and the sequence item (`-`) share
+  /// this shape, and differ in the lead and in the key path alone.
+  ///
+  /// - Parameters:
+  ///   - lead: The text that opens the line, after the indentation.
+  ///   - value: The `JSONSerialization` value to emit.
+  ///   - keyPath: The key path that the members of `value` extend, or `nil`
+  ///     inside a sequence item.
+  ///   - declaredKeyPath: The key path that the line declares, or `nil` for a
+  ///     line that declares none.
+  ///   - indent: The indentation level of the lead.
+  /// - Returns: The lines of the value, the first one with the lead.
+  private static func leadLines(
+    lead: String, value: Any, keyPath: [String]?, declaredKeyPath: String?, indent: Int
+  ) -> [Line] {
     let pad = indentation(atLevel: indent)
-    let dotted = keyPath?.joined(separator: LoadedConfiguration.keyPathSeparator)
     if let scalar = scalarText(value) {
-      return [Line(text: "\(pad)\(key): \(scalar)", keyPath: dotted)]
+      return [Line(text: "\(pad)\(lead) \(scalar)", keyPath: declaredKeyPath)]
     }
-    return [Line(text: "\(pad)\(key):", keyPath: dotted)]
+    return [Line(text: "\(pad)\(lead)", keyPath: declaredKeyPath)]
       + childLines(of: value, keyPath: keyPath, indent: indent + 1)
   }
 
@@ -295,12 +317,7 @@ public enum ConfigurationYAML {
   ///   - indent: The indentation level of the dash.
   /// - Returns: The lines of the item.
   private static func sequenceItemLines(of value: Any, indent: Int) -> [Line] {
-    let pad = indentation(atLevel: indent)
-    if let scalar = scalarText(value) {
-      return [Line(text: "\(pad)- \(scalar)", keyPath: nil)]
-    }
-    return [Line(text: "\(pad)-", keyPath: nil)]
-      + childLines(of: value, keyPath: nil, indent: indent + 1)
+    leadLines(lead: "-", value: value, keyPath: nil, declaredKeyPath: nil, indent: indent)
   }
 
   /// The inline text of a scalar or an empty collection, or `nil` when the

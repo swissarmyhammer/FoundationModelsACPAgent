@@ -7,15 +7,15 @@ import Foundation
 /// skill, an id, or the `skills` tool: the model must read the task, read the
 /// catalog it was given, and choose. That choice is the whole measurement.
 struct SkillTriggerSample: Sendable, Equatable {
-    /// A short name for the report.
-    let name: String
+  /// A short name for the report.
+  let name: String
 
-    /// The prompt text.
-    let prompt: String
+  /// The prompt text.
+  let prompt: String
 
-    /// The id of the skill the model must load, or `nil` when no skill of
-    /// the library fits the task and the model must load none.
-    let expectedSkillID: String?
+  /// The id of the skill the model must load, or `nil` when no skill of
+  /// the library fits the task and the model must load none.
+  let expectedSkillID: String?
 }
 
 /// The dataset of the skill trigger gate.
@@ -70,61 +70,61 @@ struct SkillTriggerSample: Sendable, Equatable {
 /// the model was given the catalog and loaded no skill, and `swebench-issue`
 /// is that condition in one prompt of a minute instead of one run of hours.
 enum SkillTriggerDataset {
-    /// The id of the skill for understanding code.
-    static let exploreID = "fixture-explore"
+  /// The id of the skill for understanding code.
+  static let exploreID = "fixture-explore"
 
-    /// The id of the skill for release notes.
-    static let releaseNotesID = "fixture-release-notes"
+  /// The id of the skill for release notes.
+  static let releaseNotesID = "fixture-release-notes"
 
-    /// The samples that CI runs on every push: each one loads its skill in
-    /// every run.
-    static let gateNames: Set<String> = ["load-release-notes"]
+  /// The samples that CI runs on every push: each one loads its skill in
+  /// every run.
+  static let gateNames: Set<String> = ["load-release-notes"]
 
-    /// The gate samples, in report order.
-    static var gate: [SkillTriggerSample] {
-        samples.filter { gateNames.contains($0.name) }
-    }
+  /// The gate samples, in report order.
+  static var gate: [SkillTriggerSample] {
+    samples.filter { gateNames.contains($0.name) }
+  }
 
-    /// Every sample, in report order.
-    static let samples: [SkillTriggerSample] = [
-        SkillTriggerSample(
-            name: "load-release-notes",
-            prompt: "Load your skill for writing release notes, and tell me its first step.",
-            expectedSkillID: releaseNotesID),
-        SkillTriggerSample(
-            name: "understand-parser",
-            prompt: """
-                I need to change how the parser handles an empty file, but I do not know \
-                this code. Work out how the parser reads a file and what a change to it \
-                would touch, and tell me. Change nothing.
-                """,
-            expectedSkillID: exploreID),
-        SkillTriggerSample(
-            name: "who-calls",
-            prompt: """
-                Who calls the function `authenticate` in this project, and what breaks if \
-                I change its arguments? Report what you find, and change nothing.
-                """,
-            expectedSkillID: exploreID),
-        SkillTriggerSample(
-            name: "release-notes",
-            prompt: """
-                Write the release notes of version 2.1 of this project. One line for each \
-                change that a user sees.
-                """,
-            expectedSkillID: releaseNotesID),
-        SkillTriggerSample(
-            name: "swebench-issue",
-            prompt: """
-                `Model.objects.filter()` raises a TypeError when the queryset is empty and \
-                the field is a nullable foreign key. It worked in 3.1 and it fails in 3.2. \
-                Fix it.
-                """,
-            expectedSkillID: exploreID),
-    ]
+  /// Every sample, in report order.
+  static let samples: [SkillTriggerSample] = [
+    SkillTriggerSample(
+      name: "load-release-notes",
+      prompt: "Load your skill for writing release notes, and tell me its first step.",
+      expectedSkillID: releaseNotesID),
+    SkillTriggerSample(
+      name: "understand-parser",
+      prompt: """
+        I need to change how the parser handles an empty file, but I do not know \
+        this code. Work out how the parser reads a file and what a change to it \
+        would touch, and tell me. Change nothing.
+        """,
+      expectedSkillID: exploreID),
+    SkillTriggerSample(
+      name: "who-calls",
+      prompt: """
+        Who calls the function `authenticate` in this project, and what breaks if \
+        I change its arguments? Report what you find, and change nothing.
+        """,
+      expectedSkillID: exploreID),
+    SkillTriggerSample(
+      name: "release-notes",
+      prompt: """
+        Write the release notes of version 2.1 of this project. One line for each \
+        change that a user sees.
+        """,
+      expectedSkillID: releaseNotesID),
+    SkillTriggerSample(
+      name: "swebench-issue",
+      prompt: """
+        `Model.objects.filter()` raises a TypeError when the queryset is empty and \
+        the field is a nullable foreign key. It worked in 3.1 and it fails in 3.2. \
+        Fix it.
+        """,
+      expectedSkillID: exploreID),
+  ]
 
-    /// The samples whose task a skill covers.
-    static var triggering: [SkillTriggerSample] {
-        samples.filter { $0.expectedSkillID != nil }
-    }
+  /// The samples whose task a skill covers.
+  static var triggering: [SkillTriggerSample] {
+    samples.filter { $0.expectedSkillID != nil }
+  }
 }

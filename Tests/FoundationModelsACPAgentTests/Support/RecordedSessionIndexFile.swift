@@ -20,9 +20,7 @@ enum RecordedSessionIndexFile {
   ///   - root: The recording root that holds the folder.
   /// - Returns: The file URL, whether or not anything stands there.
   static func fileURL(ofSession sessionId: String, under root: URL) -> URL {
-    root
-      .appendingPathComponent(sessionId, isDirectory: true)
-      .appendingPathComponent(fileName, isDirectory: false)
+    RecordedSessionFiles.fileURL(named: fileName, ofSession: sessionId, under: root)
   }
 
   /// The frontmatter of one session's `index.md`, decoded as `Slice`.
@@ -50,10 +48,7 @@ enum RecordedSessionIndexFile {
   /// - Throws: A failed requirement when `root` cannot be walked, or the
   ///   error of ``slice(of:as:)`` for a file.
   static func slices<Slice: Decodable>(under root: URL, as type: Slice.Type) throws -> [Slice] {
-    let walker = try #require(
-      FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil))
-    return try walker.compactMap { $0 as? URL }
-      .filter { $0.lastPathComponent == fileName }
+    try RecordedSessionFiles.files(named: fileName, under: root)
       .map { file in try slice(of: file, as: type) }
   }
 

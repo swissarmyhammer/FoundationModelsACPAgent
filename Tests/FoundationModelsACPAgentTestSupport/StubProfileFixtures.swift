@@ -12,7 +12,7 @@ import Tracing
 // over the library's own deterministic model path, `EchoModel`: a router
 // over models that download nothing and generate nothing but the prompt.
 // The library carries that path because the agent CLI's
-// `ACP_AGENT_STUB_MODEL=1` composition builds on it too (cli-plan.md §9);
+// test-only `acp-agent-stub` binary builds on it too (cli-plan.md §9);
 // `ScriptedModel.swift` plugs its scripted containers into the same
 // `StubModelLoader` seam.
 

@@ -241,9 +241,6 @@ final class SubagentAnnouncer: Sendable {
 
   /// The state of one run.
   private struct RunState {
-    /// The id of the run, for the notices.
-    let runID: ULID
-
     /// The gate of the session of the run. It opens after the first sent
     /// announcement.
     let gate: SessionAnnouncementGate
@@ -268,7 +265,6 @@ final class SubagentAnnouncer: Sendable {
     ///   - outputLimit: The most outputs that the stream of the run keeps. At the limit, the
     ///     stream drops the oldest output.
     init(runID: ULID, outputLimit: Int) {
-      self.runID = runID
       gate = SessionAnnouncementGate(isOpen: false, owner: "\(runID)")
       (outputs, outputSink) = AsyncStream.makeStream(
         of: SessionOutput.self, bufferingPolicy: .bufferingNewest(outputLimit))

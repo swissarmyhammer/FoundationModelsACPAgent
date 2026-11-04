@@ -151,28 +151,41 @@ struct DoctorCommandTests {
 
   // MARK: - The three exit codes
 
+  /// Asserts that `report` exits with `expected`, in the enum value and in the
+  /// raw value that `DoctorReport` states.
+  ///
+  /// - Parameters:
+  ///   - expected: The exit code the report must give.
+  ///   - report: The finished report.
+  ///   - sourceLocation: The test line a failure is reported at.
+  private static func expectExitCode(
+    _ expected: AgentExitCode, of report: DoctorReport,
+    sourceLocation: SourceLocation = #_sourceLocation
+  ) {
+    #expect(AgentExitCode(doctor: report) == expected, sourceLocation: sourceLocation)
+    #expect(
+      AgentExitCode(doctor: report).rawValue == report.exitCode, sourceLocation: sourceLocation)
+  }
+
   /// Checks that all pass exit 0.
   @Test func checksThatAllPassExitZero() async {
     let report = await Self.report(of: [Self.okCheck])
 
-    #expect(AgentExitCode(doctor: report) == .success)
-    #expect(AgentExitCode(doctor: report).rawValue == report.exitCode)
+    Self.expectExitCode(.success, of: report)
   }
 
   /// One check that fails exits 1, even beside a warning and a pass.
   @Test func aCheckThatFailsExitsOne() async {
     let report = await Self.report(of: [Self.okCheck, Self.warningCheck, Self.errorCheck])
 
-    #expect(AgentExitCode(doctor: report) == .error)
-    #expect(AgentExitCode(doctor: report).rawValue == report.exitCode)
+    Self.expectExitCode(.error, of: report)
   }
 
   /// Warnings with no failure exit 5, which is the row `doctor` owns.
   @Test func warningsWithNoFailureExitFive() async {
     let report = await Self.report(of: [Self.okCheck, Self.warningCheck])
 
-    #expect(AgentExitCode(doctor: report) == .doctorWarnings)
-    #expect(AgentExitCode(doctor: report).rawValue == report.exitCode)
+    Self.expectExitCode(.doctorWarnings, of: report)
   }
 
   // MARK: - The two rendering paths

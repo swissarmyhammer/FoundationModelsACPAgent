@@ -19,30 +19,30 @@ import FoundationModelsExtras
 /// reference to the agent goes, each hold goes, and the pool evicts the models
 /// in its admission queue.
 enum ProcessModelPool {
-    /// Waits for the event that the pool of the process holds no model.
-    ///
-    /// The wait reads `ModelPool.footprints`: the current footprint first,
-    /// then the footprint after each change. Each release of a hold and the
-    /// end of each evict call publish a new footprint, so the wait ends after
-    /// the last hold is released and each eviction ended, with no clock and
-    /// no poll. It is the wait of the Router helper
-    /// `ModelPool.awaitNoResidentModel()`, which no product exports.
-    ///
-    /// - Returns: The models the pool still holds: empty when the pool
-    ///   evicted each model, and the held models when the calling task was
-    ///   cancelled first.
-    static func residentModelsAfterRelease() async -> [ModelPoolKey] {
-        for await footprint in ModelPool.shared.footprints where footprint.resident.isEmpty {
-            return []
-        }
-        return Array(ModelPool.shared.footprint.resident.keys)
+  /// Waits for the event that the pool of the process holds no model.
+  ///
+  /// The wait reads `ModelPool.footprints`: the current footprint first,
+  /// then the footprint after each change. Each release of a hold and the
+  /// end of each evict call publish a new footprint, so the wait ends after
+  /// the last hold is released and each eviction ended, with no clock and
+  /// no poll. It is the wait of the Router helper
+  /// `ModelPool.awaitNoResidentModel()`, which no product exports.
+  ///
+  /// - Returns: The models the pool still holds: empty when the pool
+  ///   evicted each model, and the held models when the calling task was
+  ///   cancelled first.
+  static func residentModelsAfterRelease() async -> [ModelPoolKey] {
+    for await footprint in ModelPool.shared.footprints where footprint.resident.isEmpty {
+      return []
     }
+    return Array(ModelPool.shared.footprint.resident.keys)
+  }
 
-    /// One line for a failed check: the models the pool still holds.
-    ///
-    /// - Parameter keys: The models the pool still holds.
-    /// - Returns: The model names and roles, sorted.
-    static func describe(_ keys: [ModelPoolKey]) -> String {
-        keys.map { "\($0.ref.stringValue) (\($0.role))" }.sorted().joined(separator: ", ")
-    }
+  /// One line for a failed check: the models the pool still holds.
+  ///
+  /// - Parameter keys: The models the pool still holds.
+  /// - Returns: The model names and roles, sorted.
+  static func describe(_ keys: [ModelPoolKey]) -> String {
+    keys.map { "\($0.ref.stringValue) (\($0.role))" }.sorted().joined(separator: ", ")
+  }
 }

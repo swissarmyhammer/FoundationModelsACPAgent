@@ -1077,16 +1077,6 @@ import Testing
 
   // MARK: - Running and idle from Router work (elicitation-plan task 2)
 
-  /// The stop reason of an `idle` update, or `nil` when the update is not
-  /// an `idle` or the `idle` has none.
-  ///
-  /// - Parameter update: The update.
-  /// - Returns: The stop reason.
-  private static func idleStopReason(of update: SessionUpdate?) -> StopReason? {
-    guard case .stateUpdate(.idle(let idle)) = update else { return nil }
-    return idle.stopReason
-  }
-
   /// The ledger sends `idle` only when the session has no work, so each
   /// `idle` says so in `_meta.noWork`: the `idle` at the end of Router
   /// work, and the `idle` of a prompt that ended before it started. A
@@ -1126,7 +1116,7 @@ import Testing
     #expect(updates.count == 2, "expected running then idle, got \(updates)")
     #expect(isRunningState(updates.first))
     #expect(isIdleState(updates.last))
-    #expect(Self.idleStopReason(of: updates.last) == nil)
+    #expect(idleState(of: updates.last)?.stopReason == nil)
   }
 
   /// A prompt that ends while Router still works sends no `idle`: the
@@ -1148,7 +1138,7 @@ import Testing
     #expect(atPromptEnd.count == 1)
     #expect(isRunningState(atPromptEnd.first))
     #expect(updates.count == 2)
-    #expect(Self.idleStopReason(of: updates.last) == .endTurn)
+    #expect(idleState(of: updates.last)?.stopReason == .endTurn)
   }
 
   /// The session is busy while any of its Router sessions works: the end
@@ -1211,16 +1201,6 @@ import Testing
   /// The snippet of the elicitation proof: one question to the person.
   private static let elicitingSnippet = #"return await elicit("Which colour do you want?");"#
 
-  /// The content of the accept: `elicit("question")` asks for one string
-  /// field, `answer`.
-  private static let acceptedContent: FoundationModelsACP.JSONValue = .object([
-    "answer": .string("blue")
-  ])
-
-  /// The text that a run result holds, with no white space, when the run
-  /// got the `accept` action.
-  private static let acceptedActionText = #""action":"accept""#
-
   /// The name of the named pipe that the shell command of the tool-body
   /// proof reads. Nothing writes the pipe, thus the read waits until the
   /// session close stops it.
@@ -1243,7 +1223,8 @@ import Testing
   ///
   /// The prompt of A ends at the answer of its own mail when its snippet
   /// goes to the background (task ^9xs24pn, decision Q1), but the question
-  /// of A stays open. Thus A can send an `idle`, and only an `end_turn` one.
+  /// of A stays open. The session of A reports `requires_action` while the
+  /// question waits, thus A sends no `idle` at all.
   @Test
   func aSessionInAnElicitationHoldsNoModel() async throws {
     let fixture = try await QueuedScriptedFixture.make(
@@ -1256,7 +1237,8 @@ import Testing
     try await fixture.prompt(fixture.secondSessionId, text: Self.promptText)
     let questionOfB = try await ElicitationWait.firstPendingElicitation(in: fixture.secondSession)
     await MainActor.run {
-      fixture.secondSession.acceptElicitation(questionOfB.id, content: Self.acceptedContent)
+      fixture.secondSession.acceptElicitation(
+        questionOfB.id, content: ElicitationWait.acceptedContent)
     }
     let updatesOfB = try await fixture.waitForIdle(of: fixture.secondSessionId)
     let pendingOfA = await fixture.pendingElicitations(of: fixture.firstSession)
@@ -1267,10 +1249,9 @@ import Testing
     #expect(
       SkillsLibraryTests.toolCallText(in: updatesOfB)
         .filter { !$0.isWhitespace }
-        .contains(Self.acceptedActionText))
+        .contains(ElicitationWait.acceptedActionText))
     #expect(pendingOfA.count == 1)
-    #expect(ScriptedPromptFixture.idleCount(in: updatesOfA) <= 1)
-    #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfA) ?? .endTurn == .endTurn)
+    #expect(ScriptedPromptFixture.idleCount(in: updatesOfA) == 0)
   }
 
   /// Session A waits in a tool body: a shell read of a named pipe that
@@ -1279,8 +1260,9 @@ import Testing
   ///
   /// The prompt of A ends at the answer of its own mail when its read goes
   /// to the background (task ^9xs24pn, decision Q1), while the read still
-  /// waits. Thus A can send an `idle`, and only an `end_turn` one. B starts
-  /// no read, so its prompt ends after its own answer. The close of each
+  /// waits. The read is work of the session of A, thus A sends no `idle`
+  /// while it waits. B starts no read, so its prompt ends after its own
+  /// answer. The close of each
   /// session at the end stops the read of A.
   @Test
   func aSessionInAToolBodyHoldsNoModel() async throws {
@@ -1305,8 +1287,7 @@ import Testing
     try await fixture.closeSessions()
 
     #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfB) == .endTurn)
-    #expect(ScriptedPromptFixture.idleCount(in: updatesOfA) <= 1)
-    #expect(ScriptedPromptFixture.idleStopReason(in: updatesOfA) ?? .endTurn == .endTurn)
+    #expect(ScriptedPromptFixture.idleCount(in: updatesOfA) == 0)
   }
 
   // MARK: - The unknown-id policy

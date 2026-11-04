@@ -63,7 +63,7 @@ extension AcpAgentCommand {
     /// - Returns: The loader. Construction touches no file.
     /// - Throws: `DotfolderNameError` when the dotfolder name is
     ///   refused.
-    private static func makeLoader(
+    static func makeLoader(
       for options: WorkingDirectoryOptions, environment: [String: String]
     ) throws -> ConfigurationLoader {
       try AgentComposition.makeConfigurationLoader(

@@ -40,8 +40,7 @@ enum ComposedPromptFixture {
     try StubAgentDefaultsLayer.makeEnvironment(
       name: AgentComposition.dotfolderName,
       base: [
-        AgentComposition.stubModelVariable: AgentComposition.stubModelEnabledValue,
-        configHomeVariable: configHome.path,
+        configHomeVariable: configHome.path
       ])
   }
 

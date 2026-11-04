@@ -2,6 +2,23 @@ import FoundationModelsACP
 import FoundationModelsRouter
 import Synchronization
 
+/// The completion token of one tool run: the key that the join table, the
+/// shell output stream and the holds name a run by.
+///
+/// A wrapper, and not a plain `String`, because the SDK tool-call id of the
+/// same run is a `String` too. A caller that swaps the two does not compile.
+struct RunToken: Hashable, Sendable {
+  /// The token text, as Router gives it in the `correlationID` of the run.
+  let rawValue: String
+
+  /// Makes the token of a run.
+  ///
+  /// - Parameter rawValue: The completion token text of the run.
+  init(_ rawValue: String) {
+    self.rawValue = rawValue
+  }
+}
+
 /// The join of each tool run of one session to the SDK tool call that started
 /// it. The completion token of the run is the key (task ^9xk3xf4).
 ///
@@ -67,7 +84,7 @@ import Synchronization
 final class RunCallJoinTable: Sendable {
   /// Receives the completion token of each waiting run whose entry was
   /// written.
-  typealias JoinObserver = @Sendable (String) -> Void
+  typealias JoinObserver = @Sendable (RunToken) -> Void
 
   /// The join of one run.
   private enum Join: Equatable, Sendable {
@@ -82,7 +99,7 @@ final class RunCallJoinTable: Sendable {
   /// (``RunCallJoinTable/awaitToolCallId(for:)``).
   private struct EntryWaiter {
     /// The completion token of the run.
-    let token: String
+    let token: RunToken
 
     /// Resumes the caller when the entry is written, when the projection
     /// stops, or when the caller is cancelled.
@@ -93,10 +110,10 @@ final class RunCallJoinTable: Sendable {
   private struct State {
     /// The join of each run that has an entry, keyed by the completion
     /// token of the run.
-    var joins: [String: Join] = [:]
+    var joins: [RunToken: Join] = [:]
 
     /// The completion tokens of the runs whose events wait for an entry.
-    var waitingRuns: Set<String> = []
+    var waitingRuns: Set<RunToken> = []
 
     /// The receiver of the tokens of the waiting runs whose entry was
     /// written. It is `nil` when no terminal stream reads the table.
@@ -150,7 +167,7 @@ final class RunCallJoinTable: Sendable {
       await sink(update)
       return
     }
-    let deferral = holds.deferFinal(call, joinedTo: { toolCallId(for: $0) })
+    let deferral = holds.deferFinal(call, joinedTo: { toolCallId(for: RunToken($0)) })
     if let now = deferral.update {
       await sink(.toolCallUpdate(now))
     }
@@ -170,7 +187,7 @@ final class RunCallJoinTable: Sendable {
   ///   - toolCallID: The SDK tool-call id that Router joined to the run. It
   ///     is `nil` when no SDK call joined the run.
   ///   - token: The completion token of the run.
-  func record(toolCallID: String?, for token: String) {
+  func record(toolCallID: String?, for token: RunToken) {
     store(toolCallID.map { Join.joined(toolCallID: $0) } ?? .unjoined, for: token)
   }
 
@@ -186,14 +203,14 @@ final class RunCallJoinTable: Sendable {
     if record.closedAt == nil, holds.holdsCalls(of: record.tool) {
       holds.hold(record.correlationID)
     }
-    self.record(toolCallID: toolCallID, for: record.correlationID)
+    self.record(toolCallID: toolCallID, for: RunToken(record.correlationID))
   }
 
   /// Writes "no join" for a run that has no entry yet. A run that has an
   /// entry keeps it.
   ///
   /// - Parameter token: The completion token of the run.
-  func seal(_ token: String) {
+  func seal(_ token: RunToken) {
     store(.unjoined, for: token)
   }
 
@@ -231,7 +248,7 @@ final class RunCallJoinTable: Sendable {
     guard case .toolInvocation(let record, _) = output.event, record.closedAt == nil else {
       return
     }
-    seal(record.correlationID)
+    seal(RunToken(record.correlationID))
   }
 
   /// Sets the receiver of the tokens of the waiting runs whose entry was
@@ -247,7 +264,7 @@ final class RunCallJoinTable: Sendable {
   ///
   /// - Parameter token: The completion token of the run.
   /// - Returns: The tool call id.
-  func toolCallId(for token: String) -> ToolCallId {
+  func toolCallId(for token: RunToken) -> ToolCallId {
     Self.toolCallId(of: state.withLock { $0.joins[token] }, token: token)
   }
 
@@ -269,7 +286,7 @@ final class RunCallJoinTable: Sendable {
   /// - Returns: The tool call id, as ``toolCallId(for:)`` gives it. `nil` when the wait ended
   ///   with no entry because the task was cancelled. The completion token is not the wire id of a
   ///   run that may still get an SDK id. So a cancelled wait gives no id.
-  func awaitToolCallId(for token: String) async -> ToolCallId? {
+  func awaitToolCallId(for token: RunToken) async -> ToolCallId? {
     await awaitEntry(for: token)
     guard let join = state.withLock({ $0.joins[token] }) else {
       return nil
@@ -295,7 +312,7 @@ final class RunCallJoinTable: Sendable {
   ///
   /// - Parameter token: The completion token of the run.
   /// - Returns: The tool call id, or `nil` when the run waits.
-  func announceToolCallId(for token: String) -> ToolCallId? {
+  func announceToolCallId(for token: RunToken) -> ToolCallId? {
     let join = state.withLock { state -> Join? in
       if let join = state.joins[token] {
         return join
@@ -316,9 +333,9 @@ final class RunCallJoinTable: Sendable {
   ///   - join: The entry of the run, or `nil` when it has none.
   ///   - token: The completion token of the run.
   /// - Returns: The tool call id.
-  private static func toolCallId(of join: Join?, token: String) -> ToolCallId {
+  private static func toolCallId(of join: Join?, token: RunToken) -> ToolCallId {
     guard case .joined(let toolCallID)? = join else {
-      return ToolCallId(rawValue: token)
+      return ToolCallId(rawValue: token.rawValue)
     }
     return ToolCallId(rawValue: toolCallID)
   }
@@ -338,7 +355,7 @@ final class RunCallJoinTable: Sendable {
   /// or until the calling task is cancelled.
   ///
   /// - Parameter token: The completion token of the run.
-  private func awaitEntry(for token: String) async {
+  private func awaitEntry(for token: RunToken) async {
     let ticket = state.withLock { state in
       defer { state.nextTicket += 1 }
       return state.nextTicket
@@ -385,7 +402,7 @@ final class RunCallJoinTable: Sendable {
   /// - Parameters:
   ///   - join: The entry to write.
   ///   - token: The completion token of the run.
-  private func store(_ join: Join, for token: String) {
+  private func store(_ join: Join, for token: RunToken) {
     let (observer, waiters) = state.withLock { state -> (JoinObserver?, [EntryWaiter]) in
       guard state.joins[token] == nil else {
         return (nil, [])

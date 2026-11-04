@@ -27,10 +27,10 @@ struct OwnExecutableUnknownError: Error, CustomStringConvertible {
 /// test, and the tier-3 suite reads it byte for byte.
 ///
 /// **The child gets the environment of the run**: this process's
-/// environment, with `ACP_AGENT_HOME` set when `--home` was given. So
-/// `ACP_AGENT_STUB_MODEL`, the home and every other setting reach the
-/// spawned agent, and the child then composes its own agent from its own
-/// copy of them. It also inherits this
+/// environment, with `ACP_AGENT_HOME` set when `--home` was given. So the
+/// home and every other setting reach the spawned agent, and the child then
+/// composes its own agent from its own copy of them. The child is a copy of
+/// this binary, so a stub binary starts a stub child. It also inherits this
 /// process's working directory, which is what roots its start-up
 /// configuration; `--cwd` still names the session's directory, and the
 /// child obeys that per session, as `acp` mode does for every client

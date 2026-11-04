@@ -152,9 +152,9 @@ extension RoutedACPAgent {
     do {
       try await registerNestedSession(source.session, parent: parent, events: source.outputs)
     } catch {
-      ACPAgentTelemetry.logger(.subagentAnnouncement).error(
+      Self.logSubagentFailure(
         "The session of an agent run did not register. The run has an announcement and no session.",
-        metadata: ACPAgentTelemetry.errorMetadata(error))
+        error)
     }
   }
 
@@ -179,9 +179,8 @@ extension RoutedACPAgent {
     do {
       update.meta = .value(try SAH.AgentRun(sessionId: child).inject(into: nil))
     } catch {
-      ACPAgentTelemetry.logger(.subagentAnnouncement).error(
-        "The link of an agents call to its child did not encode. The call has no link.",
-        metadata: ACPAgentTelemetry.errorMetadata(error))
+      Self.logSubagentFailure(
+        "The link of an agents call to its child did not encode. The call has no link.", error)
     }
     return .toolCallUpdate(update)
   }
@@ -255,7 +254,7 @@ extension RoutedACPAgent {
     guard let parent = sessions[parentSessionId(of: report, root: root)], !parent.isClosed else {
       return .unavailable
     }
-    guard let callId = await parent.projector.runCallJoins.awaitToolCallId(for: token),
+    guard let callId = await parent.projector.runCallJoins.awaitToolCallId(for: RunToken(token)),
       !Task.isCancelled
     else {
       return .unavailable
@@ -344,10 +343,21 @@ extension RoutedACPAgent {
     do {
       return .value(try SAH.AgentRun(toolCallId: link).inject(into: existing))
     } catch {
-      ACPAgentTelemetry.logger(.subagentAnnouncement).error(
+      Self.logSubagentFailure(
         "The link of an agent run to its tool call did not encode. The announcement has no link.",
-        metadata: ACPAgentTelemetry.errorMetadata(error))
+        error)
       return held
     }
+  }
+
+  /// Records a failure of the announcement of a sub-agent run. The three catch blocks of this
+  /// file write the same record, and only the message differs.
+  ///
+  /// - Parameters:
+  ///   - message: What did not work, and what the run lacks because of it.
+  ///   - error: The error that was thrown.
+  private static func logSubagentFailure(_ message: Logger.Message, _ error: any Error) {
+    ACPAgentTelemetry.logger(.subagentAnnouncement).error(
+      message, metadata: ACPAgentTelemetry.errorMetadata(error))
   }
 }

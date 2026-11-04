@@ -625,6 +625,26 @@ extension RequestError {
   private static let missingWorkingDirectoryReason =
     "the working directory of this session does not exist"
 
+  /// The invalid-params refusal of a session: JSON-RPC invalid params with
+  /// the session id in `data`, and the reason when there is one. The three
+  /// refusals of this extension are built here, so their shape cannot drift.
+  ///
+  /// - Parameters:
+  ///   - id: The id of the session that the refusal names.
+  ///   - reason: Why the session cannot take the call, or `nil` for a
+  ///     refusal with no `reason` member.
+  /// - Returns: The typed invalid-params error.
+  private static func invalidParamsRefusal(id: SessionId, reason: String?) -> RequestError {
+    var data: [String: FoundationModelsACP.JSONValue] = ["sessionId": .string(id.rawValue)]
+    if let reason {
+      data["reason"] = .string(reason)
+    }
+    return RequestError(
+      code: .invalidParams,
+      message: RequestError.invalidParams.message,
+      data: .object(data))
+  }
+
   /// The unknown-id refusal: JSON-RPC invalid params
   /// with the id in `data`, so a client bug is visible, never a silent
   /// `idle` for nothing.
@@ -632,10 +652,7 @@ extension RequestError {
   /// - Parameter id: The unknown session id.
   /// - Returns: The typed invalid-params error.
   static func unknownSession(id: SessionId) -> RequestError {
-    RequestError(
-      code: .invalidParams,
-      message: RequestError.invalidParams.message,
-      data: .object(["sessionId": .string(id.rawValue)]))
+    invalidParamsRefusal(id: id, reason: nil)
   }
 
   /// The closed-session refusal: invalid params with
@@ -644,13 +661,7 @@ extension RequestError {
   /// - Parameter id: The closed session's id.
   /// - Returns: The typed invalid-params error.
   static func closedSession(id: SessionId) -> RequestError {
-    RequestError(
-      code: .invalidParams,
-      message: RequestError.invalidParams.message,
-      data: .object([
-        "sessionId": .string(id.rawValue),
-        "reason": .string(closedSessionReason),
-      ]))
+    invalidParamsRefusal(id: id, reason: closedSessionReason)
   }
 
   /// The missing-working-directory refusal: a prompt on a replay-only
@@ -659,13 +670,7 @@ extension RequestError {
   /// - Parameter id: The replay-only session's id.
   /// - Returns: The typed invalid-params error.
   static func missingSessionWorkingDirectory(id: SessionId) -> RequestError {
-    RequestError(
-      code: .invalidParams,
-      message: RequestError.invalidParams.message,
-      data: .object([
-        "sessionId": .string(id.rawValue),
-        "reason": .string(missingWorkingDirectoryReason),
-      ]))
+    invalidParamsRefusal(id: id, reason: missingWorkingDirectoryReason)
   }
 }
 

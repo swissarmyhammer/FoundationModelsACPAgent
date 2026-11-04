@@ -364,10 +364,6 @@ actor PromptStateOwner {
   /// goes out.
   private var endWaiters: [CheckedContinuation<Void, Never>] = []
 
-  /// The handlers that ``noteCancelRequested()`` runs, one time each
-  /// (``onCancelRequest(_:)``).
-  private var cancelHandlers: [@Sendable () -> Void] = []
-
   /// Creates the owner of one prompt of the session of `ledger`.
   ///
   /// - Parameter ledger: The state ledger of the session.
@@ -436,29 +432,8 @@ actor PromptStateOwner {
   /// Records that `session/cancel` asked this prompt to stop. The
   /// prompt reads it at the end, because a cancelled prompt does not
   /// always throw: model work that never checks for cancellation runs to
-  /// completion. It also runs each handler that
-  /// ``onCancelRequest(_:)`` registered.
+  /// completion.
   func noteCancelRequested() {
     cancelRequested = true
-    let handlers = cancelHandlers
-    cancelHandlers = []
-    for handler in handlers {
-      handler()
-    }
-  }
-
-  /// Runs `handler` when `session/cancel` asks this prompt to stop: at
-  /// once when the request is already recorded, else at the request. A
-  /// prompt that waits for the work of its session (task ^64pav2a)
-  /// registers the cancel of that wait here, so the cancel ends the wait
-  /// at once.
-  ///
-  /// - Parameter handler: The work to run at the request.
-  func onCancelRequest(_ handler: @escaping @Sendable () -> Void) {
-    guard !cancelRequested else {
-      handler()
-      return
-    }
-    cancelHandlers.append(handler)
   }
 }

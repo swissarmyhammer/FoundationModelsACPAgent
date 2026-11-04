@@ -407,11 +407,10 @@ enum BuiltinCommands {
     guard let registry = context.binding?.registry else {
       return "No commands are registered."
     }
-    var lines = ["Available commands:"]
-    for command in await registry.commands {
+    let entries = await registry.commands.map { command in
       let hint = command.argumentHint.map { " \($0)" } ?? ""
-      lines.append("/\(command.name)\(hint) — \(command.description)")
+      return "/\(command.name)\(hint) — \(command.description)"
     }
-    return lines.joined(separator: "\n")
+    return (["Available commands:"] + entries).joined(separator: "\n")
   }
 }

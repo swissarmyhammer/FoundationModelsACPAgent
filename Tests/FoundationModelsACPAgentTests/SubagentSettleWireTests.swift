@@ -31,7 +31,8 @@ import Testing
     let childId = try await SessionSetupNestedTests.openNestedSession(in: fixture, below: root)
     let child = try #require(await agent.sessions[childId])
     let holds = rootEntry.projector.runCallJoins.holds
-    rootEntry.projector.runCallJoins.record(toolCallID: Self.callId.rawValue, for: Self.token)
+    rootEntry.projector.runCallJoins.record(
+      toolCallID: Self.callId.rawValue, for: RunToken(Self.token))
     holds.hold(Self.token)
     holds.runObserved(Self.token)
     await rootEntry.projector.commandSink(

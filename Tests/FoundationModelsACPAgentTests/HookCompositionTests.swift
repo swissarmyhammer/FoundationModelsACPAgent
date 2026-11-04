@@ -1138,12 +1138,18 @@ struct GatedSessionEndVisitor: HookVisitor {
   let gate: WatchedValue<Bool>
 
   /// Records the start of the delivery, waits for the gate, and records the
-  /// end of the delivery.
+  /// end of the delivery. When the wait fails, the visitor records an issue
+  /// and does not record the end, so the test fails.
   ///
   /// - Parameter context: The session and the event.
   func post(_ context: HookContext<SessionEnd>) async {
     milestones.update { $0.append(.sessionEndEntered) }
-    _ = try? await gate.wait(for: "the gate opens") { $0 }
+    do {
+      _ = try await gate.wait(for: "the gate opens") { $0 }
+    } catch {
+      Issue.record("the wait for the gate failed, so the delivery did not wait for it: \(error)")
+      return
+    }
     milestones.update { $0.append(.sessionEndDelivered) }
   }
 }

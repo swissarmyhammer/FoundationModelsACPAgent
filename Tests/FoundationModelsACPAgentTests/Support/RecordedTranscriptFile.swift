@@ -118,10 +118,9 @@ enum RecordedTranscriptFile {
   ///
   /// - Parameter root: The recording root to walk.
   /// - Returns: The file URLs, in walk order.
-  static func fileURLs(under root: URL) -> [URL] {
-    let walker = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)
-    let contents = walker?.compactMap { $0 as? URL } ?? []
-    return contents.filter { $0.lastPathComponent == fileName }
+  /// - Throws: A failed requirement when `root` cannot be walked.
+  static func fileURLs(under root: URL) throws -> [URL] {
+    try RecordedSessionFiles.files(named: fileName, under: root)
   }
 
   /// The file Router records one session to: `<root>/<sessionId>/`, and
@@ -132,9 +131,7 @@ enum RecordedTranscriptFile {
   ///   - sessionId: The session's own id.
   /// - Returns: The file URL, whether or not anything stands there.
   static func fileURL(under root: URL, sessionId: String) -> URL {
-    root
-      .appendingPathComponent(sessionId, isDirectory: true)
-      .appendingPathComponent(fileName, isDirectory: false)
+    RecordedSessionFiles.fileURL(named: fileName, ofSession: sessionId, under: root)
   }
 
   /// The lines of one recorded kind.

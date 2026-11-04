@@ -6,32 +6,62 @@ import Testing
 @testable import FoundationModelsACPAgent
 @testable import acp_agent
 
-/// `AgentComposition` (cli-plan.md §5.10): the `ACP_AGENT_STUB_MODEL=1`
-/// switch selects the deterministic echo model in place of the live
+/// `AgentComposition` (cli-plan.md §5.10): the model choice of the
+/// executable selects the deterministic echo model in place of the live
 /// loader, the composition says so, and two runs of one prompt through
 /// it give byte-identical text.
-@Suite(.closesHarnesses) struct AgentCompositionTests {
+@Suite(.closesHarnesses, .stubModel) struct AgentCompositionTests {
   // MARK: - Constants
 
   /// The prompt of the two runs. The echo model answers with the prompt
   /// it received, so the answer text carries it.
   private static let promptText = "echo this back"
 
-  /// The environment that selects the stub model, and nothing else.
-  private static let stubEnvironment = [
-    AgentComposition.stubModelVariable: AgentComposition.stubModelEnabledValue
-  ]
+  /// The path of the chunk gate that the gated stub choice carries.
+  private static let chunkGatePath = "/tmp/chunk-gate"
 
-  // MARK: - The switch
+  /// The path of the script that the scripted stub choice carries.
+  private static let scriptPath = "/tmp/stub-script.json"
 
-  /// The variable at its enabled value selects the stub; an absent
-  /// variable, and any other value, select the live loader.
-  @Test func theVariableSelectsTheStubModel() {
-    #expect(AgentComposition.modelSource(environment: Self.stubEnvironment) == .stub)
-    #expect(AgentComposition.modelSource(environment: [:]) == .live)
-    #expect(
-      AgentComposition.modelSource(environment: [AgentComposition.stubModelVariable: "0"])
-        == .live)
+  // MARK: - The model choice
+
+  /// A stub model choice selects the stub model source. The suite trait
+  /// `.stubModel` binds that choice.
+  @Test func aStubChoiceSelectsTheStubModelSource() {
+    #expect(AgentComposition.modelSource() == .stub)
+  }
+
+  /// The live model choice selects the live loader.
+  @Test func theLiveChoiceSelectsTheLiveModelSource() {
+    AgentComposition.$modelChoice.withValue(.live) {
+      #expect(AgentComposition.modelSource() == .live)
+    }
+  }
+
+  /// A stub choice with a gate gives the path of the gate to the
+  /// composition.
+  @Test func aStubChoiceGivesItsChunkGate() {
+    let choice = AgentModelChoice.stub(chunkGate: Self.chunkGatePath, script: nil)
+    AgentComposition.$modelChoice.withValue(choice) {
+      #expect(AgentComposition.stubChunkGate() == Self.chunkGatePath)
+    }
+  }
+
+  /// A stub choice with a script gives the path of the script to the
+  /// composition.
+  @Test func aStubChoiceGivesItsScript() {
+    let choice = AgentModelChoice.stub(chunkGate: nil, script: Self.scriptPath)
+    AgentComposition.$modelChoice.withValue(choice) {
+      #expect(AgentComposition.stubScript() == Self.scriptPath)
+    }
+  }
+
+  /// The live choice gives neither a gate nor a script, so the live path
+  /// reads no stub file.
+  @Test func theLiveChoiceGivesNoStubFile() {
+    AgentComposition.$modelChoice.withValue(.live) {
+      #expect(AgentComposition.stubChunkGate() == nil && AgentComposition.stubScript() == nil)
+    }
   }
 
   /// The dotfolder name is the one the tier-3 fixture writes its user

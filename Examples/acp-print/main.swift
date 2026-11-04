@@ -20,13 +20,23 @@ import FoundationModelsACPClient
 
 // MARK: - Constants
 
-/// The name of the agent executable this CLI spawns. It stands beside
-/// this binary in the build products directory.
-let agentExecutableName = "acp-agent"
+/// The name of the agent executable this CLI spawns when no `--agent` flag
+/// names another. It stands beside this binary in the build products
+/// directory.
+let defaultAgentExecutableName = "acp-agent"
 
-/// The count of command-line arguments of a correct invocation: the
-/// binary path and the one positional prompt. There is no flag surface.
-let expectedArgumentCount = 2
+/// The one flag of this CLI: it names the agent executable to spawn, which
+/// stands beside this binary too. A test that needs a deterministic model
+/// across the process boundary gives the stub agent binary.
+let agentFlag = "--agent"
+
+/// The count of command-line arguments of an invocation with the default
+/// agent: the binary path and the one positional prompt.
+let argumentCountWithDefaultAgent = 2
+
+/// The count of command-line arguments of an invocation with the agent flag:
+/// the binary path, the flag, the name of the agent and the prompt.
+let argumentCountWithNamedAgent = 4
 
 /// The client name `initialize` reports to the agent.
 let clientName = "acp-print"
@@ -194,11 +204,14 @@ func runOneShotTurn(prompt: String, agentCommand: String) async -> Int32 {
 // MARK: - 1. The one positional prompt argument
 
 let arguments = CommandLine.arguments
-guard arguments.count == expectedArgumentCount else {
-    logToStandardError("usage: acp-print <prompt>")
+let namesAgent =
+    arguments.count == argumentCountWithNamedAgent && arguments[1] == agentFlag
+guard arguments.count == argumentCountWithDefaultAgent || namesAgent else {
+    logToStandardError("usage: acp-print [\(agentFlag) <agent executable>] <prompt>")
     exit(EXIT_FAILURE)
 }
-let promptText = arguments[1]
+let agentExecutableName = namesAgent ? arguments[2] : defaultAgentExecutableName
+let promptText = arguments[arguments.count - 1]
 
 // MARK: - 2. The sibling agent binary
 

@@ -1,6 +1,7 @@
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
+import FoundationModelsMultitool
 import InMemoryTracing
 import MCPTestServer
 import TelemetryTestSupport
@@ -34,6 +35,12 @@ import Tracing
 
   /// The full type name of the error that refuses an unknown command.
   private static let requestErrorTypeName = String(reflecting: RequestError.self)
+
+  /// The error type that the connect span records for a stdio server whose
+  /// command is not an absolute path: the full type name of the error of the
+  /// stdio process, and the case that the process threw.
+  private static let stdioProcessErrorName =
+    String(reflecting: StdioServerProcess.StdioServerProcessError.self) + ".commandNotAbsolute"
 
   /// The name that the loopback MCP test server mounts under.
   private static let elicitingServerName = "elicitor"
@@ -297,7 +304,9 @@ import Tracing
     let connectSpan = try Self.requireOneSpan(named: ACPAgentTelemetry.SpanName.mcpConnect, in: run)
     #expect(connectSpan.errors.isEmpty)
     #expect(connectSpan.status?.code == .error)
-    #expect(connectSpan.attributes.get(ACPAgentTelemetry.AttributeKey.errorType) != nil)
+    #expect(
+      connectSpan.attributes.get(ACPAgentTelemetry.AttributeKey.errorType)
+        == .string(Self.stdioProcessErrorName))
     #expect(
       connectSpan.attributes.get(ACPAgentTelemetry.AttributeKey.mcpServerName)
         == .string(Self.brokenServerName))

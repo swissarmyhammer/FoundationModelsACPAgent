@@ -40,13 +40,6 @@ struct ModelCacheDirectoryTests {
   /// folder of its resolver.
   private static let profileDoctorCachePath = ["resolver", "cacheDirectory"]
 
-  /// A memory figure far above the profile floor, so the profile
-  /// component does not read the machine this suite runs on.
-  private static let generousMemoryBytes: Int64 = 68_719_476_736
-
-  /// A free-disk figure far above any download, for the same reason.
-  private static let generousDiskBytes: Int64 = 1_099_511_627_776
-
   // MARK: - Helpers
 
   /// Makes a new empty folder for one test.
@@ -104,7 +97,8 @@ struct ModelCacheDirectoryTests {
       workingDirectory: fixture.workspace,
       environment: fixture.environment.merging(environment) { _, new in new },
       prober: StubToolsProber(),
-      memoryBytes: generousMemoryBytes, freeDiskBytes: generousDiskBytes)
+      memoryBytes: DoctorMachineFigures.generousMemoryBytes,
+      freeDiskBytes: DoctorMachineFigures.generousDiskBytes)
     return components.lazy.compactMap { $0 as? ProfileDoctor }.first
   }
 

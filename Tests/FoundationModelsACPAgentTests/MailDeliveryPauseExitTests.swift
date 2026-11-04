@@ -15,7 +15,7 @@ import struct FoundationModelsRouter.MailDeliveryPause
   private static let notice = HeldMailNotice(heldCount: 2, limit: 0)
 
   /// A run whose own prompt ended `end_turn` after a pause exits 6, and its
-  /// stderr gets one line with the reason. stdout gets nothing more.
+  /// stderr gets one line with the reason.
   @Test func aRunWithAPauseExitsSixAndWritesTheReasonOnStandardError() {
     let result = RunPromptResult(stopReason: .endTurn, mailPause: Self.notice)
 

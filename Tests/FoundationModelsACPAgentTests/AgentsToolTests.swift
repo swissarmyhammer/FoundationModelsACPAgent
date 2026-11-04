@@ -547,7 +547,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
 
     #expect(run.state == .running)
     #expect(
-      surface.runCallJoins.announceToolCallId(for: Self.agentToolRunToken)
+      surface.runCallJoins.announceToolCallId(for: RunToken(Self.agentToolRunToken))
         == ToolCallId(rawValue: Self.agentToolRunToken))
     hold.release()
     await surface.shutdown()

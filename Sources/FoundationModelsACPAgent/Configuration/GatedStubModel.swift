@@ -83,6 +83,13 @@ final class StubChunkGate: Sendable {
     } else {
       descriptor = open(path, O_RDONLY)
       guard descriptor >= 0 else {
+        // A closed pipe is the normal end of the gate, but a pipe that cannot
+        // be opened is a wrong or missing path. The answer then runs ungated,
+        // and nothing else would tell the test why.
+        assertionFailure("cannot open the chunk gate at \(path)")
+        ACPAgentTelemetry.logger(.configuration).error(
+          "The chunk gate of the stub model cannot be opened at \(path). The answer runs with no gate."
+        )
         state.withLock { $0.isEnded = true }
         return
       }
