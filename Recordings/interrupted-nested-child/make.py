@@ -8,7 +8,8 @@ grandchild is running, the script closes the stdin of the agent. That is an
 orderly shutdown: the sessions are suspended, and no session gets an
 `endedAt` mark.
 
-Usage: make.py <path of the acp-agent-stub binary> [<standard model id>]
+Usage: make.py <path of the acp-agent-stub binary> [--cwd <absolute path>]
+               [--model <standard model id>]
 
 The `standard` slot of the recording names the model `STANDARD_MODEL` by default
 (`mlx-community/Qwen3.8-27B-mxfp4`) and names no drafter. The stub model plays

@@ -61,7 +61,25 @@ comments:
     - manual diagnostic (not a test): scratch script in the scratchpad: fresh empty /tmp/AgentViewKitDemo-nested-work, committed transcripts copied in, USER layer from agents/, stub `acp`, initialize, then session/resume with the cwd. The response was a result (no error), and the log held no replay-only or refusal notice. I did not check that the children run again after the resume. The directory was removed after.
     - not run: unit tests (no Sources change), IntegrationTests. Nothing pushed or merged.
   timestamp: 2026-11-04T19:11:21.077606+00:00
-position_column: doing
+- actor: claude-code
+  id: 01m6kzrfqqm4thx2vwkhp3nvqc
+  text: |-
+    ### review — findings
+    - evidence: `review sha 60e65f4~1..8dafea5`: 1 finding (make.py:11). 8 attempted, 0 failed. Only make.py has a validator; the other 24 files have none. Own check (a) no machine path: grep for /Users, wballard, FoundationModelsACPAgent-wt, /var/folders gives no match in the folder. Own check (b) transcripts: pass. Paused agents calls in session-history.json of root and child; agentSpawn in child and grandchild transcript.jsonl; no endedAt; every model is mlx-community/Qwen3.8-27B-mxfp4 (the Qwen3-4B-4bit text is only the flash slot option name); no drafter text; cwd is /tmp/AgentViewKitDemo-nested-work/.
+    - next: fix the usage text of make.py, then review again.
+  timestamp: 2026-11-04T19:14:48.695954+00:00
+- actor: claude-code
+  id: 01m6kzt86859rj737fny2ym3kr
+  text: |-
+    ### implement — changed
+    - finding fixed: the usage text in make.py now reads `make.py <path of the acp-agent-stub binary> [--cwd <absolute path>] [--model <standard model id>]`. It matches the parser (`--cwd`, `--model` options, one positional `executable`) and the README (it already used `--model <id>` and `--cwd`).
+    - decision: a positional model was NOT added. A positional model next to `--model` can give two values for one setting, so it is not unambiguous. Only `--model` is accepted. Consumers who passed a 2nd positional argument must use `--model <id>`.
+    - same cause in the folder: README examples and comments checked; no other place names a positional model.
+    - checks: `python3 -I make.py --help` shows the options. `python3 -I make.py /x mlx-model` fails with `unrecognized arguments: mlx-model`. The recording was NOT run again. The committed transcripts are unchanged. IntegrationTests not run.
+    - files: Recordings/interrupted-nested-child/make.py
+    - next: ready for /review
+  timestamp: 2026-11-04T19:15:46.504536+00:00
+position_column: review
 position_ordinal: '80'
 title: Remake the interrupted nested recording with the mxfp4 standard model and answer how a cold resume uses the recorded cwd
 ---
@@ -81,3 +99,11 @@ Request from AgentViewKit (session agentviewkit-20). It copied `Recordings/inter
 
 ## Workflow
 - #subagents
+
+## Review Findings (2026-11-04 13:13)
+
+> Scope: `review sha 60e65f4~1..8dafea5` — reviewed the diffs only — lines this change added or modified. 1 file(s) reviewed, 24 not reviewed.
+
+> 24 file(s) not reviewed — no validator matched (README.md, AGENT.md files, script.json, and the transcripts index.md, session-history.json, transcript.jsonl under `Recordings/interrupted-nested-child`).
+
+- [x] `Recordings/interrupted-nested-child/make.py:11` `completeness/public-output-contract` — The usage text documents a positional standard model id, `make.py <path of the acp-agent-stub binary> [<standard model id>]`. The parser at line 234 does not accept a positional model. It defines `--model` as an option. A caller who follows the documented usage passes the model as a positional argument, and argparse rejects it with an 'unrecognized arguments' error. The documented interface and the implemented interface disagree. Make the usage text match the parser. Use `Usage: make.py <path of the acp-agent-stub binary> [--cwd <absolute path>] [--model <standard model id>]`, or add a positional `model` argument with `nargs='?'` if the positional form is wanted.

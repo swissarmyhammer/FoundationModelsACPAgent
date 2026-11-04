@@ -1,8 +1,8 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '8e80'
+position_column: doing
+position_ordinal: '8180'
 title: 'Stub script step "permission": the run sends session/request_permission and waits for the outcome, also in a child run'
 ---
 ## What

@@ -68,6 +68,14 @@ comments:
     - builds: `swift build --build-tests --package-path IntegrationTests` complete, no warning; `swift build --build-tests` complete. IntegrationTests were not run (order).
     - next: /review
   timestamp: 2026-11-04T19:11:50.599092+00:00
+- actor: claude-code
+  id: 01m6kzr6cpc1h7zdc1c0ns2zqg
+  text: |-
+    ### review — clean
+    - evidence: `review sha 18a7cba~1..18a7cba`: 0 findings, 0 confirmed, 0 refuted, 7 attempted, 0 failed (1 file reviewed; 6 .kanban files excluded by .reviewignore). All 12 earlier findings are checked.
+    - open by design (only CI can prove them): the four wire criteria (subagent_update order, session/list shows only the root, session/cancel on the child, session/resume replayFrom start), the run of `swift test --package-path IntegrationTests --filter SubagentSessionsTests`, and the root `swift test`. The IntegrationTests are built, not run.
+    - next: CI run.
+  timestamp: 2026-11-04T19:14:39.126745+00:00
 depends_on:
 - 01M6GM17VHZSWD4G2J27WTA3JT
 - 01M6GK6AH3R589GF241923KNDP
@@ -76,8 +84,8 @@ depends_on:
 - 01M6GH3TN6QK7ZCSXTNWD6MNVW
 - 01M6GH43RRA3D4ACVCWNWSAMY7
 - 01M6GH3ZHE52GHWAZ53AWNKJ0K
-position_column: review
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffffb980
 title: 'Integration test: nested sub-agent run end to end over the ACP wire, and update the docs'
 ---
 ## What
