@@ -364,6 +364,23 @@ public actor RoutedACPAgent: Agent {
     }
   }
 
+  /// The end of the host process, in the one correct order: the orderly shutdown
+  /// (``shutdown()``) first, and then the wait until the connections are torn down
+  /// (``waitForConnectionTeardown()``).
+  ///
+  /// The order matters. The teardown of a connection ends only after the work that its handlers
+  /// deferred ended (`AgentSideConnection.closed`), and that work includes the wait for the end
+  /// of each open prompt. A prompt whose `agents` call waits for a child ends only after the
+  /// run grace (`inlineSettleGrace`), and then the call is complete and the child no longer
+  /// restorable. So a wait first would let the open work finish before the pause. The shutdown
+  /// needs no wait for the teardown: it closes every open session, also one that a connection
+  /// still owns. It pauses the open tool calls and ends each open prompt as interrupted, and so
+  /// it lets the deferred work end. The wait that follows returns when that work ended.
+  public func shutdownAfterConnectionTeardown() async {
+    await shutdown()
+    await waitForConnectionTeardown()
+  }
+
   /// Waits until the teardown of one bound connection ended: it closed,
   /// its row is gone, and its sessions are free. Returns at once for an id
   /// that ``bind(connection:)`` did not give.

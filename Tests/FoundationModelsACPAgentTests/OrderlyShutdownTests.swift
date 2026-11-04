@@ -31,7 +31,7 @@ import Testing
   private static let childStartedText = "CHILD-STARTED-TEXT"
 
   /// A root session with a child run in operation.
-  private struct Working {
+  struct Working {
     /// The wired agent.
     let fixture: ScriptedPromptFixture
 
@@ -82,7 +82,7 @@ import Testing
   /// - Parameter name: The label of the test, for the folders.
   /// - Returns: The working root session.
   /// - Throws: Whatever the fixture or a wait throws.
-  private static func startWorking(named name: String) async throws -> Working {
+  static func startWorking(named name: String) async throws -> Working {
     let cwd = makeResolvedDirectory(label: "\(label)-\(name)-repo")
     try AgentsToolTests.writeAgent(named: childAgent, in: cwd)
     let hold = ScriptedHold()
