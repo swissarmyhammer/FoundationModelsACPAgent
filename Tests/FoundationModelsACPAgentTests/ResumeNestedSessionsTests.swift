@@ -84,9 +84,7 @@ import Testing
       for sessionId in await agent.sessions.keys {
         await agent.writeHistory(of: sessionId)
       }
-      for entry in await agent.sessions.values {
-        entry.session.suspend()
-      }
+      await suspendAll(of: agent)
     }
   }
 
@@ -159,10 +157,18 @@ import Testing
   ///
   /// - Parameter fixture: The agent to quit.
   private static func quit(_ fixture: ScriptedPromptFixture) async {
-    for entry in await fixture.harness.agent.sessions.values {
+    await suspendAll(of: fixture.harness.agent)
+    await fixture.close()
+  }
+
+  /// Suspends every live session of an agent. A suspended session gets no ended marker. It does
+  /// not close the sessions.
+  ///
+  /// - Parameter agent: The agent whose sessions are suspended.
+  private static func suspendAll(of agent: RoutedACPAgent) async {
+    for entry in await agent.sessions.values {
       entry.session.suspend()
     }
-    await fixture.close()
   }
 
   /// Resumes the root of `recording` in a second agent over the same working directory.

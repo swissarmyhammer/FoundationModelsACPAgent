@@ -73,6 +73,31 @@ comments:
     - Earlier tests changed: SubagentSessionsReplayTests now uses `recordShutDownChain` (it had it in HEAD as the only user; the name stays, the helper is back after I removed a duplicate). ResumeNestedSessionsTests: `childAgent` visibility only, and `recordChain` got the parameter `endsPrompt`. No assertion weakened, no test skipped. The validator tests (ChildSessionProjectionTests) are unchanged and pass.
     - next: review.
   timestamp: 2026-11-04T14:38:05.603483+00:00
+- actor: claude-code
+  id: 01m6kgdkexqcgp7abasseq0xjt
+  text: |-
+    ### review — findings
+    - evidence: review sha 3c7ae4b~1..3c7ae4b. 10 findings (10 confirmed, 5 refuted). 7 pairs attempted, 0 failed, 0 skipped. Open: SessionResumeChildSync.swift:112, SessionResumeChildSync.swift:156, ResumeChildSyncTests.swift:106, :130, :237, :255, :501, ResumeNestedSessionsTests.swift:87, SubagentSessionsReplayTests.swift:110, :118.
+    - next: the implementer fixes each finding, then runs /review again.
+  timestamp: 2026-11-04T14:46:43.421545+00:00
+- actor: claude-code
+  id: 01m6kgt2ad6kd20jf3xpj1fpt1
+  text: |-
+    ### implement — changed
+    - evidence: filtered `swift test --filter "ResumeChildSyncTests|ResumeNestedSessionsTests|SubagentSessionsReplayTests"`: 41 tests, 3 suites, pass. Full `swift test` (foreground): 1756 tests, 191 suites, pass, 1 known issue (HarnessSmokeTests, intentional). No other issue. One build warning exists in AgentTranscriptWiringTests.swift (redundant #require), not in this commit.
+    - findings fixed (10 of 10, boxes flipped to [x]):
+      - SessionResumeChildSync.swift:112: `assertionFailure("The restore failure of a child did not encode: \(error)")` before the log. Only one catch in the file.
+      - SessionResumeChildSync.swift:156: `currentUpdate(of:)` in SessionHistory.swift now calls `announced(_:)`. One subagent lookup remains. Also the shared helper for the final-call match: new `SessionUpdate.endedChild` (SessionResumeReplay.swift) is used by `ReplayedSession.child(endedBy:)` and by `endsCall(of:)`.
+      - ResumeChildSyncTests:106 and :130: one predicate pair on `WireTraceEvent` (`isOwnState(of:)`, `announces(_:)`), built from `SessionUpdate.announces`. `Wire.ownState(of:)` uses it. The two static closure helpers are gone. `Sent` got `event`, and `announcement` uses `SessionUpdate.announcement` (one match of that case in the file).
+      - ResumeChildSyncTests:237: new `secondAgent(for:)` and `resumeWithoutWire(_:)`. `resume`, `resumeWithoutSync` and `syncOfTheShutDownChain` use them.
+      - ResumeChildSyncTests:255: `startWork` returns the task handle. Each test cancels it in `defer` and awaits it after the sync.
+      - ResumeChildSyncTests:501: `try #require(update?.announcement)`. The same early-return `guard` in the running-snapshot test is gone too (`try #require` and `#expect`).
+      - ResumeNestedSessionsTests:87: new `suspendAll(of:)`, used by `quit(_:)` and `recordInterruptedChain`.
+      - SubagentSessionsReplayTests:110 and :118: new test support `SessionEventSubscription.readResumeTrace(startingWith:settledBy:)` (Tests/FoundationModelsACPAgentTestSupport/WireTraceReading.swift). Both suites call it. It has no `default` switch.
+    - No behavior change in production, no assertion weakened, no test skipped.
+    - files: Sources/FoundationModelsACPAgent/Agent/SessionResumeChildSync.swift, Sources/FoundationModelsACPAgent/Agent/SessionResumeReplay.swift, Sources/FoundationModelsACPAgent/Agent/SessionHistory.swift, Tests/FoundationModelsACPAgentTests/ResumeChildSyncTests.swift, Tests/FoundationModelsACPAgentTests/ResumeNestedSessionsTests.swift, Tests/FoundationModelsACPAgentTests/SubagentSessionsReplayTests.swift, Tests/FoundationModelsACPAgentTestSupport/WireTraceReading.swift (new)
+    - next: /review
+  timestamp: 2026-11-04T14:53:31.853571+00:00
 depends_on:
 - 01M6GM0N9BFK37GGBWPAG9VE1X
 - 01M6GH30709S58BK3AQ1VMBAM7
@@ -108,3 +133,21 @@ Do (in the resume path of `Sources/FoundationModelsACPAgent/Agent/SessionResume.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #subagents
+
+## Review Findings (2026-11-04 08:38)
+
+> Scope: `review sha 3c7ae4b~1..3c7ae4b` — reviewed the diffs only — lines this change added or modified. 6 file(s) reviewed, 10 not reviewed.
+
+> 10 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 10 file(s)
+
+- [x] `Sources/FoundationModelsACPAgent/Agent/SessionResumeChildSync.swift:112` `swift/preconditions` — The catch branch handles an unexpected encoding failure of `SAH.RestoreFailure`, and it only logs. It has no `assertionFailure`, so a debug build does not stop at the surprise and the author does not see it. Add `assertionFailure("The restore failure of a child did not encode: \(error)")` before the existing `logger.error` call in the catch block. Keep the log, so release builds still record it and the update goes out without a reason.
+- [x] `Sources/FoundationModelsACPAgent/Agent/SessionResumeChildSync.swift:156` `reuse/reuse` — The new `announced(_:)` repeats the subagent lookup that `currentUpdate(of:)` already writes inline. Both find the first `subagents` entry whose `sessionId` matches. Two copies of the same lookup can drift apart. Call `announced(_:)` from `currentUpdate(of:)` for the `.subagent` case, so the lookup exists in one place. Or move the lookup into `announced(_:)` and have `currentUpdate` use it.
+- [x] `Tests/FoundationModelsACPAgentTests/ResumeChildSyncTests.swift:106` `reuse/reuse` — The new `Wire.ownState(of:)` repeats the test that the new `isOwnState(of:)` already makes. Both match a `state_update` on the child's own stream. The `Wire` version also restricts the match to updates after the response. Reuse the predicate. For example, `ownState(of:)` can filter `afterResponse` with a shared `isOwnState`-style test on the `Sent` update and session. This keeps the 'own state' definition in one place.
+- [x] `Tests/FoundationModelsACPAgentTests/ResumeChildSyncTests.swift:130` `reuse/reuse` — The new static helper `isAnnouncement(of:)` and the new `SessionUpdate.announces(_:)` extension do the same check. Each returns true for a `subagentUpdate` whose `sessionId` is the given child. The test file now has two copies of one predicate. Make `isAnnouncement(of:)` build its closure from `update.announces(child)`, or remove one of the two and use the other everywhere.
+- [x] `Tests/FoundationModelsACPAgentTests/ResumeChildSyncTests.swift:237` `reuse/reuse` — The new `resumeWithoutSync()` repeats the setup that `syncOfTheShutDownChain()` also writes inline. Both make a second `ScriptedPromptFixture`, then call `routedConnection.resumeSession` with `request(recording, replayFrom: nil)`. The same setup appears in two places, so a change to one can miss the other. Add one helper that makes the second fixture and resumes the recording with no replay. Both `resumeWithoutSync()` and `syncOfTheShutDownChain()` should call it, and `resumeChainWithoutTheChildAgent`'s setup can use it too.
+- [x] `Tests/FoundationModelsACPAgentTests/ResumeChildSyncTests.swift:255` `swift/concurrency` — The `Task` in `startWork` is unstructured and its handle is discarded. If the sync never opens the child's gate, the task waits forever and nothing cancels it. The doc comment gives the reason for the task, but the handle is still not stored or cancelled. Store the handle, for example `let work = Task { ... }`, and cancel it or await it in the test's teardown. Or run the call with `async let` in a structured scope. Keep the doc comment, since it explains why the call must run apart from the poll.
+- [x] `Tests/FoundationModelsACPAgentTests/ResumeChildSyncTests.swift:501` `swift/optionals` — A test uses `guard case .subagentUpdate(let sent)? = update else` and returns early. This is a `guard` in a test, and the early return skips the assertion that follows it. Unwrap with `try #require`, for example `let sent = try #require(update)` followed by a `guard`-free pattern match that binds the `.subagentUpdate` payload, or `#require` on the extracted value. Then keep `#expect(sent.capabilities == .unchanged)`.
+- [x] `Tests/FoundationModelsACPAgentTests/ResumeNestedSessionsTests.swift:87` `reuse/reuse` — The new loop in `recordInterruptedChain` suspends every live session. The existing `quit(_:)` helper in the same file already does this loop, so the suspend logic now appears in two places. Extract the suspend loop into a helper, for example `suspendAll(of agent:)`, and call it from both `quit(_:)` and `recordInterruptedChain`. The interrupted recording does not close the fixture, so the helper must stay separate from the close step.
+- [x] `Tests/FoundationModelsACPAgentTests/SubagentSessionsReplayTests.swift:110` `reuse/reuse` — The new reader task in `resume(replayFrom:)` is a near-copy of the reader task in `ResumeChildSyncTests.resume`. Both subscribe to all sessions, map each event with `WireTraceEvent(sequenced)`, and collect events until the response. The two copies can drift apart, for example in how they handle events that do not map. Move the subscribe-and-collect loop into one shared helper in the test support, with an optional stop test. Both suites should call it, so the wire reading is defined once.
+- [x] `Tests/FoundationModelsACPAgentTests/SubagentSessionsReplayTests.swift:118` `swift/state-modeling` — The `switch` over `WireTraceEvent`, a domain enum, ends in `default: continue`. A newly added event case is silently skipped by the reader, so the compiler cannot flag it. Replace `default: continue` with explicit cases for the other `WireTraceEvent` cases, each one a `continue`. Then the compiler reports any new case that the reader must handle.

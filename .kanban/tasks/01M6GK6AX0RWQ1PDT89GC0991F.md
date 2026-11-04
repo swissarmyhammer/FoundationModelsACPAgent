@@ -67,6 +67,7 @@ comments:
 depends_on:
 - 01M6GJPPXWKQJ9E6SK5WD0CWZ7
 - 01M6GM17VHZSWD4G2J27WTA3JT
+- 01M6KGEQVH2T73SR32CD6VZDKG
 position_column: todo
 position_ordinal: 8b80
 title: Re-drive interrupted nested runs after a cold resume, children first, completing the original agent tool call

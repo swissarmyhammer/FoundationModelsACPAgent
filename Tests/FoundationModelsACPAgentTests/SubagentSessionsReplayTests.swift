@@ -64,7 +64,8 @@ import Testing
     ///
     /// - Parameter notification: The notification.
     /// - Returns: The announcement it carries, or `nil` for any other update.
-    private static func announcement(in notification: UpdateSessionNotification) -> SubagentUpdate? {
+    private static func announcement(in notification: UpdateSessionNotification) -> SubagentUpdate?
+    {
       if case .subagentUpdate(let update) = notification.update {
         return update
       }
@@ -107,25 +108,17 @@ import Testing
       script: [.endPass], label: "\(label)-second", workingDirectory: recording.cwd)
     let connection = fixture.harness.connection
     let subscription = connection.subscribeToAllSessions()
-    let reader = Task { () -> [UpdateSessionNotification] in
-      var beforeResponse: [UpdateSessionNotification] = []
-      for await sequenced in subscription.events {
-        switch WireTraceEvent(sequenced) {
-        case .update(let sessionId, let update):
-          beforeResponse.append(UpdateSessionNotification(sessionId: sessionId, update: update))
-        case .resumeResponse:
-          return beforeResponse
-        default:
-          continue
-        }
-      }
-      return beforeResponse
-    }
+    let reader = Task { await subscription.readResumeTrace() }
     _ = try await connection.resumeSession(
       ResumeSessionRequest(
         cwd: AbsolutePath(rawValue: recording.cwd.path), sessionId: recording.root,
         replayFrom: replayFrom))
-    let updates = await reader.value
+    let updates = await reader.value.compactMap { event -> UpdateSessionNotification? in
+      if case .update(let sessionId, let update) = event {
+        return UpdateSessionNotification(sessionId: sessionId, update: update)
+      }
+      return nil
+    }
     return ResumedWire(fixture: fixture, recording: recording, updates: updates)
   }
 

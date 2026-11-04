@@ -64,13 +64,24 @@ struct ReplayedSession {
   /// - Parameter update: An update of the history of this session.
   /// - Returns: The child, or `nil` when the update is no final status of a call with a link.
   func child(endedBy update: SessionUpdate) -> ReplayedSession? {
-    guard case .toolCallUpdate(let call) = update, BackgroundWatch.isFinal(call.status),
-      case .value(let meta) = call.meta,
-      let linked = SAH.AgentRun.extract(from: meta)?.sessionId
-    else {
+    guard let linked = update.endedChild else {
       return nil
     }
     return children.first { $0.sessionId == linked }
+  }
+}
+
+extension SessionUpdate {
+  /// The session id of the child that this update ends: the update is the final status of the
+  /// `agents` call that started the child, and the call links to the child in its `_meta`. The
+  /// one place that matches such an update.
+  var endedChild: SessionId? {
+    guard case .toolCallUpdate(let call) = self, BackgroundWatch.isFinal(call.status),
+      case .value(let meta) = call.meta
+    else {
+      return nil
+    }
+    return SAH.AgentRun.extract(from: meta)?.sessionId
   }
 }
 

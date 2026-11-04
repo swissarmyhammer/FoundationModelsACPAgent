@@ -219,7 +219,7 @@ extension SessionMergeEngine {
         return held.terminalId == terminal.terminalId
       }
     case .subagent(let child):
-      return subagents.first { $0.sessionId == child.sessionId }.map { held in
+      return announced(child.sessionId).map { held in
         // The update goes out before the response. The capabilities are a current fact, and
         // the snapshot after the response gives them.
         var historical = held

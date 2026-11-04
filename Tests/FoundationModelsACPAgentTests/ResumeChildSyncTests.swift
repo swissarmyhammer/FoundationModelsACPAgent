@@ -43,10 +43,12 @@ import Testing
 
     /// The announcement that the update holds, or `nil` for any other update.
     var announcement: SubagentUpdate? {
-      if case .subagentUpdate(let announced) = update {
-        return announced
-      }
-      return nil
+      update.announcement
+    }
+
+    /// The update as an event of the trace.
+    var event: WireTraceEvent {
+      .update(sessionId: sessionId, update: update)
     }
   }
 
@@ -104,37 +106,11 @@ import Testing
     /// - Parameter child: The child.
     /// - Returns: The update, or `nil` when the wire holds none.
     func ownState(of child: SessionId) -> Sent? {
-      afterResponse.first { $0.sessionId == child && $0.update.isStateUpdate }
+      afterResponse.first { $0.event.isOwnState(of: child) }
     }
   }
 
   // MARK: - Fixtures
-
-  /// Tells that the trace event is the own `state_update` of `session`.
-  ///
-  /// - Parameter session: The session.
-  /// - Returns: The test for the event.
-  private static func isOwnState(of session: SessionId) -> @Sendable (WireTraceEvent) -> Bool {
-    { event in
-      if case .update(let stream, let update) = event {
-        return stream == session && update.isStateUpdate
-      }
-      return false
-    }
-  }
-
-  /// Tells that the trace event is an announcement of `child`.
-  ///
-  /// - Parameter child: The child.
-  /// - Returns: The test for the event.
-  private static func isAnnouncement(of child: SessionId) -> @Sendable (WireTraceEvent) -> Bool {
-    { event in
-      if case .update(_, .subagentUpdate(let announced)) = event {
-        return announced.sessionId == child
-      }
-      return false
-    }
-  }
 
   /// The resume request of the root of `recording`.
   ///
@@ -171,27 +147,12 @@ import Testing
     _ recording: ResumeNestedSessionsTests.Recording, replays: Bool,
     settledBy: @escaping @Sendable (WireTraceEvent) -> Bool
   ) async throws -> Wire {
-    let fixture = try await ScriptedPromptFixture.make(
-      script: [.endPass], label: "\(label)-second", workingDirectory: recording.cwd)
+    let fixture = try await secondAgent(for: recording)
     let connection = fixture.harness.connection
     let subscription = connection.subscribeToAllSessions()
     let first = WireTraceEvent.resumeRequest(id: requestId, sessionId: recording.root)
-    let reader = Task { () -> [WireTraceEvent] in
-      var seen = [first]
-      var responded = false
-      for await sequenced in subscription.events {
-        guard let event = WireTraceEvent(sequenced) else {
-          continue
-        }
-        seen.append(event)
-        if case .resumeResponse = event {
-          responded = true
-        }
-        if responded, settledBy(event) {
-          break
-        }
-      }
-      return seen
+    let reader = Task {
+      await subscription.readResumeTrace(startingWith: [first], settledBy: settledBy)
     }
     let call = request(recording, replayFrom: cursor(replays: replays))
     let resumeCall = Task { try await connection.resumeSession(call) }
@@ -213,7 +174,8 @@ import Testing
   /// - Throws: Whatever the fixture or the request throws.
   private static func resumeChain(replays: Bool) async throws -> Wire {
     let recording = try await ResumeNestedSessionsTests.recordInterruptedChain()
-    return try await resume(recording, replays: replays, settledBy: isOwnState(of: recording.leaf))
+    let leaf = recording.leaf
+    return try await resume(recording, replays: replays) { $0.isOwnState(of: leaf) }
   }
 
   /// Records the chain, removes the definition of the child agent, and resumes it. The child and
@@ -226,7 +188,8 @@ import Testing
     let recording = try await ResumeNestedSessionsTests.recordInterruptedChain()
     try AgentsToolTests.removeAgent(
       named: ResumeNestedSessionsTests.childAgent, in: recording.cwd)
-    return try await resume(recording, replays: replays, settledBy: isAnnouncement(of: recording.leaf))
+    let leaf = recording.leaf
+    return try await resume(recording, replays: replays) { $0.announces(leaf) }
   }
 
   /// Resumes the chain with no wire request, so the sync after the response does not run. The
@@ -238,11 +201,33 @@ import Testing
     fixture: ScriptedPromptFixture, recording: ResumeNestedSessionsTests.Recording
   ) {
     let recording = try await ResumeNestedSessionsTests.recordInterruptedChain()
-    let fixture = try await ScriptedPromptFixture.make(
+    return (try await resumeWithoutWire(recording), recording)
+  }
+
+  /// Starts the second agent over the working directory of `recording`.
+  ///
+  /// - Parameter recording: The chain that the first agent recorded.
+  /// - Returns: The second agent.
+  /// - Throws: Whatever the fixture throws.
+  private static func secondAgent(
+    for recording: ResumeNestedSessionsTests.Recording
+  ) async throws -> ScriptedPromptFixture {
+    try await ScriptedPromptFixture.make(
       script: [.endPass], label: "\(label)-second", workingDirectory: recording.cwd)
+  }
+
+  /// Starts the second agent and resumes `recording` with no replay and no wire reader.
+  ///
+  /// - Parameter recording: The chain that the first agent recorded.
+  /// - Returns: The second agent, with the resumed root.
+  /// - Throws: Whatever the fixture or the request throws.
+  private static func resumeWithoutWire(
+    _ recording: ResumeNestedSessionsTests.Recording
+  ) async throws -> ScriptedPromptFixture {
+    let fixture = try await secondAgent(for: recording)
     _ = try await fixture.harness.routedConnection.resumeSession(
       request(recording, replayFrom: nil))
-    return (fixture, recording)
+    return fixture
   }
 
   /// Starts work in the session of `child` and returns when the ledger of the child notes it.
@@ -250,15 +235,18 @@ import Testing
   /// that made the change waits with it, so the call runs in a task of its own.
   ///
   /// - Parameter child: The entry of the restored child.
+  /// - Returns: The task of the call. The test awaits it after the sync, and cancels it when the
+  ///   test ends early.
   /// - Throws: An issue when the ledger does not note the work in time.
-  private static func startWork(of child: ActiveSession) async throws {
-    Task { await child.stateLedger.workStarted(on: ULID()) }
+  private static func startWork(of child: ActiveSession) async throws -> Task<Void, Never> {
+    let work = Task { await child.stateLedger.workStarted(on: ULID()) }
     var polls = 0
     while await child.stateLedger.isIdle, polls < workPollLimit {
       polls += 1
       try await Task.sleep(for: workPollInterval)
     }
     try #require(await !child.stateLedger.isIdle)
+    return work
   }
 
   /// Waits until the background list of `session` is `expected`.
@@ -405,7 +393,9 @@ import Testing
     let root = wire.recording.root
     try #require(wire.snapshot(of: wire.recording.child) != nil)
 
-    let beforeResponse = wire.beforeResponse.filter { $0.sessionId != root || $0.announcement != nil }
+    let beforeResponse = wire.beforeResponse.filter {
+      $0.sessionId != root || $0.announcement != nil
+    }
 
     #expect(beforeResponse.isEmpty)
     await wire.fixture.close()
@@ -419,27 +409,23 @@ import Testing
     let (fixture, recording) = try await Self.resumeWithoutSync()
     let agent = fixture.harness.agent
     let child = try #require(await agent.sessions[recording.child])
-    try await Self.startWork(of: child)
+    let work = try await Self.startWork(of: child)
+    defer { work.cancel() }
 
     await agent.syncChildren(of: recording.root)
     let updates = try await fixture.collector.wait(for: "the snapshot of the child") { updates in
       updates.contains { $0.sessionId == recording.root && $0.update.announces(recording.child) }
     }
 
-    let snapshot = updates.compactMap { notification -> SubagentUpdate? in
-      guard notification.sessionId == recording.root,
-        case .subagentUpdate(let announced) = notification.update,
-        announced.sessionId == recording.child
-      else {
-        return nil
-      }
-      return announced
-    }.first
-    guard case .value(.running)? = snapshot?.state else {
-      Issue.record("The snapshot of the running child does not carry the state running.")
-      await fixture.close()
-      return
+    let snapshot = try #require(
+      updates.lazy.filter { $0.sessionId == recording.root }
+        .compactMap { $0.update.announcement }.first { $0.sessionId == recording.child })
+    var isRunning = false
+    if case .value(.running) = snapshot.state {
+      isRunning = true
     }
+    #expect(isRunning)
+    await work.value
     await fixture.close()
   }
 
@@ -450,7 +436,8 @@ import Testing
     let (fixture, recording) = try await Self.resumeWithoutSync()
     let agent = fixture.harness.agent
     let child = try #require(await agent.sessions[recording.child])
-    try await Self.startWork(of: child)
+    let work = try await Self.startWork(of: child)
+    defer { work.cancel() }
 
     await agent.syncChildren(of: recording.root)
     let updates = try await fixture.collector.wait(for: "the running update of the child") {
@@ -463,6 +450,7 @@ import Testing
     }
     let first = updates.firstIndex { $0.sessionId == recording.child }
     #expect(try #require(snapshot) < #require(first))
+    await work.value
     await fixture.close()
   }
 
@@ -473,7 +461,8 @@ import Testing
     let (fixture, recording) = try await Self.resumeWithoutSync()
     let agent = fixture.harness.agent
     let child = try #require(await agent.sessions[recording.child])
-    try await Self.startWork(of: child)
+    let work = try await Self.startWork(of: child)
+    defer { work.cancel() }
 
     await agent.syncChildren(of: recording.root)
     let root = try #require(await agent.sessions[recording.root])
@@ -481,6 +470,7 @@ import Testing
       becoming: [.subagent(BackgroundSubagent(sessionId: recording.child))], of: root)
 
     #expect(listed == [.subagent(BackgroundSubagent(sessionId: recording.child))])
+    await work.value
     await fixture.close()
   }
 
@@ -498,10 +488,7 @@ import Testing
 
     let update = history.currentUpdate(of: .subagent(BackgroundSubagent(sessionId: child)))
 
-    guard case .subagentUpdate(let sent)? = update else {
-      Issue.record("The history holds no update of the listed child.")
-      return
-    }
+    let sent = try #require(update?.announcement)
     #expect(sent.capabilities == .unchanged)
   }
 
@@ -557,16 +544,15 @@ import Testing
     updates: [UpdateSessionNotification], recording: ResumeNestedSessionsTests.Recording
   ) {
     let recording = try await ResumeNestedSessionsTests.recordShutDownChain()
-    let fixture = try await ScriptedPromptFixture.make(
-      script: [.endPass], label: "\(label)-second", workingDirectory: recording.cwd)
-    _ = try await fixture.harness.routedConnection.resumeSession(
-      request(recording, replayFrom: nil))
+    let fixture = try await resumeWithoutWire(recording)
     let agent = fixture.harness.agent
     await agent.syncChildren(of: recording.root)
     let connection = try #require(agent.connections.path(forSession: recording.root)?.connection)
     await connection.post(
       .agentMessageChunk(
-        ContentChunk(content: .text(TextContent(text: syncEndMarker)), messageId: ACPEventTranslator.makeMessageId())),
+        ContentChunk(
+          content: .text(TextContent(text: syncEndMarker)),
+          messageId: ACPEventTranslator.makeMessageId())),
       in: recording.root)
     let updates = try await fixture.collector.wait(for: "the end marker of the sync") { updates in
       ScriptedPromptFixture.agentText(in: updates.filter { $0.sessionId == recording.root })
@@ -583,7 +569,8 @@ import Testing
     let (updates, recording) = try await Self.syncOfTheShutDownChain()
 
     let announced = updates.filter { notification in
-      notification.update.announces(recording.child) || notification.update.announces(recording.leaf)
+      notification.update.announces(recording.child)
+        || notification.update.announces(recording.leaf)
     }
 
     #expect(announced.isEmpty)
@@ -624,8 +611,8 @@ import Testing
   @Test
   func aHardKillKeepsTheAgentsCallOpenAndTheResumeWireIsValid() async throws {
     let recording = try await ResumeNestedSessionsTests.recordInterruptedChain()
-    let wire = try await Self.resume(
-      recording, replays: true, settledBy: Self.isOwnState(of: recording.leaf))
+    let leaf = recording.leaf
+    let wire = try await Self.resume(recording, replays: true) { $0.isOwnState(of: leaf) }
 
     let calls = wire.beforeResponse.compactMap { sent -> ToolCallUpdate? in
       if case .toolCallUpdate(let call) = sent.update,
@@ -658,13 +645,42 @@ import Testing
 }
 
 extension SessionUpdate {
+  /// The announcement that this update holds, or `nil` for any other update.
+  fileprivate var announcement: SubagentUpdate? {
+    if case .subagentUpdate(let announced) = self {
+      return announced
+    }
+    return nil
+  }
+
   /// Whether this update is an announcement of `child`.
   ///
   /// - Parameter child: The child.
   /// - Returns: `true` for a `subagent_update` that names `child`.
   fileprivate func announces(_ child: SessionId) -> Bool {
-    if case .subagentUpdate(let announced) = self {
-      return announced.sessionId == child
+    announcement?.sessionId == child
+  }
+}
+
+extension WireTraceEvent {
+  /// Whether this event is an announcement of `child`, on any stream.
+  ///
+  /// - Parameter child: The child.
+  /// - Returns: `true` for a `subagent_update` that names `child`.
+  fileprivate func announces(_ child: SessionId) -> Bool {
+    if case .update(_, let update) = self {
+      return update.announces(child)
+    }
+    return false
+  }
+
+  /// Whether this event is the own `state_update` of `session`, on its own stream.
+  ///
+  /// - Parameter session: The session.
+  /// - Returns: `true` for a `state_update` on the stream of `session`.
+  fileprivate func isOwnState(of session: SessionId) -> Bool {
+    if case .update(let stream, let update) = self {
+      return stream == session && update.isStateUpdate
     }
     return false
   }

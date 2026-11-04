@@ -109,6 +109,7 @@ extension RoutedACPAgent {
     do {
       update.meta = .value(try SAH.RestoreFailure(reason: failed.reason).inject(into: held))
     } catch {
+      assertionFailure("The restore failure of a child did not encode: \(error)")
       ACPAgentTelemetry.logger(.sessionResume).error(
         "The restore failure of a child did not encode. The announcement has no reason.",
         metadata: ACPAgentTelemetry.sessionMetadata(child, parent: parent))
@@ -138,14 +139,7 @@ extension SessionMergeEngine {
   /// - Parameter child: The child.
   /// - Returns: `true` when a `tool_call_update` with a final status links to `child`.
   func endsCall(of child: SessionId) -> Bool {
-    replayUpdates(from: .start).contains { update in
-      guard case .toolCallUpdate(let call) = update, BackgroundWatch.isFinal(call.status),
-        case .value(let meta) = call.meta
-      else {
-        return false
-      }
-      return SAH.AgentRun.extract(from: meta)?.sessionId == child
-    }
+    replayUpdates(from: .start).contains { $0.endedChild == child }
   }
 
   /// The merged announcement that the history holds for a child.

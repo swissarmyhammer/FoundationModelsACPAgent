@@ -6,6 +6,15 @@ comments:
   id: 01m6jqb1ep5hvfb9jetpt0wayw
   text: 'Implemented on branch wt-slot (one commit, not pushed). A slot switch now suspends, closes, and restores with switchingModel: true under the same id. Open gaps: (1) a running child run is still cancelled by the switch, as before; only a recorded child stays in the tree. A live child needs claimingRuns and re-drive (SessionResumeNested). (2) No Router fork API is reachable, so a fork has no test. (3) Restore keeps the recorded budget limit, so a smaller context needs compact() once but the limit stays unscaled. The review tool has not run.'
   timestamp: 2026-11-04T07:28:25.046593+00:00
+- actor: claude-code
+  id: 01m6kgdnxht8sm0dbxvrhp6a2y
+  text: |-
+    ### review of commit 28571d0 — findings (not recorded in the description)
+    - evidence: review sha 28571d0~1..28571d0. 2 findings (2 confirmed, 5 refuted). 21 pairs attempted, 0 failed.
+    - [ ] Sources/FoundationModelsACPAgent/Agent/ModelSlotSwitch.swift:175 swift/doc-parameter-naming: The doc entry for the parameter of install(_:in:slot:replacing:) is named replacingId. That name matches neither the internal name id nor the external label replacing, so DocC cannot resolve it against the declaration. Change the doc key on line 175 to `///   - id:`. Keep the prose that describes the session root of the restore.
+    - [ ] Tests/FoundationModelsACPAgentTests/ModelSlotSwitchSessionIdTests.swift:48 reuse/reuse: The new helper switchToFlash repeats the body of switchModelSlot in HookCompositionTests. The copy does not drain the hook dispatcher, so the two helpers can diverge. Keep one helper for the slot switch. Move the slot-switch helper to the shared test support (for example ScriptedPromptFixture) as one internal function. Let it take a flag or a second step for the dispatcher drain. Use it from both HookCompositionTests and ModelSlotSwitchSessionIdTests, and delete the private copies.
+    - next: the peer session fixes both findings.
+  timestamp: 2026-11-04T14:46:45.937330+00:00
 position_column: done
 position_ordinal: ffffaa80
 title: 'A model slot switch keeps the session id: suspend, then restore on the new slot'
