@@ -15,6 +15,32 @@ comments:
     - evidence: All items verified against the code from commit 753dd02 and later commits. ScriptedStubModelTests: 26 pass (swift test --filter ScriptedStubModelTests). IntegrationTests ScriptedStubProcessTests: 2 pass (root calls the agents tool; bad script stops the run with an error). The stub binary acp-agent-stub reads ACP_AGENT_STUB_SCRIPT (ScriptedStubScript, ScriptedPassStep, ScriptedPlaybook: one implementation). All 8 checkboxes set in the .md file. No file was changed in the source.
     - next: /review
   timestamp: 2026-11-04T02:40:12.132961+00:00
+- actor: claude-code
+  id: 01m6j756eb89sqhbc5qfb9mxhf
+  text: |-
+    ### review — findings
+    - evidence: 4 findings (4 confirmed, 1 refuted). IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/ScriptedStubProcessTests.swift:68, Sources/FoundationModelsACPAgent/Configuration/ScriptedSessionBackend.swift:189, Sources/acp-agent/AgentComposition.swift:118 (two findings).
+    - scope: review sha 753dd02~1..753dd02.
+    - next: fix each open finding in the dated Review Findings section. The task stays in review.
+  timestamp: 2026-11-04T02:45:36.331735+00:00
+- actor: claude-code
+  id: 01m6j75sp1bsndq1249dhkn40x
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: no-change — all 8 items already done by commit 753dd02 and later commits
+    - test: not run — no source change; ScriptedStubModelTests 26 and ScriptedStubProcessTests 2 passed in the implement step
+    - commit: 6d2dd22 (kanban files only)
+    - review: findings — 4 open on range 753dd02~1..753dd02: ScriptedStubProcessTests.swift:68, ScriptedSessionBackend.swift:189, AgentComposition.swift:118 (two findings)
+    - note: the two findings at AgentComposition.swift:118 differ on stubChunkGate (leave unchanged / must call the helper). The file has moved since 753dd02. Verify each finding against the current code first.
+    - next: implement works the open findings
+  timestamp: 2026-11-04T02:45:56.033793+00:00
+- actor: claude-code
+  id: 01m6j783n7p1r2s7eycnsagpm9
+  text: |-
+    ### implement — changed
+    - evidence: Finding 1 (ScriptedStubProcessTests.swift:68): the copy no longer exists; both suites call TierThreeFixture.writeStubScript. Findings 3 and 4 (AgentComposition.swift:118): stubScript() and stubChunkGate() no longer read the environment; both read the model choice (an enum), so no shared env helper is needed and no copy of the body remains. Finding 2 (ScriptedSessionBackend.swift:189): still held. Added ScriptedSessionBackend.makeSibling(of:tools:instructions:seededEntries:observer:); the private makeSibling(seededEntries:) and ScriptedLLMContainer.makeBackend both call it. Files: Sources/FoundationModelsACPAgent/Configuration/ScriptedSessionBackend.swift, Sources/FoundationModelsACPAgent/Configuration/ScriptedPlaybook.swift. Tests: swift test --filter ScriptedStubModelTests 26 pass; IntegrationTests --filter ScriptedStub 2 pass. All 4 boxes set.
+    - next: /review
+  timestamp: 2026-11-04T02:47:11.783906+00:00
 position_column: doing
 position_ordinal: '8380'
 title: 'Scripted stub model for the spawned acp-agent: ACP_AGENT_STUB_SCRIPT'
@@ -45,3 +71,12 @@ DESIGN (decided by the coordinator, so the client can write its test now):
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #subagents
+
+## Review Findings (2026-11-03 20:40)
+
+> Scope: `review sha 753dd02~1..753dd02` — reviewed the diffs only — lines this change added or modified. 13 file(s) reviewed, 0 not reviewed.
+
+- [x] `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/ScriptedStubProcessTests.swift:68` `reuse/reuse` — The new writeScript(_:label:) repeats a helper that already exists. It makes a resolved directory, writes the script text to script.json, and returns the file URL. The copy is exact, so the same behavior now lives in two test files. Move one shared script-writing helper into the integration support folder (for example TierThreeFixture) and call it from ScriptedStubProcessTests and ScriptedElicitProcessTests, instead of keeping a copy in each suite.
+- [x] `Sources/FoundationModelsACPAgent/Configuration/ScriptedSessionBackend.swift:189` `duplication/duplication` — `makeSibling(seededEntries:)` builds a `ScriptedSessionBackend` with the same five-argument call that `ScriptedLLMContainer.makeBackend(tools:instructions:seededEntries:)` uses. Both pass `playbook.makeSibling()`, the tools, the instructions, the seeded entries and the observer. A change to the backend's init arguments must be made in both places. Move the construction into one place. For example, give `ScriptedSessionBackend` a static factory `make(playbook:tools:instructions:seededEntries:observer:)` and have both `makeSibling(seededEntries:)` and `ScriptedLLMContainer.makeBackend` call it. The two call sites then differ only in where their values come from.
+- [x] `Sources/acp-agent/AgentComposition.swift:118` `duplication/duplication` — The new `stubScript(environment:)` repeats the body of the existing `stubChunkGate(environment:)` word for word: read an environment variable, return nil when it is absent or empty, otherwise return the value. Only the variable name differs. The two copies can drift apart, for example if the empty-value rule changes for one variable and not the other. Extract one helper, for example `static func nonEmptyValue(of name: String, in environment: [String: String]) -> String?`, and make `stubScript(environment:)` call it with `stubScriptVariable`. Leave `stubChunkGate(environment:)` unchanged in this change. Converting it to the same helper is a separate task, because it is outside this change.
+- [x] `Sources/acp-agent/AgentComposition.swift:118` `reuse/reuse` — The new stubScript(environment:) repeats the body of stubChunkGate(environment:): it reads one environment variable and returns nil when the value is empty. This is a near-match that was copied, not extended. A future change to the empty-value rule must be made in two places. Add one private helper, for example nonEmptyValue(of variable: String, in environment: [String: String]) -> String?, and have stubScript and stubChunkGate both call it. Keep the variable names as the parameters.

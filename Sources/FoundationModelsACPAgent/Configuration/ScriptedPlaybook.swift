@@ -246,8 +246,8 @@ public struct ScriptedLLMContainer: LoadedLLMContainer {
   private func makeBackend(
     tools: [any Tool], instructions: String? = nil, seededEntries: [Transcript.Entry] = []
   ) -> any LanguageModelSessionBackend {
-    ScriptedSessionBackend(
-      playbook: playbook.makeSibling(),
+    ScriptedSessionBackend.makeSibling(
+      of: playbook,
       tools: tools,
       instructions: instructions,
       seededEntries: seededEntries,

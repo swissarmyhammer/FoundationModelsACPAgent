@@ -215,6 +215,33 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
   /// - Parameter seededEntries: The transcript the new backend starts from.
   /// - Returns: The new backend.
   private func makeSibling(seededEntries: [Transcript.Entry]) -> ScriptedSessionBackend {
+    Self.makeSibling(
+      of: playbook,
+      tools: tools,
+      instructions: instructions,
+      seededEntries: seededEntries,
+      observer: observer)
+  }
+
+  /// Makes a backend over a sibling of `playbook`. This is the one place
+  /// that builds a sibling backend, for a fork, a replaced transcript and
+  /// a container session.
+  ///
+  /// - Parameters:
+  ///   - playbook: The playbook to take a sibling of.
+  ///   - tools: The tools `toolCall` steps invoke.
+  ///   - instructions: The session instructions, or `nil` for none.
+  ///   - seededEntries: The transcript the new backend starts from, or
+  ///     empty for a fresh session.
+  ///   - observer: The observer of the new backend, or `nil` for none.
+  /// - Returns: The new backend.
+  static func makeSibling(
+    of playbook: ScriptedPlaybook,
+    tools: [any Tool],
+    instructions: String?,
+    seededEntries: [Transcript.Entry],
+    observer: (any ScriptedBackendObserver)?
+  ) -> ScriptedSessionBackend {
     ScriptedSessionBackend(
       playbook: playbook.makeSibling(),
       tools: tools,
