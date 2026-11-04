@@ -56,10 +56,10 @@ import Testing
   /// The events of one `agents` call that mailed a message: the open and the close record, the
   /// report of the call with the sent-message record, and the SDK call with its arguments.
   private func sendEvents(
-    direction: SentMessageRecord.Direction, mail: MailID, reportFirst: Bool = true
+    receiver: SentMessageRecord.Receiver, mail: MailID, reportFirst: Bool = true
   ) -> [SessionEvent] {
     let record = SentMessageRecord(
-      mailId: mail.value.description, direction: direction, receiverRunId: other.rawValue,
+      mailId: mail.value.description, receiver: receiver,
       receiverSessionId: other.rawValue)
     let json = String(data: (try? JSONEncoder().encode(record)) ?? Data(), encoding: .utf8) ?? ""
     let invocation = ToolInvocationRecord(
@@ -91,7 +91,7 @@ import Testing
 
   @Test("a send agent call sends the outgoing view with the text of its arguments")
   func aSendAgentCallSendsTheOutgoingView() async throws {
-    let updates = await updates(of: sendEvents(direction: .toChild, mail: MailID()))
+    let updates = await updates(of: sendEvents(receiver: .run(id: other.rawValue), mail: MailID()))
 
     let outgoing = try #require(updates.compactMap(\.sessionMessagePayload).first)
     #expect(outgoing.firstText == Self.text)
@@ -102,16 +102,17 @@ import Testing
   @Test("a send agent call sends the outgoing view when its SDK call comes before its report")
   func aSendAgentCallWithTheCallFirstSendsTheOutgoingView() async throws {
     let updates = await updates(
-      of: sendEvents(direction: .toChild, mail: MailID(), reportFirst: false))
+      of: sendEvents(receiver: .run(id: other.rawValue), mail: MailID(), reportFirst: false))
 
     let outgoing = try #require(updates.compactMap(\.sessionMessagePayload).first)
     #expect(outgoing.firstText == Self.text)
   }
 
   @Test("a send agent call sends no incoming view before the receiver took the mail")
-  func aSendAgentCallSendsNoIncomingViewEarly() async {
-    _ = await updates(of: sendEvents(direction: .toChild, mail: MailID()))
+  func aSendAgentCallSendsNoIncomingViewEarly() async throws {
+    let updates = await updates(of: sendEvents(receiver: .run(id: other.rawValue), mail: MailID()))
 
+    _ = try #require(updates.compactMap(\.sessionMessagePayload).first)
     #expect(otherInbox.updates.isEmpty)
   }
 
@@ -119,9 +120,11 @@ import Testing
   func theSentRecordIsNotToolCallContent() async throws {
     let mail = MailID()
 
-    let updates = await updates(of: sendEvents(direction: .toChild, mail: mail))
+    let updates = await updates(of: sendEvents(receiver: .run(id: other.rawValue), mail: mail))
 
-    let content = toolCallUpdates(in: updates).flatMap { texts(in: $0.content) }
+    let toolCalls = toolCallUpdates(in: updates)
+    try #require(!toolCalls.isEmpty)
+    let content = toolCalls.flatMap { texts(in: $0.content) }
     #expect(!content.contains { $0.contains(mail.value.description) })
   }
 
@@ -129,7 +132,7 @@ import Testing
   func aReceiptSendsTheIncomingView() async throws {
     let mail = MailID()
     let record = SentMessageRecord(
-      mailId: mail.value.description, direction: .toCaller, receiverRunId: nil,
+      mailId: mail.value.description, receiver: .caller,
       receiverSessionId: own.rawValue)
     otherInbox.accept(
       prompt.execution.runCallJoins.messages.sent(record, from: other, text: Self.text))
@@ -170,12 +173,19 @@ import Testing
   }
 
   @Test("the run of another tool sends no message view")
-  func theRunOfAnotherToolSendsNoMessageView() async {
-    prompt.execution.runCallJoins.messages.bind(token: Self.runToken, child: other, caller: own)
+  func theRunOfAnotherToolSendsNoMessageView() async throws {
+    let messages = prompt.execution.runCallJoins.messages
+    messages.bind(token: Self.runToken, child: other, caller: own)
+    messages.finalReply(ofRun: Self.runToken, text: Self.reply)
     let settled = runEvent(tool: "shell", kind: .completed, outcome: .succeeded)
+    let viewsBefore = otherInbox.updates.count
 
     let updates = await updates(of: [.runSettled(settled)])
 
-    #expect(updates.compactMap(\.sessionMessagePayload).isEmpty && otherInbox.updates.isEmpty)
+    #expect(updates.compactMap(\.sessionMessagePayload).isEmpty)
+    #expect(otherInbox.updates.count == viewsBefore)
+    // The final reply of the bound run still waits, so the settled run of the other tool left it.
+    let pending = messages.receivedFinal(ofRun: Self.runToken, by: own, text: Self.reply)
+    #expect(!pending.isEmpty)
   }
 }

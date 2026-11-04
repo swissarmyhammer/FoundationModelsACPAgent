@@ -73,14 +73,14 @@ import Testing
   /// The record of a message that `send agent` mailed to the child.
   private static func toChild(_ mail: MailID, child: SessionId) -> SentMessageRecord {
     SentMessageRecord(
-      mailId: mail.value.description, direction: .toChild, receiverRunId: child.rawValue,
+      mailId: mail.value.description, receiver: .run(id: child.rawValue),
       receiverSessionId: child.rawValue)
   }
 
   /// The record of a message that `send caller` mailed to the caller.
   private static func toCaller(_ mail: MailID, caller: SessionId) -> SentMessageRecord {
     SentMessageRecord(
-      mailId: mail.value.description, direction: .toCaller, receiverRunId: nil,
+      mailId: mail.value.description, receiver: .caller,
       receiverSessionId: caller.rawValue)
   }
 
@@ -99,12 +99,13 @@ import Testing
   }
 
   @Test("send agent sends no incoming view before the child received the mail")
-  func sendAgentSendsNoIncomingViewEarly() {
+  func sendAgentSendsNoIncomingViewEarly() throws {
     let pair = Pair()
 
     pair.sent(
       Self.toChild(MailID(), child: pair.child), from: pair.caller, text: Self.text)
 
+    _ = try #require(pair.callerInbox.messages.first)
     #expect(pair.childInbox.updates.isEmpty)
   }
 
@@ -156,12 +157,16 @@ import Testing
   }
 
   @Test("a receipt of a mail that nobody sent sends nothing")
-  func aReceiptOfAnUnknownMailSendsNothing() {
+  func aReceiptOfAnUnknownMailSendsNothing() throws {
     let pair = Pair()
+    pair.sent(Self.toChild(MailID(), child: pair.child), from: pair.caller, text: Self.text)
+    let before = pair.callerInbox.updates.count
 
     pair.delivered(MailID(), to: pair.child)
 
-    #expect(pair.callerInbox.updates.isEmpty && pair.childInbox.updates.isEmpty)
+    _ = try #require(pair.callerInbox.messages.first)
+    #expect(pair.callerInbox.updates.count == before)
+    #expect(pair.childInbox.updates.isEmpty)
   }
 
   @Test("a second receipt of the same mail sends no second incoming view")
@@ -202,12 +207,14 @@ import Testing
   }
 
   @Test("a message of a run waits for the bind of its token")
-  func aRunMessageWaitsForTheBind() {
+  func aRunMessageWaitsForTheBind() throws {
     let pair = Pair()
 
     pair.message(fromRun: "TOKEN", key: "mail-1", text: Self.text)
 
     #expect(pair.callerInbox.updates.isEmpty && pair.childInbox.updates.isEmpty)
+    pair.projector.bind(token: "TOKEN", child: pair.child, caller: pair.caller)
+    _ = try #require(pair.callerInbox.messages.first)
   }
 
   @Test("the bind sends the views of a message that came before it")
@@ -274,13 +281,14 @@ import Testing
   }
 
   @Test("a detached session gets no view")
-  func aDetachedSessionGetsNoView() {
+  func aDetachedSessionGetsNoView() throws {
     let pair = Pair()
     pair.projector.bind(token: "TOKEN", child: pair.child, caller: pair.caller)
     pair.projector.detach(pair.child)
 
     pair.message(fromRun: "TOKEN", key: "mail-1", text: Self.text)
 
+    _ = try #require(pair.callerInbox.messages.first)
     #expect(pair.childInbox.updates.isEmpty)
   }
 
@@ -343,13 +351,15 @@ import Testing
   }
 
   @Test("the journal of the end sends no incoming view before the end of the run")
-  func theJournalBeforeTheEndSendsNothingYet() {
+  func theJournalBeforeTheEndSendsNothingYet() throws {
     let pair = Pair()
     pair.projector.bind(token: "TOKEN", child: pair.child, caller: pair.caller)
 
     pair.receivedFinal(ofRun: "TOKEN", text: Self.report)
 
     #expect(pair.callerInbox.updates.isEmpty)
+    pair.projector.finalReply(ofRun: "TOKEN", text: Self.reply)
+    _ = try #require(pair.callerInbox.messages.first)
   }
 
   @Test("the end of a run after the journal sends both views")
@@ -378,11 +388,15 @@ import Testing
   }
 
   @Test("the end of a run that is not bound sends nothing")
-  func theEndOfAnUnboundRunSendsNothing() {
+  func theEndOfAnUnboundRunSendsNothing() throws {
     let pair = Pair()
+    pair.projector.bind(token: "BOUND", child: pair.child, caller: pair.caller)
+    pair.projector.finalReply(ofRun: "BOUND", text: Self.reply)
+    _ = try #require(pair.childInbox.messages.first)
+    let before = pair.childInbox.updates.count
 
     pair.projector.finalReply(ofRun: "TOKEN", text: Self.reply)
 
-    #expect(pair.childInbox.updates.isEmpty)
+    #expect(pair.childInbox.updates.count == before)
   }
 }

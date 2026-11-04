@@ -50,7 +50,9 @@ import Testing
   @Test("remove of an unknown key returns nothing")
   func removeOfAnUnknownKeyReturnsNothing() {
     var table = BoundedTable<Int>(limit: Self.limit)
+    table.store(1, for: "b")
 
     #expect(table.remove("a") == nil)
+    #expect(table["b"] == 1)
   }
 }
