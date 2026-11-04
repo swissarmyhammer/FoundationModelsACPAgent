@@ -149,6 +149,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   /// - Parameters:
   ///   - label: The directory label of the calling test.
   ///   - script: The steps of each scripted pass.
+  ///   - loader: The model loader, or `nil` (the default) to play `script` in every pass.
   ///   - inlineSettleGrace: The settle period of the context.
   ///   - configure: The mutation that shapes the configuration.
   /// - Returns: The context.
@@ -156,6 +157,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   static func makeContext(
     label: String,
     script: [ScriptedPassStep] = [.endPass],
+    loader: StubModelLoader? = nil,
     inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
     runClock: (any RunClock)? = nil,
     configure: (inout AgentConfiguration) -> Void = { _ in }
@@ -167,7 +169,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     configuration.tools.codeContext = .disabled
     configure(&configuration)
     let cacheDirectory = makeResolvedDirectory(label: "AgentsToolTests-\(label)-cache")
-    let loader = makeScriptedModelLoader(script: script)
+    let loader = loader ?? makeScriptedModelLoader(script: script)
     let profile =
       if let runClock {
         try await makeStubProfile(
@@ -510,23 +512,105 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   @Test
   func aSlowRunGoesToTheBackgroundAndItsFinalMessageComesAsMailOneTime() async throws {
     let hold = ScriptedHold()
-    let context = try await Self.makeContext(
-      label: "slow", script: Self.startAgentScript(hold: hold),
-      inlineSettleGrace: 0, runClock: ManualRunClock())
+    try await Self.proveASlowRunSettlesAsMail(
+      label: "slow", loader: makeScriptedModelLoader(script: Self.startAgentScript(hold: hold))
+    ) {
+      hold.release()
+    }
+  }
+
+  /// The same proof as
+  /// ``aSlowRunGoesToTheBackgroundAndItsFinalMessageComesAsMailOneTime()``,
+  /// but the slow run waits at a `gate` step on a named pipe. The root
+  /// session must go on and end while the run waits at the pipe, and the
+  /// byte that the test writes into the pipe lets the run end (task
+  /// ^js730ph).
+  @Test(.timeLimit(.minutes(1)))
+  func aSlowRunThatWaitsAtANamedPipeGoesToTheBackgroundAndItsFinalMessageComesAsMail()
+    async throws
+  {
+    try await Self.proveASlowRunAtANamedPipeSettlesAsMail(label: "gate")
+  }
+
+  /// The same proof as
+  /// ``aSlowRunThatWaitsAtANamedPipeGoesToTheBackgroundAndItsFinalMessageComesAsMail()``
+  /// with a settle period of the real clock. The call of the root session
+  /// waits for the period and then gives the pending envelope, while the run
+  /// still waits at the pipe (task ^js730ph).
+  @Test(.timeLimit(.minutes(1)))
+  func aSlowRunAtANamedPipeGivesThePendingEnvelopeAfterTheRealSettlePeriod() async throws {
+    try await Self.proveASlowRunAtANamedPipeSettlesAsMail(
+      label: "gate-settle", inlineSettleGrace: Self.shortSettlePeriod, runClock: nil)
+  }
+
+  /// Makes a named pipe and a model whose slow run waits at it, and proves
+  /// that the slow run settles as mail after a byte went into the pipe.
+  ///
+  /// - Parameters:
+  ///   - label: The directory label of the calling test.
+  ///   - inlineSettleGrace: The settle period of the context. Zero by default.
+  ///   - runClock: The clock of the runs. A manual clock by default.
+  /// - Throws: Whatever the fixtures or the write into the pipe throw.
+  private static func proveASlowRunAtANamedPipeSettlesAsMail(
+    label: String, inlineSettleGrace: TimeInterval = 0,
+    runClock: (any RunClock)? = ManualRunClock()
+  ) async throws {
+    let gateName = "gate"
+    let directory = try NamedPipe.makeDirectory(holding: gateName, label: "AgentsToolTests-\(label)")
+    let pipe = directory.appendingPathComponent(gateName)
+    // Sessions, not one script for every pass: the mail that the root session
+    // gets later has the run prompt in it, and a script for every pass would
+    // make that pass wait at the pipe a second time.
+    let stubScript = ScriptedStubScript(sessions: [
+      ScriptedStubScript.Session(
+        promptContains: slowRunPrompt,
+        passes: [[.gate(path: pipe.path), .textDelta(slowFinalText), .endPass]]),
+      ScriptedStubScript.Session(
+        promptContains: rootSlowPrompt,
+        passes: [[startAgentCall(agent: slowAgent, prompt: slowRunPrompt), .endPass]]),
+    ])
+    let loader = StubModelLoader { _ in
+      ScriptedLLMContainer(playbook: .sessions(stubScript))
+    }
+    try await proveASlowRunSettlesAsMail(
+      label: label, loader: loader, inlineSettleGrace: inlineSettleGrace, runClock: runClock
+    ) {
+      try await NamedPipe.write("go", toPipeAt: pipe)
+    }
+  }
+
+  /// Plays the root prompt of the slow run. The
+  /// root session must get the pending envelope while the slow run waits.
+  /// After `release` lets the run end, its final message must come as mail
+  /// one time.
+  ///
+  /// - Parameters:
+  ///   - label: The directory label of the calling test.
+  ///   - loader: The model loader whose script plays the root session and the slow run.
+  ///   - inlineSettleGrace: The settle period of the context. Zero by default.
+  ///   - runClock: The clock of the runs. A manual clock by default, that the test never advances.
+  ///   - release: Lets the waiting slow run end.
+  /// - Throws: Whatever the fixtures or `release` throw.
+  private static func proveASlowRunSettlesAsMail(
+    label: String, loader: StubModelLoader, inlineSettleGrace: TimeInterval = 0,
+    runClock: (any RunClock)? = ManualRunClock(), release: () async throws -> Void
+  ) async throws {
+    let context = try await makeContext(
+      label: label, loader: loader, inlineSettleGrace: inlineSettleGrace, runClock: runClock)
     let surface = try await SurfaceCatalog.sessionSurface(context: context)
-    let session = Self.makeRootSession(surface: surface, context: context)
+    let session = makeRootSession(surface: surface, context: context)
 
-    _ = try await session.respond(to: Self.rootSlowPrompt, maxTokens: nil)
+    _ = try await session.respond(to: rootSlowPrompt, maxTokens: nil)
 
-    let output = try #require(Self.agentsToolOutputs(in: await session.transcript).first)
-    #expect(!output.contains(Self.slowFinalText))
-    #expect(output.contains(Self.pendingMarker), "\(output)")
-    hold.release()
+    let output = try #require(agentsToolOutputs(in: await session.transcript).first)
+    #expect(!output.contains(slowFinalText))
+    #expect(output.contains(pendingMarker), "\(output)")
+    try await release()
     // The open run counts as work. So the idle comes after the run ended.
     // It also comes after the answer of its mail.
     #expect(await session.awaitIdle())
-    let mail = Self.promptTexts(in: await session.transcript).filter {
-      $0.contains(Self.slowFinalText)
+    let mail = promptTexts(in: await session.transcript).filter {
+      $0.contains(slowFinalText)
     }
     #expect(mail.count == 1)
     await session.close()
