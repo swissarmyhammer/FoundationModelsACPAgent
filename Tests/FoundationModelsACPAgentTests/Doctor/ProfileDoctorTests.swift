@@ -139,9 +139,7 @@ struct ProfileDoctorTests {
       configuration: Self.configuration(standard: Self.malformedReference)
     ).runHealthChecks()
 
-    let errors = checks.findings(.error)
-    let failure = try #require(errors.first)
-    #expect(errors.count == Self.oneFinding)
+    let failure = try checks.singleFinding(.error)
     #expect(failure.name.contains(Self.standardKey))
     #expect(failure.message.contains(Self.malformedReference.stringValue))
     #expect(failure.fix != nil)
@@ -174,10 +172,8 @@ struct ProfileDoctorTests {
 
     let checks = await Self.doctor(resolver: resolver).runHealthChecks()
 
-    let errors = checks.findings(.error)
-    let failure = try #require(errors.first)
+    let failure = try checks.singleFinding(.error)
     let fix = try #require(failure.fix)
-    #expect(errors.count == Self.oneFinding)
     #expect(failure.name.contains(Self.standardKey))
     #expect(failure.message.contains(reference.stringValue))
     #expect(fix.contains(Self.editCommand))
@@ -194,9 +190,7 @@ struct ProfileDoctorTests {
 
     let checks = await Self.doctor(resolver: resolver).runHealthChecks()
 
-    let warnings = checks.findings(.warning)
-    let warning = try #require(warnings.first)
-    #expect(warnings.count == Self.oneFinding)
+    let warning = try checks.singleFinding(.warning)
     #expect(warning.message.contains(Self.unreachableReason))
     #expect(warning.fix != nil)
     #expect(checks.findings(.error).isEmpty)
@@ -219,9 +213,7 @@ struct ProfileDoctorTests {
     ).runHealthChecks()
     await resolver.lateAnswers.open()
 
-    let warnings = checks.findings(.warning)
-    let warning = try #require(warnings.first)
-    #expect(warnings.count == Self.oneFinding)
+    let warning = try checks.singleFinding(.warning)
     #expect(warning.message.contains(reference.stringValue))
     #expect(warning.fix != nil)
   }
@@ -267,10 +259,8 @@ struct ProfileDoctorTests {
   @Test func aMemoryFigureBelowTheFloorGivesOneErrorWithBothFigures() async throws {
     let checks = await Self.doctor(memoryBytes: Self.smallMemoryBytes).runHealthChecks()
 
-    let errors = checks.findings(.error)
-    let failure = try #require(errors.first)
+    let failure = try checks.singleFinding(.error)
     let fix = try #require(failure.fix)
-    #expect(errors.count == Self.oneFinding)
     #expect(failure.message.contains(Self.smallMemoryText))
     #expect(failure.message.contains(Self.memoryFloorText))
     #expect(fix.contains(Self.standardKey))
@@ -287,9 +277,7 @@ struct ProfileDoctorTests {
       resolver: resolver, freeDiskBytes: Self.smallDiskBytes
     ).runHealthChecks()
 
-    let errors = checks.findings(.error)
-    let failure = try #require(errors.first)
-    #expect(errors.count == Self.oneFinding)
+    let failure = try checks.singleFinding(.error)
     #expect(failure.message.contains(Self.smallDiskText))
     #expect(failure.message.contains(Self.wholeDownloadText))
     #expect(failure.fix != nil)
@@ -306,10 +294,8 @@ struct ProfileDoctorTests {
 
     let checks = await Self.doctor(configuration: configuration).runHealthChecks()
 
-    let warnings = checks.findings(.warning)
-    let warning = try #require(warnings.first)
+    let warning = try checks.singleFinding(.warning)
     let fix = try #require(warning.fix)
-    #expect(warnings.count == Self.oneFinding)
     #expect(warning.name.contains(Self.flashKey))
     #expect(warning.message.contains(Self.mtpReference.stringValue))
     #expect(fix.contains(Self.drafterWord))
@@ -340,9 +326,7 @@ struct ProfileDoctorTests {
       resolver: resolver
     ).runHealthChecks()
 
-    let errors = checks.findings(.error)
-    let failure = try #require(errors.first)
-    #expect(errors.count == Self.oneFinding)
+    let failure = try checks.singleFinding(.error)
     #expect(failure.name.contains(Self.standardDrafterKey))
     #expect(failure.message.contains(Self.missingDrafter.stringValue))
   }

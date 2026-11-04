@@ -149,18 +149,13 @@ struct OutOfProcessTests {
   private static func runGatedAgentCLI(
     label: String, signalCount: Int, observed: ObservedAgents
   ) async throws -> SignalledExecutableRun {
-    let gated = try TierThreeFixture.gatedStubModel(label: label)
-    return try await SignalledExecutableRun.run(
-      executableNamed: TierThreeFixture.stubAgentExecutableName,
+    try await TierThreeFixture.runGatedStubAgent(
       arguments: [runSubcommand, outOfProcessFlag, gatedPromptText],
-      workspace: makeResolvedDirectory(label: "\(label)-repo"),
-      configHome: makeResolvedDirectory(label: "\(label)-config"),
-      environment: gated.environment,
+      label: label,
+      signalCount: signalCount,
       atFirstOutput: { runIdentifier in
         try await observed.record(ProcessCensus.agentsServingACP(startedBy: runIdentifier))
-      },
-      signalCount: signalCount,
-      chunkGate: gated.gate)
+      })
   }
 
   // MARK: - The contract

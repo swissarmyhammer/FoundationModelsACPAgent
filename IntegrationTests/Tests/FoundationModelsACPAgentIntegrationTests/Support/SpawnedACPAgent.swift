@@ -166,7 +166,13 @@ struct SpawnedACPAgent {
     // A write to the stdin of a child that ended raises `SIGPIPE`, and that
     // signal ends this whole test process. With the flag the write fails
     // with `EPIPE` instead.
-    _ = fcntl(inputPipe.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
+    let noSigPipeResult = fcntl(
+      inputPipe.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
+    if noSigPipeResult == -1 {
+      let failure = errno
+      RunReport.write("SpawnedACPAgent: F_SETNOSIGPIPE failed, errno \(failure)")
+      assertionFailure("F_SETNOSIGPIPE failed with errno \(failure)")
+    }
     let exit = ProcessExitEvent(watching: process)
     try process.run()
 

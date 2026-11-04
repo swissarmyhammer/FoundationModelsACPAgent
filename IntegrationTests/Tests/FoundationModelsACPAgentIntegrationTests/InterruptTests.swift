@@ -52,15 +52,8 @@ struct InterruptTests {
   private static func runAgentCLI(
     signalCount: Int, label: String
   ) async throws -> SignalledExecutableRun {
-    let gated = try TierThreeFixture.gatedStubModel(label: label)
-    return try await SignalledExecutableRun.run(
-      executableNamed: TierThreeFixture.stubAgentExecutableName,
-      arguments: ["run", Self.prompt],
-      workspace: makeResolvedDirectory(label: "\(label)-repo"),
-      configHome: makeResolvedDirectory(label: "\(label)-config"),
-      environment: gated.environment,
-      signalCount: signalCount,
-      chunkGate: gated.gate)
+    try await TierThreeFixture.runGatedStubAgent(
+      arguments: ["run", Self.prompt], label: label, signalCount: signalCount)
   }
 
   // MARK: - The contract

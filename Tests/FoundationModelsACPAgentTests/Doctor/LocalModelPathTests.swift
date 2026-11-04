@@ -111,9 +111,8 @@ struct LocalModelPathTests {
 
     let checks = await Self.findings(embedding: ModelRef(repo: missing.path))
 
-    let errors = checks.filter { $0.status == .error }
-    #expect(errors.count == 1)
-    #expect(errors.first?.fix != nil)
+    let failure = try checks.singleFinding(.error)
+    #expect(failure.fix != nil)
   }
 
   @Test func aPathWithAnAtSignIsAnError() async throws {

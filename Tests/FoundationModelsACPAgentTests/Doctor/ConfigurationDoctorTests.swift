@@ -30,9 +30,6 @@ struct ConfigurationDoctorTests {
   /// The command a load failure names.
   private static let loadFixCommand = "config show"
 
-  /// The number of findings a test that expects exactly one gets.
-  private static let oneFinding = 1
-
   /// The reference name of the secret reference cases.
   private static let referenceName = "doctor-tavily-key"
 
@@ -113,10 +110,8 @@ struct ConfigurationDoctorTests {
 
     let checks = try await Self.checks(in: fixture)
 
-    let errors = checks.findings(.error)
-    let failure = try #require(errors.first)
+    let failure = try checks.singleFinding(.error)
     let fix = try #require(failure.fix)
-    #expect(errors.count == Self.oneFinding)
     #expect(failure.message.contains(Self.unknownKeyName))
     #expect(fix.contains(Self.loadFixCommand))
   }
@@ -132,10 +127,8 @@ struct ConfigurationDoctorTests {
 
     let checks = try await Self.checks(in: fixture)
 
-    let warnings = checks.findings(.warning)
-    let warning = try #require(warnings.first)
+    let warning = try checks.singleFinding(.warning)
     let fix = try #require(warning.fix)
-    #expect(warnings.count == Self.oneFinding)
     #expect(warning.message.contains(Self.unknownSectionName))
     #expect(fix.contains(Self.unknownSectionName))
     #expect(fix.contains(ConfigurationLoader.configFileName))
@@ -152,10 +145,8 @@ struct ConfigurationDoctorTests {
 
     let checks = try await Self.checks(in: fixture)
 
-    let warnings = checks.findings(.warning)
-    let warning = try #require(warnings.first)
+    let warning = try checks.singleFinding(.warning)
     let fix = try #require(warning.fix)
-    #expect(warnings.count == Self.oneFinding)
     #expect(warning.message.contains(Self.referenceName))
     #expect(warning.message.contains(Self.referenceKeyPath))
     #expect(fix.contains(Self.referenceName))
@@ -170,10 +161,8 @@ struct ConfigurationDoctorTests {
 
     let checks = try await Self.checks(in: fixture, secretStore: FailingSecretStore())
 
-    let warnings = checks.findings(.warning)
-    let warning = try #require(warnings.first)
+    let warning = try checks.singleFinding(.warning)
     let fix = try #require(warning.fix)
-    #expect(warnings.count == Self.oneFinding)
     #expect(warning.message.contains(Self.lookupFailedText))
     #expect(!warning.message.contains(Self.noItemText))
     #expect(warning.message.contains(Self.referenceName))
@@ -221,10 +210,8 @@ struct ConfigurationDoctorTests {
     let checks = try await Self.checks(in: fixture)
     try setPermissions(ownerOnlyPermissions, of: fixture.projectDirectory)
 
-    let errors = checks.findings(.error)
-    let failure = try #require(errors.first)
+    let failure = try checks.singleFinding(.error)
     let fix = try #require(failure.fix)
-    #expect(errors.count == Self.oneFinding)
     #expect(failure.message.contains(fixture.projectDirectory.path))
     #expect(fix.contains(Self.permissionCommand))
     #expect(fix.contains(fixture.projectDirectory.path))

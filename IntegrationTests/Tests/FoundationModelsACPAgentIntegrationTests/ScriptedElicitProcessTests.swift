@@ -83,8 +83,7 @@ struct ScriptedElicitProcessTests {
     let file = try TierThreeFixture.writeStubScript(script, label: label)
     let drive = try await SpawnedAgentPromptDrive.run(
       label: label,
-      environment: try TierThreeFixture.makeOfflineDefaultsEnvironment()
-        .merging([TierThreeFixture.stubScriptVariable: file.path]) { _, script in script },
+      environment: try TierThreeFixture.stubScriptEnvironment(file: file),
       promptText: rootPrompt,
       answeringQuestionWith: { session in
         let pending = await PendingQuestionWait.first(in: session)
@@ -161,8 +160,7 @@ struct ScriptedElicitProcessTests {
       arguments: ["run", "--verbose", Self.rootPrompt],
       workspace: workspace,
       configHome: makeResolvedDirectory(label: "ScriptedElicitProcessTests-bad-config"),
-      environment: try TierThreeFixture.makeOfflineDefaultsEnvironment()
-        .merging([TierThreeFixture.stubScriptVariable: file.path]) { _, script in script })
+      environment: try TierThreeFixture.stubScriptEnvironment(file: file))
 
     #expect(run.exitCode == Self.errorExitCode, "stderr: \(run.standardError)")
     #expect(run.standardError.contains("elicit"), "stderr: \(run.standardError)")

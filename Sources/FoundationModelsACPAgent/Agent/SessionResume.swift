@@ -159,9 +159,12 @@ extension RoutedACPAgent {
     let workingDirectory = try SessionSetup.validatedWorkingDirectory(
       path: params.cwd.rawValue, field: .cwd)
     guard let rootId = ULID(ulidString: params.sessionId.rawValue) else {
+      warnRefusedResume(
+        "The session id of the resume is not a recorded session id. The agent refuses the resume.",
+        sessionId: params.sessionId)
       throw RequestError.unknownSession(id: params.sessionId)
     }
-    let replayCursor = try Self.replayCursor(of: params)
+    let replayCursor = try replayCursor(of: params)
 
     let context = try await loadSessionContext(workingDirectory: workingDirectory)
     try requireRecordedWorkingDirectory(
@@ -245,8 +248,10 @@ extension RoutedACPAgent {
 
   // MARK: - The pre-checks
 
-  /// Records that the agent refuses a resume. Each refusal of the pre-checks
-  /// writes the same record, with the session id as its only metadata.
+  /// Records that the agent refuses a resume. Each refusal of the
+  /// pre-checks (an owned session, an unknown replay cursor, an unknown
+  /// session id, a recording with no such session and a cwd mismatch) writes the same record, with the session id
+  /// as its only metadata.
   ///
   /// - Parameters:
   ///   - message: Why the agent refuses the resume.
@@ -283,13 +288,16 @@ extension RoutedACPAgent {
   /// - Returns: The cursor, or `nil`.
   /// - Throws: ``RequestError/unknownReplayCursor(_:)`` for a cursor
   ///   type this agent cannot honor.
-  private static func replayCursor(of params: ResumeSessionRequest) throws -> ReplayCursor? {
+  private func replayCursor(of params: ResumeSessionRequest) throws -> ReplayCursor? {
     switch params.replayFrom {
     case nil:
       return nil
     case .start:
       return .start
     case .unknown(let type, _):
+      warnRefusedResume(
+        "The resume names a replay cursor type that this agent cannot honor. The agent refuses the resume.",
+        sessionId: params.sessionId)
       throw RequestError.unknownReplayCursor(type)
     }
   }
@@ -318,6 +326,9 @@ extension RoutedACPAgent {
       recorded = try residentProfile.standard.recordedWorkingDirectory(
         ofSession: rootId, recordingRoot: transcriptRoot)
     } catch TranscriptTreeError.sessionNotFound {
+      warnRefusedResume(
+        "The recording holds no session with the id of the resume. The agent refuses the resume.",
+        sessionId: sessionId)
       throw RequestError.unknownSession(id: sessionId)
     }
     let recordedPath = recorded.standardizedFileURL.path

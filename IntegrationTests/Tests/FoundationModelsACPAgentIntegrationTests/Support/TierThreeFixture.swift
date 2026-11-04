@@ -104,6 +104,17 @@ enum TierThreeFixture {
     return file
   }
 
+  /// The environment of a stub run over a script file: the offline defaults
+  /// layer, and the pair that names `file` as the script of the stub model.
+  ///
+  /// - Parameter file: The script file (``writeStubScript(_:label:)``).
+  /// - Returns: The environment pairs to give a spawned run.
+  /// - Throws: The directory-creation or write error.
+  static func stubScriptEnvironment(file: URL) throws -> [String: String] {
+    try makeOfflineDefaultsEnvironment()
+      .merging([stubScriptVariable: file.path]) { _, script in script }
+  }
+
   /// Makes the named pipe of a chunk gate in a fresh directory, and the
   /// environment pair that names it to the stub binary. The run
   /// (``SignalledExecutableRun``) holds the write end, so a prompt stays
@@ -118,6 +129,39 @@ enum TierThreeFixture {
     let gate = makeResolvedDirectory(label: "\(label)-gate").appendingPathComponent("chunks")
     try StubChunkGateWriter.makePipe(at: gate)
     return (gate, [stubChunkGateVariable: gate.path])
+  }
+
+  /// Runs the built `acp-agent-stub` over the gated stub model, in fresh
+  /// directories, and sends `signalCount` interrupts once its first answer
+  /// bytes arrive. The gate holds the prompt after its first chunk, so each
+  /// signal lands inside the prompt.
+  ///
+  /// - Parameters:
+  ///   - arguments: The command-line arguments for the agent.
+  ///   - label: The directory label, so a leftover directory says where it
+  ///     came from.
+  ///   - signalCount: How many `SIGINT`s to send. Zero runs the prompt to
+  ///     its end.
+  ///   - atFirstOutput: What to do once the child has written its first
+  ///     stdout byte, with the child's process identifier.
+  /// - Returns: The finished run.
+  /// - Throws: The wait, locator or spawn error, or what `atFirstOutput` throws.
+  static func runGatedStubAgent(
+    arguments: [String],
+    label: String,
+    signalCount: Int,
+    atFirstOutput: @Sendable (pid_t) async throws -> Void = { _ in }
+  ) async throws -> SignalledExecutableRun {
+    let gated = try gatedStubModel(label: label)
+    return try await SignalledExecutableRun.run(
+      executableNamed: stubAgentExecutableName,
+      arguments: arguments,
+      workspace: makeResolvedDirectory(label: "\(label)-repo"),
+      configHome: makeResolvedDirectory(label: "\(label)-config"),
+      environment: gated.environment,
+      atFirstOutput: atFirstOutput,
+      signalCount: signalCount,
+      chunkGate: gated.gate)
   }
 
   /// The user-layer `config.yaml` the spawned agent resolves its

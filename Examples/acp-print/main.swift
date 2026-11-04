@@ -38,6 +38,16 @@ let argumentCountWithDefaultAgent = 2
 /// the binary path, the flag, the name of the agent and the prompt.
 let argumentCountWithNamedAgent = 4
 
+/// The position of the agent flag in the command-line arguments.
+let agentFlagIndex = 1
+
+/// The position of the agent executable name in the command-line arguments
+/// of an invocation with the agent flag.
+let agentNameIndex = 2
+
+/// The prompt is always the last command-line argument.
+let promptIndexFromEnd = 1
+
 /// The client name `initialize` reports to the agent.
 let clientName = "acp-print"
 
@@ -57,7 +67,7 @@ let clientCapabilities = ClientCapabilities()
 ///
 /// - Parameter message: The line to write.
 func logToStandardError(_ message: String) {
-    FileHandle.standardError.write(Data((message + "\n").utf8))
+  FileHandle.standardError.write(Data((message + "\n").utf8))
 }
 
 // MARK: - The answer stream
@@ -65,11 +75,11 @@ func logToStandardError(_ message: String) {
 /// One input of the answer stream: an update of the session, or the
 /// `messageId` of the own prompt from the `session/prompt` response.
 enum AnswerInput: Sendable {
-    /// One `session/update` of the session.
-    case update(SessionUpdate)
+  /// One `session/update` of the session.
+  case update(SessionUpdate)
 
-    /// The `messageId` of the own prompt.
-    case ownMessage(MessageId)
+  /// The `messageId` of the own prompt.
+  case ownMessage(MessageId)
 }
 
 /// Consumes the session's updates: writes each agent message chunk's text
@@ -92,37 +102,37 @@ enum AnswerInput: Sendable {
 ///   idle update after the own echo — the connection died before the
 ///   prompt ended.
 func streamAnswer(from inputs: AsyncStream<AnswerInput>) async -> StopReason? {
-    var wroteText = false
-    var endedWithNewline = false
-    var ownMessageId: MessageId?
-    var echoes: [MessageId] = []
-    var idlesAfterEcho: [MessageId: StopReason?] = [:]
-    for await input in inputs {
-        switch input {
-        case .ownMessage(let messageId):
-            ownMessageId = messageId
-        case .update(.agentMessageChunk(let chunk)):
-            guard case .text(let content) = chunk.content else { break }
-            FileHandle.standardOutput.write(Data(content.text.utf8))
-            wroteText = true
-            endedWithNewline = content.text.hasSuffix("\n")
-        case .update(.userMessage(let echo)):
-            echoes.append(echo.messageId)
-        case .update(.stateUpdate(.idle(let idle))):
-            for messageId in echoes where idlesAfterEcho[messageId] == nil {
-                idlesAfterEcho[messageId] = .some(idle.stopReason)
-            }
-        case .update:
-            break
-        }
-        if let ownMessageId, let stopReason = idlesAfterEcho[ownMessageId] {
-            if wroteText && !endedWithNewline {
-                FileHandle.standardOutput.write(Data("\n".utf8))
-            }
-            return stopReason
-        }
+  var wroteText = false
+  var endedWithNewline = false
+  var ownMessageId: MessageId?
+  var echoes: [MessageId] = []
+  var idlesAfterEcho: [MessageId: StopReason?] = [:]
+  for await input in inputs {
+    switch input {
+    case .ownMessage(let messageId):
+      ownMessageId = messageId
+    case .update(.agentMessageChunk(let chunk)):
+      guard case .text(let content) = chunk.content else { break }
+      FileHandle.standardOutput.write(Data(content.text.utf8))
+      wroteText = true
+      endedWithNewline = content.text.hasSuffix("\n")
+    case .update(.userMessage(let echo)):
+      echoes.append(echo.messageId)
+    case .update(.stateUpdate(.idle(let idle))):
+      for messageId in echoes where idlesAfterEcho[messageId] == nil {
+        idlesAfterEcho[messageId] = .some(idle.stopReason)
+      }
+    case .update:
+      break
     }
-    return nil
+    if let ownMessageId, let stopReason = idlesAfterEcho[ownMessageId] {
+      if wroteText && !endedWithNewline {
+        FileHandle.standardOutput.write(Data("\n".utf8))
+      }
+      return stopReason
+    }
+  }
+  return nil
 }
 
 // MARK: - The one-shot turn
@@ -143,75 +153,75 @@ func streamAnswer(from inputs: AsyncStream<AnswerInput>) async -> StopReason? {
 ///   refusal, a cancellation, or an error.
 @MainActor
 func runOneShotTurn(prompt: String, agentCommand: String) async -> Int32 {
-    do {
-        let agent = try AgentProcess(command: agentCommand, arguments: ["acp"])
-        defer { agent.shutdown() }
-        let model = ConnectionModel()
-        let connection = await model.connect(over: agent.transport, logger: .standardError)
+  do {
+    let agent = try AgentProcess(command: agentCommand, arguments: ["acp"])
+    defer { agent.shutdown() }
+    let model = ConnectionModel()
+    let connection = await model.connect(over: agent.transport, logger: .standardError)
 
-        _ = try await connection.initialize(
-            InitializeRequest(
-                info: Implementation(name: clientName, version: clientVersion),
-                protocolVersion: ACPClient.supportedProtocolVersion,
-                capabilities: clientCapabilities))
+    _ = try await connection.initialize(
+      InitializeRequest(
+        info: Implementation(name: clientName, version: clientVersion),
+        protocolVersion: ACPClient.supportedProtocolVersion,
+        capabilities: clientCapabilities))
 
-        // The process working directory is always absolute, and the wire
-        // type carries the string as sent, so there is nothing to refuse
-        // here. The agent judges the path: `cwd` must be absolute, and it
-        // is part of the root set of the session.
-        let cwd = AbsolutePath(rawValue: FileManager.default.currentDirectoryPath)
-        let session = try await connection.newSession(NewSessionRequest(cwd: cwd))
+    // The process working directory is always absolute, and the wire
+    // type carries the string as sent, so there is nothing to refuse
+    // here. The agent judges the path: `cwd` must be absolute, and it
+    // is part of the root set of the session.
+    let cwd = AbsolutePath(rawValue: FileManager.default.currentDirectoryPath)
+    let session = try await connection.newSession(NewSessionRequest(cwd: cwd))
 
-        // Subscribe before the prompt, so the stream holds each update of
-        // the prompt in order.
-        let updates = connection.subscribe(to: session.sessionId).updates
-        let (inputs, input) = AsyncStream.makeStream(of: AnswerInput.self)
-        let forwarder = Task {
-            for await case .update(let update) in updates {
-                input.yield(.update(update))
-            }
-            input.finish()
-        }
-        defer { forwarder.cancel() }
-        let answer = Task { await streamAnswer(from: inputs) }
-        do {
-            let response = try await connection.prompt(
-                PromptRequest(prompt: [.text(TextContent(text: prompt))], sessionId: session.sessionId)
-            )
-            input.yield(.ownMessage(response.messageId))
-        } catch {
-            answer.cancel()
-            _ = await answer.value
-            await connection.close()
-            logToStandardError("the prompt turn failed: \(error)")
-            return EXIT_FAILURE
-        }
-
-        let stopReason = await answer.value
-        await connection.close()
-        guard let stopReason else {
-            logToStandardError("the connection ended before the prompt reached an idle state")
-            return EXIT_FAILURE
-        }
-        logToStandardError("stop reason: \(stopReason.wireValue)")
-        return stopReason == .endTurn ? EXIT_SUCCESS : EXIT_FAILURE
-    } catch {
-        logToStandardError("acp-print failed: \(error)")
-        return EXIT_FAILURE
+    // Subscribe before the prompt, so the stream holds each update of
+    // the prompt in order.
+    let updates = connection.subscribe(to: session.sessionId).updates
+    let (inputs, input) = AsyncStream.makeStream(of: AnswerInput.self)
+    let forwarder = Task {
+      for await case .update(let update) in updates {
+        input.yield(.update(update))
+      }
+      input.finish()
     }
+    defer { forwarder.cancel() }
+    let answer = Task { await streamAnswer(from: inputs) }
+    do {
+      let response = try await connection.prompt(
+        PromptRequest(prompt: [.text(TextContent(text: prompt))], sessionId: session.sessionId)
+      )
+      input.yield(.ownMessage(response.messageId))
+    } catch {
+      answer.cancel()
+      _ = await answer.value
+      await connection.close()
+      logToStandardError("the prompt turn failed: \(error)")
+      return EXIT_FAILURE
+    }
+
+    let stopReason = await answer.value
+    await connection.close()
+    guard let stopReason else {
+      logToStandardError("the connection ended before the prompt reached an idle state")
+      return EXIT_FAILURE
+    }
+    logToStandardError("stop reason: \(stopReason.wireValue)")
+    return stopReason == .endTurn ? EXIT_SUCCESS : EXIT_FAILURE
+  } catch {
+    logToStandardError("acp-print failed: \(error)")
+    return EXIT_FAILURE
+  }
 }
 
 // MARK: - 1. The one positional prompt argument
 
 let arguments = CommandLine.arguments
 let namesAgent =
-    arguments.count == argumentCountWithNamedAgent && arguments[1] == agentFlag
+  arguments.count == argumentCountWithNamedAgent && arguments[agentFlagIndex] == agentFlag
 guard arguments.count == argumentCountWithDefaultAgent || namesAgent else {
-    logToStandardError("usage: acp-print [\(agentFlag) <agent executable>] <prompt>")
-    exit(EXIT_FAILURE)
+  logToStandardError("usage: acp-print [\(agentFlag) <agent executable>] <prompt>")
+  exit(EXIT_FAILURE)
 }
-let agentExecutableName = namesAgent ? arguments[2] : defaultAgentExecutableName
-let promptText = arguments[arguments.count - 1]
+let agentExecutableName = namesAgent ? arguments[agentNameIndex] : defaultAgentExecutableName
+let promptText = arguments[arguments.count - promptIndexFromEnd]
 
 // MARK: - 2. The sibling agent binary
 
@@ -219,17 +229,18 @@ let promptText = arguments[arguments.count - 1]
 // example executables into one products directory, so the agent stands
 // beside this binary.
 guard let ownExecutable = Bundle.main.executableURL else {
-    logToStandardError("acp-print cannot resolve its own executable path")
-    exit(EXIT_FAILURE)
+  logToStandardError("acp-print cannot resolve its own executable path")
+  exit(EXIT_FAILURE)
 }
 let agentCommand =
-    ownExecutable
-    .deletingLastPathComponent()
-    .appendingPathComponent(agentExecutableName)
-    .path
+  ownExecutable
+  .deletingLastPathComponent()
+  .appendingPathComponent(agentExecutableName)
+  .path
 guard FileManager.default.isExecutableFile(atPath: agentCommand) else {
-    logToStandardError("acp-print needs \(agentExecutableName) beside its own binary; none stands at \(agentCommand)")
-    exit(EXIT_FAILURE)
+  logToStandardError(
+    "acp-print needs \(agentExecutableName) beside its own binary; none stands at \(agentCommand)")
+  exit(EXIT_FAILURE)
 }
 
 // MARK: - 3. Run the turn and exit at the stop reason

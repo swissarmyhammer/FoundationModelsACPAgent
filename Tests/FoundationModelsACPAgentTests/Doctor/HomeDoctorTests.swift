@@ -15,9 +15,6 @@ struct HomeDoctorTests {
   /// root.
   private static let rowCount = 2
 
-  /// The number of findings a test that expects exactly one gets.
-  private static let oneFinding = 1
-
   /// The name of a folder that is not on disk yet.
   private static let missingFolderName = "not-yet"
 
@@ -63,9 +60,7 @@ struct HomeDoctorTests {
 
     let checks = await HomeDoctor(home: home).runHealthChecks()
 
-    let errors = checks.filter { $0.status == .error }
-    let failure = try #require(errors.first)
-    #expect(errors.count == Self.oneFinding)
+    let failure = try checks.singleFinding(.error)
     #expect(failure.message.contains(file.standardizedFileURL.path))
     #expect(failure.fix != nil)
   }

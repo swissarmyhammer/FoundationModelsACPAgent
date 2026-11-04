@@ -37,9 +37,16 @@ let skillTriggerDefaultRepeats = 1
 
 /// How many times each sample runs.
 var skillTriggerRepeats: Int {
-  guard let text = ProcessInfo.processInfo.environment[skillTriggerRepeatsVariable],
-    let count = Int(text), count > 0
-  else { return skillTriggerDefaultRepeats }
+  guard let text = ProcessInfo.processInfo.environment[skillTriggerRepeatsVariable] else {
+    return skillTriggerDefaultRepeats
+  }
+  guard let count = Int(text), count > 0 else {
+    RunReport.write(
+      "\(skillTriggerRepeatsVariable)=\(text) is not a positive integer; "
+        + "the default \(skillTriggerDefaultRepeats) is used")
+    assertionFailure("\(skillTriggerRepeatsVariable) must be a positive integer, got \(text)")
+    return skillTriggerDefaultRepeats
+  }
   return count
 }
 
@@ -129,11 +136,15 @@ struct SkillTriggerTests {
   /// asserts that the models left the pool.
   @Test("A live model loads the skill that fits the task")
   func aLiveModelLoadsTheSkillThatFitsTheTask() async throws {
-    for rate in try await Self.measureSelectedSamples() {
+    let rates = try await Self.measureSelectedSamples()
+    #expect(
+      !rates.isEmpty,
+      "no sample ran: the names in \(skillTriggerSamplesVariable) match no sample")
+    for rate in rates {
       let sample = rate.sample
       // The rate is the result of this suite, thus it goes to the
       // reader whether the bar passes or fails.
-      print("SKILL TRIGGER \(rate.line)")
+      RunReport.write("SKILL TRIGGER \(rate.line)")
       let message: Comment = """
         the model loaded `\(sample.expectedSkillID ?? "(none)")` for \
         `\(sample.name)` in \(rate.rate) of the runs, under the floor \

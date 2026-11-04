@@ -15,9 +15,6 @@ import Testing
 struct RuntimeDoctorTests {
   // MARK: - Constants
 
-  /// The number of findings a test that expects exactly one gets.
-  private static let oneFinding = 1
-
   /// The permissions of a directory that can be entered and written but
   /// not read, which is how a test makes a layer unreadable.
   private static let unreadablePermissions = NSNumber(value: 0o300)
@@ -99,10 +96,8 @@ struct RuntimeDoctorTests {
     let checks = try await Self.doctor(in: fixture).runHealthChecks()
     try setPermissions(ownerOnlyPermissions, of: layer)
 
-    let errors = checks.findings(.error)
-    let failure = try #require(errors.first)
+    let failure = try checks.singleFinding(.error)
     let fix = try #require(failure.fix)
-    #expect(errors.count == Self.oneFinding)
     #expect(failure.message.contains(layer.path))
     #expect(fix.contains(layer.path))
   }

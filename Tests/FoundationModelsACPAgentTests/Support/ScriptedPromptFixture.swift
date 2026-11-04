@@ -75,6 +75,44 @@ struct ScriptedPromptFixture {
     await harness.close()
   }
 
+  /// Closes the session of this fixture, which writes its history file, and
+  /// resumes the session in a second agent over the same working directory.
+  /// The resume asks for a replay from the start. The second agent closes
+  /// after `read`, also when `read` throws.
+  ///
+  /// - Parameters:
+  ///   - makeSecond: Wires the second fixture in the given working
+  ///     directory. The suites differ in the capabilities and in the model
+  ///     loader of the second agent.
+  ///   - read: What to read of the resumed fixture. It gets the fixture and
+  ///     the count of updates its collector held before the resume, so it
+  ///     can tell the replay from the updates of the setup.
+  /// - Returns: What `read` returned.
+  /// - Throws: Whatever the close, the construction, the resume or `read`
+  ///   throws.
+  func closeAndResume<Reading>(
+    makeSecond: (URL) async throws -> ScriptedPromptFixture,
+    read: (ScriptedPromptFixture, Int) async throws -> Reading
+  ) async throws -> Reading {
+    _ = try await harness.connection.closeSession(CloseSessionRequest(sessionId: sessionId))
+    await close()
+
+    let second = try await makeSecond(cwd)
+    let countBefore = await second.collector.updates.count
+    do {
+      _ = try await second.harness.connection.resumeSession(
+        ResumeSessionRequest(
+          cwd: AbsolutePath(rawValue: cwd.path), sessionId: sessionId,
+          replayFrom: .start(ReplayFromStart())))
+      let reading = try await read(second, countBefore)
+      await second.close()
+      return reading
+    } catch {
+      await second.close()
+      throw error
+    }
+  }
+
   /// Wires a scripted agent, completes `initialize`, and opens one
   /// session.
   ///

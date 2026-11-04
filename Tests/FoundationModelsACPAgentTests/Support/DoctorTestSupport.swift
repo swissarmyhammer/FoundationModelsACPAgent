@@ -14,6 +14,9 @@ enum DoctorMachineFigures {
   static let generousDiskBytes: Int64 = 1_099_511_627_776
 }
 
+/// How many findings ``Array/singleFinding(_:sourceLocation:)`` accepts.
+private let singleFindingCount = 1
+
 extension Array where Element == HealthCheck {
   /// The findings that carry `status`.
   ///
@@ -21,6 +24,22 @@ extension Array where Element == HealthCheck {
   /// - Returns: The findings that carry `status`, in order.
   func findings(_ status: HealthStatus) -> [HealthCheck] {
     filter { $0.status == status }
+  }
+
+  /// The one finding that carries `status`. The helper asserts that there is
+  /// exactly one such finding.
+  ///
+  /// - Parameters:
+  ///   - status: The status to keep.
+  ///   - sourceLocation: The test line a failure is reported at.
+  /// - Returns: The finding.
+  /// - Throws: The `#require` failure when no finding carries `status`.
+  func singleFinding(
+    _ status: HealthStatus, sourceLocation: SourceLocation = #_sourceLocation
+  ) throws -> HealthCheck {
+    let matches = findings(status)
+    #expect(matches.count == singleFindingCount, sourceLocation: sourceLocation)
+    return try #require(matches.first, sourceLocation: sourceLocation)
   }
 
   /// Asserts that no finding is a warning.

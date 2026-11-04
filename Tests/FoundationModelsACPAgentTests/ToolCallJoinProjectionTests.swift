@@ -490,7 +490,8 @@ import Testing
 
   /// Only the open record of a tool run of an agent run writes an entry.
   /// A close record, and an event that is not a record, write nothing: the
-  /// run still waits for its entry.
+  /// run still waits for its entry. The open record then writes the entry,
+  /// and the announce goes on the completion token of the run.
   @Test func onlyTheOpenRecordOfAnAgentRunWritesAnEntry() {
     let runCallJoins = RunCallJoinTable()
     runCallJoins.openProjection()
@@ -502,6 +503,15 @@ import Testing
       SessionOutput(origin: .system, event: Self.progress(Self.agentShellRunToken)))
 
     #expect(runCallJoins.announceToolCallId(for: RunToken(Self.agentShellRunToken)) == nil)
+
+    runCallJoins.recordAgentRunEvent(
+      SessionOutput(
+        origin: .system,
+        event: Self.openRecord(Self.agentShellRunToken, toolCallID: Self.agentSdkCallId)))
+
+    #expect(
+      runCallJoins.announceToolCallId(for: RunToken(Self.agentShellRunToken))
+        == ToolCallId(rawValue: Self.agentShellRunToken))
   }
 
   /// A root shell run that starts after an agent run ended keeps its SDK id.

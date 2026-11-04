@@ -115,7 +115,7 @@ struct ToolCallingTests {
     let report =
       "TOOL CALLING seconds=\(run.elapsed.components.seconds) "
       + "stop=\(run.stopReason.map { "\($0)" } ?? "none") tools=\(run.toolTitles)"
-    print(report)
+    RunReport.write(report)
 
     #expect(run.stopReason == .endTurn, "the prompt did not end with end_turn: \(report)")
 

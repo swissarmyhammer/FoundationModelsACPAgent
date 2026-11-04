@@ -98,19 +98,14 @@ import Testing
       projectConfigYAML: projectConfigYAML)
     try await ScriptedPromptFixture.runPrompt(on: first, text: "record this session")
     let recorded = try await projection(first.harness.agent, first.sessionId)
-    _ = try await first.harness.connection.closeSession(
-      CloseSessionRequest(sessionId: first.sessionId))
-    await first.close()
-
-    let second = try await ScriptedPromptFixture.make(
-      script: [.endPass], label: "\(label)-second", capabilities: resumedWith,
-      workingDirectory: first.cwd)
-    _ = try await second.harness.connection.resumeSession(
-      ResumeSessionRequest(
-        cwd: AbsolutePath(rawValue: first.cwd.path), sessionId: first.sessionId,
-        replayFrom: .start(ReplayFromStart())))
-    let resumed = try await projection(second.harness.agent, first.sessionId)
-    await second.close()
+    let sessionId = first.sessionId
+    let resumed = try await first.closeAndResume(
+      makeSecond: {
+        try await ScriptedPromptFixture.make(
+          script: [.endPass], label: "\(label)-second", capabilities: resumedWith,
+          workingDirectory: $0)
+      },
+      read: { second, _ in try await projection(second.harness.agent, sessionId) })
     return (recorded, resumed)
   }
 

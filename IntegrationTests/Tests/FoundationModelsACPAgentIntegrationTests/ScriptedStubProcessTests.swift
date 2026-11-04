@@ -73,8 +73,7 @@ struct ScriptedStubProcessTests {
       arguments: ["run", "--verbose", rootPrompt],
       workspace: workspace,
       configHome: makeResolvedDirectory(label: "\(label)-config"),
-      environment: try TierThreeFixture.makeOfflineDefaultsEnvironment()
-        .merging([TierThreeFixture.stubScriptVariable: file.path]) { _, script in script })
+      environment: try TierThreeFixture.stubScriptEnvironment(file: file))
   }
 
   // MARK: - The contract

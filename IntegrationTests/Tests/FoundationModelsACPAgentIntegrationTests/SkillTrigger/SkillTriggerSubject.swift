@@ -276,26 +276,44 @@ struct SkillTriggerSubject {
   private static func skillsDecision(
     in updates: [UpdateSessionNotification], sessionId: SessionId
   ) -> SkillsDecision {
-    var loadedIDs: [String] = []
-    var callCount = 0
-    var titles: [String] = []
-    for notification in updates where notification.sessionId == sessionId {
+    let titledCalls = updates.filter { $0.sessionId == sessionId }.compactMap { notification in
       guard case .toolCallUpdate(let update) = notification.update,
         case .value(let title) = update.title
-      else { continue }
-      titles.append(title)
+      else { return nil as SkillsToolCall? }
       guard title == "skills", case .value(let rawInput) = update.rawInput,
         case .object(let arguments) = rawInput
-      else { continue }
-      callCount += 1
-      guard case .string(let operation)? = arguments["op"],
-        operation.lowercased().contains("use"),
-        case .string(let id)? = arguments["id"]
-      else { continue }
-      loadedIDs.append(id)
+      else { return SkillsToolCall(title: title, loadedID: nil, isSkillsCall: false) }
+      return SkillsToolCall(
+        title: title, loadedID: Self.loadedID(in: arguments), isSkillsCall: true)
     }
     return SkillsDecision(
-      loadedIDs: loadedIDs, skillsCallCount: callCount, toolTitlesSeen: titles)
+      loadedIDs: titledCalls.compactMap(\.loadedID),
+      skillsCallCount: titledCalls.filter(\.isSkillsCall).count,
+      toolTitlesSeen: titledCalls.map(\.title))
+  }
+
+  /// One tool call update of the session, reduced to what the decision reads.
+  private struct SkillsToolCall {
+    /// The title of the tool call.
+    let title: String
+
+    /// The id the call loads with `use skill`, or `nil`.
+    let loadedID: String?
+
+    /// Whether the call is a call of the `skills` tool.
+    let isSkillsCall: Bool
+  }
+
+  /// The skill id of a `use skill` call.
+  ///
+  /// - Parameter arguments: The arguments of a `skills` call.
+  /// - Returns: The id, or `nil` when the call is not a `use` call with an id.
+  private static func loadedID(in arguments: [String: FoundationModelsACP.JSONValue]) -> String? {
+    guard case .string(let operation)? = arguments["op"],
+      operation.lowercased().contains("use"),
+      case .string(let id)? = arguments["id"]
+    else { return nil }
+    return id
   }
 
   /// Waits for the idle terminator of one session. Each update that the

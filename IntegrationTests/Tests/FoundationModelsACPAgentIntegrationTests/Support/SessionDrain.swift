@@ -22,13 +22,18 @@ enum SessionDrain {
   ///   - sessionId: The ACP session to end.
   ///   - harness: The harness that holds the agent and the client wire.
   /// - Returns: `true` when the session became idle, and `false` when it
-  ///   closed or the task was cancelled first.
+  ///   closed or the task was cancelled first. When the agent holds no
+  ///   session for `sessionId`, there is no work to wait for, so the value
+  ///   is `true` after the failure is reported.
   /// - Throws: Whatever `session/close` throws.
   @discardableResult
   static func drainAndClose(
     _ sessionId: SessionId, in harness: AgentClientHarness
   ) async throws -> Bool {
     guard let session = await harness.agent.sessions[sessionId]?.session else {
+      // The caller just made this session, so a missing one is not expected.
+      RunReport.write("SessionDrain: no session for \(sessionId.rawValue)")
+      assertionFailure("no session for \(sessionId)")
       return true
     }
     let drained = await drain(session)

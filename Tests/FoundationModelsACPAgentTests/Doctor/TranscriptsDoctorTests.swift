@@ -22,9 +22,6 @@ struct TranscriptsDoctorTests {
   /// The configuration key a transcripts fix names.
   private static let locationKey = "transcripts.location"
 
-  /// The number of findings a test that expects exactly one gets.
-  private static let oneFinding = 1
-
   // MARK: - Helpers
 
   /// The component over `fixture`'s stack, with the configuration the one
@@ -70,10 +67,8 @@ struct TranscriptsDoctorTests {
     let checks = await component.runHealthChecks()
     try setPermissions(ownerOnlyPermissions, of: parent)
 
-    let errors = checks.filter { $0.status == .error }
-    let failure = try #require(errors.first)
+    let failure = try checks.singleFinding(.error)
     let fix = try #require(failure.fix)
-    #expect(errors.count == Self.oneFinding)
     #expect(fix.contains(Self.locationKey))
   }
 

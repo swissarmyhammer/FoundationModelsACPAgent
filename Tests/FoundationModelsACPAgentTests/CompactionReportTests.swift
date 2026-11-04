@@ -224,19 +224,11 @@ import Testing
   private static func closeAndResume(
     _ first: ScriptedPromptFixture, label: String
   ) async throws -> [SessionUpdate] {
-    _ = try await first.harness.connection.closeSession(
-      CloseSessionRequest(sessionId: first.sessionId))
-    await first.close()
-
-    let second = try await makeFixture(label: label, workingDirectory: first.cwd)
-    let countBefore = await second.collector.updates.count
-    _ = try await second.harness.connection.resumeSession(
-      ResumeSessionRequest(
-        cwd: AbsolutePath(rawValue: first.cwd.path), sessionId: first.sessionId,
-        replayFrom: .start(ReplayFromStart())))
-    let replay = Array(await second.collector.updates.dropFirst(countBefore)).map(\.update)
-    await second.close()
-    return replay
+    try await first.closeAndResume(
+      makeSecond: { try await makeFixture(label: label, workingDirectory: $0) },
+      read: { second, countBefore in
+        Array(await second.collector.updates.dropFirst(countBefore)).map(\.update)
+      })
   }
 
   // MARK: - Automatic compaction (Router's compaction events)
