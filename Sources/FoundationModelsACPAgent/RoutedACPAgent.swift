@@ -80,6 +80,11 @@ public actor RoutedACPAgent: Agent {
   /// of ``connections``: the table reads the same links for the owner.
   nonisolated var sessionTree: SessionTree { connections.tree }
 
+  /// The questions that the relays of child sessions hold. The relay of an ancestor session
+  /// drops the relayed copy of such a question, so the client gets one request
+  /// (``ElicitationClaims``).
+  nonisolated let elicitationClaims = ElicitationClaims()
+
   /// The bearer tokens of the devices of the user, as the host gave them
   /// (ACPA-5b, D120 b). ``bind(connection:)`` gives `userDevice` to a
   /// connection whose bearer token is one of them, and `external` to a

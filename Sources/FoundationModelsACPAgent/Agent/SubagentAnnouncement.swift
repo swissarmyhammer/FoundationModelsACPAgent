@@ -136,8 +136,10 @@ extension RoutedACPAgent {
   }
 
   /// Registers the child session of a run as a session nested in its parent. A child that has
-  /// an entry already, and a child with no source, change nothing. A refused registration is
-  /// logged: the child is still announced, and it has no session of its own.
+  /// an entry already changes nothing. A child with no source, and a refused registration, leave
+  /// the child announced with no session of its own. The call logs a refusal. It also releases
+  /// the copies of child questions that the parent holds, because no relay of this child can
+  /// claim its question (``ElicitationClaims/release(owner:)``).
   ///
   /// - Parameters:
   ///   - child: The ACP id of the child.
@@ -146,12 +148,17 @@ extension RoutedACPAgent {
   private func registerChild(_ child: SessionId, source: SubagentSource?, under parent: SessionId)
     async
   {
-    guard let source, sessions[child] == nil else {
+    guard sessions[child] == nil else {
+      return
+    }
+    guard let source else {
+      elicitationClaims.release(owner: parent)
       return
     }
     do {
       try await registerNestedSession(source.session, parent: parent, events: source.outputs)
     } catch {
+      elicitationClaims.release(owner: parent)
       Self.logSubagentFailure(
         "The session of an agent run did not register. The run has an announcement and no session.",
         error)

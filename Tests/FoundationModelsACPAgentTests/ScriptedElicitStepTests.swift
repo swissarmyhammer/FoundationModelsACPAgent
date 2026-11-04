@@ -189,9 +189,9 @@ import Testing
   // MARK: - A child session
 
   /// The number of `elicitation/create` requests that a question of a
-  /// child makes: one under the child session, and one copy under the
-  /// session of its parent.
-  private static let createsOfAChildQuestion = 2
+  /// child makes: one under the child session. The copy under the session
+  /// of its parent is not sent (``ChildElicitationTests``).
+  private static let createsOfAChildQuestion = 1
 
   /// The agent that the root session starts.
   private static let childAgent = "asker"
@@ -245,8 +245,12 @@ import Testing
 
     #expect(askingSessions.contains { $0 == child })
     let session = fixture.session
-    let pending = try await ElicitationWait.firstPendingElicitation(in: session)
-    await MainActor.run { session.cancelElicitation(pending.id) }
+    try await ObservedValue.wait(for: "the child holds the question") {
+      session.children.first?.pendingElicitations.isEmpty == false
+    }
+    let childModel = try #require(await session.children.first)
+    let pending = try await ElicitationWait.firstPendingElicitation(in: childModel)
+    await MainActor.run { childModel.cancelElicitation(pending.id) }
     await fixture.close()
   }
 }

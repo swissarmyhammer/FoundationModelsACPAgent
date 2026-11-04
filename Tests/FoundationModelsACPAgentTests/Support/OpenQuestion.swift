@@ -27,6 +27,10 @@ struct OpenQuestion {
   /// Opens one question in a fresh session and waits until the client
   /// holds it.
   ///
+  /// A relayed copy of a child question would wait here for the claim of a child session, which
+  /// this fixture does not have. So the call releases the copies of the session
+  /// (``ElicitationClaims/release(owner:)``), and a relayed copy goes to the client.
+  ///
   /// - Parameters:
   ///   - label: The directory label of the calling test.
   ///   - answerDelivery: The delivery that the session reports for the
@@ -41,6 +45,7 @@ struct OpenQuestion {
     let fixture = try await ScriptedPromptFixture.make(script: [], label: label)
     let entry = try #require(await fixture.harness.agent.sessions[fixture.sessionId])
     let relay = try #require(entry.projector.relay)
+    fixture.harness.agent.elicitationClaims.release(owner: fixture.sessionId)
     let session = CloseCountingRoutedSession(wrapping: entry.session)
     await session.setAnswerDelivery(answerDelivery)
     let elicitationId = ULID()

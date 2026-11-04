@@ -199,9 +199,10 @@ extension RoutedACPAgent {
         .stringValue,
       send: send,
       shellSnapshot: { commandID in shellOutput?.snapshot(for: commandID) },
-      relay: ElicitationRelay(sessionId: sessionId, stateLedger: stateLedger) {
-        table.path(forSession: sessionId)
-      },
+      relay: ElicitationRelay(
+        sessionId: sessionId, stateLedger: stateLedger, announcement: announcement,
+        claims: elicitationClaims,
+        outboundPath: { table.path(forSession: sessionId) }),
       runCallJoins: build.runCallJoins,
       stateLedger: stateLedger)
     if let events {

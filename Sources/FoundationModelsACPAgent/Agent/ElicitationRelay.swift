@@ -41,6 +41,17 @@ typealias ElicitationCompletionHandler = @Sendable (ElicitationCompletion) async
 /// session holds that question and reports its own state. The relay finds a
 /// copy by its agent path, which only a relay sets.
 ///
+/// A question of a child run reaches the client one time, under the session id of the child. The
+/// relay of the child session sends the original. The relay of each ancestor session gets a
+/// relayed copy with the same elicitation id, and it sends nothing for the copy
+/// (``ElicitationClaims``). The copy ends when Router ends it. That end goes to nobody, because
+/// the client never saw the copy. The relay does not answer a copy either: the answer at the
+/// child ends the copy at Router.
+///
+/// A session that is not announced to the client yet sends no question. The relay waits for the
+/// announcement (``SessionAnnouncementGate``), so the client learns of a child before it gets a
+/// request that names the child.
+///
 /// Router ends a question with no answer of the client when it stops the run
 /// of the question. This happens for a cancel of the run, `cancelAll()` and
 /// `close()`. Router then sends `SessionEvent.elicitationEnded`. The relay
@@ -122,6 +133,22 @@ actor ElicitationRelay {
   /// a question waits for the user. A relay with no ledger reports nothing.
   private let stateLedger: SessionStateLedger?
 
+  /// The gate that tells if the client knows the session, or `nil` for a session that the client
+  /// knows from the start. A question waits for the announcement of a child.
+  private let announcement: SessionAnnouncementGate?
+
+  /// The record of the questions that the relays of child sessions hold, or `nil` for a relay
+  /// that sends each copy.
+  private let claims: ElicitationClaims?
+
+  /// The ids of the relayed copies that wait here for the claim of their child. The end of a
+  /// copy takes its id out, so the wait knows that the copy ended.
+  private var parkedCopies: Set<String> = []
+
+  /// The ids of the relayed copies that the relay dropped, because the child holds the question.
+  /// The end of such a copy goes to nobody. ``end(_:)`` takes the id out.
+  private var droppedCopies: Set<String> = []
+
   /// The questions whose answer Router took, so the run of the question
   /// resumes. The value is the work-event mark of the ledger from before
   /// the answer went to Router. ``relayRequest(_:toolCallId:tool:on:)``
@@ -199,14 +226,21 @@ actor ElicitationRelay {
   ///   - sessionId: The session this relay serves.
   ///   - stateLedger: The state ledger that learns when a question waits
   ///     for the user, or `nil` for none.
+  ///   - announcement: The gate that tells if the client knows the session, or `nil` when it
+  ///     knows the session from the start.
+  ///   - claims: The record that stops the relayed copy of a child question from reaching the
+  ///     client, or `nil` to send each copy.
   ///   - outboundPath: Gives the outbound path of the session as it is
   ///     when a question comes, or `nil` when the session has none.
   init(
     sessionId: SessionId, stateLedger: SessionStateLedger? = nil,
+    announcement: SessionAnnouncementGate? = nil, claims: ElicitationClaims? = nil,
     outboundPath: @escaping @Sendable () -> ClientPath?
   ) {
     self.sessionId = sessionId
     self.stateLedger = stateLedger
+    self.announcement = announcement
+    self.claims = claims
     self.outboundPath = outboundPath
   }
 
@@ -240,6 +274,9 @@ actor ElicitationRelay {
       ACPAgentTelemetry.logger(.elicitationRelay).warning(
         "An elicitation event has no request. The relay ignores the event.",
         metadata: metadata)
+      return
+    }
+    guard await admits(request) else {
       return
     }
     // `TracedCall.run` is not `rethrows`. This body does not throw, thus
@@ -276,6 +313,11 @@ actor ElicitationRelay {
     on session: any RoutedSession
   ) async -> ElicitationResponse {
     let elicitationId = request.elicitationId.ulidString
+    guard await clientKnowsSession() else {
+      let response = ElicitationResponse.cancel(reason: CancelReason.notAnnounced.rawValue)
+      await session.respond(elicitationId: elicitationId, response: response)
+      return response
+    }
     let path = outboundPath()
     if let path, !Self.supports(request.mode, by: path.capabilities) {
       await decline(
@@ -298,7 +340,7 @@ actor ElicitationRelay {
         reason: .duplicateURLElicitationId)
       return .decline
     }
-    let holdsQuestion = request.agentPath.isEmpty
+    let holdsQuestion = !request.isRelayed
     if holdsQuestion {
       await stateLedger?.userWaitStarted(elicitationId)
     }
@@ -322,6 +364,72 @@ actor ElicitationRelay {
     return outcome
   }
 
+  // MARK: - The relayed copies
+
+  /// Tells if the relay carries the question to the client. The original of a question is
+  /// claimed for this session, so the relay of each ancestor drops its copy. A relayed copy
+  /// waits for the claim of its child (``ElicitationClaims``). The relay carries the copy only
+  /// when the host released it, because no relay of a child can claim the question.
+  ///
+  /// - Parameter request: The request the tool posted, or the relayed copy of it.
+  /// - Returns: `false` when the question is a copy that the client must not get.
+  private func admits(_ request: ElicitationRequest) async -> Bool {
+    let elicitationId = request.elicitationId.ulidString
+    guard request.isRelayed, let claims else {
+      claims?.claim(elicitationId)
+      return true
+    }
+    if earlyEnds.removeValue(forKey: elicitationId) != nil {
+      ACPAgentTelemetry.logger(.elicitationRelay).debug(
+        "Router ended a relayed copy before the relay handled it. The relay drops the copy.",
+        metadata: elicitationMetadata(elicitationId))
+      return false
+    }
+    parkedCopies.insert(elicitationId)
+    let verdict = await claims.awaitClaim(of: elicitationId, for: sessionId)
+    guard parkedCopies.remove(elicitationId) != nil else {
+      return false
+    }
+    switch verdict {
+    case .claimed:
+      droppedCopies.insert(elicitationId)
+      ACPAgentTelemetry.logger(.elicitationRelay).debug(
+        "A child session holds the question of a relayed copy. The relay does not send the copy.",
+        metadata: elicitationMetadata(elicitationId))
+      return false
+    case .released:
+      return true
+    case .withdrawn:
+      return false
+    }
+  }
+
+  /// Ends a relayed copy that this relay waits for or dropped. The client never saw such a copy,
+  /// so its end goes to nobody.
+  ///
+  /// - Parameter elicitationId: The id of the question that Router ended.
+  /// - Returns: `true` when the id was a copy that the relay dropped, and the end is done.
+  private func endRelayedCopy(_ elicitationId: String) -> Bool {
+    if parkedCopies.remove(elicitationId) != nil {
+      claims?.withdraw(elicitationId, owner: sessionId)
+      return true
+    }
+    return droppedCopies.remove(elicitationId) != nil
+  }
+
+  /// Waits until the client knows the session. A session that the client knows from the start
+  /// does not wait.
+  ///
+  /// - Returns: `false` when the gate ended without an announcement, so no request can name the
+  ///   session.
+  private func clientKnowsSession() async -> Bool {
+    guard let announcement else {
+      return true
+    }
+    await announcement.submit {}
+    return announcement.isOpen
+  }
+
   /// Ends the client request of a question that Router ended with no
   /// answer of the client: the relay cancels the task of the
   /// `elicitation/create`, so the connection sends `$/cancel_request`, and
@@ -339,6 +447,9 @@ actor ElicitationRelay {
   /// - Parameter end: The end that Router sent.
   func end(_ end: ElicitationEnd) async {
     let elicitationId = end.elicitationId.ulidString
+    if endRelayedCopy(elicitationId) {
+      return
+    }
     if awaitingCompletion.contains(elicitationId) {
       ACPAgentTelemetry.logger(.elicitationRelay).notice(
         "Router ended an accepted URL flow. The relay sends elicitation/complete.",
@@ -386,6 +497,9 @@ actor ElicitationRelay {
   /// flow held, so the ledger leaves `requires_action`.
   func drainOpenRoundTrips() async {
     feedEnded = true
+    parkedCopies = []
+    droppedCopies = []
+    claims?.withdrawAll(owner: sessionId)
     for elicitationId in Array(answerTasks.keys) {
       cancelWireRequest(elicitationId, reason: Self.feedEndedCancelReason)
     }
@@ -898,6 +1012,9 @@ actor ElicitationRelay {
 
     /// The answer of the client did not decode.
     case answerNotValid = "the answer of the client is not valid"
+
+    /// The session ended before the client learned of it, so no request can name it.
+    case notAnnounced = "the client never learned of the session"
   }
 
   /// The wire shape of the client's answer. Extras' own decoders read

@@ -126,7 +126,8 @@ import Testing
   }
 
   /// The copy of a child question sends nothing: the child session holds
-  /// the question and reports its own state.
+  /// the question and reports its own state. The host released the copy, so it reaches the
+  /// client here.
   @Test
   func theCopyOfAChildQuestionReportsNoStateToTheClient() async throws {
     let question = try await OpenQuestion.open(label: "RequiresActionStateTests-relayed-copy") {

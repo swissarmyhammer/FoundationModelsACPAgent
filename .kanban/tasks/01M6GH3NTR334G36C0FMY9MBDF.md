@@ -25,6 +25,21 @@ comments:
   id: 01m6h6kkhgmgwcjfwf6nzr9qgj
   text: 'SPEC REVIEW (independent, 2026-11-03): ElicitationRelay.swift near line 522: createElicitation for a child session is sent with no check of the announcement gate; the relay has no reference to it. The announcement goes through an async queue, so a request could reach the wire before the subagent_update of its child (rule: announce before ANY use of the child id). Fix: the request of a child waits for the announcement gate of that child. Also near line 301: `holdsQuestion = request.agentPath.isEmpty`; check with a test that the CHILD own question (original, agentPath empty on the child feed) makes the child requires_action, and that a relayed copy on the parent does not. Both are latent today because no live child session is attached yet; they become real in this task.'
   timestamp: 2026-11-03T17:16:45.488711+00:00
+- actor: claude-code
+  id: 01m6j441cwmsm5d3avndf1n7px
+  text: |-
+    Research. Git history: the child sessions are already built with their own projector and relay (^n3hb9sv, ^gpc9h1, ^1vmbam7, ^snb0qg4). So the child question already arrived under the child id, and the answer already went through the child session. Not done: the relayed copy was sent a second time under the parent id (the old test in ScriptedElicitStepTests expected two requests). Also not done: the copy end was not handled, and the child request did not wait for the announcement gate. The Router accessor session(id:) is in use, and the pinned Router already ends the copy with the reason `answered at the child`.
+    Plan: a shared record ElicitationClaims. The relay of the child claims the id of the original. The relay of each ancestor parks the copy until the claim, then drops it. The end of a parked or dropped copy goes to nobody. The host releases the copies when a child gets no session (registerChild). A new gate wait in the relay for the announcement. A race made a simple check of the children in the session tree not enough: the copy can come before the child is registered.
+  timestamp: 2026-11-04T01:52:32.668176+00:00
+- actor: claude-code
+  id: 01m6j4cecx8v6xpts5s4w88cbk
+  text: |-
+    ### implement — changed
+    - evidence: 11 files. New: Sources/FoundationModelsACPAgent/Agent/ElicitationClaims.swift, Tests/FoundationModelsACPAgentTests/ChildElicitationTests.swift. Changed: Agent/ElicitationRelay.swift (copy parking, drop, end of copy, wait for the announcement gate), Agent/SessionBuild.swift, Agent/SubagentAnnouncement.swift (release on a child with no session), RoutedACPAgent.swift (elicitationClaims), and the tests ScriptedElicitStepTests.swift, RequiresActionStateTests.swift, Support/OpenQuestion.swift. All 6 acceptance items and both test items are checked in the .md. `swift test --filter "Elicitation|SubagentAnnouncer|SubagentSettle|RequiresAction|ChildSession|SessionSetupNested"`: 177 tests, 23 suites, all pass.
+    - note: the spec-review items are done: the child request waits for the announcement gate (tests: aQuestionWaitsForTheAnnouncementOfItsSession, aQuestionOfAnUnannouncedSessionIsCancelledAtRouter), and a child own question makes the child requires_action while the copy does not make the root requires_action (tests: theChildIsRequiresActionWhileItsQuestionWaits, theRootIsNotRequiresActionBecauseOfTheQuestionOfItsChild).
+    - note: one limit. After a child gets no session (registration refused), the copies of its parent go to the client as before, also for the later copies of a healthy child of that parent. A question is never lost. A request can then come twice in that rare case.
+    - next: /review
+  timestamp: 2026-11-04T01:57:08.125571+00:00
 depends_on:
 - 01M6GH30709S58BK3AQ1VMBAM7
 position_column: todo
@@ -41,15 +56,15 @@ Approach (from the Router session review): when the Router card `01M6GJJKPTESHZG
 BLOCKED BY (other board): Router accessor card `01M6GJJKPTESHZGW7N2AAY83G3`. Until it is done the child has no session here, and the question reaches the user under the root id (accepted for now; do not build the child-id rule before the card is done). Do not change the Router.
 
 ## Acceptance Criteria
-- [ ] An elicitation from a child run arrives at the client once, with the child `sessionId`.
-- [ ] The answer reaches the asking child run.
-- [ ] The relayed copy in the root stream is not sent a second time.
-- [ ] A cancel of the child answers its pending elicitation `cancelled`.
-- [ ] Replay sends no elicitation.
+- [x] An elicitation from a child run arrives at the client once, with the child `sessionId`.
+- [x] The answer reaches the asking child run.
+- [x] The relayed copy in the root stream is not sent a second time.
+- [x] A cancel of the child answers its pending elicitation `cancelled`.
+- [x] Replay sends no elicitation.
 
 ## Tests
-- [ ] `Tests/FoundationModelsACPAgentTests/ChildElicitationTests.swift`: child id, exactly-one request, answer path, cancel, no replay.
-- [ ] Run `swift test --filter ChildElicitationTests`. All pass.
+- [x] `Tests/FoundationModelsACPAgentTests/ChildElicitationTests.swift`: child id, exactly-one request, answer path, cancel, no replay.
+- [x] Run `swift test --filter ChildElicitationTests`. All pass.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
