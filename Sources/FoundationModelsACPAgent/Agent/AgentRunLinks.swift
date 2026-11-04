@@ -23,8 +23,20 @@ extension RoutedACPAgent {
       callerMail: { message, sender, caller in
         let mail = OutgoingSessionMessage(
           from: .session(sender), to: .session(caller), text: message)
-        let receipts = try? await directory.send(mail)
-        return receipts?.first { $0.outcome != .refused }?.messageID
+        do {
+          let receipts = try await directory.send(mail)
+          return receipts.first { $0.outcome != .refused }?.messageID
+        } catch {
+          // The links type cannot throw, so the reason of the failure goes to the log.
+          ACPAgentTelemetry.logger(.session).warning(
+            "The result mail of a restored run did not reach its caller session.",
+            metadata: [
+              ACPAgentTelemetry.LogMetadataKey.sessionId: "\(caller)",
+              ACPAgentTelemetry.LogMetadataKey.errorType: "\(type(of: error))",
+              "error.message": "\(error)",
+            ])
+          return nil
+        }
       },
       claimCompletion: { [weak self] caller, key, outcome, detail in
         guard let session = await self?.sessions[SessionId(rawValue: caller.description)]?.session

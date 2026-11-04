@@ -62,12 +62,19 @@ comments:
     - evidence: Tests/FoundationModelsACPAgentTests/SubagentCancelTests.swift — isCancelledIdle now guards on the session id and uses the shared idleState(of:). No other hand-rolled unwrap is in the file. Finding box flipped to [x]. swift test --filter SubagentCancelTests: 12 tests passed.
     - next: /review
   timestamp: 2026-11-04T04:40:35.809380+00:00
+- actor: claude-code
+  id: 01m6jdsm1abrc1xf6se9hsytd0
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD. 0 findings, 0 confirmed, 0 refuted. The one prior finding (reuse of idleState(of:) in SubagentCancelTests.swift) is checked.
+    - next: none. The task is moved to done.
+  timestamp: 2026-11-04T04:41:37.066159+00:00
 depends_on:
 - 01M6GH30709S58BK3AQ1VMBAM7
 - 01M6GH353HTRBREVKKN3N2WZW8
 - 01M6GM17FQDM22JNPV0D9NSYVC
-position_column: review
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffffa380
 title: Cancel one child with session/cancel on the child id; parent cancel and close follow the RFD
 ---
 ## What

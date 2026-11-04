@@ -122,10 +122,31 @@ comments:
     - next: a person decides. Option 1: change Multitool so the host closure wins (needs a task on the Multitool board). Option 2: accept the Router session id as the owner and change the ShellSessionIdentity docs and this test.
     - note: the work of this card is complete and committed as a checkpoint. Review waits for the blocker.
   timestamp: 2026-11-04T01:33:28.438649+00:00
+- actor: claude-code
+  id: 01m6jk5a0js5pq8g8y0zw6nz4d
+  text: |-
+    ### review — findings
+    - evidence: review sha 96de096~1..96de096; 2 findings (2 confirmed, 4 refuted): AgentRunLinks.swift:26, TranscriptStoreTests.swift:382. Known blocker, not a finding: ShellSessionOwnerTests.aCommandAfterAModelSlotSwitchRecordsTheACPSessionID fails because of Multitool change 746da544.
+    - next: fix the 2 open findings, then run review again.
+  timestamp: 2026-11-04T06:15:22.898061+00:00
+- actor: claude-code
+  id: 01m6jk7te3kmy2rtv5eztw3fwj
+  text: |-
+    ### implement — changed
+    - finding 1 (AgentRunLinks.swift): the `CallerMail` type of FoundationModelsAgents is `async -> MailID?` and cannot throw, and this task must not change that package. So `try?` is now `do/catch`: the failure goes to the session log as a warning with the caller session id, the error type and the error message, then the closure returns nil. The file had one `try?`; no other copy of the cause.
+    - finding 2 (TranscriptStoreTests.swift): one helper `conversation(of:)` holds the `.mail` and `.promptStarted` filter. The inline use and `conversationKinds(of:)` both call it (`.map(\.kind)`). No other copy of the filter in the file.
+    - evidence: `swift test --filter "TranscriptStoreTests|ResumeNestedSessionsTests"`: 25 tests in 2 suites passed. No compiler warning (one build-system "missing creator" note about a bundle path, not from code). No test calls AgentRunLinks directly; ResumeNestedSessionsTests uses the links through resume. Full suite not run (as asked). Known blocker ShellSessionOwnerTests is not touched.
+    - next: run /review again.
+
+    step: implement
+    outcome: changed
+    evidence: 2 files — Sources/FoundationModelsACPAgent/Agent/AgentRunLinks.swift, Tests/FoundationModelsACPAgentTests/TranscriptStoreTests.swift; 25 tests pass
+    task: ^wd0cwz7
+  timestamp: 2026-11-04T06:16:45.251234+00:00
 depends_on:
 - 01M6GH2K0VV6RWV5R6SN3HB9SV
 position_column: doing
-position_ordinal: '8280'
+position_ordinal: '8480'
 title: 'Cold resume: restore the recorded nested sub-agent sessions with their parent, idle, with tools from the CURRENT config'
 ---
 ## What
@@ -159,3 +180,13 @@ Do:
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #subagents
+
+## Review Findings (2026-11-04 00:12)
+
+> Scope: `review sha 96de096~1..96de096` — reviewed the diffs only — lines this change added or modified. 14 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Sources/FoundationModelsACPAgent/Agent/AgentRunLinks.swift:26` `swift/error-handling` — The caller-mail closure turns every send failure into nil through `try?`. The caller of the closure cannot tell a thrown error from a refused receipt, so the reason for the failed mail is lost. Let the closure throw, or return a typed result that names the failure (for example refused or threw, with the error), so the run can record why its result did not reach the caller.
+- [x] `Tests/FoundationModelsACPAgentTests/TranscriptStoreTests.swift:382` `reuse/reuse` — The new test filters out the `.mail` and `.promptStarted` events inline. The same predicate is written again in the new helper `conversationKinds(of:)`, so the rule that defines the conversation now lives in two places. A change to one copy can leave the other stale. Extract one helper that returns the conversation events, for example `private static func conversation(of events: [TranscriptEvent]) -> [TranscriptEvent]`. Use it at line 382 and derive `conversationKinds(of:)` from it with `.map(\.kind)`. Then the predicate exists once.

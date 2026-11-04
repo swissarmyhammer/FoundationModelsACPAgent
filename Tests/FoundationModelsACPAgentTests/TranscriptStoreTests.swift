@@ -379,7 +379,7 @@ import Testing
     // (mailbox.md, section 5, problem 10) and one `.promptStarted` marker
     // before each prompt. They belong to the session, but they are not the
     // conversation.
-    let conversation = events.filter { $0.kind != .mail && $0.kind != .promptStarted }
+    let conversation = Self.conversation(of: events)
 
     #expect(events.allSatisfy { $0.sessionId == id })
     #expect(events.contains { $0.kind == .mail })
@@ -394,13 +394,21 @@ import Testing
       ).isEmpty)
   }
 
-  /// The kinds of the conversation in `events`: the events without the `.mail` facts and the
-  /// `.promptStarted` markers.
+  /// The conversation in `events`: the events without the `.mail` facts and the `.promptStarted`
+  /// markers.
   ///
   /// - Parameter events: The events of one session.
-  /// - Returns: The kinds of the remaining events, in order.
+  /// - Returns: The remaining events, in order.
+  private static func conversation(of events: [TranscriptEvent]) -> [TranscriptEvent] {
+    events.filter { $0.kind != .mail && $0.kind != .promptStarted }
+  }
+
+  /// The kinds of the conversation in `events`.
+  ///
+  /// - Parameter events: The events of one session.
+  /// - Returns: The kinds of the conversation events, in order.
   private static func conversationKinds(of events: [TranscriptEvent]) -> [TranscriptEvent.Kind] {
-    events.filter { $0.kind != .mail && $0.kind != .promptStarted }.map(\.kind)
+    conversation(of: events).map(\.kind)
   }
 
   /// Drives one session in its own short-lived recorder run. The run's
