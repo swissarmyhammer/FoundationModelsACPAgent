@@ -31,7 +31,8 @@ public enum SandboxCompositionError: Error, Equatable, CustomStringConvertible {
 ///
 /// **The sandbox is the only gate.** There is no permission layer: this
 /// agent does not advertise a permission capability and never sends
-/// `session/request_permission`. A denylist over
+/// `session/request_permission`. Only the `permission` step of the stub
+/// script of the tests sends it (`ScriptedPermission`). A denylist over
 /// command text can be avoided by respelling the command; the seatbelt
 /// sandbox is a kernel boundary and does not care how a command is
 /// spelled.

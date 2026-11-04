@@ -325,7 +325,8 @@ registry. When the session closes, its agent runs stop first.
 
 **Know the sandbox limit.** The sandbox is the only gate on shell commands:
 there is no permission prompt, and the agent never sends
-`session/request_permission`.
+`session/request_permission` (the `permission` step of the stub script in tests is the only
+exception).
 The sandbox bounds writing and deleting only. Reads are free and the network is open, so exfiltration is not bounded.
 
 ## Shutdown and restart
@@ -494,8 +495,17 @@ each session says and calls:
   no entry matches, each call echoes the prompt.
 - A step has one key: `text` (a text delta), `reasoning`, `toolCall` (`name` and `arguments`),
   `gate` (a path: the pass waits until a file exists there, or until one byte can be read
-  from the named pipe there; a stop of the run ends the wait while the file is missing) and
-  `elicit` (a form question to the user; the session needs the `runCode` tool).
+  from the named pipe there; a stop of the run ends the wait while the file is missing),
+  `elicit` (a form question to the user; the session needs the `runCode` tool) and
+  `permission` (a title: see below).
+- The `permission` step sends `session/request_permission` to the client with the title and two
+  options: allow once and reject once. The pass waits for the outcome. A selected option lets
+  the pass go on, and the script decides what a reject means. A cancelled outcome ends the pass
+  with a clear text, as a cancel of an `elicit` step does. The request names the session of the
+  run. A child run thus asks under its own session id, one time, and never under the root. A
+  `session/cancel` of the child ends the request while it waits. The step plays as a `runCode`
+  call, so the session needs the `runCode` tool and the client must answer form questions. This
+  step is for tests only: no tool of the agent sends a permission request.
 - A file that is not valid stops the agent with an error that names the place. It never
   becomes a silent echo.
 
@@ -683,7 +693,8 @@ code gives the local detail.
   session gives the result: the summary, the tokens before and after and the
   summarizer model, or the reason of a failure or a shortfall.
 - **The sandbox is the only gate.** The agent does not advertise or send
-  `session/request_permission`. There is no permission mode, no
+  `session/request_permission` (only the `permission` step of the stub script sends it, in tests).
+  There is no permission mode, no
   `permissions:` section and no stored decision. A denylist over the command
   text is easy to bypass, and a question that a person answers a hundred
   times each day is not a boundary. `SeatbeltSandbox` is a kernel boundary,

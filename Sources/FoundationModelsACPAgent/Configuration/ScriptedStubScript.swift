@@ -16,12 +16,22 @@ import Foundation
 //     { "toolCall": { "name": "<tool>", "arguments": { ... } } }
 //     { "gate": "<path>" }
 //     { "elicit": "<message>" }
+//     { "permission": "<title>" }
 //
 // The `elicit` step asks the user a form question with one required text
 // field named `answer`, and waits. The answer text is the output of the
 // call, and the pass goes on. A decline or a cancel ends the pass with a
 // clear text. The step plays as a `runCode` call, so a session whose agent
 // has no `runCode` tool cannot ask.
+//
+// The `permission` step sends `session/request_permission` to the client
+// with the title, and two options: allow once and reject once. It waits for
+// the outcome. A selected option lets the pass go on, and the script decides
+// what a reject means. A cancelled outcome ends the pass with a clear text,
+// as a cancel of an `elicit` step does. The request names the session of the
+// run, so a child run asks under its own session id, one time. A
+// `session/cancel` of that session ends the request. The step plays as a
+// `runCode` call too, and the client must answer form questions.
 //
 // The steps are the ``ScriptedPassStep`` values of the in-process tests.
 // A bad file is an error of ``ScriptedStubScriptError``. It is never a
@@ -165,6 +175,9 @@ private enum ScriptReader {
   /// The key of a step that is a question to the user.
   static let elicitKey = "elicit"
 
+  /// The key of a step that is a request for permission.
+  static let permissionKey = "permission"
+
   /// Fails with an invalid-script error.
   private static func invalid(_ location: String, _ problem: String) -> ScriptedStubScriptError {
     .invalid(location: location, problem: problem, path: nil)
@@ -218,7 +231,7 @@ private enum ScriptReader {
 
   /// Reads one step. A step has exactly one key.
   static func step(_ value: Any, at location: String) throws -> ScriptedPassStep {
-    let known: Set = [textKey, reasoningKey, toolCallKey, gateKey, elicitKey]
+    let known: Set = [textKey, reasoningKey, toolCallKey, gateKey, elicitKey, permissionKey]
     guard let step = value as? [String: Any], step.count == 1, let key = step.keys.first else {
       throw invalid(location, "a step is an object with exactly one key")
     }
@@ -236,6 +249,8 @@ private enum ScriptReader {
       return .gate(path: try string(step[key], at: place))
     case elicitKey:
       return .elicit(message: try string(step[key], at: place))
+    case permissionKey:
+      return .permission(title: try string(step[key], at: place))
     default:
       return try toolCall(step[key], at: place)
     }

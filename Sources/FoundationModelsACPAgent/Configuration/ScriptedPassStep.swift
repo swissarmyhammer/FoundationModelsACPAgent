@@ -42,6 +42,16 @@ public enum ScriptedPassStep: Sendable, Equatable {
   /// its next step. A decline or a cancel ends the pass with a clear text.
   case elicit(message: String)
 
+  /// Asks the user for permission with the title `title`, and waits for the
+  /// outcome. The request offers allow once and reject once.
+  ///
+  /// The request is a `session/request_permission` of the session
+  /// (``ScriptedPermission``). It goes out under the session id of the run,
+  /// which is the child id in a child run. A selected option lets the pass
+  /// go on with its next step. A cancelled outcome ends the pass with a
+  /// clear text, as a cancel of an ``elicit(message:)`` step does.
+  case permission(title: String)
+
   /// Throws the real SDK error `failure` names, so a stop-reason test
   /// drives the prompt owner's error mapping to a stop reason.
   case fail(ScriptedFailure)

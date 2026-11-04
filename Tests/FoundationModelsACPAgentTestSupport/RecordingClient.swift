@@ -50,9 +50,20 @@ public actor UpdateCollector {
 
 /// Collects the elicitation traffic the agent sends to the client: each
 /// `elicitation/create` request and each `elicitation/complete`
-/// notification, in arrival order. The observable models keep no history
-/// of them, so a count or an order proof reads this recorder.
+/// notification, in arrival order. It also collects each
+/// `session/request_permission` request, because only the `permission` step
+/// of the stub script sends one, over the same relay. The observable models
+/// keep no history of them, so a count or an order proof reads this
+/// recorder.
 public actor ElicitationWireRecorder {
+  /// The recorded permission requests, in arrival order, with their waits.
+  private let recordedPermissions = WatchedValue<[RequestPermissionRequest]>([])
+
+  /// The recorded permission requests, in arrival order.
+  public var permissions: [RequestPermissionRequest] {
+    recordedPermissions.value
+  }
+
   /// The recorded create requests, in arrival order, with their waits.
   private let recordedCreates = WatchedValue<[CreateElicitationRequest]>([])
 
@@ -84,6 +95,28 @@ public actor ElicitationWireRecorder {
   ///   cancelled before the requests come.
   public nonisolated func waitForCreates(count: Int) async throws -> [CreateElicitationRequest] {
     try await recordedCreates.wait(for: "\(count) elicitation create request(s)") {
+      $0.count >= count
+    }
+  }
+
+  /// Appends one permission request.
+  ///
+  /// - Parameter request: The request to record.
+  public func recordPermission(request: RequestPermissionRequest) {
+    recordedPermissions.update { $0.append(request) }
+  }
+
+  /// Waits until at least `count` permission requests were recorded.
+  /// Returns at once when they are recorded now. The wait uses no clock
+  /// and no poll: each record resumes it.
+  ///
+  /// - Parameter count: The number of permission requests to wait for.
+  /// - Returns: The recorded requests, in arrival order.
+  /// - Throws: ``ConditionWaitCancelled`` when the task of the wait is
+  ///   cancelled before the requests come.
+  public nonisolated func waitForPermissions(count: Int) async throws -> [RequestPermissionRequest]
+  {
+    try await recordedPermissions.wait(for: "\(count) permission request(s)") {
       $0.count >= count
     }
   }
@@ -169,10 +202,12 @@ public final class GraphQLTunnelRecorder: Sendable {
 /// Wire it with the `client` closure of
 /// `ConnectionModel.connect(over:client:)`, which gives the router.
 ///
-/// There is no configurable permission answer. This agent never sends
-/// `session/request_permission` (the sandbox is the only gate), and a test asserts
-/// `pendingPermissions` stays empty as a regression tripwire. Every
-/// request therefore forwards to the router unchanged.
+/// There is no configurable permission answer. This agent sends
+/// `session/request_permission` only for the `permission` step of the stub
+/// script (the sandbox is the only gate), and a test asserts
+/// `pendingPermissions` stays empty for every other script as a regression
+/// tripwire. Every request therefore forwards to the router unchanged, after
+/// the recorder keeps a copy.
 final class RecordingClient: Client {
   /// The recorder of the raw update sequence.
   let collector: UpdateCollector
@@ -237,7 +272,8 @@ final class RecordingClient: Client {
   func requestPermission(
     _ params: RequestPermissionRequest
   ) async throws -> RequestPermissionResponse {
-    try await router.requestPermission(params)
+    await elicitations.recordPermission(request: params)
+    return try await router.requestPermission(params)
   }
 
   func createElicitation(

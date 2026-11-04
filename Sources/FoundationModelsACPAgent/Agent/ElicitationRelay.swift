@@ -23,7 +23,11 @@ typealias ElicitationCompletionHandler = @Sendable (ElicitationCompletion) async
 /// The relay of a tool's elicitation to the ACP client. This package owns
 /// elicitation, because it is the only layer with a live two-way channel
 /// to a user. An elicitation asks a question that a tool needs answered.
-/// It is not a permission prompt, and it authorizes nothing.
+/// It is not a permission prompt, and it authorizes nothing. One test-only
+/// exception exists: the `permission` step of the stub script rides this
+/// relay and sends `session/request_permission` in place of
+/// `elicitation/create` (``ScriptedPermission``). No tool of the agent asks
+/// that way.
 ///
 /// A tool that calls `ToolContext.elicit` suspends in Router's mailbox, and
 /// the request arrives as `SessionEvent.elicitationRequested`. This actor
@@ -164,10 +168,21 @@ actor ElicitationRelay {
   /// them.
   private var answerTasks: [String: Task<Void, Never>] = [:]
 
+  /// The request that a question sends to the client. A question is an `elicitation/create`,
+  /// except the question of a `permission` step of the stub script, which is a
+  /// `session/request_permission` (``ScriptedPermission``).
+  private enum WireCall {
+    /// The mapped `elicitation/create` request.
+    case elicitation(CreateElicitationRequest)
+
+    /// The mapped `session/request_permission` request.
+    case permission(RequestPermissionRequest)
+  }
+
   /// One wire request of a question, kept so the relay can ask it again on a new connection.
   private struct OpenWireRequest {
-    /// The mapped `elicitation/create` request.
-    let request: CreateElicitationRequest
+    /// The mapped request.
+    let request: WireCall
 
     /// The mode of the request.
     let mode: ElicitationMode
@@ -356,7 +371,7 @@ actor ElicitationRelay {
       return .decline
     }
     guard
-      let wireRequest = Self.wireRequest(
+      let wireRequest = Self.wireCall(
         for: request, sessionId: sessionId, toolCallId: toolCallId, tool: tool)
     else {
       await decline(
@@ -563,7 +578,7 @@ actor ElicitationRelay {
   /// does not complete the flow: the flow completes out of band.
   ///
   /// - Parameters:
-  ///   - wireRequest: The mapped `elicitation/create` request.
+  ///   - wireRequest: The mapped request.
   ///   - elicitationId: The pending elicitation's id.
   ///   - mode: The mode of the request.
   ///   - connection: The connection the create goes through, or `nil`
@@ -572,7 +587,7 @@ actor ElicitationRelay {
   /// - Returns: The answer that went to Router, or the response of the end
   ///   that Router sent.
   private func deliverRoundTrip(
-    _ wireRequest: CreateElicitationRequest,
+    _ wireRequest: WireCall,
     elicitationId: String,
     mode: ElicitationMode,
     over connection: AgentSideConnection?,
@@ -625,7 +640,7 @@ actor ElicitationRelay {
   /// dropped.
   ///
   /// - Parameters:
-  ///   - wireRequest: The mapped `elicitation/create` request.
+  ///   - wireRequest: The mapped request.
   ///   - elicitationId: The pending elicitation's id.
   ///   - mode: The mode of the request.
   ///   - connection: The connection the create goes through, or `nil`
@@ -633,7 +648,7 @@ actor ElicitationRelay {
   ///     `cancel`.
   /// - Returns: The decoded answer, `cancel`, or the end from Router.
   private func clientAnswer(
-    to wireRequest: CreateElicitationRequest, elicitationId: String, mode: ElicitationMode,
+    to wireRequest: WireCall, elicitationId: String, mode: ElicitationMode,
     over connection: AgentSideConnection?
   ) async -> ClientAnswer {
     await withCheckedContinuation { continuation in
@@ -661,13 +676,13 @@ actor ElicitationRelay {
   /// replaces it, and an answer of the earlier request finds a newer generation and is dropped.
   ///
   /// - Parameters:
-  ///   - wireRequest: The mapped `elicitation/create` request.
+  ///   - wireRequest: The mapped request.
   ///   - elicitationId: The pending elicitation's id.
   ///   - mode: The mode of the request.
   ///   - connection: The connection the create goes through, or `nil` when the session has no
   ///     outbound path: then the relay delivers `cancel`.
   private func startWireRequest(
-    _ wireRequest: CreateElicitationRequest, elicitationId: String, mode: ElicitationMode,
+    _ wireRequest: WireCall, elicitationId: String, mode: ElicitationMode,
     over connection: AgentSideConnection?
   ) {
     nextWireGeneration += 1
@@ -686,17 +701,40 @@ actor ElicitationRelay {
           generation: generation)
         return
       }
-      let raw: CreateElicitationResponse?
+      let answer: ElicitationResponse
       do {
-        raw = try await connection.createElicitation(wireRequest, cancellation: cancellation)
+        answer = try await Self.ask(
+          wireRequest, mode: mode, over: connection, cancellation: cancellation)
       } catch {
         ACPAgentTelemetry.logger(.elicitationRelay).warning(
-          "The elicitation/create request failed. The relay delivers cancel.",
+          "The client request failed. The relay delivers cancel.",
           metadata: self.elicitationMetadata(elicitationId, error: error))
-        raw = nil
+        answer = Self.answer(from: nil, mode: mode)
       }
-      self.deliver(
-        Self.answer(from: raw, mode: mode), toPending: elicitationId, generation: generation)
+      self.deliver(answer, toPending: elicitationId, generation: generation)
+    }
+  }
+
+  /// Sends one wire request and decodes the answer of the client.
+  ///
+  /// - Parameters:
+  ///   - wireRequest: The mapped request.
+  ///   - mode: The mode of the request.
+  ///   - connection: The connection the request goes through.
+  ///   - cancellation: Gives the `_meta` of the `$/cancel_request`.
+  /// - Returns: The answer to deliver to Router.
+  /// - Throws: The error of the request, for example a cancel of the task.
+  private static func ask(
+    _ wireRequest: WireCall, mode: ElicitationMode, over connection: AgentSideConnection,
+    cancellation: OutboundCancellation
+  ) async throws -> ElicitationResponse {
+    switch wireRequest {
+    case .elicitation(let request):
+      let raw = try await connection.createElicitation(request, cancellation: cancellation)
+      return answer(from: raw, mode: mode)
+    case .permission(let request):
+      let response = try await connection.requestPermission(request, cancellation: cancellation)
+      return ScriptedPermission.answer(from: response)
     }
   }
 
@@ -1068,6 +1106,28 @@ actor ElicitationRelay {
             scope: .session(scope))),
         meta: meta)
     }
+  }
+
+  /// Maps the question to the request that goes to the client: a
+  /// `session/request_permission` for the question of a `permission` step of the stub
+  /// script (``ScriptedPermission``), and else the `elicitation/create` of
+  /// ``wireRequest(for:sessionId:toolCallId:tool:)``. The request names the session of this
+  /// relay, which is the child id for a child run.
+  ///
+  /// - Parameters:
+  ///   - request: The request the tool posted.
+  ///   - sessionId: The session the elicitation belongs to.
+  ///   - toolCallId: The run's completion token.
+  ///   - tool: The tool of the run that posted the question.
+  /// - Returns: The request, or `nil` when the request does not carry its mode's payload.
+  private static func wireCall(
+    for request: ElicitationRequest, sessionId: SessionId, toolCallId: String, tool: String
+  ) -> WireCall? {
+    if ScriptedPermission.isPermission(request) {
+      return .permission(ScriptedPermission.wireRequest(for: request, sessionId: sessionId))
+    }
+    return wireRequest(for: request, sessionId: sessionId, toolCallId: toolCallId, tool: tool)
+      .map(WireCall.elicitation)
   }
 
   /// Decodes the client's raw answer into Extras' response.

@@ -49,6 +49,11 @@ import Testing
     #expect(steps == [.elicit(message: "Which colour?")])
   }
 
+  @Test func aPermissionStepIsAPermissionOfTheTitle() throws {
+    let steps = try Self.firstPass(of: Self.scriptJSON(step: #"{"permission":"Run the build?"}"#))
+    #expect(steps == [.permission(title: "Run the build?")])
+  }
+
   @Test func aToolCallStepKeepsTheNameAndEncodesTheArguments() throws {
     let steps = try Self.firstPass(
       of: Self.scriptJSON(
@@ -103,6 +108,11 @@ import Testing
   @Test func anElicitThatIsNotAStringIsAnErrorThatNamesTheStep() {
     let message = Self.parseError(of: Self.scriptJSON(step: #"{"elicit":5}"#))
     #expect(message?.contains("elicit") == true)
+  }
+
+  @Test func aPermissionThatIsNotAStringIsAnErrorThatNamesTheStep() {
+    let message = Self.parseError(of: Self.scriptJSON(step: #"{"permission":5}"#))
+    #expect(message?.contains("permission") == true)
   }
 
   @Test func aToolCallWithoutArgumentsIsAnError() {

@@ -463,7 +463,13 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
         let argumentsJSON = try String(contentsOfFile: path, encoding: .utf8)
         try await invokeTool(named: name, argumentsJSON: argumentsJSON, turn: turn)
       case .elicit(let message):
-        if try await askUser(message, turn: turn, yield: yield) {
+        let arguments = try ScriptedElicitation.runCodeArguments(asking: message)
+        if try await askUser(runCodeArguments: arguments, turn: turn, yield: yield) {
+          return true
+        }
+      case .permission(let title):
+        let arguments = try ScriptedPermission.runCodeArguments(asking: title)
+        if try await askUser(runCodeArguments: arguments, turn: turn, yield: yield) {
           return true
         }
       case .fail(let failure):
@@ -488,11 +494,11 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     return false
   }
 
-  /// Plays one ``ScriptedPassStep/elicit(message:)`` step: the `runCode`
-  /// call that asks the user, as ``ScriptedElicitation`` describes it.
+  /// Plays one question step: the `runCode` call that asks the user, as
+  /// ``ScriptedElicitation`` and ``ScriptedPermission`` describe it.
   ///
   /// - Parameters:
-  ///   - message: The message of the question.
+  ///   - runCodeArguments: The arguments of the `runCode` call that asks.
   ///   - turn: The hold of the model by the pass, or `nil` for a pass
   ///     that takes no model lock.
   ///   - yield: Receives the text that ends a pass whose question got no
@@ -502,12 +508,10 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
   ///   user answered.
   /// - Throws: What ``invokeTool(named:argumentsJSON:turn:)`` throws.
   private func askUser(
-    _ message: String, turn: (any ScriptedPassTurn)?, yield: (String) -> Void
+    runCodeArguments: String, turn: (any ScriptedPassTurn)?, yield: (String) -> Void
   ) async throws -> Bool {
     let output = try await invokeTool(
-      named: NoOpToolCall.runCodeToolName,
-      argumentsJSON: try ScriptedElicitation.runCodeArguments(asking: message),
-      turn: turn)
+      named: NoOpToolCall.runCodeToolName, argumentsJSON: runCodeArguments, turn: turn)
     guard let refusal = ScriptedElicitation.refusal(inOutput: String(describing: output)) else {
       return false
     }
