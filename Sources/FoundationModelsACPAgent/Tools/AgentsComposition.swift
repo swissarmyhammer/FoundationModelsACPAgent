@@ -77,6 +77,10 @@ enum AgentsComposition {
   ///   - runCallJoins: The join table of the session. The environment
   ///     writes the entry of each tool run of each agent run into it
   ///     (``makeRunEventObserver(runCallJoins:announcer:)``).
+  ///     The environment also gets the links of ``CatalogContext/agentRunHost``: the
+  ///     recording root of the runs, the mark of an ended run, the mail to a caller that is
+  ///     not a run, and the completion of a claimed call. With them a run marks its session
+  ///     as ended, and a later process restores a run that did not end.
   /// - Returns: The mount.
   /// - Throws: Whatever `AgentRegistry.load()`, `AgentEnvironment.make`
   ///   or `AgentsTool.make(context:)` throws.
@@ -87,14 +91,16 @@ enum AgentsComposition {
     let registry = makeAgentRegistry(context: context, marketplaces: skills.marketplaces)
     try await registry.load()
     let announcer = SubagentAnnouncer(holds: runCallJoins.holds)
-    let environment = try await AgentEnvironment.make(
+    let made = try await AgentEnvironment.make(
       profile: context.profile,
       skills: skills.registry,
       skillsSelectionModel: RoutedSelectionModel(profile: context.profile),
       workingDirectory: context.workingDirectory,
       tools: runTools,
       inlineSettleGrace: context.inlineSettleGrace,
-      runEventObserver: makeRunEventObserver(runCallJoins: runCallJoins, announcer: announcer))
+      runEventObserver: makeRunEventObserver(runCallJoins: runCallJoins, announcer: announcer),
+      callerMail: context.agentRunHost?.callerMail)
+    let environment = context.agentRunHost?.linking(made) ?? made
     let runner = AgentRunner(registry: registry, environment: environment)
     let tool = try await AgentsTool.make(context: AgentsToolContext(runner: runner))
     bindHolds(of: runCallJoins, tool: tool, runner: runner, announcer: announcer)

@@ -105,6 +105,10 @@ public struct CatalogContext: Sendable {
   /// (``ToolCatalog/settingsTool(in:)``).
   public let settingsEndpoint: SettingsGraph?
 
+  /// The links that let the agent runs of the surface end for good and restore after a restart
+  /// (``AgentRunHost``), or `nil` for a catalog that has no agent.
+  public let agentRunHost: AgentRunHost?
+
   /// Makes a catalog context.
   ///
   /// - Parameters:
@@ -128,6 +132,8 @@ public struct CatalogContext: Sendable {
   ///     default) for no `snapshots` capability (``snapshotStore``).
   ///   - settingsEndpoint: The one `settings` endpoint of the agent, or
   ///     `nil` (the default) for no `settings` tool (``settingsEndpoint``).
+  ///   - agentRunHost: The links of the agent runs to the host, or `nil` (the default) for runs
+  ///     that mark nothing and cannot restore (``agentRunHost``).
   public init(
     workingDirectory: URL,
     additionalRoots: [URL] = [],
@@ -139,8 +145,10 @@ public struct CatalogContext: Sendable {
     inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
     userPresence: UserPresence = .interactive,
     snapshotStore: SnapshotStore? = nil,
-    settingsEndpoint: SettingsGraph? = nil
+    settingsEndpoint: SettingsGraph? = nil,
+    agentRunHost: AgentRunHost? = nil
   ) {
+    self.agentRunHost = agentRunHost
     self.snapshotStore = snapshotStore
     self.settingsEndpoint = settingsEndpoint
     self.workingDirectory = workingDirectory

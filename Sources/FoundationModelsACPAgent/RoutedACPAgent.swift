@@ -60,6 +60,11 @@ public actor RoutedACPAgent: Agent {
   /// change to the `index.md` of the session folder.
   nonisolated let sessionDirectory: RouterSessionDirectory
 
+  /// The recording roots that this agent composed a session under. The session directory reads
+  /// them with the roots of the project store (``recordingRootsOfTheDirectory()``), so it finds
+  /// the recorded nested sessions of a session that it restores.
+  nonisolated let knownRecordingRoots = KnownRecordingRoots()
+
   /// The connection table (ACPA-5, D120): one row for each bound
   /// connection and one for ``ConnectionId/direct``, with the client
   /// capabilities of the `initialize` of each and its trust, and the owner
@@ -435,6 +440,8 @@ public actor RoutedACPAgent: Agent {
     }
     residentProfile = try await configuration.profile.resolveResident(
       fallbackName: name, router: router, reporting: progress)
+    let directoryRoots = recordingRootsOfTheDirectory()
+    await router.sessionDirectory.useRecordingRoots { await directoryRoots() }
   }
 
   // MARK: - The order rule

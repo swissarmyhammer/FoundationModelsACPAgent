@@ -148,6 +148,17 @@ actor CloseCountingRoutedSession: RoutedSession {
     wrapped.suspend()
   }
 
+  /// Whether the real session is suspended.
+  nonisolated var isSuspended: Bool { wrapped.isSuspended }
+
+  /// Sends the cancel signal of the foreground work to the real session.
+  ///
+  /// - Returns: The id of the signal.
+  @discardableResult
+  nonisolated func cancelForeground() -> SignalID {
+    wrapped.cancelForeground()
+  }
+
   /// Sends the replace signal to the real session.
   ///
   /// - Parameters:

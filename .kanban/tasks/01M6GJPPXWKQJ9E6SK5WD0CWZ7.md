@@ -94,10 +94,38 @@ comments:
   id: 01m6hj6wv8kfpz8ms8kp1sja4j
   text: 'MULTITOOL PUSHED (main 5a900fdb): MultiTool.currentRegistry is public (980dd817). Use it to build restored runs from the CURRENT registry. Also pass crashRecordDirectory to StdioServerProcess, else the reaping of stdio servers after a crash stays off (5a900fdb). The shell owner now comes from the ToolContext session id (746da544). Run swift package update before this task.'
   timestamp: 2026-11-03T20:39:31.944615+00:00
+- actor: claude-code
+  id: 01m6j2s7rwrvj37jjb55dw21sp
+  text: |-
+    ### implement — changed
+    - evidence: 13 files. New: Agent/SessionResumeNested.swift, Agent/AgentRunLinks.swift, Agent/KnownRecordingRoots.swift, Tools/AgentRunHost.swift, Tests/.../ResumeNestedSessionsTests.swift. Changed: Agent/SessionResume.swift, Agent/SessionSetup.swift, Agent/PromptState.swift, RoutedACPAgent.swift, Tools/AgentsComposition.swift, Tools/CatalogContext.swift, Tests/.../AgentsToolTests.swift (writeAgent has disallowedTools; removeAgent), Tests/.../Support/CloseCountingRoutedSession.swift (new Router members isSuspended, cancelForeground). 8 of 8 acceptance and test items checked. `swift test --filter` for ResumeNestedSessionsTests (8 pass), AgentsToolTests (13), SessionResumeTests (22), ResumeSyncTests (16), SessionSetupNestedTests (13), ChildSessionProjectionTests (12), AgentCompositionTests (10): all pass, zero warnings.
+    - how it works: resume computes the claims of the root (runner.claims), restores the root with claimingRuns, then calls runner.restoreInterrupted(of: root) and registers each restored run as a nested session (registerNestedSession), caller before child, with the project hook key recorded in SnapshotSessionKeys. The report (restored runs not started, failed children) is kept in ActiveSession.nestedRestore for the child sync and re-drive tasks. Children come back idle: nobody calls resumeAll here.
+    - host links that were missing (without them restoreInterrupted throws sessionEndingMissing and a finished run was never marked ended): AgentRunHost gives the runs recordingRoot, sessionEnding (directory.markEnded), callerMail (directory.send) and claimCompletion (live root session). The session directory got recording roots (KnownRecordingRoots + project store) with useRecordingRoots; before, the host never set them, so recordedChildren found nothing.
+    - ran `swift package update` (Package.resolved is not tracked): Agents a8597b6, Router bb52caa, Multitool 5a900fd. Router added isSuspended and cancelForeground to RoutedSession; one test double needed both.
+    - FINDING 1: an interrupted child needs NO ended marker. In a plain close, SessionSurface.stopAgentRuns stops the announcer first; its settle closes the child sessions; the runs then end as cancelled WITHOUT the shutdown flag and mark their sessions ended. So a close that does not suspend the sessions loses the children for the next resume. An orderly quit must call session.suspend() on every live session first (a suspended session gets no marker). This is card ^59111kq (orderly shutdown). The test records with suspend + close. The same effect hits a live re-resume in one process (resumeSession tears the live entry down): that is the hot resume card ^923kndp.
+    - FINDING 2: the restored tools cannot be read from the recording or the transcript (they keep the recorded names). The test reads RoutedSessionActor.tools (the tools given to the restore). Agents drops the Router configurationReport (missing tools), so no wire report of a tool mismatch exists yet.
+    - FINDING 3: a failed child lists its descendants too (cause ancestorNotRestored), as the coordinator decision asks. The test checks child then leaf.
+    - not in this task: hot resume (^923kndp), start of the restored runs, replay and the child announcements (^awnkj0k, child sync), Multitool crashRecordDirectory for StdioServerProcess and the continue message about shell handles (re-drive task), the hook key of the Router session itself (no accessor; the snapshot key of root, child and grandchild is tested), SessionEnd of FoundationModelsHooks (this package has no handler for it).
+
+    step: implement
+    outcome: changed
+    evidence: 13 files (5 new, 8 changed); 8/8 card items checked; 7 filtered suites pass, 0 warnings
+    task: ^wd0cwz7
+  timestamp: 2026-11-04T01:29:10.172671+00:00
+- actor: claude-code
+  id: 01m6j313zphsb9wzha4hpkq3ne
+  text: |-
+    ### finish iteration 1 — stuck
+    - implement: changed — 13 files, 8 of 8 card items checked
+    - test: stuck — root swift test, 1520 tests, 1 failing: ShellSessionOwnerTests.aCommandAfterAModelSlotSwitchRecordsTheACPSessionID. TranscriptStoreTests fixed (Router now records .promptStarted). IntegrationTests deterministic suites: 38 passed.
+    - blocker: FoundationModelsMultitool commit 746da544 makes ShellRunner.run take the owner from ToolContext.current?.sessionID. The sessionID closure of ShellSessionIdentity is now only a fallback. This conflicts with the documented contract that the shell history names the ACP session id.
+    - next: a person decides. Option 1: change Multitool so the host closure wins (needs a task on the Multitool board). Option 2: accept the Router session id as the owner and change the ShellSessionIdentity docs and this test.
+    - note: the work of this card is complete and committed as a checkpoint. Review waits for the blocker.
+  timestamp: 2026-11-04T01:33:28.438649+00:00
 depends_on:
 - 01M6GH2K0VV6RWV5R6SN3HB9SV
-position_column: todo
-position_ordinal: '8980'
+position_column: doing
+position_ordinal: '8280'
 title: 'Cold resume: restore the recorded nested sub-agent sessions with their parent, idle, with tools from the CURRENT config'
 ---
 ## What
@@ -118,16 +146,16 @@ Do:
 4. Do not change the Router or FoundationModelsAgents from this task.
 
 ## Acceptance Criteria
-- [ ] After a cold resume of a root that had a nested chain of sessions (root, child, grandchild), `sessions` holds the root, the child and the grandchild, each with its parent.
-- [ ] Every restored child is idle.
-- [ ] A restored child has the tools of the CURRENT definition: change `disallowedTools` between the run and the resume, and the restored child follows the new config.
-- [ ] The ACP ids of the children are the same after a second resume.
-- [ ] A child whose definition is gone is not restored, and the root still resumes (the failure is kept for the child sync task).
-- [ ] `session/close` of the root closes the restored children.
+- [x] After a cold resume of a root that had a nested chain of sessions (root, child, grandchild), `sessions` holds the root, the child and the grandchild, each with its parent.
+- [x] Every restored child is idle.
+- [x] A restored child has the tools of the CURRENT definition: change `disallowedTools` between the run and the resume, and the restored child follows the new config.
+- [x] The ACP ids of the children are the same after a second resume.
+- [x] A child whose definition is gone is not restored, and the root still resumes (the failure is kept for the child sync task).
+- [x] `session/close` of the root closes the restored children.
 
 ## Tests
-- [ ] `Tests/FoundationModelsACPAgentTests/ResumeNestedSessionsTests.swift`: record a session with a nested chain of three sessions with the stub model, resume, check entries, parents, idle, stable ids, config change, missing definition, close.
-- [ ] Run `swift test --filter ResumeNestedSessionsTests`. All pass.
+- [x] `Tests/FoundationModelsACPAgentTests/ResumeNestedSessionsTests.swift`: record a session with a nested chain of three sessions with the stub model, resume, check entries, parents, idle, stable ids, config change, missing definition, close.
+- [x] Run `swift test --filter ResumeNestedSessionsTests`. All pass.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #subagents

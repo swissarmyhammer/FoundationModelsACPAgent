@@ -376,9 +376,10 @@ import Testing
 
     let events = try fixture.store.transcript(for: id, inProject: fixture.workingDirectory)
     // Router also records the facts of each mail as `.mail` events
-    // (mailbox.md, section 5, problem 10). They belong to the session,
-    // but they are not the conversation.
-    let conversation = events.filter { $0.kind != .mail }
+    // (mailbox.md, section 5, problem 10) and one `.promptStarted` marker
+    // before each prompt. They belong to the session, but they are not the
+    // conversation.
+    let conversation = events.filter { $0.kind != .mail && $0.kind != .promptStarted }
 
     #expect(events.allSatisfy { $0.sessionId == id })
     #expect(events.contains { $0.kind == .mail })
@@ -391,6 +392,15 @@ import Testing
       try fixture.store.transcript(
         for: ULID.generate(), inProject: fixture.workingDirectory
       ).isEmpty)
+  }
+
+  /// The kinds of the conversation in `events`: the events without the `.mail` facts and the
+  /// `.promptStarted` markers.
+  ///
+  /// - Parameter events: The events of one session.
+  /// - Returns: The kinds of the remaining events, in order.
+  private static func conversationKinds(of events: [TranscriptEvent]) -> [TranscriptEvent.Kind] {
+    events.filter { $0.kind != .mail && $0.kind != .promptStarted }.map(\.kind)
   }
 
   /// Drives one session in its own short-lived recorder run. The run's
@@ -437,9 +447,10 @@ import Testing
 
     #expect(ids == Set([firstRun, secondRun].map(\.description)))
     // The `.mail` events are the mail facts that Router records beside
-    // the conversation (mailbox.md, section 5, problem 10).
-    #expect(firstEvents.filter { $0.kind != .mail }.map(\.kind) == [.session, .prompt, .response])
-    #expect(secondEvents.filter { $0.kind != .mail }.map(\.kind) == [.session, .prompt, .response])
+    // the conversation (mailbox.md, section 5, problem 10), and the
+    // `.promptStarted` markers that open each prompt.
+    #expect(Self.conversationKinds(of: firstEvents) == [.session, .prompt, .response])
+    #expect(Self.conversationKinds(of: secondEvents) == [.session, .prompt, .response])
     // Both recorder runs start `seq` at zero, so the merged stream holds
     // colliding sequence numbers and only `ts` keeps the groups apart.
     #expect(firstEvents.first?.seq == 0)

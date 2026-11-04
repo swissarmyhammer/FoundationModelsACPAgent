@@ -211,9 +211,10 @@ extension RoutedACPAgent {
     // `session/new`, so the resumed session shares the one snapshot
     // timeline of its folder. The endpoints map the session to that key.
     let hookLineage = HookLineage(workingDirectory: workingDirectory, origin: .resumed)
+    let claims = await claimedRuns(of: rootId, in: composition)
     let restored = try await restoreRecordedSession(
       rootId, sessionId: params.sessionId, composition: composition, userPresence: userPresence,
-      hookLineage: hookLineage)
+      hookLineage: hookLineage, claimingRuns: claims)
     SnapshotSessionKeys.shared.record(hookLineage.sessionKey, for: params.sessionId)
     let history = resumedHistory(
       kept: keptHistory, directory: restored.session.recordingDirectory, rootId: rootId,
@@ -231,6 +232,11 @@ extension RoutedACPAgent {
         userPresence: userPresence),
       titleRecorded: restored.session.facts.title != nil,
       history: history)
+
+    // The root is in the table with its project hook key. So each recorded nested session
+    // restores under it, the caller before the child, and takes the same key.
+    await restoreNestedSessions(
+      of: params.sessionId, composition: composition, hookLineage: hookLineage)
 
     try await replayHistory(history, from: replayCursor, sessionId: params.sessionId)
     await syncCurrentState(of: params.sessionId)
@@ -406,13 +412,16 @@ extension RoutedACPAgent {
   ///   - userPresence: The user presence of the session.
   ///   - hookLineage: The hook lineage of the resumed session: its key is
   ///     the key that the hooks of the restored root see.
+  ///   - claimingRuns: The orphan `start agent` calls of the root that the restored nested
+  ///     sessions complete.
   /// - Returns: The restored session and its reports.
   /// - Throws: `RequestError.unknownSession` when the recording is
   ///   gone, or whatever the restore throws.
   private func restoreRecordedSession(
     _ rootId: ULID, sessionId: SessionId, composition: SessionComposition,
     userPresence: UserPresence,
-    hookLineage: HookLineage
+    hookLineage: HookLineage,
+    claimingRuns: Set<RunKey>
   ) async throws -> RestoredSession {
     do {
       let restored = try await residentProfile.standard.restoreSessionWithHostChecks(
@@ -421,7 +430,8 @@ extension RoutedACPAgent {
         instructions: composition.isReplayOnly ? nil : composition.instructions,
         tools: composition.surface.tools,
         userPresence: userPresence,
-        hookSessionKey: hookLineage.sessionKey)
+        hookSessionKey: hookLineage.sessionKey,
+        claimingRuns: claimingRuns)
       logRestoreReports(of: restored, sessionId: sessionId)
       return restored
     } catch {

@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModels
 import FoundationModelsACP
+import FoundationModelsAgents
 import FoundationModelsExtras
 import FoundationModelsRouter
 import FoundationModelsSkills
@@ -147,6 +148,12 @@ struct ActiveSession: Sendable {
   /// The agent never makes a session directory.
   /// So the session mounts no tool surface, writes nothing for the session, and refuses each prompt.
   let isReplayOnly: Bool
+
+  /// What the cold resume of this session restored of its recorded nested sessions: the runs in
+  /// tree order, not started, and the children that did not restore. It is `nil` for a session
+  /// that no cold resume restored, and for a nested session. The child sync task announces the
+  /// failed children. The re-drive task starts the runs.
+  var nestedRestore: RestoreReport?
 
   /// Whether `session/close` released this session.
   var isClosed = false
@@ -967,7 +974,8 @@ extension RoutedACPAgent {
       inlineSettleGrace: inlineSettleGrace,
       userPresence: userPresence,
       snapshotStore: hooks.snapshotStore,
-      settingsEndpoint: settingsEndpoint)
+      settingsEndpoint: settingsEndpoint,
+      agentRunHost: makeAgentRunHost(recordingRoot: context.transcriptRoot))
   }
 
   /// Composes one session over an already-resolved configuration.
@@ -1001,6 +1009,7 @@ extension RoutedACPAgent {
     clientMCPServers: [FoundationModelsACP.MCPServer],
     userPresence: UserPresence
   ) async throws -> SessionComposition {
+    knownRecordingRoots.add(context.transcriptRoot)
     let catalogContext = catalogContext(
       from: context, workingDirectory: workingDirectory, additionalRoots: additionalRoots,
       clientMCPServers: clientMCPServers, userPresence: userPresence)
@@ -1214,6 +1223,9 @@ extension RoutedLLM {
   ///     So the resumed session shares the one snapshot timeline of its folder.
   ///     The `SessionStart` of the root has the origin `resumed`.
   ///     Router gives the key to each fork in the same folder and to each restored sub-agent.
+  ///   - claimingRuns: The orphan `start agent` calls of the root that the restored sub-agent
+  ///     sessions complete (``RoutedACPAgent/claimedRuns(of:in:)``). The restore posts no `lost`
+  ///     end for them. The default claims none.
   /// - Returns: The restored session and its reports, with the host rules of
   ///   ``makeBudgetedSession(instructions:workingDirectory:recordingRoot:tools:compaction:repetition:inlineSettleGrace:)``.
   /// - Throws: Whatever Router's restore throws.
@@ -1223,7 +1235,8 @@ extension RoutedLLM {
     instructions: String?,
     tools: [any FoundationModels.Tool],
     userPresence: UserPresence,
-    hookSessionKey: String? = nil
+    hookSessionKey: String? = nil,
+    claimingRuns: Set<RunKey> = []
   ) async throws -> RestoredSession {
     try await restoreSession(
       id: id,
@@ -1233,13 +1246,14 @@ extension RoutedLLM {
       toolOutputProtection: HostRules.toolOutputProtection,
       isNoOpToolCall: HostRules.isNoOpToolCall,
       userPresence: userPresence,
-      hookSessionKey: hookSessionKey)
+      hookSessionKey: hookSessionKey,
+      claimingRuns: claimingRuns)
   }
 }
 
 /// The host rules that every Router session of the agent carries. A new
 /// session (``RoutedACPAgent/makeBudgetedSession(instructions:workingDirectory:recordingRoot:tools:compaction:repetition:inlineSettleGrace:userPresence:mailOnlyAnswerLimit:hookLineage:)``)
-/// and a restored session (``RoutedACPAgent/restoreSessionWithHostChecks(id:recordingRoot:instructions:tools:userPresence:hookSessionKey:)``)
+/// and a restored session (``RoutedACPAgent/restoreSessionWithHostChecks(id:recordingRoot:instructions:tools:userPresence:hookSessionKey:claimingRuns:)``)
 /// both read the rules here, so the two cannot differ.
 private enum HostRules {
   /// The rule that keeps the output of a skill tool call out of the fold.

@@ -70,8 +70,15 @@ comments:
     evidence: only the card .md checkboxes changed (7 items checked); IntegrationTests EmbeddingModelTests 2 of 2 pass
     task: ^3j33qc8
   timestamp: 2026-11-04T01:06:58.301930+00:00
-position_column: review
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m6j1kdch28t5b51qdfw6059b
+  text: |-
+    ### review — clean
+    - evidence: review sha 4184f76~1..4184f76. Findings 0, confirmed 0, refuted 0. 7 pairs attempted, 0 failed. None.
+    - next: Task moved to done. No open finding.
+  timestamp: 2026-11-04T01:08:30.737984+00:00
+position_column: done
+position_ordinal: ffff9c80
 title: 'Adopt ACP schema alpha.13 in the agent: update the wire dependency and fix the breaks'
 ---
 ## What

@@ -118,6 +118,11 @@ actor SessionStateLedger {
     openCount > 0
   }
 
+  /// Whether the session is idle now: the state that a snapshot of the session carries.
+  var isIdle: Bool {
+    current == .idle
+  }
+
   /// Whether the session is busy: Router works, or a prompt is open.
   private var isBusy: Bool {
     openCount > 0 || !workingSources.isEmpty || answersResuming > 0

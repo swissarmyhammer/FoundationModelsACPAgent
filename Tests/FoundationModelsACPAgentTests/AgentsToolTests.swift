@@ -81,6 +81,29 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
 
   // MARK: - Fixtures
 
+  /// The agent folder `<cwd>/.agents/agents/<name>`.
+  ///
+  /// - Parameters:
+  ///   - name: The id of the agent, which is also the folder name.
+  ///   - cwd: The session working directory.
+  /// - Returns: The folder.
+  private static func agentFolder(named name: String, in cwd: URL) -> URL {
+    cwd
+      .appendingPathComponent(".\(SurfaceCatalog.agentsDotfolderName)", isDirectory: true)
+      .appendingPathComponent(agentsFolderName, isDirectory: true)
+      .appendingPathComponent(name, isDirectory: true)
+  }
+
+  /// Deletes the agent folder `<cwd>/.agents/agents/<name>`, so the catalog has no such agent.
+  ///
+  /// - Parameters:
+  ///   - name: The id of the agent, which is also the folder name.
+  ///   - cwd: The session working directory.
+  /// - Throws: The removal error.
+  static func removeAgent(named name: String, in cwd: URL) throws {
+    try FileManager.default.removeItem(at: agentFolder(named: name, in: cwd))
+  }
+
   /// Writes the agent folder `<cwd>/.agents/agents/<name>/AGENT.md`.
   ///
   /// - Parameters:
@@ -88,17 +111,18 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   ///   - cwd: The session working directory.
   ///   - tools: The value of the `tools` key of the agent, or `nil` for an agent with no such key.
   ///     A run gets the `agents` tool only with an explicit grant.
+  ///   - disallowedTools: The value of the `disallowedTools` key of the agent, or `nil` for an
+  ///     agent with no such key.
   /// - Throws: The directory-creation or write error.
-  static func writeAgent(named name: String, in cwd: URL, tools: String? = nil) throws {
-    let folder =
-      cwd
-      .appendingPathComponent(".\(SurfaceCatalog.agentsDotfolderName)", isDirectory: true)
-      .appendingPathComponent(agentsFolderName, isDirectory: true)
-      .appendingPathComponent(name, isDirectory: true)
+  static func writeAgent(
+    named name: String, in cwd: URL, tools: String? = nil, disallowedTools: String? = nil
+  ) throws {
+    let folder = agentFolder(named: name, in: cwd)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     let toolsLine = tools.map { "tools: \($0)\n" } ?? ""
+    let disallowedLine = disallowedTools.map { "disallowedTools: \($0)\n" } ?? ""
     let document =
-      "---\nname: \(name)\ndescription: The \(name) test agent.\n\(toolsLine)---\n\nDo the task.\n"
+      "---\nname: \(name)\ndescription: The \(name) test agent.\n\(toolsLine)\(disallowedLine)---\n\nDo the task.\n"
     try document.write(
       to: folder.appendingPathComponent(agentDocumentName, isDirectory: false),
       atomically: true, encoding: .utf8)
