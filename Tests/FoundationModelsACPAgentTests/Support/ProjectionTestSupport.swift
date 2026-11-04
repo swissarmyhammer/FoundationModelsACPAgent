@@ -422,7 +422,8 @@ enum RoutedPrompt {
       tools: tools,
       compaction: CompactionConfiguration(),
       repetition: RepetitionConfiguration(),
-      inlineSettleGrace: CatalogContext.defaultInlineSettleGrace)
+      inlineSettleGrace: CatalogContext.defaultInlineSettleGrace,
+      transcriptReader: nil)
     let recorder = SinkRecorder()
     let send: SessionUpdateSink = { update in
       await recorder.append(update)

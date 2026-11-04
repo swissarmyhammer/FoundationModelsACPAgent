@@ -127,7 +127,7 @@ import Testing
     let restored = try await fixture.profile.standard.restoreSessionWithHostChecks(
       id: recorded.id, recordingRoot: fixture.recordingRoot,
       instructions: NoOpSessionFixture.instructions,
-      tools: fixture.tools, userPresence: .interactive)
+      tools: fixture.tools, userPresence: .interactive, transcriptReader: nil)
     _ = try await restored.session.respond(to: Self.callerPrompt)
     await restored.session.close()
 
@@ -198,7 +198,8 @@ struct NoOpSessionFixture {
       tools: tools,
       compaction: CompactionConfiguration(),
       repetition: RepetitionConfiguration(),
-      inlineSettleGrace: CatalogContext.defaultInlineSettleGrace)
+      inlineSettleGrace: CatalogContext.defaultInlineSettleGrace,
+      transcriptReader: nil)
   }
 
   /// Removes the temporary directory.

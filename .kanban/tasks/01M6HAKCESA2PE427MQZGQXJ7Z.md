@@ -2,10 +2,15 @@
 assignees:
 - claude-code
 comments:
-- actor: claude-code
-  id: 01m6hg08kekzdktm5cxs88cbpt
-  text: 'Router pushed both partial kinds: `TranscriptEvent.Kind.toolCallStarted` and `TranscriptEvent.Kind.promptStarted`. The host reader must map them like any other kind, with no special case. An unknown kind must not break the reader. A `promptStarted` entry has the joined message text and one mailDelivered record per mail. Work in the worktree `wt-transcript` from `origin/main`, and tell the coordinator before any push to `origin/main`. The card is still blocked by Extras card 01M6HAD7WQ56PXQZ5F4KAE59SS.'
-  timestamp: 2026-11-03T20:00:57.454998+00:00
+- actor: wballard
+  id: 01m6hqdwdper2fk85nak8b27qn
+  text: |-
+    ### implement - stuck
+    - blocker: Router gap. The Router builds the MountSite itself in RoutedModel.makeSessionToolWiring (Sources/FoundationModelsRouter/RoutedLLM.swift, internal, 3 MountSite(...) calls plus ToolOutputCapping). No call passes transcriptReader, and no public Router API lets the host give one. Router origin/main (bb52caa) has no mention of SessionTranscriptReader. Extras (d692c69) has the parameter on MountSite and ToolContext, but the ACP agent never makes a MountSite: it gives tools to the Router.
+    - needed: a Router card. The Router must take an optional transcript reader (for example on the router or session configuration) and pass it to each MountSite it makes: the root site, the recordedSpawn site, and the restore path. A child site keeps the reader of its parent (Extras does this in childSite).
+    - no code was written. Stopped as the task rule says: no change in Router or Extras.
+    - design point for the reader, for when the Router is ready: find the project of an id from a session folder scan of the registered recording roots (RegisteredRecordingRoots, TranscriptStore.allProjects), cache id to recording root after the first hit, and read only that session folder, not the merged project. This needs a read of one folder in TranscriptEvent (merged(under:) takes a root of many folders). Decide this in the implement step.
+  timestamp: 2026-11-03T22:10:43.766976+00:00
 position_column: doing
 position_ordinal: '8180'
 title: Give ToolContext a session transcript reader from TranscriptStore

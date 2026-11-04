@@ -257,7 +257,8 @@ extension RoutedACPAgent {
         inlineSettleGrace: entry.surface.inlineSettleGrace,
         userPresence: entry.userPresence,
         mailOnlyAnswerLimit: mailOnlyAnswerLimit,
-        hookLineage: HookLineage(workingDirectory: entry.workingDirectory, origin: .replacement))
+        hookLineage: HookLineage(workingDirectory: entry.workingDirectory, origin: .replacement),
+        transcriptReader: transcriptReader)
     // The replacement has a Router id of its own, and it owns the store
     // key once the replaced session releases it: the `snapshots`
     // endpoints name the ACP session as the owner of its checkpoints, and

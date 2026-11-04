@@ -695,7 +695,8 @@ extension RoutedACPAgent {
       inlineSettleGrace: composition.surface.inlineSettleGrace,
       userPresence: userPresence,
       mailOnlyAnswerLimit: mailOnlyAnswerLimit,
-      hookLineage: hookLineage)
+      hookLineage: hookLineage,
+      transcriptReader: transcriptReader)
     let sessionId = SessionId(rawValue: session.id.description)
     SnapshotSessionKeys.shared.record(hookLineage.sessionKey, for: sessionId)
 
@@ -1143,6 +1144,10 @@ extension RoutedLLM {
   ///     (``HookLineage/init(workingDirectory:origin:)``).
   ///     The model-slot switch gives the same key with the origin `replacement`.
   ///     So each session of one folder shares one snapshot timeline.
+  ///   - transcriptReader: The reader that a tool of the session uses to read the
+  ///     transcript of a session (``RoutedACPAgent/transcriptReader``).
+  ///     Every session that the agent makes gets it.
+  ///     It is `nil` only in a test that checks the missing source.
   /// - Returns: A new session over this model, with automatic
   ///   compaction on. The compaction keeps each skill that the model
   ///   loads with `use skill` (``SkillOutputProtection``). While an
@@ -1158,7 +1163,8 @@ extension RoutedLLM {
     inlineSettleGrace: TimeInterval,
     userPresence: UserPresence = .interactive,
     mailOnlyAnswerLimit: Int = SessionConfiguration.defaultMailOnlyAnswerLimit,
-    hookLineage: HookLineage? = nil
+    hookLineage: HookLineage? = nil,
+    transcriptReader: (any SessionTranscriptReader)?
   ) -> any RoutedSession {
     // The resolved context decides two things that a reader cannot see otherwise.
     // They are the fold point of the compaction, and the token ceiling
@@ -1195,7 +1201,8 @@ extension RoutedLLM {
         isNoOpToolCall: HostRules.isNoOpToolCall,
         userPresence: userPresence,
         hookSessionKey: hookLineage?.sessionKey,
-        hookOrigin: hookLineage?.origin))
+        hookOrigin: hookLineage?.origin,
+        transcriptReader: transcriptReader))
   }
 
   /// Restores one recorded session with the host rules that
@@ -1226,6 +1233,9 @@ extension RoutedLLM {
   ///   - claimingRuns: The orphan `start agent` calls of the root that the restored sub-agent
   ///     sessions complete (``RoutedACPAgent/claimedRuns(of:in:)``). The restore posts no `lost`
   ///     end for them. The default claims none.
+  ///   - transcriptReader: The reader that a tool of the restored session uses to read the
+  ///     transcript of a session. A recording holds no live reader, so the caller gives it again.
+  ///     It covers the restored root and each restored child.
   /// - Returns: The restored session and its reports, with the host rules of
   ///   ``makeBudgetedSession(instructions:workingDirectory:recordingRoot:tools:compaction:repetition:inlineSettleGrace:)``.
   /// - Throws: Whatever Router's restore throws.
@@ -1236,7 +1246,8 @@ extension RoutedLLM {
     tools: [any FoundationModels.Tool],
     userPresence: UserPresence,
     hookSessionKey: String? = nil,
-    claimingRuns: Set<RunKey> = []
+    claimingRuns: Set<RunKey> = [],
+    transcriptReader: (any SessionTranscriptReader)?
   ) async throws -> RestoredSession {
     try await restoreSession(
       id: id,
@@ -1247,13 +1258,14 @@ extension RoutedLLM {
       isNoOpToolCall: HostRules.isNoOpToolCall,
       userPresence: userPresence,
       hookSessionKey: hookSessionKey,
-      claimingRuns: claimingRuns)
+      claimingRuns: claimingRuns,
+      transcriptReader: transcriptReader)
   }
 }
 
 /// The host rules that every Router session of the agent carries. A new
-/// session (``RoutedACPAgent/makeBudgetedSession(instructions:workingDirectory:recordingRoot:tools:compaction:repetition:inlineSettleGrace:userPresence:mailOnlyAnswerLimit:hookLineage:)``)
-/// and a restored session (``RoutedACPAgent/restoreSessionWithHostChecks(id:recordingRoot:instructions:tools:userPresence:hookSessionKey:claimingRuns:)``)
+/// session (``RoutedACPAgent/makeBudgetedSession(instructions:workingDirectory:recordingRoot:tools:compaction:repetition:inlineSettleGrace:userPresence:mailOnlyAnswerLimit:hookLineage:transcriptReader:)``)
+/// and a restored session (``RoutedACPAgent/restoreSessionWithHostChecks(id:recordingRoot:instructions:tools:userPresence:hookSessionKey:claimingRuns:transcriptReader:)``)
 /// both read the rules here, so the two cannot differ.
 private enum HostRules {
   /// The rule that keeps the output of a skill tool call out of the fold.

@@ -145,6 +145,12 @@ public actor RoutedACPAgent: Agent {
   /// load of the files.
   nonisolated let settingsStore: SettingsStore
 
+  /// The reader that each session of the agent gives its tools, to read the transcript of a session
+  /// (``RecordedSessionTranscriptReader``).
+  /// It searches the recording roots of the registered projects of ``settingsStore``.
+  /// Every session that the agent makes or restores gets this one reader.
+  nonisolated let transcriptReader: RecordedSessionTranscriptReader
+
   /// The one `settings` endpoint of the agent over ``settingsStore``
   /// (EXTRAS-9 rule 9): the initializer makes it next to the store, and
   /// each session composition gives this same instance to its
@@ -427,6 +433,10 @@ public actor RoutedACPAgent: Agent {
       settingsFolders: settingsFolders, transcriptLocation: transcriptLocation,
       secretStore: self.secretStore)
     self.settingsEndpoint = try SettingsGraph(store: settingsStore)
+    let readerStore = settingsStore
+    self.transcriptReader = RecordedSessionTranscriptReader {
+      await RegisteredRecordingRoots.resolve(in: readerStore).roots
+    }
     // The sessions of one working directory share one key, so the
     // endpoint reads the key of each session, and the ACP session of each
     // Router session that owns the store, from the one map that the

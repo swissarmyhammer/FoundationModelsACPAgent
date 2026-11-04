@@ -158,7 +158,8 @@ import Testing
       tools: [StubSkillsTool(), StubNotesTool()],
       compaction: CompactionConfiguration(),
       repetition: RepetitionConfiguration(),
-      inlineSettleGrace: CatalogContext.defaultInlineSettleGrace)
+      inlineSettleGrace: CatalogContext.defaultInlineSettleGrace,
+      transcriptReader: nil)
     let requestCount = 6
     for request in 0..<requestCount {
       _ = try await session.respond(to: "request \(request)")

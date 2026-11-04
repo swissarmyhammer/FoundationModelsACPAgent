@@ -220,7 +220,8 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
       tools: surface.tools,
       compaction: AgentConfiguration().compaction,
       repetition: AgentConfiguration().repetition,
-      inlineSettleGrace: surface.inlineSettleGrace)
+      inlineSettleGrace: surface.inlineSettleGrace,
+      transcriptReader: nil)
   }
 
   /// The text of each output of the `agents` tool in a transcript, in

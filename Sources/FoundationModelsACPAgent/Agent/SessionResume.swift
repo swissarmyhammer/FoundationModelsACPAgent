@@ -431,7 +431,8 @@ extension RoutedACPAgent {
         tools: composition.surface.tools,
         userPresence: userPresence,
         hookSessionKey: hookLineage.sessionKey,
-        claimingRuns: claimingRuns)
+        claimingRuns: claimingRuns,
+        transcriptReader: transcriptReader)
       logRestoreReports(of: restored, sessionId: sessionId)
       return restored
     } catch {
