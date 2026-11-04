@@ -17,17 +17,18 @@ the script. The recording holds the model id as metadata only.
 The script deletes `workspace/` and writes it again.
 """
 
+import argparse
 import json
 import os
 import shutil
 import subprocess
-import sys
 import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-WORKSPACE = HERE / "workspace"
-TRANSCRIPTS = WORKSPACE / ".acp-agent" / "transcripts"
+DEFAULT_CWD = "/tmp/AgentViewKitDemo-nested-work"
+COMMITTED_TRANSCRIPTS = HERE / "workspace" / ".acp-agent" / "transcripts"
+COMMITTED_AGENTS = HERE / "agents"
 ROOT_PROMPT = "ROOT-NESTED-MARKER start the child"
 GRANDCHILD_AGENT = "leaf"
 GRANDCHILD_PROMPT = "GRANDCHILD-NESTED-MARKER"
@@ -47,13 +48,21 @@ Do the task.
 """
 
 
-def write_agent(name: str, tools: str) -> None:
-    """Write the agent folder `name` in the project folder of the workspace."""
-    folder = WORKSPACE / ".agents" / "agents" / name
+def write_agent(layer: Path, name: str, tools: str) -> None:
+    """Write the agent folder `name` in the agents folder `layer`."""
+    folder = layer / name
     folder.mkdir(parents=True)
     tools_line = f"tools: {tools}\n" if tools else ""
     document = AGENT_DOCUMENT.format(name=name, tools=tools_line)
     (folder / "AGENT.md").write_text(document, encoding="utf-8")
+
+
+def write_agents(user_agents: Path) -> None:
+    """Write `parent` and `leaf` in the USER layer, and copy them to the folder."""
+    write_agent(user_agents, "parent", "Agent")
+    write_agent(user_agents, "leaf", "")
+    shutil.rmtree(COMMITTED_AGENTS, ignore_errors=True)
+    shutil.copytree(user_agents, COMMITTED_AGENTS)
 
 
 def write_script(scratch: Path) -> Path:
@@ -123,9 +132,9 @@ def read_until_response(process: subprocess.Popen, request_id: int) -> dict:
     raise RuntimeError(f"the agent ended before the response {request_id}")
 
 
-def grandchild_has_prompt() -> bool:
+def grandchild_has_prompt(transcripts: Path) -> bool:
     """Whether the transcript of the grandchild holds the prompt it was given."""
-    for folder in TRANSCRIPTS.glob("*"):
+    for folder in transcripts.glob("*"):
         index = folder / "index.md"
         transcript = folder / "transcript.jsonl"
         if not index.exists() or not transcript.exists():
@@ -137,27 +146,30 @@ def grandchild_has_prompt() -> bool:
     return False
 
 
-def wait_for_grandchild() -> None:
+def wait_for_grandchild(transcripts: Path) -> None:
     """Wait until the grandchild runs, and waits on its gate."""
     deadline = time.monotonic() + DEADLINE_SECONDS
     while time.monotonic() < deadline:
-        if grandchild_has_prompt():
+        if grandchild_has_prompt(transcripts):
             return
         time.sleep(POLL_SECONDS)
     raise RuntimeError("the grandchild never started")
 
 
-def main(executable: str, model: str) -> None:
+def main(executable: str, model: str, cwd: str) -> None:
     """Run the agent, start the nested run, and shut the agent down."""
-    shutil.rmtree(WORKSPACE, ignore_errors=True)
-    WORKSPACE.mkdir()
-    write_agent("parent", "Agent")
-    write_agent("leaf", "")
+    if not os.path.isabs(cwd):
+        raise SystemExit(f"--cwd must be an absolute path: {cwd}")
+    transcripts = Path(cwd) / ".acp-agent" / "transcripts"
+    shutil.rmtree(Path(cwd) / ".acp-agent", ignore_errors=True)
+    shutil.rmtree(Path(cwd) / ".agents", ignore_errors=True)
+    Path(cwd).mkdir(parents=True, exist_ok=True)
     scratch = Path(subprocess.check_output(["mktemp", "-d"], text=True).strip())
     script = write_script(scratch)
+    write_agents(scratch / "config" / "agents")
     process = subprocess.Popen(
         [executable, "acp"],
-        cwd=WORKSPACE,
+        cwd=cwd,
         env=environment(script, scratch, model),
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
@@ -185,7 +197,7 @@ def main(executable: str, model: str) -> None:
             "jsonrpc": "2.0",
             "id": 2,
             "method": "session/new",
-            "params": {"cwd": str(WORKSPACE), "mcpServers": []},
+            "params": {"cwd": cwd, "mcpServers": []},
         },
     )
     created = read_until_response(process, 2)
@@ -204,13 +216,21 @@ def main(executable: str, model: str) -> None:
             },
         },
     )
-    wait_for_grandchild()
+    wait_for_grandchild(transcripts)
     process.stdin.close()
     process.wait(timeout=SHUTDOWN_SECONDS)
     shutil.rmtree(scratch, ignore_errors=True)
+    shutil.rmtree(HERE / "workspace", ignore_errors=True)
+    shutil.copytree(transcripts, COMMITTED_TRANSCRIPTS)
     print(f"root session: {session_id}")
-    print(f"recording root: {TRANSCRIPTS}")
+    print(f"recorded cwd: {cwd}")
+    print(f"committed transcripts: {COMMITTED_TRANSCRIPTS}")
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else STANDARD_MODEL)
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("executable", help="path of the acp-agent-stub binary")
+    parser.add_argument("--cwd", default=DEFAULT_CWD, help="absolute recorded cwd")
+    parser.add_argument("--model", default=STANDARD_MODEL, help="standard model id")
+    arguments = parser.parse_args()
+    main(arguments.executable, arguments.model, arguments.cwd)

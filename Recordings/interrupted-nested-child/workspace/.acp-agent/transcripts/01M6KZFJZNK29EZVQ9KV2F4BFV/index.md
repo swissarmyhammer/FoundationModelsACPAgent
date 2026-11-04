@@ -1,8 +1,8 @@
 ---
-sessionId: 01M6KZ8ZMRTYGA0DVHSTNW7C7S
-cwd: /Users/wballard/github/swissarmyhammer/FoundationModelsACPAgent-wt-rec/Recordings/interrupted-nested-child/workspace/
-updatedAt: '2026-11-04T19:06:20.699Z'
-firstActivityAt: '2026-11-04T19:06:20.699Z'
+sessionId: 01M6KZFJZNK29EZVQ9KV2F4BFV
+cwd: /tmp/AgentViewKitDemo-nested-work/
+updatedAt: '2026-11-04T19:09:57.112Z'
+firstActivityAt: '2026-11-04T19:09:57.112Z'
 additionalDirectories: []
 agentID: leaf
 agentName: leaf
@@ -17,10 +17,10 @@ instructions: '
   '
 recordingLevel: full
 agentSpawn:
-  parentSessionId: 01M6KZ8Z87G4B4DJXC5SWPVVVB
-  parentToolCallId: 01M6KZ8Z8B8NB7GZB7GCCT13S8
-  rootSessionId: 01M6KZ8Z4GXEZCXF3F53NAEBVM
-routerId: 01M6KZ8WFKS7HYD9M9ATTG2P14
+  parentSessionId: 01M6KZFJKJZWF47K4NWB69RP7R
+  parentToolCallId: 01M6KZFJKNZVDZPX44JDHJYCR9
+  rootSessionId: 01M6KZFJJQ3RGRAXDP42Q9GV3J
+routerId: 01M6KZFH6TAJFMTEA5WPRJPJ7B
 compactionCount: 0
 profile:
   definitionName: acp-agent
@@ -34,8 +34,8 @@ configuration:
     Do the task.
 
     '
-  workingDirectory: file:///Users/wballard/github/swissarmyhammer/FoundationModelsACPAgent-wt-rec/Recordings/interrupted-nested-child/workspace/
-  recordingRoot: file:///Users/wballard/github/swissarmyhammer/FoundationModelsACPAgent-wt-rec/Recordings/interrupted-nested-child/workspace/.acp-agent/transcripts/
+  workingDirectory: file:///tmp/AgentViewKitDemo-nested-work/
+  recordingRoot: file:///tmp/AgentViewKitDemo-nested-work/.acp-agent/transcripts/
   toolNames:
   - runCode
   - searchTools
@@ -65,9 +65,9 @@ configuration:
       Leave out small talk, and finished work that does not matter next. Use plain
       sentences or short bullets.'
   agentSpawn:
-    parentSessionId: 01M6KZ8Z87G4B4DJXC5SWPVVVB
-    parentToolCallId: 01M6KZ8Z8B8NB7GZB7GCCT13S8
-    rootSessionId: 01M6KZ8Z4GXEZCXF3F53NAEBVM
+    parentSessionId: 01M6KZFJKJZWF47K4NWB69RP7R
+    parentToolCallId: 01M6KZFJKNZVDZPX44JDHJYCR9
+    rootSessionId: 01M6KZFJJQ3RGRAXDP42Q9GV3J
   repetitionDetection:
     isEnabled: true
     windowTokens: 2048
