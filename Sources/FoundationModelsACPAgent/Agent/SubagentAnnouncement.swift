@@ -138,6 +138,7 @@ extension RoutedACPAgent {
     let child = SessionId(rawValue: report.runID.description)
     if previous == nil {
       await registerChild(child, source: source, under: parentId)
+      bindMessages(of: report, child: child, callerId: parentId, caller: parent)
     }
     let send = historySink(for: parentId, gate: parent.announcement)
     await send(.subagentUpdate(patch))
@@ -148,6 +149,25 @@ extension RoutedACPAgent {
       await parent.stateLedger.subagentAnnounced(child)
     }
     return .sent(target)
+  }
+
+  /// Binds the run to its two sessions in the projector of messages. A message that the run
+  /// posts to its caller then gets its views in both transcripts
+  /// (``SubagentMessageProjector/bind(token:child:caller:)``). A run that no `agents` call
+  /// started has no token, and no message of the call route.
+  ///
+  /// - Parameters:
+  ///   - report: The report of the run.
+  ///   - child: The ACP id of the child.
+  ///   - callerId: The ACP id of the session that started the run.
+  ///   - caller: The entry of that session.
+  private func bindMessages(
+    of report: SubagentReport, child: SessionId, callerId: SessionId, caller: ActiveSession
+  ) {
+    guard let token = report.completionToken else {
+      return
+    }
+    caller.surface.runCallJoins.messages.bind(token: token, child: child, caller: callerId)
   }
 
   /// Registers the child session of a run as a session nested in its parent. A child that has
@@ -219,6 +239,7 @@ extension RoutedACPAgent {
   func settleSubagent(_ report: SubagentReport, root: SessionId, holds: AgentCallHolds) async {
     let child = SessionId(rawValue: report.runID.description)
     if let entry = sessions[child] {
+      sendFinalReply(of: report, through: entry)
       await endChild(entry, with: report)
       await retireSession(child)
     }
@@ -230,6 +251,21 @@ extension RoutedACPAgent {
       return
     }
     await parent.projector.releaseHold(of: token)
+  }
+
+  /// Sends the outgoing view of the final message of a run to the transcript of the child. It
+  /// goes before the end of the child, because the child sends nothing after its last state.
+  /// The incoming view follows in the transcript of the caller, when the caller journals the end
+  /// of the run (``SubagentMessageProjector/finalReply(ofRun:text:)``).
+  ///
+  /// - Parameters:
+  ///   - report: The final report of the run.
+  ///   - entry: The entry of the child.
+  private func sendFinalReply(of report: SubagentReport, through entry: ActiveSession) {
+    guard let token = report.completionToken else {
+      return
+    }
+    entry.surface.runCallJoins.messages.finalReply(ofRun: token, text: report.finalReply)
   }
 
   /// Ends the session of a child. A child that the client knows sends its last updates and its

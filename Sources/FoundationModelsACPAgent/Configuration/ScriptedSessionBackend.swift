@@ -458,6 +458,10 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
         appendReasoning(text)
       case .toolCall(let name, let argumentsJSON):
         try await invokeTool(named: name, argumentsJSON: argumentsJSON, turn: turn)
+      case .toolCallFromFile(let name, let path):
+        try await ScriptedGate.wait(atPath: path)
+        let argumentsJSON = try String(contentsOfFile: path, encoding: .utf8)
+        try await invokeTool(named: name, argumentsJSON: argumentsJSON, turn: turn)
       case .elicit(let message):
         if try await askUser(message, turn: turn, yield: yield) {
           return true

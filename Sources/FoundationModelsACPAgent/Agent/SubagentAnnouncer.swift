@@ -33,6 +33,11 @@ struct SubagentReport: Equatable, Sendable {
   /// id of the call.
   let completionToken: String?
 
+  /// The reply of the run: the text of its last turn. It is `nil` for a run that is in
+  /// operation, failed or was cancelled. The reply is the outgoing view of the final message
+  /// of the run (``SubagentMessageProjector/finalReply(ofRun:text:)``).
+  let finalReply: String?
+
   /// Makes a report from its parts.
   ///
   /// - Parameters:
@@ -43,9 +48,10 @@ struct SubagentReport: Equatable, Sendable {
   ///   - state: The foreground state of the run.
   ///   - completionToken: The completion token of the `agents` call that
   ///     started the run, or `nil`.
+  ///   - finalReply: The reply of the run, or `nil`.
   init(
     runID: ULID, caller: ULID?, title: String, description: String?, state: StateUpdate,
-    completionToken: String? = nil
+    completionToken: String? = nil, finalReply: String? = nil
   ) {
     self.runID = runID
     self.caller = caller
@@ -53,6 +59,7 @@ struct SubagentReport: Equatable, Sendable {
     self.description = description
     self.state = state
     self.completionToken = completionToken
+    self.finalReply = finalReply
   }
 
   /// Makes the report of a run, as the run is now.
@@ -61,7 +68,19 @@ struct SubagentReport: Equatable, Sendable {
   init(run: AgentRun) {
     self.init(
       runID: run.id, caller: run.caller, title: run.agent.id, description: run.agent.description,
-      state: Self.state(of: run.state), completionToken: run.completionToken)
+      state: Self.state(of: run.state), completionToken: run.completionToken,
+      finalReply: Self.finalReply(of: run.state))
+  }
+
+  /// The reply of a run that finished.
+  ///
+  /// - Parameter runState: The state of the run.
+  /// - Returns: The text of the last turn of a finished run, or `nil` for any other state.
+  private static func finalReply(of runState: AgentRunState) -> String? {
+    if case .finished(let reply) = runState {
+      return reply
+    }
+    return nil
   }
 
   /// The foreground state that a state of a run reports. A run in operation is `running`. A run

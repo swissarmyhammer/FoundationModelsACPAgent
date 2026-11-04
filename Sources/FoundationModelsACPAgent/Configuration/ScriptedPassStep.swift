@@ -26,6 +26,14 @@ public enum ScriptedPassStep: Sendable, Equatable {
   /// `argumentsJSON`.
   case toolCall(name: String, argumentsJSON: String)
 
+  /// Waits until the file at `path` exists, then invokes the handed tool named `name` with the
+  /// text of the file as its arguments.
+  ///
+  /// A proof uses it when the arguments of a call hold an id that exists only while the test
+  /// runs, for example the id of a child session. The test writes the file when it knows the id.
+  /// It writes the file in one step (an atomic write), so the call never reads half of it.
+  case toolCallFromFile(name: String, path: String)
+
   /// Asks the user one form question with the text `message`, and waits
   /// for the answer. The form has one required text field named `answer`.
   ///

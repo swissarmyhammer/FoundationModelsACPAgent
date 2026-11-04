@@ -70,8 +70,9 @@ struct RunToken: Hashable, Sendable {
 ///
 /// Each session has its own table, so the tool call ids of a child and of its
 /// parent never meet. The tables of the sessions of one surface share one set
-/// of holds. The holds are on the final status of the `agents` calls
-/// (``holds``, ``deferringFinalStatus(of:)``).
+/// of holds and one projector of messages. The holds are on the final status of the `agents` calls
+/// (``holds``, ``deferringFinalStatus(of:)``). The projector of messages gives the
+/// `session_message` views of the messages between a caller and a child (``messages``).
 ///
 /// The session surface owns one table (``SessionSurface/runCallJoins``). The
 /// terminal stream and the agent environment live for the whole session, as the
@@ -137,12 +138,24 @@ final class RunCallJoinTable: Sendable {
   /// sessions of one surface share one object.
   let holds: AgentCallHolds
 
+  /// The `session_message` views of the messages between a caller and a child. The tables of
+  /// the sessions of one surface share one object, because a message has a view in the
+  /// transcript of each of its two sessions.
+  let messages: SubagentMessageProjector
+
   /// Makes a table.
   ///
-  /// - Parameter holds: The holds of the surface. A table of a session that
-  ///   has no surface of its own gives the holds of its parent.
-  init(holds: AgentCallHolds = AgentCallHolds()) {
+  /// - Parameters:
+  ///   - holds: The holds of the surface. A table of a session that has no surface of its own
+  ///     gives the holds of its parent.
+  ///   - messages: The message views of the surface. A table of a session that has no surface of
+  ///     its own gives the views of its parent.
+  init(
+    holds: AgentCallHolds = AgentCallHolds(),
+    messages: SubagentMessageProjector = SubagentMessageProjector()
+  ) {
     self.holds = holds
+    self.messages = messages
   }
 
   /// The sink that keeps the final status of each held `agents` call. The

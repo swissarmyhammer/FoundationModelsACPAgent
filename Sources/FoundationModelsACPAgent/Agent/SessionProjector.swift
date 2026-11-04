@@ -106,6 +106,9 @@ actor SessionProjector {
   /// The join table of the session, which the translator writes.
   nonisolated let runCallJoins: RunCallJoinTable
 
+  /// The id of the ACP session.
+  private nonisolated let sessionId: SessionId
+
   /// The input end of the inbox.
   private nonisolated let inbox: AsyncStream<Input>.Continuation
 
@@ -144,6 +147,7 @@ actor SessionProjector {
   ) {
     self.relay = relay
     self.runCallJoins = runCallJoins
+    self.sessionId = sessionId
     // The final status of an `agents` call waits for the end of its child
     // (``AgentCallHolds``). Each send of the session goes through the hold.
     // The ledger learns of each update after the update went out, below the hold. So a call
@@ -154,6 +158,11 @@ actor SessionProjector {
     let send = runCallJoins.deferringFinalStatus(of: announcing)
     let (stream, inbox) = AsyncStream.makeStream(of: Input.self)
     self.inbox = inbox
+    // The views of the messages between a caller and a child go through the inbox. So a view
+    // keeps its order with the events of the session.
+    runCallJoins.messages.attach(sessionId) { update in
+      inbox.yield(.update(update, sent: nil))
+    }
     runCallJoins.openProjection()
     consumer = Task {
       var state = ProjectionState(
@@ -368,6 +377,7 @@ actor SessionProjector {
       }
       await reader.value
     }
+    runCallJoins.messages.detach(sessionId)
     inbox.finish()
     await consumer.value
     runCallJoins.closeProjection()
@@ -505,6 +515,7 @@ private struct ProjectionState {
     if let index, case .submissionStarted = event {
       await open[index].prompt.owner.promptDidStart()
     }
+    translator.origin = output.origin
     translator.tally = index.map { open[$0].tally } ?? runTally
     let recorders = index.map { [open[$0].toolCalls] } ?? open.map(\.toolCalls)
     translator.send = recorders.reduce(send) { sink, toolCalls in toolCalls.recording(into: sink) }

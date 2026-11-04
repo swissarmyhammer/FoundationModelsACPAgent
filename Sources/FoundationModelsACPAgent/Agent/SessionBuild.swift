@@ -97,7 +97,8 @@ struct SessionBuild {
   /// the parent waits for. The tool call ids of the nested session and of its
   /// parent never meet. Each session has its own table. The two tables share
   /// the holds on the final status of the `agents` calls
-  /// (``AgentCallHolds``). The runs of the whole surface are held in one
+  /// (``AgentCallHolds``) and the projector of the messages between a caller and a child
+  /// (``SubagentMessageProjector``). The runs of the whole surface are held in one
   /// place.
   ///
   /// - Parameters:
@@ -120,7 +121,8 @@ struct SessionBuild {
     // prompt of the agent never writes its title.
     titleRecorded = true
     self.history = history
-    runCallJoins = RunCallJoinTable(holds: parent.surface.runCallJoins.holds)
+    runCallJoins = RunCallJoinTable(
+      holds: parent.surface.runCallJoins.holds, messages: parent.surface.runCallJoins.messages)
     capabilities = SessionCapabilitySet(advertised: SubagentAnnouncer.childCapabilities)
   }
 }

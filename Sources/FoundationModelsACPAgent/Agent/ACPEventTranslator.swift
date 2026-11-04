@@ -155,6 +155,23 @@ struct ACPEventTranslator {
 
   // MARK: - The mutable state
 
+  /// The origin of the event in translation. The ``SessionProjector`` sets it before each event.
+  /// The key of a message of a run derives from the mail in it
+  /// (``messageKey(of:)``).
+  var origin: Origin = .system
+
+  /// The sent-message records of the tool calls whose arguments did not come yet, by the wire
+  /// id of the call. Only the SDK `toolCall` event carries the text of the message, and it can
+  /// come before or after the report (``keepSentMessages(of:)``).
+  var sentMessages: [String: [SentMessageRecord]] = [:]
+
+  /// The texts of the messages in the arguments of recent tool calls, by the SDK id of the call.
+  var messageTexts = MessageTexts()
+
+  /// The number of messages of runs that had no single mail in their origin. It keeps the keys
+  /// of such messages apart.
+  var unmailedMessageCount = 0
+
   /// The counts of the prompt that the event in translation belongs to.
   /// The ``SessionProjector`` sets it before each event and reads it after:
   /// the tally of the open prompt for an event of that prompt, and a
@@ -209,7 +226,7 @@ struct ACPEventTranslator {
   /// - Parameter runId: The correlation id of the run, which is its
   ///   completion token.
   /// - Returns: The metadata.
-  private func runMetadata(_ runId: String) -> Logger.Metadata {
+  func runMetadata(_ runId: String) -> Logger.Metadata {
     var metadata = ACPAgentTelemetry.sessionMetadata(sessionId, parent: parentSessionId)
     metadata[ACPAgentTelemetry.LogMetadataKey.toolCallId] = "\(runId)"
     return metadata
@@ -284,6 +301,7 @@ struct ACPEventTranslator {
     case .toolCall(let id, let name, let argumentsJSON):
       tally.sawOutput = true
       await projectToolCall(id: id, name: name, argumentsJSON: argumentsJSON)
+      await keepMessageText(ofCall: id, tool: name, argumentsJSON: argumentsJSON)
     case .toolStatus(let id, let status, let summary, let output):
       tally.sawOutput = true
       await projectToolStatus(id: id, status: status, summary: summary, output: output)
@@ -325,16 +343,22 @@ struct ACPEventTranslator {
       // A settled run that has no join entry gets "no join", so a
       // terminal announce that waits for the run stops waiting.
       runCallJoins.seal(RunToken(operationEvent.correlationID))
+      // The incoming view of the final message comes before the settlement. The settlement can
+      // send the final status of the `agents` call, and the client removes the child at that
+      // status.
+      await receiveFinalMessage(of: operationEvent)
       await projectSettlement(of: operationEvent)
     case .runProgress(let operationEvent):
       // A report of a run, not output of the model: it does not set
       // `sawOutput`, so it changes neither the `_no_output` stop
       // reason nor the stall guard of the prompt (task ^jwx92y8).
       await projectProgress(of: operationEvent)
-    case .runMessage:
+    case .runMessage(let operationEvent):
       // A message of a background run that the session injects for
-      // the model, with no ACP counterpart: the answer that this
-      // message starts carries the result to the client.
+      // the model. The answer that this message starts carries the
+      // result to the client. The message of a child also has a
+      // `session_message` view.
+      await sendMessage(of: operationEvent)
       reportUnsentEvent(event)
     case .toolCallReport(let report):
       // The "at least one attachment" rule is a doc comment
@@ -348,6 +372,9 @@ struct ACPEventTranslator {
         return
       }
       tally.sawOutput = true
+      guard let report = await keepSentMessages(of: report) else {
+        return
+      }
       recordChangedFiles(in: report)
       await projectToolCallReport(report)
     case .toolDisplay(let display):
@@ -403,7 +430,12 @@ struct ACPEventTranslator {
       // reads the end of an answer for the stop reason.
       streamedTextInAnswer = false
       reportUnsentEvent(event)
-    case .submissionStarted, .mailDelivered, .cancelled, .signalDone, .lost:
+    case .mailDelivered(let mail):
+      // The mail of a message between a caller and a child gets its incoming view when this
+      // session takes it. Every other mail sends nothing.
+      await receiveMessage(of: mail)
+      reportUnsentEvent(event)
+    case .submissionStarted, .cancelled, .signalDone, .lost:
       // Mail and signal bookkeeping with no ACP counterpart.
       reportUnsentEvent(event)
     case .workStarted, .workEnded:
