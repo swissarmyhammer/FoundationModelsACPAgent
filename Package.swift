@@ -316,10 +316,10 @@ private let metricsTestKitProduct = Target.Dependency.product(
 private let telemetryTestSupportProduct = Target.Dependency.product(
     name: "TelemetryTestSupport", package: extrasDependencyName)
 
-/// The test support of Router: `HookLayeredLLMContainer`, which puts the
-/// tool layers of the live model loader (the no-op check, the repetition
-/// check and the tool hook layer) on the tools of each session of a scripted
-/// container. Only the unit test target links it.
+/// The test support of Router: `StubURLProtocol` and `RequestRecorder`, which
+/// the token suite uses to stub the network of the live router. Only the unit
+/// test target links it. `HookLayeredLLMContainer` is not here: it is in the
+/// main Router target.
 private let routerTestSupportProduct = Target.Dependency.product(
     name: "\(routerDependencyName)TestSupport", package: routerDependencyName)
 
@@ -529,9 +529,9 @@ let package = Package(
         // they read, and the span API with the in-memory tracer, whose span
         // kinds and span ids they read — see `inMemoryTracingProduct` — and
         // the test metrics kit, whose metric values they read — see
-        // `metricsTestKitProduct`. The hook and no-op suites link the
-        // Router test support, whose container puts the tool layers of the
-        // live loader on a scripted model — see `routerTestSupportProduct`.
+        // `metricsTestKitProduct`. The token suite links the Router
+        // test support, whose URL stub it uses — see
+        // `routerTestSupportProduct`.
         // The `settings` endpoint suites give variables to the endpoint as
         // GraphQL `Map` values and read its schema — see `graphQLProducts`.
         // The token suite gives a `TokenProvider` to the live router and

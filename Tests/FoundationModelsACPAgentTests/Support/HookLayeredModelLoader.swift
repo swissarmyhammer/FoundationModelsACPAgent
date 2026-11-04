@@ -1,6 +1,6 @@
 import FoundationModelsACPAgent
 import FoundationModelsACPAgentTestSupport
-import FoundationModelsRouterTestSupport
+import FoundationModelsRouter
 
 /// A loader whose containers play `script` with the tool layers of the live
 /// model loader on the tools of each session and of each fork.
