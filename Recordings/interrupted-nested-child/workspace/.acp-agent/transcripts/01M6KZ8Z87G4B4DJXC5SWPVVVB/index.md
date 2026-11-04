@@ -1,16 +1,14 @@
 ---
-sessionId: 01M6JKRZN9H4V39ECSWBBPT5QJ
-cwd: /Users/wballard/github/swissarmyhammer/FoundationModelsACPAgent/Recordings/interrupted-nested-child/workspace/
-updatedAt: '2026-11-04T06:26:07.669Z'
-firstActivityAt: '2026-11-04T06:26:07.669Z'
+sessionId: 01M6KZ8Z87G4B4DJXC5SWPVVVB
+cwd: /Users/wballard/github/swissarmyhammer/FoundationModelsACPAgent-wt-rec/Recordings/interrupted-nested-child/workspace/
+updatedAt: '2026-11-04T19:06:20.298Z'
+firstActivityAt: '2026-11-04T19:06:20.298Z'
 additionalDirectories: []
-agentID: leaf
-agentName: leaf
+agentID: parent
+agentName: parent
 tags: []
 slot: standard
-model:
-  repo: mlx-community/Qwen3.8-27B-4bit
-  drafter: mlx-community/Qwen3.8-27B-MTP-4bit
+model: mlx-community/Qwen3.8-27B-mxfp4
 context: 32768
 instructions: '
 
@@ -19,16 +17,14 @@ instructions: '
   '
 recordingLevel: full
 agentSpawn:
-  parentSessionId: 01M6JKRZA4NJBNESVN3DV9T2KY
-  parentToolCallId: 01M6JKRZA75RS90H9Y5YSW904Q
-  rootSessionId: 01M6JKRZ7HWFCD7GFPEETKGX83
-routerId: 01M6JKRY71VK8CV4VEJ52V229Q
+  parentSessionId: 01M6KZ8Z4GXEZCXF3F53NAEBVM
+  parentToolCallId: 01M6KZ8Z826GS69C0KZ8JBCT0P
+  rootSessionId: 01M6KZ8Z4GXEZCXF3F53NAEBVM
+routerId: 01M6KZ8WFKS7HYD9M9ATTG2P14
 compactionCount: 0
 profile:
   definitionName: acp-agent
-  standard:
-    repo: mlx-community/Qwen3.8-27B-4bit
-    drafter: mlx-community/Qwen3.8-27B-MTP-4bit
+  standard: mlx-community/Qwen3.8-27B-mxfp4
   flash: mlx-community/Qwen3-4B-4bit
   embedding: erjigit17/embeddinggemma-300m-ane-coreml
   context: 32768
@@ -38,12 +34,9 @@ configuration:
     Do the task.
 
     '
-  workingDirectory: file:///Users/wballard/github/swissarmyhammer/FoundationModelsACPAgent/Recordings/interrupted-nested-child/workspace/
-  recordingRoot: file:///Users/wballard/github/swissarmyhammer/FoundationModelsACPAgent/Recordings/interrupted-nested-child/workspace/.acp-agent/transcripts/
+  workingDirectory: file:///Users/wballard/github/swissarmyhammer/FoundationModelsACPAgent-wt-rec/Recordings/interrupted-nested-child/workspace/
+  recordingRoot: file:///Users/wballard/github/swissarmyhammer/FoundationModelsACPAgent-wt-rec/Recordings/interrupted-nested-child/workspace/.acp-agent/transcripts/
   toolNames:
-  - runCode
-  - searchTools
-  - skills
   - agents
   budget:
     limit: 32768
@@ -69,9 +62,9 @@ configuration:
       Leave out small talk, and finished work that does not matter next. Use plain
       sentences or short bullets.'
   agentSpawn:
-    parentSessionId: 01M6JKRZA4NJBNESVN3DV9T2KY
-    parentToolCallId: 01M6JKRZA75RS90H9Y5YSW904Q
-    rootSessionId: 01M6JKRZ7HWFCD7GFPEETKGX83
+    parentSessionId: 01M6KZ8Z4GXEZCXF3F53NAEBVM
+    parentToolCallId: 01M6KZ8Z826GS69C0KZ8JBCT0P
+    rootSessionId: 01M6KZ8Z4GXEZCXF3F53NAEBVM
   repetitionDetection:
     isEnabled: true
     windowTokens: 2048

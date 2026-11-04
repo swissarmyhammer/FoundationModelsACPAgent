@@ -8,7 +8,11 @@ grandchild is running, the script closes the stdin of the agent. That is an
 orderly shutdown: the sessions are suspended, and no session gets an
 `endedAt` mark.
 
-Usage: make.py <path of the acp-agent-stub binary>
+Usage: make.py <path of the acp-agent-stub binary> [<standard model id>]
+
+The `standard` slot of the recording names the model `STANDARD_MODEL` by default
+(`mlx-community/Qwen3.8-27B-mxfp4`) and names no drafter. The stub model plays
+the script. The recording holds the model id as metadata only.
 
 The script deletes `workspace/` and writes it again.
 """
@@ -27,6 +31,7 @@ TRANSCRIPTS = WORKSPACE / ".acp-agent" / "transcripts"
 ROOT_PROMPT = "ROOT-NESTED-MARKER start the child"
 GRANDCHILD_AGENT = "leaf"
 GRANDCHILD_PROMPT = "GRANDCHILD-NESTED-MARKER"
+STANDARD_MODEL = "mlx-community/Qwen3.8-27B-mxfp4"
 PROTOCOL_VERSION = 2
 POLL_SECONDS = 0.2
 DEADLINE_SECONDS = 120
@@ -51,20 +56,36 @@ def write_agent(name: str, tools: str) -> None:
     (folder / "AGENT.md").write_text(document, encoding="utf-8")
 
 
-def write_script(gate: Path) -> Path:
-    """Write the stub script with the path of the gate, and return its path."""
+def write_script(scratch: Path) -> Path:
+    """Write the stub script in the scratch folder, and return its path.
+
+    The script holds the path of the gate, a path of this machine. It stays out of
+    the recording folder, so no file of the folder holds that path.
+    """
+    gate = scratch / "gate-that-never-opens"
     template = (HERE / "script.template.json").read_text(encoding="utf-8")
-    script = HERE / "script.json"
+    script = scratch / "script.json"
     script.write_text(template.replace("GATE-PATH", str(gate)), encoding="utf-8")
     return script
 
 
-def environment(script: Path, scratch: Path) -> dict:
-    """The environment of the agent: offline defaults, own homes, the script."""
+def environment(script: Path, scratch: Path, model: str) -> dict:
+    """The environment of the agent: offline defaults, own homes, the script.
+
+    The user layer (`config/acp-agent/config.yaml` of the scratch folder) names
+    `model` as the plain `standard` candidate. A plain string has no drafter,
+    and the default profile would add one. The defaults layer does not set the
+    profile of the start-up configuration, thus the profile is in the user layer.
+    """
     defaults = scratch / "defaults"
     defaults.mkdir()
     (defaults / "config.yaml").write_text(
         "tools:\n  skills:\n    marketplaces: []\n", encoding="utf-8"
+    )
+    user_layer = scratch / "config" / "acp-agent"
+    user_layer.mkdir(parents=True)
+    (user_layer / "config.yaml").write_text(
+        f"profile:\n  standard:\n    - {model}\n", encoding="utf-8"
     )
     env = dict(os.environ)
     env.update(
@@ -126,18 +147,18 @@ def wait_for_grandchild() -> None:
     raise RuntimeError("the grandchild never started")
 
 
-def main(executable: str) -> None:
+def main(executable: str, model: str) -> None:
     """Run the agent, start the nested run, and shut the agent down."""
     shutil.rmtree(WORKSPACE, ignore_errors=True)
     WORKSPACE.mkdir()
     write_agent("parent", "Agent")
     write_agent("leaf", "")
     scratch = Path(subprocess.check_output(["mktemp", "-d"], text=True).strip())
-    script = write_script(scratch / "gate-that-never-opens")
+    script = write_script(scratch)
     process = subprocess.Popen(
         [executable, "acp"],
         cwd=WORKSPACE,
-        env=environment(script, scratch),
+        env=environment(script, scratch, model),
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         text=True,
@@ -192,4 +213,4 @@ def main(executable: str) -> None:
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    main(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else STANDARD_MODEL)
