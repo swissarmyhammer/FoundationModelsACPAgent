@@ -164,10 +164,10 @@ extension RoutedACPAgent {
   private func bindMessages(
     of report: SubagentReport, child: SessionId, callerId: SessionId, caller: ActiveSession
   ) {
-    guard let token = report.completionToken else {
+    guard let route = messageRoute(of: report, through: caller) else {
       return
     }
-    caller.surface.runCallJoins.messages.bind(token: token, child: child, caller: callerId)
+    route.projector.bind(token: route.token, child: child, caller: callerId)
   }
 
   /// Registers the child session of a run as a session nested in its parent. A child that has
@@ -262,10 +262,26 @@ extension RoutedACPAgent {
   ///   - report: The final report of the run.
   ///   - entry: The entry of the child.
   private func sendFinalReply(of report: SubagentReport, through entry: ActiveSession) {
-    guard let token = report.completionToken else {
+    guard let route = messageRoute(of: report, through: entry) else {
       return
     }
-    entry.surface.runCallJoins.messages.finalReply(ofRun: token, text: report.finalReply)
+    route.projector.finalReply(ofRun: route.token, text: report.finalReply)
+  }
+
+  /// The message route of a run: its completion token, and the projector of the messages of the
+  /// surface of a session. A run that no call started has no route.
+  ///
+  /// - Parameters:
+  ///   - report: The report of the run.
+  ///   - entry: The entry of the session whose surface holds the projector.
+  /// - Returns: The token and the projector, or `nil` for a run with no completion token.
+  private func messageRoute(of report: SubagentReport, through entry: ActiveSession)
+    -> (token: String, projector: SubagentMessageProjector)?
+  {
+    guard let token = report.completionToken else {
+      return nil
+    }
+    return (token, entry.surface.runCallJoins.messages)
   }
 
   /// Ends the session of a child. A child that the client knows sends its last updates and its

@@ -320,42 +320,9 @@ extension SubagentMessageProjector {
     let update: SessionUpdate
   }
 
-  /// A table with a limit, keyed by text.
-  fileprivate struct Table<Value: Sendable>: Sendable {
-    /// The values by key.
-    private var values: [String: Value] = [:]
-
-    /// The keys in the order that they came, for the removal of the oldest.
-    private var order: [String] = []
-
-    /// The value for a key, or `nil`.
-    subscript(key: String) -> Value? { values[key] }
-
-    /// Stores a value. At the limit, the oldest entry leaves.
-    ///
-    /// - Parameters:
-    ///   - value: The value.
-    ///   - key: The key.
-    mutating func store(_ value: Value, for key: String) {
-      if values.updateValue(value, forKey: key) == nil {
-        order.append(key)
-      }
-      if order.count > SubagentMessageProjector.tableLimit {
-        values.removeValue(forKey: order.removeFirst())
-      }
-    }
-
-    /// Removes the value of a key.
-    ///
-    /// - Parameter key: The key.
-    /// - Returns: The value, or `nil` when the table held none.
-    mutating func remove(_ key: String) -> Value? {
-      guard let value = values.removeValue(forKey: key) else {
-        return nil
-      }
-      order.removeAll { $0 == key }
-      return value
-    }
+  /// An empty table with the limit of the tables of the object.
+  fileprivate static func newTable<Value: Sendable>() -> BoundedTable<Value> {
+    BoundedTable(limit: tableLimit)
   }
 
   /// The state that the lock guards.
@@ -364,19 +331,19 @@ extension SubagentMessageProjector {
     var inboxes: [SessionId: Inbox] = [:]
 
     /// The bound runs, by completion token in upper case.
-    var runs = Table<Run>()
+    var runs: BoundedTable<Run> = SubagentMessageProjector.newTable()
 
     /// The messages of runs that are not bound yet, by completion token in upper case.
-    var waitingRunMessages = Table<[WaitingRunMessage]>()
+    var waitingRunMessages: BoundedTable<[WaitingRunMessage]> = SubagentMessageProjector.newTable()
 
     /// The messages whose send step is done and whose receive step is not, by key.
-    var awaitingReceipt = Table<Message>()
+    var awaitingReceipt: BoundedTable<Message> = SubagentMessageProjector.newTable()
 
     /// The messages that have no outgoing view, and whose receive step is not done, by key.
-    var withoutOutgoingView = Table<Message>()
+    var withoutOutgoingView: BoundedTable<Message> = SubagentMessageProjector.newTable()
 
     /// The receive steps that came before their send step, by key.
-    var earlyReceipts = Table<Receipt>()
+    var earlyReceipts: BoundedTable<Receipt> = SubagentMessageProjector.newTable()
 
     /// The keys whose send step is done.
     var sentKeys = RecentIDSet<String>(limit: SubagentMessageProjector.tableLimit)

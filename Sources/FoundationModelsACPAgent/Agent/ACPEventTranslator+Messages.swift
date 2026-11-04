@@ -157,13 +157,10 @@ extension ACPEventTranslator {
 /// call that mails no message leaves its text here, so the set keeps only the newest.
 struct MessageTexts: Sendable {
   /// The most texts that the set keeps.
-  private static let limit = 32
+  fileprivate static let limit = 32
 
-  /// The ids of the calls in the order that their texts came.
-  private var order: [String] = []
-
-  /// The text of each call.
-  private var texts: [String: String] = [:]
+  /// The texts by the SDK id of the call.
+  private var texts = BoundedTable<String>(limit: MessageTexts.limit)
 
   /// Keeps the text of a call. At the limit, the oldest text leaves.
   ///
@@ -171,12 +168,7 @@ struct MessageTexts: Sendable {
   ///   - text: The text.
   ///   - id: The SDK id of the call.
   mutating func store(_ text: String, forCall id: String) {
-    if texts.updateValue(text, forKey: id) == nil {
-      order.append(id)
-    }
-    if order.count > Self.limit {
-      texts.removeValue(forKey: order.removeFirst())
-    }
+    texts.store(text, for: id)
   }
 
   /// Takes the text of a call out of the set.
@@ -184,10 +176,6 @@ struct MessageTexts: Sendable {
   /// - Parameter id: The SDK id of the call.
   /// - Returns: The text, or `nil` when the set holds none for the call.
   mutating func take(forCall id: String) -> String? {
-    guard let text = texts.removeValue(forKey: id) else {
-      return nil
-    }
-    order.removeAll { $0 == id }
-    return text
+    texts.remove(id)
   }
 }
