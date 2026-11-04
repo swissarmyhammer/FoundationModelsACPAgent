@@ -227,15 +227,9 @@ import Testing
     let creates = try await recorder.waitForCreates(count: Self.createsOfAChildQuestion)
     let updates = try await fixture.collector.wait(for: "the announcement of the child") {
       updates in
-      updates.contains { notification in
-        if case .subagentUpdate = notification.update { return true }
-        return false
-      }
+      AnnouncedChild.first(in: updates, on: fixture.sessionId) != nil
     }
-    let child = updates.compactMap { notification -> SessionId? in
-      if case .subagentUpdate(let update) = notification.update { return update.sessionId }
-      return nil
-    }.first
+    let child = AnnouncedChild.first(in: updates, on: fixture.sessionId)
     let askingSessions = creates.compactMap { request -> SessionId? in
       guard case .form(let form) = request.mode, case .session(let scope) = form.scope else {
         return nil

@@ -167,17 +167,6 @@ import Testing
     return false
   }
 
-  /// The id of a session that an announcement names.
-  ///
-  /// - Parameter updates: The notifications.
-  /// - Returns: The first announced child, or `nil`.
-  private static func firstChild(in updates: [UpdateSessionNotification]) -> SessionId? {
-    for notification in updates {
-      if case .subagentUpdate(let update) = notification.update { return update.sessionId }
-    }
-    return nil
-  }
-
   /// The id of the `agents` call of a session, as the first update that names the tool.
   ///
   /// - Parameters:
@@ -242,7 +231,9 @@ import Testing
     }
     let call = try #require(agentsCall(in: updates, of: fixture.sessionId))
     return Wire(
-      fixture: fixture, child: try #require(firstChild(in: updates)), agentsCall: call,
+      fixture: fixture,
+      child: try #require(AnnouncedChild.first(in: updates, on: fixture.sessionId)),
+      agentsCall: call,
       updates: updates)
   }
 
@@ -445,7 +436,7 @@ import Testing
       updates.contains { $0.sessionId == fixture.sessionId && isMessage($0.update) }
     }
     return HeldBackgroundRun(
-      fixture: fixture, child: try #require(firstChild(in: held)),
+      fixture: fixture, child: try #require(AnnouncedChild.first(in: held, on: fixture.sessionId)),
       call: try #require(agentsCall(in: held, of: fixture.sessionId)), held: held)
   }
 
@@ -489,14 +480,7 @@ import Testing
         .textDelta(Self.childText), .endPass,
       ], rootWarmupCalls: Self.rootWarmupCalls, childTools: AgentsToolTests.agentsToolName)
 
-    let announced = wire.updates.compactMap {
-      notification -> (parent: SessionId, child: SessionId)? in
-      if case .subagentUpdate(let update) = notification.update {
-        return (notification.sessionId, update.sessionId)
-      }
-      return nil
-    }
-    let leaf = try #require(announced.first { $0.parent == wire.child }?.child)
+    let leaf = try #require(AnnouncedChild.first(in: wire.updates, on: wire.child))
 
     #expect(ScriptedPromptFixture.agentText(in: wire.updates(of: leaf)) == Self.leafText)
     #expect(

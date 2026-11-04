@@ -53,6 +53,32 @@ comments:
     - evidence: 4 files changed, 1 added. Finding checked: ChildSessionUsageTelemetryHooksTests.swift:302 (copy of announcedChild). The shared helper AnnouncedChild.first is now in Tests/FoundationModelsACPAgentTests/Support/AnnouncedChild.swift. ResumeNestedSessionsTests and the new suite both call it. Same cause removed from the whole file: the copies of isFinal and agentsCall in the new suite are deleted; it calls ChildSessionProjectionTests.isFinal and agentsCall (agentsCall widened from private). Filtered tests: 43 tests in 3 suites passed.
     - next: review
   timestamp: 2026-11-04T02:24:35.583408+00:00
+- actor: claude-code
+  id: 01m6j61yt1saz8ffbn35xvks99
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD, 1 finding (1 confirmed, 2 refuted). Tests/FoundationModelsACPAgentTests/Support/AnnouncedChild.swift:11 reuse/reuse — AnnouncedChild.first repeats ChildSessionProjectionTests.firstChild. The prior finding is checked.
+    - next: Make firstChild call AnnouncedChild.first, or delete firstChild and move its callers. Keep one implementation. Task stays in review.
+  timestamp: 2026-11-04T02:26:21.633579+00:00
+- actor: claude-code
+  id: 01m6j62adepf7xk1ves67800z7
+  text: |-
+    ### finish iteration 2 — findings
+    - implement: changed — 4 files, 1 of 1 finding checked
+    - test: filtered 43 tests passed (test-only change); no full run
+    - commit: 2a21486
+    - review: findings — Tests/FoundationModelsACPAgentTests/Support/AnnouncedChild.swift:11
+    - next: implement works the 1 open finding
+  timestamp: 2026-11-04T02:26:33.518476+00:00
+- actor: claude-code
+  id: 01m6j63scat3acct73v7db9drv
+  text: |-
+    ### implement — changed
+    - evidence: 2 files — Tests/FoundationModelsACPAgentTests/ChildSessionProjectionTests.swift, Tests/FoundationModelsACPAgentTests/ScriptedElicitStepTests.swift. Finding checked: AnnouncedChild.swift:11 (AnnouncedChild.first repeats ChildSessionProjectionTests.firstChild).
+    - The private firstChild is deleted. Its two callers, and the other scans for the first .subagentUpdate (the chain test in ChildSessionProjectionTests and the child scan in ScriptedElicitStepTests), now call AnnouncedChild.first(in:on:). SubagentAnnouncerWireTests.announcement and Wire.announcement have a different purpose and stay.
+    - Tests: swift test --filter "ChildSessionProjectionTests|ScriptedElicitStepTests" — 20 tests in 2 suites passed. swift format run.
+    - next: /review
+  timestamp: 2026-11-04T02:27:21.610305+00:00
 depends_on:
 - 01M6GH2K0VV6RWV5R6SN3HB9SV
 - 01M6GH30709S58BK3AQ1VMBAM7
@@ -95,3 +121,12 @@ Depends on: the shared session build (task 1) and the announce task.
 > - `.kanban/ (from .reviewignore)` — 4 file(s)
 
 - [x] `Tests/FoundationModelsACPAgentTests/ChildSessionUsageTelemetryHooksTests.swift:302` `reuse/reuse` — The new `announcedChild(in:on:)` helper repeats the body of an existing helper with the same name and signature. Two copies of one test helper will drift apart when the announcement shape changes. Delete the copy in ChildSessionUsageTelemetryHooksTests.swift and call the existing helper. Its `private` modifier must be widened (for example to `static`, or moved to a shared test support file such as the `Support/` folder) so both suites can use it.
+
+## Review Findings (2026-11-03 20:25)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 4 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTests/Support/AnnouncedChild.swift:11` `reuse/reuse` — The new function AnnouncedChild.first repeats the logic of the existing private helper ChildSessionProjectionTests.firstChild. Both scan the updates for the first .subagentUpdate and return its sessionId. The only difference is the added filter on the parent session. The change should have extended firstChild with a parent parameter, or made firstChild call AnnouncedChild.first. Instead, two copies of the same capability now exist and can diverge. Remove the duplicate. Make `firstChild(in:)` in ChildSessionProjectionTests.swift call `AnnouncedChild.first(in:on:)`, or delete `firstChild` and move its callers to `AnnouncedChild.first(in:on:)`. Keep one implementation in Support/AnnouncedChild.swift.
