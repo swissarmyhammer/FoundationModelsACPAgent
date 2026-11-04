@@ -1,0 +1,356 @@
+import Foundation
+import FoundationModelsACP
+import FoundationModelsACPAgentTestSupport
+import FoundationModelsExtras
+import FoundationModelsRouter
+import Synchronization
+import Testing
+
+@testable import FoundationModelsACPAgent
+
+/// A cold `session/resume` starts the interrupted nested runs again, after the response and after
+/// the snapshots of the children, the children before their callers. The first agent records a
+/// chain of three sessions (root, child, grandchild) and ends with the orderly shutdown, so the
+/// `agents` calls stay paused. A second agent resumes the root. Its model answers the first
+/// message of a restored run with a marker text.
+@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct RedriveInterruptedRunsTests {
+  /// The prefix of the folders of each fixture of this suite.
+  private static let label = "RedriveInterruptedRunsTests"
+
+  /// The text that the model of the second agent plays when a restored run starts.
+  fileprivate static let redriveText = "REDRIVEN-RUN-TEXT"
+
+  /// The start of the first message of a restored run (the Agents package writes it).
+  private static let restoredRunMessage = "The process stopped while you worked"
+
+  /// The seconds that a test waits for the re-drive after the response.
+  private static let redriveWaitSeconds = 30
+
+  /// The most polls of a journal in a test.
+  private static let journalPollLimit = 1000
+
+  /// The time between two polls of a journal.
+  private static let journalPollInterval = Duration.milliseconds(20)
+
+  /// The wire of one resume with a re-drive.
+  private struct Wire {
+    /// The second agent.
+    let fixture: ScriptedPromptFixture
+
+    /// The chain that the first agent recorded.
+    let recording: ResumeNestedSessionsTests.Recording
+
+    /// The request, the updates and the response, in wire order.
+    let trace: [WireTraceEvent]
+
+    /// The position of the response.
+    var responsePosition: Int {
+      trace.firstIndex { event in
+        if case .resumeResponse = event {
+          return true
+        }
+        return false
+      } ?? trace.count
+    }
+
+    /// The position of the first re-drive text on the stream of `session`, or `nil`.
+    ///
+    /// - Parameter session: The session.
+    /// - Returns: The position in the trace.
+    func firstRedriveText(of session: SessionId) -> Int? {
+      trace.firstIndex { $0.isRedriveText(on: session) }
+    }
+
+    /// The position of the first announcement of `child` after the response, or `nil`.
+    ///
+    /// - Parameter child: The child.
+    /// - Returns: The position in the trace.
+    func snapshotPosition(of child: SessionId) -> Int? {
+      trace.indices.first { position in
+        position > responsePosition && trace[position].announces(child)
+      }
+    }
+
+    /// The position of the first running `state_update` on the stream of `session`, or `nil`.
+    ///
+    /// - Parameter session: The session.
+    /// - Returns: The position in the trace.
+    func firstRunning(of session: SessionId) -> Int? {
+      trace.firstIndex { $0.isRunningState(on: session) }
+    }
+  }
+
+  /// What the read of the wire saw of the restored sessions.
+  private struct RedriveSeen {
+    /// The sessions that played the marker text.
+    var spoken = Set<SessionId>()
+
+    /// The sessions that showed the state `running`.
+    var running = Set<SessionId>()
+
+    /// Notes what `event` shows of `session`.
+    ///
+    /// - Parameters:
+    ///   - event: The event of the wire.
+    ///   - session: The session to look at.
+    mutating func note(_ event: WireTraceEvent, on session: SessionId) {
+      if event.isRedriveText(on: session) {
+        spoken.insert(session)
+      }
+      if event.isRunningState(on: session) {
+        running.insert(session)
+      }
+    }
+
+    /// Whether every one of `sessions` spoke and ran.
+    ///
+    /// - Parameter sessions: The restored sessions.
+    /// - Returns: `true` when the read has all it needs.
+    func isComplete(for sessions: [SessionId]) -> Bool {
+      spoken.isSuperset(of: sessions) && running.isSuperset(of: sessions)
+    }
+  }
+
+  // MARK: - Fixtures
+
+  /// Starts the second agent over the working directory of `recording`. The model plays the
+  /// marker text when it gets the first message of a restored run.
+  ///
+  /// - Parameter recording: The chain that the first agent recorded.
+  /// - Returns: The second agent.
+  /// - Throws: Whatever the fixture throws.
+  private static func secondAgent(
+    for recording: ResumeNestedSessionsTests.Recording
+  ) async throws -> ScriptedPromptFixture {
+    let script: [ScriptedPassStep] = [
+      .onPrompt(containing: restoredRunMessage, play: [.textDelta(redriveText), .endPass]),
+      .endPass,
+    ]
+    return try await ScriptedPromptFixture.make(
+      script: script, label: "\(label)-second", workingDirectory: recording.cwd)
+  }
+
+  /// Resumes the root of `recording` in a second agent and reads the wire until both restored
+  /// sessions played the marker text and showed the state `running`. A missing text ends the read at the timeout.
+  ///
+  /// - Parameter recording: The chain that the first agent recorded.
+  /// - Returns: The wire of the resume.
+  /// - Throws: Whatever the fixture or the request throws.
+  private static func resumeAndRedrive(
+    _ recording: ResumeNestedSessionsTests.Recording
+  ) async throws -> Wire {
+    let fixture = try await secondAgent(for: recording)
+    let connection = fixture.harness.connection
+    let subscription = connection.subscribeToAllSessions()
+    let first = WireTraceEvent.resumeRequest(id: .number(1), sessionId: recording.root)
+    let sessions = [recording.child, recording.leaf]
+    let seen = Mutex(RedriveSeen())
+    let reader = Task {
+      await subscription.readResumeTrace(startingWith: [first]) { event in
+        seen.withLock { seen in
+          for session in sessions {
+            seen.note(event, on: session)
+          }
+          return seen.isComplete(for: sessions)
+        }
+      }
+    }
+    let timeout = Task {
+      try? await Task.sleep(for: .seconds(redriveWaitSeconds))
+      reader.cancel()
+    }
+    let request = ResumeSessionRequest(
+      cwd: AbsolutePath(rawValue: recording.cwd.path), sessionId: recording.root)
+    _ = try await connection.resumeSession(request)
+    let trace = await reader.value
+    timeout.cancel()
+    return Wire(fixture: fixture, recording: recording, trace: trace)
+  }
+
+  /// Records the chain with the orderly shutdown and resumes it with a re-drive.
+  ///
+  /// - Returns: The wire of the resume.
+  /// - Throws: Whatever the fixture or the request throws.
+  private static func redriveShutDownChain() async throws -> Wire {
+    try await resumeAndRedrive(try await ResumeNestedSessionsTests.recordShutDownChain())
+  }
+
+  /// Waits until the journal of `session` holds the completed outcome of a call, and returns the
+  /// outcomes of all the completed calls.
+  ///
+  /// - Parameters:
+  ///   - session: The caller session.
+  ///   - fixture: The second agent.
+  ///   - isMet: Tells whether the outcomes are the ones that the test waits for.
+  /// - Returns: The outcomes of the completed calls of the journal at the end of the wait.
+  /// - Throws: Whatever the cancel of the sleep throws.
+  private static func completedOutcomes(
+    of session: SessionId, on fixture: ScriptedPromptFixture,
+    until isMet: ([OperationOutcome]) -> Bool
+  ) async throws -> [OperationOutcome] {
+    guard let id = ULID(ulidString: session.rawValue) else {
+      return []
+    }
+    let directory = fixture.harness.agent.sessionDirectory
+    var outcomes: [OperationOutcome] = []
+    for _ in 0..<journalPollLimit {
+      let statuses = (try? await directory.runStatuses(of: id)) ?? [:]
+      outcomes = statuses.values.compactMap { status in
+        if case .completed(let outcome) = status {
+          return outcome
+        }
+        return nil
+      }
+      if isMet(outcomes) {
+        break
+      }
+      try await Task.sleep(for: journalPollInterval)
+    }
+    return outcomes
+  }
+
+  // MARK: - The re-drive
+
+  /// The restored child works again: it plays the first message of a restored run.
+  @Test
+  func theRestoredChildRunsAgain() async throws {
+    let wire = try await Self.redriveShutDownChain()
+
+    #expect(wire.firstRedriveText(of: wire.recording.child) != nil)
+    await wire.fixture.close()
+  }
+
+  /// The restored grandchild works again too.
+  @Test
+  func theRestoredGrandchildRunsAgain() async throws {
+    let wire = try await Self.redriveShutDownChain()
+
+    #expect(wire.firstRedriveText(of: wire.recording.leaf) != nil)
+    await wire.fixture.close()
+  }
+
+  /// A child starts before its caller: the grandchild shows `running` before the child plays its
+  /// first text. (The first text of a session comes when its first pass ends, so it is the first
+  /// sign of the work of a caller on the wire.)
+  @Test
+  func theChildrenStartBeforeTheirCallers() async throws {
+    let wire = try await Self.redriveShutDownChain()
+    let leafRuns = try #require(wire.firstRunning(of: wire.recording.leaf))
+    let childWorks = try #require(wire.firstRedriveText(of: wire.recording.child))
+
+    #expect(leafRuns < childWorks)
+    await wire.fixture.close()
+  }
+
+  /// No re-driven session sends its work before the response of the resume.
+  @Test
+  func noRedrivenChildWorksBeforeTheResponse() async throws {
+    let wire = try await Self.redriveShutDownChain()
+    let first = try #require(
+      [wire.recording.child, wire.recording.leaf].compactMap(wire.firstRedriveText(of:)).min())
+
+    #expect(first > wire.responsePosition)
+    await wire.fixture.close()
+  }
+
+  /// The snapshot of a child goes out before its work: a delayed snapshot cannot overwrite a newer
+  /// state.
+  @Test
+  func theSnapshotOfAChildPrecedesItsWork() async throws {
+    let wire = try await Self.redriveShutDownChain()
+    let snapshot = try #require(wire.snapshotPosition(of: wire.recording.leaf))
+    let work = try #require(wire.firstRedriveText(of: wire.recording.leaf))
+
+    #expect(snapshot < work)
+    await wire.fixture.close()
+  }
+
+  /// The client sees the state `running` on the stream of each re-driven session before the
+  /// session plays its first text.
+  @Test(arguments: [true, false])
+  func eachRedrivenSessionShowsRunningBeforeItWorks(isLeaf: Bool) async throws {
+    let wire = try await Self.redriveShutDownChain()
+    let session = isLeaf ? wire.recording.leaf : wire.recording.child
+    let running = try #require(wire.firstRunning(of: session))
+    let works = try #require(wire.firstRedriveText(of: session))
+
+    #expect(running < works)
+    await wire.fixture.close()
+  }
+
+  // MARK: - The original call
+
+  /// The end of the re-driven child completes its original `start agent` call in the journal of
+  /// its caller. The call does not end as `lost`.
+  @Test
+  func theEndOfTheChildCompletesTheOriginalCall() async throws {
+    let wire = try await Self.redriveShutDownChain()
+
+    let outcomes = try await Self.completedOutcomes(of: wire.recording.root, on: wire.fixture) {
+      $0.contains(.succeeded)
+    }
+
+    #expect(outcomes.contains(.succeeded))
+    #expect(!outcomes.contains(.lost))
+    await wire.fixture.close()
+  }
+
+  // MARK: - A child that cannot be re-driven
+
+  /// A child whose definition is gone cannot run again. Its original call ends as `lost`, and the
+  /// root still resumes.
+  @Test
+  func aChildThatCannotRestoreEndsItsCallAsLost() async throws {
+    let recording = try await ResumeNestedSessionsTests.recordShutDownChain()
+    try AgentsToolTests.removeAgent(named: ResumeNestedSessionsTests.childAgent, in: recording.cwd)
+    let fixture = try await Self.secondAgent(for: recording)
+
+    try await ResumeNestedSessionsTests.resumeRoot(of: recording, on: fixture)
+    let outcomes = try await Self.completedOutcomes(of: recording.root, on: fixture) {
+      $0.contains(.lost)
+    }
+
+    #expect(outcomes.contains(.lost))
+    #expect(await fixture.harness.agent.sessions[recording.root] != nil)
+    await fixture.close()
+  }
+}
+
+extension WireTraceEvent {
+  /// Whether this event is the marker text of a re-driven run on the stream of `session`.
+  ///
+  /// - Parameter session: The session.
+  /// - Returns: `true` for an `agent_message_chunk` with the marker text on that stream.
+  fileprivate func isRedriveText(on session: SessionId) -> Bool {
+    guard case .update(let stream, let update) = self, stream == session,
+      case .agentMessageChunk(let chunk) = update, case .text(let content) = chunk.content
+    else {
+      return false
+    }
+    return content.text.contains(RedriveInterruptedRunsTests.redriveText)
+  }
+
+  /// Whether this event is a running `state_update` on the stream of `session`.
+  ///
+  /// - Parameter session: The session.
+  /// - Returns: `true` for a running state on that stream.
+  fileprivate func isRunningState(on session: SessionId) -> Bool {
+    guard case .update(let stream, let update) = self, stream == session,
+      case .stateUpdate(.running) = update
+    else {
+      return false
+    }
+    return true
+  }
+
+  /// Whether this event is an announcement of `child`.
+  ///
+  /// - Parameter child: The child.
+  /// - Returns: `true` for a `subagent_update` that names `child`.
+  fileprivate func announces(_ child: SessionId) -> Bool {
+    if case .update(_, let update) = self {
+      return update.announces(child)
+    }
+    return false
+  }
+}

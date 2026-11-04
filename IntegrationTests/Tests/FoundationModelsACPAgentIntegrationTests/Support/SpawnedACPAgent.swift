@@ -202,6 +202,18 @@ struct SpawnedACPAgent {
     }
   }
 
+  /// Kills the agent with `SIGKILL` and waits until it ends and closes its pipes. The agent gets no
+  /// time to stop its work, to write a history file or to close a session, as when the machine
+  /// loses power.
+  ///
+  /// - Returns: How the agent ended.
+  /// - Throws: The wait error.
+  func killAndWait() async throws -> SpawnedAgentExit {
+    try await end {
+      Darwin.kill(process.processIdentifier, SIGKILL)
+    }
+  }
+
   /// Asks the agent to end, and waits until it ends and closes its pipes.
   ///
   /// The wait for the end is the exit event of the child, with no clock.

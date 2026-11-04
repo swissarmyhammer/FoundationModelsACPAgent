@@ -11,7 +11,9 @@ import FoundationModelsRouter
 extension RoutedACPAgent {
   /// Schedules the sync of the children to run after the response of the current request.
   ///
-  /// Call it synchronously in the handler of the request, so the work follows the response.
+  /// Call it synchronously in the handler of the request, so the work follows the response. When
+  /// the snapshots are out, the interrupted runs of the tree start again
+  /// (``redriveInterruptedRuns(of:)``).
   ///
   /// - Parameters:
   ///   - sessionId: The resumed root session.
@@ -19,6 +21,7 @@ extension RoutedACPAgent {
   func scheduleChildSync(of sessionId: SessionId, through connection: AgentSideConnection) {
     connection.afterRespondingInCurrentInstrumentationContext { [weak self] in
       await self?.syncChildren(of: sessionId)
+      await self?.redriveInterruptedRuns(of: sessionId)
     }
   }
 

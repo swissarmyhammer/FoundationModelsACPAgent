@@ -10,7 +10,7 @@ import Testing
 /// A cold `session/resume` restores the recorded nested sessions of the root, not only the root.
 /// The first agent records a chain of three sessions (root, child, grandchild) and stops while the
 /// child and the grandchild work. A second agent resumes the root. The restored sessions come back
-/// idle: nothing starts them again here.
+/// idle, and the re-drive starts their runs after the response (``RedriveInterruptedRunsTests``).
 @Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct ResumeNestedSessionsTests {
   /// The prefix of the folders of each fixture of this suite.
   private static let label = "ResumeNestedSessionsTests"
@@ -38,6 +38,12 @@ import Testing
 
   /// A tool that stays in the default tool set of the grandchild.
   private static let keptTool = "searchTools"
+
+  /// The most polls of a ledger while a re-driven run ends.
+  private static let idlePollLimit = 1000
+
+  /// The time between two polls of a ledger.
+  private static let idlePollInterval = Duration.milliseconds(20)
 
   /// The chain that the first agent recorded.
   struct Recording {
@@ -213,6 +219,20 @@ import Testing
         cwd: AbsolutePath(rawValue: recording.cwd.path), sessionId: recording.root))
   }
 
+  /// Waits until the ledger of `session` reports idle. The re-driven run of the session ends
+  /// on its own, so the wait uses a poll with a limit.
+  ///
+  /// - Parameter session: The restored session.
+  /// - Throws: An issue when the ledger stays busy for the whole wait.
+  private static func waitUntilIdle(_ session: ActiveSession) async throws {
+    var polls = 0
+    while await !session.stateLedger.isIdle, polls < idlePollLimit {
+      polls += 1
+      try await Task.sleep(for: idlePollInterval)
+    }
+    try #require(await session.stateLedger.isIdle)
+  }
+
   /// The names of the tools that the session offers to its model. The recorded names are in the
   /// `index.md` and in the transcript, so the test reads the tools that the restore gave the
   /// Router session.
@@ -240,16 +260,21 @@ import Testing
     await resumed.fixture.close()
   }
 
-  /// Every restored session comes back idle. Nothing starts it again here.
+  /// Every restored session is idle again when its re-driven run ends: the ledger of the session
+  /// does not stay busy after the re-drive.
   @Test
-  func everyRestoredChildIsIdle() async throws {
+  func everyRestoredChildIsIdleWhenItsRedrivenRunEnds() async throws {
     let resumed = try await Self.resume(try await Self.recordInterruptedChain())
     let recording = resumed.recording
 
     let sessions = await resumed.sessions
+    let child = try #require(sessions[recording.child])
+    let leaf = try #require(sessions[recording.leaf])
+    try await Self.waitUntilIdle(child)
+    try await Self.waitUntilIdle(leaf)
 
-    #expect(await sessions[recording.child]?.stateLedger.isIdle == true)
-    #expect(await sessions[recording.leaf]?.stateLedger.isIdle == true)
+    #expect(await child.stateLedger.isIdle)
+    #expect(await leaf.stateLedger.isIdle)
     await resumed.fixture.close()
   }
 
