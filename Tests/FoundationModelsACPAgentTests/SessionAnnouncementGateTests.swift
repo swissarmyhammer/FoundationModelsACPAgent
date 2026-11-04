@@ -4,9 +4,8 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// The gate of the updates of one session: a closed gate holds each send in
-/// order, and the open sends the held sends before any later send. A submit
-/// returns after its own send ran.
+/// The gate of the updates of one session. A closed gate holds each send in order.
+/// The open sends the held sends before any later send. A submit returns after its own send ran.
 @Suite(.timeLimit(.minutes(1))) struct SessionAnnouncementGateTests {
   /// The log of the sends that went out, in order.
   private final class Sent: Sendable {
@@ -28,7 +27,7 @@ import Testing
   }
 
   /// Waits until a count of submits wait in the gate. A submit that waits is a submit that the
-  /// gate kept, so no test depends on the order in which tasks start.
+  /// gate kept. So no test depends on the order in which tasks start.
   ///
   /// - Parameters:
   ///   - gate: The gate.
@@ -40,7 +39,7 @@ import Testing
   }
 
   /// Starts a submit in a task of its own, and waits until the gate kept it. A submit to a gate
-  /// that is not open waits for its send, so the test cannot wait in the same task.
+  /// that is not open waits for its send. So the test cannot wait in the same task.
   ///
   /// - Parameters:
   ///   - send: The send.
@@ -106,9 +105,9 @@ import Testing
     #expect(sent.values == [1])
   }
 
-  /// A submit that comes while the open sends the held sends goes after them, and it returns
-  /// only after its own send ran. A caller that waits for its send (the `sent` continuation of
-  /// a slash command) must not resume before the update is out.
+  /// A submit that comes while the open sends the held sends goes after them. It returns only
+  /// after its own send ran. A caller that waits for its send must not resume before the update
+  /// is out. The `sent` continuation of a slash command is such a caller.
   @Test
   func aSubmitDuringTheFlushReturnsAfterItsOwnSendRan() async {
     let gate = SessionAnnouncementGate(isOpen: false)

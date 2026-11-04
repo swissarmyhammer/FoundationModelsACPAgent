@@ -8,9 +8,10 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// A nested session is an ordinary session with a parent: the same build
-/// as a root session, one parent link more. One chain of three sessions (a
-/// root, a child and a grandchild) follows the same rule at each link.
+/// A nested session is an ordinary session with a parent. It has the same
+/// build as a root session, with one parent link more. One chain of three
+/// sessions (a root, a child and a grandchild) follows the same rule at
+/// each link.
 @Suite(.closesHarnesses) struct SessionSetupNestedTests {
   /// The prefix of the folders of each fixture of this suite.
   private static let label = "SessionSetupNestedTests"
@@ -84,7 +85,7 @@ import Testing
   // MARK: The entry
 
   /// The entry of a nested session is in the table of the agent, with its
-  /// parent link, and the parent entry names it as a child.
+  /// parent link. The parent entry names it as a child.
   @Test
   func theNestedSessionHasAnEntryWithItsParentLink() async throws {
     let fixture = try await ScriptedPromptFixture.make(script: [.endPass], label: Self.label)
@@ -129,8 +130,8 @@ import Testing
     await fixture.close()
   }
 
-  /// The nested session borrows the command registry of its parent, and it
-  /// owns the join table of its projector, so the stop of its projector
+  /// The nested session borrows the command registry of its parent. It
+  /// owns the join table of its projector. Thus the stop of its projector
   /// cannot seal the runs that the parent waits for.
   @Test
   func theNestedSessionBorrowsTheCommandsAndOwnsItsJoinTable() async throws {
@@ -179,8 +180,8 @@ import Testing
 
   // MARK: The updates
 
-  /// A child has no owner of its own: it takes the connection of its
-  /// parent, so an update of the child goes out there, under the id of the
+  /// A child has no owner of its own. It takes the connection of its
+  /// parent. So an update of the child goes out there, under the id of the
   /// child.
   @Test
   func anUpdateOfTheNestedSessionReachesTheConnectionOfItsParent() async throws {
@@ -199,7 +200,7 @@ import Testing
   }
 
   /// Until the announcement opens the gate, no update of the nested
-  /// session leaves the agent, and the retained history of the nested
+  /// session leaves the agent. The retained history of the nested
   /// session keeps it.
   @Test
   func noUpdateOfTheNestedSessionLeavesBeforeTheAnnouncement() async throws {
@@ -224,8 +225,8 @@ import Testing
 
   // MARK: The tables that read the sessions
 
-  /// The `active_sessions` gauge counts the sessions that a client opened:
-  /// a nested session is one more entry of the table, and not one more
+  /// The `active_sessions` gauge counts the sessions that a client opened.
+  /// A nested session is one more entry of the table. It is not one more
   /// open session.
   @Test
   func theActiveSessionsGaugeDoesNotCountANestedSession() async throws {
@@ -244,9 +245,9 @@ import Testing
   }
 
   /// The tunnel reaches a session through its own endpoints. A nested
-  /// session has none: it borrows the tools of its parent, so a call that
-  /// names it gets `NOT_FOUND`, the same answer as for a session that the
-  /// agent does not have.
+  /// session has none. It borrows the tools of its parent. So a call that
+  /// names it gets `NOT_FOUND`. This is the same answer as for a session
+  /// that the agent does not have.
   @Test
   func theTunnelDoesNotAnswerForANestedSession() async throws {
     let fixture = try await ScriptedPromptFixture.make(script: [.endPass], label: Self.label)
@@ -263,8 +264,8 @@ import Testing
 
   // MARK: The end
 
-  /// Retiring a nested session removes its entry and its link, and the
-  /// parent goes on: its surface is not shut down, so a prompt of the
+  /// Retiring a nested session removes its entry and its link. The
+  /// parent goes on. Its surface is not shut down. So a prompt of the
   /// parent still ends.
   @Test
   func retiringTheNestedSessionLeavesTheParentWorking() async throws {

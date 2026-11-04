@@ -4,24 +4,26 @@ import FoundationModelsRouter
 import Logging
 
 /// The one reader of the events of one ACP session, from the open of the
-/// session to its close (elicitation-plan tasks 1, 4 and 5; `mailbox.md`,
-/// section 3, item 4).
+/// session to its close.
+/// (See elicitation-plan tasks 1, 4 and 5, and `mailbox.md`, section 3, item 4.)
 ///
 /// The projector reads `streamSessionEvents()` of each Router session that
-/// the ACP session uses: the root session, and the replacement session of a
-/// model slot switch. It sends each event to the client through one
-/// ``ACPEventTranslator``, in the order of one inbox. Thus an event that
-/// comes while no prompt is open, such as a run result or a compaction,
-/// reaches the client too.
+/// the ACP session uses.
+/// These are the root session, and the replacement session of a
+/// model slot switch.
+/// It sends each event to the client through one
+/// ``ACPEventTranslator``, in the order of one inbox.
+/// Thus the client also gets an event that comes while no prompt is open.
+/// Such an event is a run result or a compaction.
 ///
-/// A prompt is one record in the projector: its `MailID`, its prompt-state
-/// owner and the work to run at its end. More than one prompt can be open.
-/// The prompt opens before its mail goes into the session, so each event of
-/// the mail finds the record. An event counts for a prompt (``PromptTally``)
-/// only when its origin holds the `MailID` of that prompt. The prompt ends at the terminal event of its
-/// `MailID`: `answered`, `answerFailed`, `cancelled` or `lost`. Later work,
-/// for example the answer that the mail of a background run starts, goes to
-/// the client with no prompt open, and sends no state update.
+/// A prompt is one record in the projector.
+/// The record holds its `MailID`, its prompt-state owner and the work to run at its end.
+/// More than one prompt can be open.
+/// The prompt opens before its mail goes into the session, so each event of the mail finds the record.
+/// An event counts for a prompt (``PromptTally``) only when its origin holds the `MailID` of that prompt.
+/// The prompt ends at the terminal event of its `MailID`: `answered`, `answerFailed`, `cancelled` or `lost`.
+/// Later work goes to the client with no prompt open, and sends no state update.
+/// An example is the answer that the mail of a background run starts.
 ///
 /// One task reads the inbox and owns the translator, so no two events are
 /// translated at the same time. The inbox has no bound: the Router
@@ -37,7 +39,8 @@ actor SessionProjector {
     let sourceId: ULID
 
     /// The `awaitAnswer(of:)` of the Router session that the mail goes
-    /// into: the typed error of a failed answer comes from it.
+    /// into.
+    /// The typed error of a failed answer comes from it.
     let awaitAnswer: @Sendable (MailID) async throws -> SessionAnswer
 
     /// The prompt-state owner of the prompt.
@@ -47,8 +50,8 @@ actor SessionProjector {
     let modelName: String
 
     /// The work to run after the `idle` of the prompt went out, with the
-    /// stop reason of that `idle`: the end of the telemetry and the
-    /// clear of the prompt in the session table.
+    /// stop reason of that `idle`.
+    /// It is the end of the telemetry and the clear of the prompt in the session table.
     let onEnd: @Sendable (StopReason) async -> Void
   }
 
@@ -57,8 +60,8 @@ actor SessionProjector {
     /// The id of the Router session.
     let id: ULID
 
-    /// The Router session, which the answer of an elicitation goes back
-    /// to, or `nil` for a synthetic source of a test.
+    /// The Router session, which the answer of an elicitation goes back to.
+    /// It is `nil` for a synthetic source of a test.
     let session: (any RoutedSession)?
   }
 
@@ -167,8 +170,8 @@ actor SessionProjector {
       }
       await state.endOpenPrompts(stop: .cancelled)
       // Router ended each open question before the end of the feed.
-      // A round trip that is still in flight is a defect: the relay
-      // ends it with a warning, so its tool resumes.
+      // A round trip that is still in flight is a defect.
+      // The relay ends it with a warning, so its tool resumes.
       await relay?.drainOpenRoundTrips()
     }
   }
@@ -206,18 +209,18 @@ actor SessionProjector {
     }
   }
 
-  /// Opens a prompt. Call it before the mail of the prompt goes into the
-  /// session, so the projector has the record when the first event of the
-  /// mail comes.
+  /// Opens a prompt.
+  /// Call it before the mail of the prompt goes into the session.
+  /// Then the projector has the record when the first event of the mail comes.
   ///
   /// - Parameter prompt: The prompt.
   nonisolated func open(_ prompt: Prompt) {
     inbox.yield(.openPrompt(prompt))
   }
 
-  /// Tells the projector that the session refused the mail of an open
-  /// prompt. The prompt ends with the error text as an agent message, and
-  /// an `idle` with the `error` stop reason (task ^he1rmw6, decision G3).
+  /// Tells the projector that the session refused the mail of an open prompt.
+  /// The prompt ends with the error text as an agent message.
+  /// It also ends with an `idle` with the `error` stop reason (task ^he1rmw6, decision G3).
   ///
   /// - Parameters:
   ///   - mailId: The id of the refused mail.
@@ -236,9 +239,10 @@ actor SessionProjector {
   }
 
   /// Tells the projector the id of the `cancelAll()` signal of a
-  /// `session/cancel`. Each open prompt that the cancel reached ends as
-  /// `cancelled` no later than the `signalDone` event of that signal, so
-  /// the `idle` with the `cancelled` stop reason ends the cancel (an ACP
+  /// `session/cancel`.
+  /// Each open prompt that the cancel reached ends as `cancelled`.
+  /// It ends no later than the `signalDone` event of that signal.
+  /// So the `idle` with the `cancelled` stop reason ends the cancel (an ACP
   /// rule; task ^9xs24pn, decision G6).
   ///
   /// - Parameter signal: The id of the `cancelAll()` signal.
@@ -246,10 +250,12 @@ actor SessionProjector {
     inbox.yield(.cancelSent(signal))
   }
 
-  /// The sink of a slash command: each update goes through the inbox, so it
-  /// keeps its order with the events of the session. The sink returns when
-  /// the update went out, so the end of the command, which the state
-  /// ledger of the session sends, comes after each update of the command.
+  /// The sink of a slash command.
+  /// Each update goes through the inbox.
+  /// So it keeps its order with the events of the session.
+  /// The sink returns when the update went out.
+  /// So the end of the command comes after each update of the command.
+  /// The state ledger of the session sends the end of the command.
   /// After ``stop()``, an update goes nowhere.
   nonisolated var commandSink: SessionUpdateSink {
     { [inbox] update in
@@ -258,8 +264,9 @@ actor SessionProjector {
   }
 
   /// Offers one item to the inbox, and suspends until the consumer handled
-  /// it. The three senders that wait for their item (the command sink, the
-  /// end of a run and the end of a hold) use this one handshake.
+  /// it.
+  /// Three senders wait for their item: the command sink, the end of a run and the end of a hold.
+  /// They use this one handshake.
   ///
   /// - Parameters:
   ///   - inbox: The input end of the inbox.
@@ -280,11 +287,13 @@ actor SessionProjector {
     }
   }
 
-  /// Ends the session of a run: waits until each source sent its last
-  /// output, and then reports the end of the run with `idle`. The `idle`
-  /// goes out after each update that the session sent, and it carries the
-  /// stop reason of the run. The caller finishes the outputs of each source
-  /// first: a source that never ends holds this call.
+  /// Ends the session of a run.
+  /// It waits until each source sent its last output.
+  /// Then it reports the end of the run with `idle`.
+  /// The `idle` goes out after each update that the session sent.
+  /// It carries the stop reason of the run.
+  /// The caller finishes the outputs of each source first.
+  /// A source that never ends holds this call.
   ///
   /// - Parameter idle: The `idle` that tells how the run ended.
   func end(with idle: IdleStateUpdate) async {
@@ -294,10 +303,12 @@ actor SessionProjector {
     await Self.yieldAndWait(to: inbox) { .runEnded(idle, handled: $0) }
   }
 
-  /// Ends the hold on the final status of the `agents` call of a run, and sends the statuses
-  /// that the hold kept. They go through the inbox, so each update that came before stays before
-  /// them and each update that comes after goes after them. After ``stop()``, the hold ends and
-  /// the kept statuses go nowhere.
+  /// Ends the hold on the final status of the `agents` call of a run.
+  /// It also sends the statuses that the hold kept.
+  /// They go through the inbox.
+  /// So each update that came before stays before them.
+  /// Each update that comes after goes after them.
+  /// After ``stop()``, the hold ends and the kept statuses go nowhere.
   ///
   /// - Parameter token: The completion token of the call that started the run.
   nonisolated func releaseHold(of token: String) async {
@@ -310,12 +321,13 @@ actor SessionProjector {
   /// still open ends as `cancelled`. Safe to call more than one time.
   ///
   /// The reader of each source in `closed` reads to the natural end of its
-  /// outputs: the caller closed that Router session, and the close ends
-  /// the subscription after its last event. Thus the projector sends each
-  /// event of a closed session, and the stop does not depend on how a
-  /// cancelled stream treats the outputs that it still holds. The stop
-  /// cancels the reader of each other source, for example a replaced
-  /// session that a prompt kept busy at a model slot switch.
+  /// outputs.
+  /// The caller closed that Router session, and the close ends
+  /// the subscription after its last event.
+  /// Thus the projector sends each event of a closed session.
+  /// The stop does not depend on how a cancelled stream treats the outputs that it still holds.
+  /// The stop cancels the reader of each other source.
+  /// An example is a replaced session that a prompt kept busy at a model slot switch.
   ///
   /// - Parameter closed: The ids of the sources whose outputs ended or
   ///   end without a cancel.
@@ -350,12 +362,12 @@ private struct ProjectionState {
     /// The counts of the prompt.
     var tally = PromptTally()
 
-    /// The tool calls that went to the client while the prompt was open,
-    /// so the end of the prompt can close each one that did not finish.
-    /// It takes the tool-call updates of the prompt, and the updates of
-    /// each other work, for example the settlement of a run of the
-    /// prompt, which has the origin of its run mail. It never takes an
-    /// update of another prompt.
+    /// The tool calls that went to the client while the prompt was open.
+    /// So the end of the prompt can close each one that did not finish.
+    /// It takes the tool-call updates of the prompt.
+    /// It also takes the updates of each other work.
+    /// An example is the settlement of a run of the prompt, which has the origin of its run mail.
+    /// It never takes an update of another prompt.
     let toolCalls = PromptToolCalls()
   }
 
@@ -384,9 +396,9 @@ private struct ProjectionState {
   /// not come yet.
   var pendingCancels: Set<SignalID> = []
 
-  /// The ids of the last `signalDone` events, so a ``SessionProjector/Input/cancelSent(_:)``
-  /// that comes after the event of its signal still finds it. The
-  /// reader of the session and the sender of the cancel are two tasks.
+  /// The ids of the last `signalDone` events.
+  /// So a ``SessionProjector/Input/cancelSent(_:)`` that comes after the event of its signal still finds it.
+  /// The reader of the session and the sender of the cancel are two tasks.
   var recentSignalsDone: [SignalID] = []
 
   /// The number of ids that ``recentSignalsDone`` keeps.
@@ -444,9 +456,9 @@ private struct ProjectionState {
     }
   }
 
-  /// Translates one output, counts it for the open prompt whose mail its
-  /// origin holds, and ends a prompt at the terminal event of its mail or
-  /// at the stall bound.
+  /// Translates one output.
+  /// It counts the output for the open prompt whose mail its origin holds.
+  /// It ends a prompt at the terminal event of its mail or at the stall bound.
   ///
   /// - Parameters:
   ///   - output: The output.
@@ -497,9 +509,9 @@ private struct ProjectionState {
   }
 
   /// Ends each prompt that a `session/cancel` reached when the `signalDone`
-  /// of its `cancelAll()` signal comes, and keeps the id of each other
-  /// signal for a ``SessionProjector/Input/cancelSent(_:)`` that comes
-  /// later.
+  /// of its `cancelAll()` signal comes.
+  /// It keeps the id of each other signal for a
+  /// ``SessionProjector/Input/cancelSent(_:)`` that comes later.
   ///
   /// - Parameter signal: The id of the signal that ended.
   private mutating func signalDone(_ signal: SignalID) async {
@@ -523,9 +535,10 @@ private struct ProjectionState {
     }
   }
 
-  /// The handler that starts each elicitation round trip in its own task,
-  /// so the translation does not wait for the user (elicitation-plan task
-  /// 5), or `nil` when no relay is wired or the source has no session.
+  /// The handler that starts each elicitation round trip in its own task
+  /// (elicitation-plan task 5).
+  /// So the translation does not wait for the user.
+  /// It is `nil` when no relay is wired or the source has no session.
   ///
   /// - Parameter session: The Router session that the answer goes back to.
   /// - Returns: The handler.
@@ -545,9 +558,9 @@ private struct ProjectionState {
   /// The stop of `prompt` when `event` is the terminal event of its mail,
   /// or `nil` for each other event.
   ///
-  /// A failed answer gives its typed error through `awaitAnswer(of:)`. The
-  /// terminal is already in the ledger of the session when the event comes,
-  /// so the call returns at once (task ^9xs24pn, decision G5).
+  /// A failed answer gives its typed error through `awaitAnswer(of:)`.
+  /// The terminal is already in the ledger of the session when the event comes.
+  /// So the call returns at once (task ^9xs24pn, decision G5).
   ///
   /// - Parameters:
   ///   - event: The event.
@@ -595,10 +608,14 @@ private struct ProjectionState {
   }
 
   /// Ends the open prompt of the mail `mailId` with `stop`, or does
-  /// nothing when no such prompt is open: the cut and the empty checks of
-  /// a completed prompt, the close of each tool call that did not finish,
-  /// the one `usage_update`, the end of the prompt in its owner (the
-  /// `idle` when no other prompt is open), and the end work of the prompt.
+  /// nothing when no such prompt is open.
+  /// The steps are these.
+  /// First, the cut and the empty checks of a completed prompt.
+  /// Then the close of each tool call that did not finish.
+  /// Then the one `usage_update`.
+  /// Then the end of the prompt in its owner (the
+  /// `idle` when no other prompt is open).
+  /// Last, the end work of the prompt.
   ///
   /// - Parameters:
   ///   - mailId: The mail of the prompt.
@@ -609,14 +626,14 @@ private struct ProjectionState {
     }
     let ending = open.remove(at: index)
     var stop = stop
-    // A cancelled prompt does not always end with a cancelled terminal:
-    // model work that never checks for cancellation runs to completion.
+    // A cancelled prompt does not always end with a cancelled terminal.
+    // Model work that never checks for cancellation runs to completion.
     // The recorded request still ends the prompt as cancelled.
     if await ending.prompt.owner.cancelRequested {
       stop = .cancelled
     }
-    // A completed prompt that made no output and whose usage report says
-    // zero generated tokens must not read as a normal `end_turn` (task
+    // A completed prompt must not read as a normal `end_turn` in one case.
+    // The case is no output and a usage report that says zero generated tokens (task
     // ^pez780d).
     if stop == .completed, ending.tally.generatedNothing {
       stop = .noOutput

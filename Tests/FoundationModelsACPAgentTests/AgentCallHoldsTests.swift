@@ -150,8 +150,8 @@ import ULID
     #expect(sent.updates == [Self.statusUpdate(.completed)])
   }
 
-  /// Two tables of one chain share the holds, so a call of a nested run is
-  /// held by the table of its own session.
+  /// Two tables of one chain share the holds.
+  /// So the table of its own session holds a call of a nested run.
   @Test
   func aNestedTableSharesTheHoldsOfItsParent() async {
     let parent = RunCallJoinTable()
@@ -167,8 +167,8 @@ import ULID
   }
 
   /// The projector of the session sends the kept status when the hold ends, in the order of its
-  /// inbox: an update that came before the release stays before the status, and one that comes
-  /// after the release goes after it.
+  /// inbox. An update that came before the release stays before the status. An update that
+  /// comes after the release goes after it.
   @Test
   func theProjectorSendsTheKeptStatusAtTheReleaseInItsOwnOrder() async {
     let table = Self.makeHeldTable()
@@ -223,8 +223,8 @@ import ULID
     return table
   }
 
-  /// A hold that comes after the end of the run is not placed. The end came first, so the
-  /// final status of the call goes through and nothing waits for a release that never comes.
+  /// A hold that comes after the end of the run is not placed. The end came first. So the
+  /// final status of the call goes through. Nothing waits for a release that never comes.
   @Test
   func aHoldRequestedAfterTheEndOfTheRunIsNotPlaced() async {
     let table = RunCallJoinTable()

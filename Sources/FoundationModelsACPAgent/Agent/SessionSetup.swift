@@ -6,10 +6,10 @@ import FoundationModelsRouter
 import FoundationModelsSkills
 import Logging
 
-/// Whether a session has a prompt in flight. A session accepts a new
-/// prompt in both `idle` and `busy`: each prompt is mail, and it waits in
-/// the mail queue of the session (elicitation-plan task 3). A `closed`
-/// session is resumable, not promptable.
+/// Whether a session has a prompt in flight.
+/// A session accepts a new prompt in both `idle` and `busy`.
+/// Each prompt is mail, and it waits in the mail queue of the session (elicitation-plan task 3).
+/// A `closed` session is resumable, not promptable.
 enum SessionAvailability: Equatable, Sendable {
   /// No prompt is in flight.
   case idle
@@ -22,12 +22,13 @@ enum SessionAvailability: Equatable, Sendable {
   case closed
 }
 
-/// One live session in the agent's table: the Router
-/// session plus everything the session composed per cwd — its config, its
-/// assembled instructions, its confinement root set, its transcript
-/// directory, and the mounted tool surface whose pool the session
-/// lifecycle shuts down at close. One ACP session is one Router session,
-/// with the same ULID.
+/// One live session in the agent's table.
+/// It holds the Router session.
+/// It also holds everything the session composed per cwd.
+/// That is its config, its assembled instructions and its confinement root set.
+/// It also holds its transcript directory.
+/// The session lifecycle shuts down the pool of the mounted tool surface at close.
+/// One ACP session is one Router session, with the same ULID.
 ///
 /// A root session and a nested sub-agent session are the same type, built by
 /// one function (``RoutedACPAgent/registerSession(_:sessionId:parent:build:events:)``).
@@ -38,15 +39,14 @@ enum SessionAvailability: Equatable, Sendable {
 /// ``isReplayOnly``. It **owns** the parts that belong to the events of its
 /// own Router session: ``session``, ``transcriptDirectory``, ``stateLedger``,
 /// ``projector`` (with its relay and its join table), ``retainedHistory``,
-/// ``announcement`` and ``openPrompts``. The session that owns the surface
-/// (``ownsSurface``) alone stops the agent runs, finishes the shell stream
-/// and shuts the surface down.
+/// ``announcement`` and ``openPrompts``.
+/// Only the session that owns the surface (``ownsSurface``) stops the agent runs.
+/// That session also finishes the shell stream and shuts the surface down.
 struct ActiveSession: Sendable {
   /// The Router session that answers this ACP session's prompts.
-  /// Retaining it is what keeps the resident profile alive for this
-  /// session's lifetime. Born as the root session from the standard
-  /// slot; a model-slot switch replaces it with one
-  /// vended from the selected slot's handle.
+  /// Retaining it keeps the resident profile alive for the lifetime of the session.
+  /// It is born as the root session from the standard slot.
+  /// A model-slot switch replaces it with one vended from the handle of the selected slot.
   var session: any RoutedSession
 
   /// The merged per-cwd configuration this session was composed from.
@@ -112,10 +112,11 @@ struct ActiveSession: Sendable {
   /// elicitation with `cancel` through it.
   let projector: SessionProjector
 
-  /// The session's descendants — its forks. `session/close`
-  /// closes each one, so no orphan keeps a run or a submission in the model
-  /// queue after the parent goes. The runs of the `agents` tool are not
-  /// here: `SessionSurface.stopAgentRuns()` stops them.
+  /// The session's descendants — its forks.
+  /// `session/close` closes each one.
+  /// So no orphan keeps a run or a submission in the model queue after the parent goes.
+  /// The runs of the `agents` tool are not here.
+  /// `SessionSurface.stopAgentRuns()` stops them.
   var descendants: [any RoutedSession] = []
 
   /// The session that this session is nested in, or `nil` for a root
@@ -133,17 +134,18 @@ struct ActiveSession: Sendable {
   let announcement: SessionAnnouncementGate
 
   /// Whether this session owns its mounted surface: only a session with no
-  /// parent does. The close of a nested session never stops the agent
-  /// runs of the surface, never finishes its shell stream and never shuts
-  /// it down, because the parent still uses it.
+  /// parent does.
+  /// The close of a nested session never stops the agent runs of the surface.
+  /// It never finishes the shell stream and never shuts the surface down.
+  /// The parent still uses the surface.
   var ownsSurface: Bool {
     parentSessionId == nil
   }
 
   /// Whether the session is replay-only: `session/resume` found its
-  /// working directory or one of its additional roots missing. The agent
-  /// never makes a session directory, so the session mounts no tool
-  /// surface, writes nothing for the session, and refuses each prompt.
+  /// working directory or one of its additional roots missing.
+  /// The agent never makes a session directory.
+  /// So the session mounts no tool surface, writes nothing for the session, and refuses each prompt.
   let isReplayOnly: Bool
 
   /// Whether `session/close` released this session.
@@ -178,15 +180,15 @@ struct ActiveSession: Sendable {
   }
 
   /// Inserts the prompt of `request` as the user message of the session.
-  /// After the success response to the current request, the connection
-  /// gives the `user_message` echo to the retained history and then sends
-  /// the echo. Thus the history gets the message after the handler
-  /// returns. The prompt defers its work after this call, so the history
-  /// holds the message before the first update of the prompt.
+  /// The connection gives the `user_message` echo to the retained history after the success response to the current request.
+  /// Then it sends the echo.
+  /// Thus the history gets the message after the handler returns.
+  /// The prompt defers its work after this call.
+  /// So the history holds the message before the first update of the prompt.
   ///
-  /// Call it in the handler of the `session/prompt` request, after each
-  /// check that can refuse the prompt and before the prompt defers its
-  /// work, so the echo goes out first.
+  /// Call it in the handler of the `session/prompt` request.
+  /// Call it after each check that can refuse the prompt.
+  /// Call it before the prompt defers its work, so the echo goes out first.
   ///
   /// - Parameters:
   ///   - request: The prompt request.
@@ -225,10 +227,10 @@ enum SessionSetup {
 
   /// Whether `path` is absolute.
   ///
-  /// The ACP schema types a path as a plain string and states the
-  /// absolute rule in prose only, so no decoder enforces it. This agent
-  /// owns the file system, so this agent is the only judge, and this is
-  /// the one place the rule is written down.
+  /// The ACP schema types a path as a plain string.
+  /// It states the absolute rule in prose only, so no decoder enforces it.
+  /// This agent owns the file system, so this agent is the only judge.
+  /// This is the one place the rule is written down.
   ///
   /// - Parameter path: The candidate path string.
   /// - Returns: `true` when `path` begins with `/`.
@@ -237,9 +239,10 @@ enum SessionSetup {
   }
 
   /// Validates that `path` is absolute and returns it as a directory
-  /// URL. `cwd` MUST be absolute: it keys the config
-  /// layer, the AGENTS.md walk, and the transcript directory, and a
-  /// relative path would key them off the process cwd instead.
+  /// URL.
+  /// `cwd` MUST be absolute.
+  /// It keys the config layer, the AGENTS.md walk, and the transcript directory.
+  /// A relative path would key them off the process cwd instead.
   ///
   /// - Parameters:
   ///   - path: The path string of the request.
@@ -297,10 +300,9 @@ enum SessionSetup {
     }
   }
 
-  /// The first directory of a session that fails the existence check,
-  /// in request order: the cwd first, then each additional root in wire
-  /// order. This walk is the one statement of which directories a
-  /// session needs.
+  /// The first directory of a session that fails the existence check, in request order.
+  /// The order is the cwd first, then each additional root in wire order.
+  /// This walk is the one statement of which directories a session needs.
   ///
   /// - Parameters:
   ///   - workingDirectory: The session working directory.
@@ -322,11 +324,11 @@ enum SessionSetup {
   /// Validates that the working directory and each additional root of a
   /// session are existing directories.
   ///
-  /// The agent never makes a session directory. Each tool mount reads or
-  /// writes the directory it is given, so a composition that runs over a
-  /// missing directory can make it, or watch and index a folder that is
-  /// not there. So `session/new` refuses a missing directory before it
-  /// composes anything.
+  /// The agent never makes a session directory.
+  /// Each tool mount reads or writes the directory it is given.
+  /// So a composition that runs over a missing directory can make it.
+  /// It can also watch and index a folder that is not there.
+  /// So `session/new` refuses a missing directory before it composes anything.
   ///
   /// - Parameters:
   ///   - workingDirectory: The session working directory.
@@ -363,10 +365,10 @@ enum SessionSetup {
   /// goes through the same ``validatedWorkingDirectory(path:field:)``
   /// check the `cwd` goes through, under its own field name.
   ///
-  /// A relative entry refuses the whole request. The wire decode
-  /// carries every entry as sent, so a skip here would drop a
-  /// confinement root the client asked for and never say so, and the
-  /// session would then run with a boundary neither side agreed on.
+  /// A relative entry refuses the whole request.
+  /// The wire decode carries every entry as sent.
+  /// So a skip here would drop a confinement root that the client asked for, and it would never say so.
+  /// The session would then run with a boundary that neither side agreed on.
   ///
   /// - Parameter paths: The requested directory paths, in wire order.
   /// - Returns: The confinement root URLs, in the same order.
@@ -378,9 +380,10 @@ enum SessionSetup {
     }
   }
 
-  /// The user layer's root in `stack`: the synced root of a custom home,
-  /// and `$XDG_CONFIG_HOME/<name>/` of the XDG home of the CLI. The `home`
-  /// transcript location resolves against it.
+  /// The user layer's root in `stack`.
+  /// For a custom home, it is the synced root.
+  /// For the XDG home of the CLI, it is `$XDG_CONFIG_HOME/<name>/`.
+  /// The `home` transcript location resolves against it.
   ///
   /// - Parameter stack: The session's dotfolder stack.
   /// - Returns: The user layer root.
@@ -450,10 +453,10 @@ extension AbsolutePath {
   /// The wire path for `rawValue`, or `nil` when `rawValue` is not
   /// absolute.
   ///
-  /// The wire type carries whatever string it was given, so this is the
-  /// one door for every projection that must DROP a path it cannot put
-  /// on the wire — a damaged stored record, or a tool report the agent
-  /// only relays. A path that arrives in a request is refused instead,
+  /// The wire type carries whatever string it was given.
+  /// So this is the one door for every projection that must DROP a path it cannot put on the wire.
+  /// Such a path is a damaged stored record, or a tool report that the agent only relays.
+  /// A path that arrives in a request is refused instead,
   /// through ``SessionSetup/validatedWorkingDirectory(path:field:)``.
   ///
   /// - Parameter rawValue: The candidate path string.
@@ -466,14 +469,15 @@ extension AbsolutePath {
   }
 }
 
-/// The per-cwd configuration resolution one session request starts from
-/// of the session cwd: the loader whose stack the instructions assembly
-/// reads, the merged configuration, the user layer root, and the resolved
-/// recording root.
+/// The per-cwd configuration resolution that one session request starts from.
+/// It covers the session cwd.
+/// It holds the loader whose stack the instructions assembly reads.
+/// It also holds the merged configuration, the user layer root, and the resolved recording root.
 ///
-/// `session/new` resolves and composes in one motion; `session/resume`
-/// resolves first, runs the cwd pre-check against ``transcriptRoot``, and
-/// composes only after the check passes.
+/// `session/new` resolves and composes in one motion.
+/// `session/resume` resolves first.
+/// Then it runs the cwd pre-check against ``transcriptRoot``.
+/// It composes only after the check passes.
 struct LoadedSessionContext {
   /// The loader whose dotfolder stack the instructions assembly reads.
   let loader: ConfigurationLoader
@@ -491,9 +495,9 @@ struct LoadedSessionContext {
   /// Resolves the context of one working directory from the settings in
   /// memory of `settingsStore` (``SettingsStore/merged(for:)``).
   ///
-  /// The session requests of the agent and the walk of the project store
-  /// of the home (``RegisteredRecordingRoots``) both call it, thus each of
-  /// them finds the same recording root for a working directory.
+  /// The session requests of the agent call it.
+  /// The walk of the project store of the home (``RegisteredRecordingRoots``) calls it too.
+  /// Thus each of them finds the same recording root for a working directory.
   ///
   /// - Parameters:
   ///   - workingDirectory: The working directory to resolve.
@@ -518,9 +522,8 @@ struct LoadedSessionContext {
   }
 }
 
-/// What one `session/new` composed before the session was made:
-/// the merged config, the assembled instructions, the
-/// mounted tool surface, and the resolved recording root.
+/// What one `session/new` composed before the session was made.
+/// It holds the merged config, the assembled instructions, the mounted tool surface, and the resolved recording root.
 struct SessionComposition {
   /// The merged per-cwd configuration.
   let configuration: AgentConfiguration
@@ -552,10 +555,9 @@ struct SessionComposition {
   let isReplayOnly: Bool
 }
 
-/// What one mount of a session announces in the `session/new` or
-/// `session/resume` response (ACP schema-v2.0.0-alpha.7): the session id,
-/// the first command list, and the first config-option list. A later
-/// `available_commands_update` or `config_option_update` replaces a list.
+/// What one mount of a session announces in the `session/new` or `session/resume` response (ACP schema-v2.0.0-alpha.7).
+/// It holds the session id, the first command list, and the first config-option list.
+/// A later `available_commands_update` or `config_option_update` replaces a list.
 struct SessionActivation {
   /// The ACP session id: the root Router session's ULID.
   let sessionId: SessionId
@@ -567,9 +569,8 @@ struct SessionActivation {
   let configOptions: [SessionConfigOption]
 }
 
-/// Where one mounted session works, and whether a user can answer it: the
-/// `session/new` or `session/resume` inputs of the mount that the
-/// composition does not hold.
+/// Where one mounted session works, and whether a user can answer it.
+/// These are the `session/new` or `session/resume` inputs of the mount that the composition does not hold.
 struct SessionPlacement {
   /// The validated session working directory.
   let workingDirectory: URL
@@ -585,28 +586,28 @@ struct SessionPlacement {
 extension RoutedACPAgent {
   /// Creates one root Router session for `params.cwd`.
   ///
-  /// The ACP `sessionId` IS the root Router session's ULID, serialized —
-  /// there is no mapping table, because a mapping table can drift and
-  /// a resume would then restore the wrong conversation. Router writes
-  /// the `index.md` of the session folder when it makes the session, and
-  /// the cwd is registered in the project store of the home now. The
-  /// title waits for the first prompt, and a session with zero prompts
-  /// is not listed (``RoutedACPAgent/listSessions(_:)``).
+  /// The ACP `sessionId` IS the root Router session's ULID, serialized.
+  /// There is no mapping table, because a mapping table can drift.
+  /// A resume would then restore the wrong conversation.
+  /// Router writes the `index.md` of the session folder when it makes the session.
+  /// The cwd is registered in the project store of the home now.
+  /// The title waits for the first prompt.
+  /// A session with zero prompts is not listed (``RoutedACPAgent/listSessions(_:)``).
   ///
-  /// The request runs in one server span, and it writes one "enter" record
-  /// when it starts, because the tool and MCP server composition can take a
-  /// long time (``RequestTracing``). The span carries the id of the new
-  /// session.
+  /// The request runs in one server span.
+  /// It writes one "enter" record when it starts.
+  /// The reason is that the tool and MCP server composition can take a long time (``RequestTracing``).
+  /// The span carries the id of the new session.
   ///
   /// - Parameter params: The request: the absolute `cwd`, the ordered
   ///   `additionalDirectories`, and the client's session-scoped
   ///   `mcpServers`.
   /// - Returns: The response carrying the new sessionId, the
   ///   `availableCommands` list and the `configOptions` list.
-  /// - Throws: The order rule's invalid-request error,
-  ///   `RequestError.invalidParams` for a relative cwd or for a cwd or an
-  ///   additional directory that is not an existing directory, or
-  ///   whatever the composition pipeline throws.
+  /// - Throws: The order rule's invalid-request error.
+  ///   `RequestError.invalidParams` for a relative cwd.
+  ///   The same error for a cwd or an additional directory that is not an existing directory.
+  ///   Whatever the composition pipeline throws.
   public func newSession(_ params: NewSessionRequest) async throws -> NewSessionResponse {
     try await newSession(params, from: .direct)
   }
@@ -665,17 +666,17 @@ extension RoutedACPAgent {
       userPresence: userPresence)
 
     // The session comes from the profile's standard slot, never from
-    // the router. `grammar` stays absent — a plain
-    // session, not a guided one — and `agentSpawn` stays nil: an agent
-    // run starts from the standalone `agents` tool of the surface,
-    // never from `session/new`. The budget starts automatic
-    // compaction: the fractions come from the `compaction:` section and
-    // the limit from the model's resolved context, never from
-    // configuration. The
-    // repetition detector takes the `repetition:` section. The settle
-    // period is the one that the surface gave the agent runs. The hooks
-    // see the key of the working directory, which each session of that
-    // folder shares, so they share one snapshot timeline.
+    // the router.
+    // `grammar` stays absent: a plain session, not a guided one.
+    // `agentSpawn` stays nil.
+    // An agent run starts from the standalone `agents` tool of the surface, never from `session/new`.
+    // The budget starts automatic compaction.
+    // The fractions come from the `compaction:` section.
+    // The limit comes from the resolved context of the model, never from configuration.
+    // The repetition detector takes the `repetition:` section.
+    // The settle period is the one that the surface gave the agent runs.
+    // The hooks see the key of the working directory.
+    // Each session of that folder shares the key, so they share one snapshot timeline.
     let hookLineage = HookLineage(workingDirectory: workingDirectory, origin: .new)
     let session = residentProfile.standard.makeBudgetedSession(
       instructions: composition.instructions,
@@ -691,8 +692,8 @@ extension RoutedACPAgent {
     let sessionId = SessionId(rawValue: session.id.description)
     SnapshotSessionKeys.shared.record(hookLineage.sessionKey, for: sessionId)
 
-    // The connection of the request owns the new session and is its
-    // starter (D120 c), before the mount sends anything for the session.
+    // The connection of the request owns the new session and is its starter (D120 c).
+    // This happens before the mount sends anything for the session.
     connections.recordStart(of: sessionId, by: caller)
 
     // The title is NOT set here: the first prompt sets it, from the
@@ -714,19 +715,18 @@ extension RoutedACPAgent {
     return response
   }
 
-  /// Mounts one made or restored root Router session into the agent: the
-  /// record of its placement (``recordPlacement(of:placement:)``), the
-  /// command registry with
-  /// its bound builtin context, the table entry with its retained
-  /// history (the one build of a session,
-  /// ``registerSession(_:sessionId:parent:build:events:)``), the command-set
-  /// publication, the terminal projection, and
-  /// the status report of the MCP servers.
+  /// Mounts one made or restored root Router session into the agent.
+  /// The mount records the placement of the session (``recordPlacement(of:placement:)``).
+  /// It makes the command registry with its bound builtin context.
+  /// It makes the table entry with its retained history (the one build of a session,
+  /// ``registerSession(_:sessionId:parent:build:events:)``).
+  /// It publishes the command set.
+  /// It starts the terminal projection.
+  /// It sends the status report of the MCP servers.
   ///
   /// The caller sets the owner of the session before the mount
-  /// (``ConnectionTable/recordStart(of:by:)`` or
-  /// ``ConnectionTable/take(_:by:)``), so each update of the mount goes to
-  /// the owner.
+  /// (``ConnectionTable/recordStart(of:by:)`` or ``ConnectionTable/take(_:by:)``).
+  /// So each update of the mount goes to the owner.
   ///
   /// - Parameters:
   ///   - session: The root Router session to mount.
@@ -753,16 +753,15 @@ extension RoutedACPAgent {
     }
 
     let sessionId = SessionId(rawValue: session.id.description)
-    // Each shell command of the session records this ACP session id as
-    // its owner. A model slot switch replaces the Router session over
-    // the same surface and binds nothing, so the id stays the ACP id.
+    // Each shell command of the session records this ACP session id as its owner.
+    // A model slot switch replaces the Router session over the same surface and binds nothing.
+    // So the id stays the ACP id.
     composition.surface.shellSessionIdentity?.bind(sessionId.rawValue)
 
-    // Assemble the command registry now the session exists: the six
-    // builtins capture a context bound to the live
-    // session and, through it, to the registry that carries them, so
-    // `/help` can list every registered command. The reserved-name rule
-    // is enforced by the registry merge.
+    // Assemble the command registry now the session exists.
+    // The six builtins capture a context bound to the live session.
+    // Through it, they also capture the registry that carries them, so `/help` can list every registered command.
+    // The registry merge enforces the reserved-name rule.
     let commandContext = BuiltinCommandContext(
       workingDirectory: workingDirectory,
       configuration: composition.configuration,
@@ -785,17 +784,15 @@ extension RoutedACPAgent {
         transcriptDirectory: session.recordingDirectory,
         registry: commands))
 
-    // The first announcement of the config-option list: one select
-    // over the profile's chat slots, defaulting to
-    // the standard slot the session was just composed from. The
-    // announced state is recorded so the divergence check compares
-    // against what the client actually saw.
+    // The first announcement of the config-option list is one select over the profile's chat slots.
+    // It defaults to the standard slot the session was just composed from.
+    // The announced state is recorded, so the divergence check compares against what the client actually saw.
     let configOptions = ConfigOptions.options(
       profile: residentProfile, selectedSlot: ConfigOptions.defaultSlot)
 
-    // The one reader of the events of the session starts before anything
-    // can mail the session, so it keeps each event (elicitation-plan
-    // task 1). The build is the one that a nested session takes too.
+    // The one reader of the events of the session starts before anything can mail the session.
+    // So it keeps each event (elicitation-plan task 1).
+    // The build is the one that a nested session takes too.
     try await registerSession(
       session,
       sessionId: sessionId,
@@ -826,21 +823,20 @@ extension RoutedACPAgent {
       configOptions: configOptions)
   }
 
-  /// Records where one mounted session works, for the listings. The cwd
-  /// goes into the project store of the home (Router `ProjectStore`, one
-  /// file for each project in ``AgentHome/projectsDirectory``), so a
-  /// cross-project browser finds the project. The additional directories
-  /// go to Router (`setAdditionalDirectories(to:for:)`), which writes them
-  /// to the `index.md` of the session; a resume gives the complete new
-  /// list, because the list of the client is authoritative on each
-  /// reconnect.
+  /// Records where one mounted session works, for the listings.
+  /// The cwd goes into the project store of the home.
+  /// That store is Router `ProjectStore`, with one file for each project in ``AgentHome/projectsDirectory``.
+  /// So a cross-project browser finds the project.
+  /// The additional directories go to Router (`setAdditionalDirectories(to:for:)`).
+  /// Router writes them to the `index.md` of the session.
+  /// A resume gives the complete new list.
+  /// The reason is that the list of the client is authoritative on each reconnect.
   ///
   /// - Parameters:
   ///   - session: The root Router session.
   ///   - placement: Where the session works.
-  /// - Throws: The error of the project file save, or
-  ///   `SessionDirectoryError.unknownSession` when the session directory of
-  ///   the router does not hold the session.
+  /// - Throws: The error of the project file save.
+  ///   `SessionDirectoryError.unknownSession` when the session directory of the router does not hold the session.
   private func recordPlacement(of session: any RoutedSession, placement: SessionPlacement)
     async throws
   {
@@ -850,14 +846,14 @@ extension RoutedACPAgent {
       to: placement.additionalRoots, for: session.id)
   }
 
-  /// Starts the session's terminal projection: the
-  /// one consumer loop over the host-owned shell output stream,
-  /// posting each terminal update through the connection of the session
-  /// and keeping it in the retained history (``historySink(for:)``).
+  /// Starts the session's terminal projection.
+  /// It is the one consumer loop over the host-owned shell output stream.
+  /// It posts each terminal update through the connection of the session.
+  /// It also keeps each update in the retained history (``historySink(for:)``).
   /// The join table of the surface (``SessionSurface/runCallJoins``) gives
   /// the wire id of each `Terminal` announce.
-  /// A session with no shell mount starts nothing. The loop ends when
-  /// ``markSessionClosed(_:)`` finishes the stream.
+  /// A session with no shell mount starts nothing.
+  /// The loop ends when ``markSessionClosed(_:)`` finishes the stream.
   ///
   /// - Parameters:
   ///   - surface: The session's mounted surface.
@@ -870,18 +866,18 @@ extension RoutedACPAgent {
       over: shellOutput, runCallJoins: surface.runCallJoins, send: historySink(for: sessionId))
   }
 
-  /// Sends the status report of the MCP servers of a session after the
-  /// response of the current `session/new` or `session/resume` request:
-  /// one `_mcp_server_status` update for each outcome, in mount order
-  /// (``MCPServerStatusReport``). The client knows the session id only
-  /// from the response, so no update goes out before it. A resume sends a
-  /// full new report, and the client replaces its list.
+  /// Sends the status report of the MCP servers of a session.
+  /// It sends the report after the response of the current `session/new` or `session/resume` request.
+  /// It sends one `_mcp_server_status` update for each outcome, in mount order
+  /// (``MCPServerStatusReport``).
+  /// The client knows the session id only from the response, so no update goes out before it.
+  /// A resume sends a full new report, and the client replaces its list.
   ///
-  /// The updates go through `post(_:in:)` directly, never through the
-  /// history sink: the status is live, and the retained history and a
-  /// replay never hold it. A session with no MCP server, or a session
-  /// whose connection has no outbound path, sends nothing. The deferred
-  /// work keeps the connection weakly, as the agent keeps the connection
+  /// The updates go through `post(_:in:)` directly, never through the history sink.
+  /// The status is live, so the retained history and a replay never hold it.
+  /// A session with no MCP server sends nothing.
+  /// A session whose connection has no outbound path sends nothing.
+  /// The deferred work keeps the connection weakly, as the agent keeps the connection
   /// (task `^173qn8n`).
   ///
   /// - Parameters:
@@ -906,12 +902,10 @@ extension RoutedACPAgent {
   /// Makes the configuration loader of one working directory: the one
   /// place where this agent makes a `ConfigurationLoader`.
   ///
-  /// Each request path that reads the configuration of a `cwd` calls it,
-  /// so each read gets the same ``settingsFolders`` and
-  /// ``transcriptLocation``. A new path that calls it cannot miss the code
-  /// override or the home of the host. The loader comes
-  /// from ``settingsStore``, thus the store and the loader read the same
-  /// folders.
+  /// Each request path that reads the configuration of a `cwd` calls it.
+  /// So each read gets the same ``settingsFolders`` and ``transcriptLocation``.
+  /// A new path that calls it cannot miss the code override or the home of the host.
+  /// The loader comes from ``settingsStore``, so the store and the loader read the same folders.
   ///
   /// - Parameter workingDirectory: The working directory whose project
   ///   layer the loader reads.
@@ -925,9 +919,9 @@ extension RoutedACPAgent {
   /// the recording root.
   ///
   /// The configuration comes from the settings in memory
-  /// (``SettingsStore/merged(for:)``), and not from a fresh load of the
-  /// files. The store reads a level file the first time that a request
-  /// needs it, and reads it again when it changes from outside.
+  /// (``SettingsStore/merged(for:)``), and not from a fresh load of the files.
+  /// The store reads a level file the first time that a request needs it.
+  /// It reads the file again when it changes from outside.
   ///
   /// - Parameter workingDirectory: The validated session working
   ///   directory.
@@ -937,11 +931,13 @@ extension RoutedACPAgent {
     try await LoadedSessionContext.load(workingDirectory: workingDirectory, from: settingsStore)
   }
 
-  /// Makes the catalog context of one session composition: the session
-  /// root set and MCP servers, the per-cwd configuration, and what the
-  /// agent shares with each session, among them the snapshot store and the
-  /// one `settings` endpoint of the agent (``settingsEndpoint``), thus the
-  /// `settings` tool of each session runs on that same instance.
+  /// Makes the catalog context of one session composition.
+  /// The context holds the session root set and MCP servers.
+  /// It holds the per-cwd configuration.
+  /// It also holds what the agent shares with each session.
+  /// That includes the snapshot store.
+  /// It also includes the one `settings` endpoint of the agent (``settingsEndpoint``).
+  /// So the `settings` tool of each session runs on that same instance.
   ///
   /// - Parameters:
   ///   - context: The resolved per-cwd configuration.
@@ -974,18 +970,17 @@ extension RoutedACPAgent {
       settingsEndpoint: settingsEndpoint)
   }
 
-  /// Composes one session over an already-resolved configuration:
-  /// assemble the instructions, then connect the MCP
-  /// servers and build the tool roster through the catalog.
+  /// Composes one session over an already-resolved configuration.
+  /// It assembles the instructions.
+  /// Then it connects the MCP servers and builds the tool roster through the catalog.
   ///
-  /// The catalog context gets ``environment``, the environment of the
-  /// host, so each session tool that reads an environment value reads the
-  /// value the host gave (task ^b2kb6j1). It also gets
-  /// ``settingsFolders``, whose ``home`` gives the marketplace cache folder
-  /// and the machine state folder of the session. `session/new` and
-  /// `session/resume` compose through this function. A model-slot switch
-  /// composes nothing: the replacement session gets the tools of this
-  /// composition.
+  /// The catalog context gets ``environment``, the environment of the host.
+  /// So each session tool that reads an environment value reads the value the host gave (task ^b2kb6j1).
+  /// It also gets ``settingsFolders``.
+  /// Its ``home`` gives the marketplace cache folder and the machine state folder of the session.
+  /// `session/new` and `session/resume` compose through this function.
+  /// A model-slot switch composes nothing.
+  /// The replacement session gets the tools of this composition.
   ///
   /// - Parameters:
   ///   - context: The resolved per-cwd configuration.
@@ -1010,11 +1005,11 @@ extension RoutedACPAgent {
       from: context, workingDirectory: workingDirectory, additionalRoots: additionalRoots,
       clientMCPServers: clientMCPServers, userPresence: userPresence)
 
-    // One watched registry serves the preload assembly here, the
-    // slash-command source below, the `skills` tool and the agent runs
-    // (a standalone tool, not a Multitool capability). `watch: true`
-    // is what makes its
-    // `commandUpdates` non-nil.
+    // One watched registry serves the preload assembly here.
+    // It also serves the slash-command source below.
+    // It also serves the `skills` tool and the agent runs.
+    // These are a standalone tool, not a Multitool capability.
+    // `watch: true` is what makes its `commandUpdates` non-nil.
     let skills = await ToolCatalog.makeSkillsSource(context: catalogContext)
     let instructions = try await InstructionsAssembler(
       stack: context.loader.stack, workingDirectory: workingDirectory
@@ -1033,10 +1028,10 @@ extension RoutedACPAgent {
       isReplayOnly: false)
   }
 
-  /// Assembles the registry's later sources in precedence order:
-  /// the catalog's linked `SlashCommandProviding`
-  /// conformers first, then the registered providers, then the skills
-  /// source last, so skills win a non-builtin collision.
+  /// Assembles the registry's later sources in precedence order.
+  /// First come the catalog's linked `SlashCommandProviding` conformers.
+  /// Then come the registered providers.
+  /// The skills source comes last, so skills win a non-builtin collision.
   ///
   /// - Parameters:
   ///   - surface: The mounted tool surface whose conformers join.
@@ -1049,32 +1044,30 @@ extension RoutedACPAgent {
       + [SkillCommandSource(registry: skills)]
   }
 
-  /// Publishes each change of the session's command set:
-  /// the `session/new` or `session/resume` response announces the first
-  /// list (ACP schema-v2.0.0-alpha.7), and the registry starts to publish
-  /// after that response. A publication sends an
-  /// `available_commands_update` only when its list differs from the
-  /// list that the client has (``publishCommandList(_:of:)``),
-  /// so no update repeats the list of the response. Each update goes to
-  /// the connection of the session as it is when the update goes out.
+  /// Publishes each change of the session's command set.
+  /// The `session/new` or `session/resume` response announces the first list (ACP schema-v2.0.0-alpha.7).
+  /// The registry starts to publish after that response.
+  /// A publication sends an `available_commands_update` only in one case.
+  /// That case is a list that differs from the list that the client has (``publishCommandList(_:of:)``).
+  /// So no update repeats the list of the response.
+  /// Each update goes to the connection of the session as it is when the update goes out.
   ///
-  /// The closures keep the agent and the registry weakly, and no closure
-  /// keeps a connection, as the agent keeps the connection (task
+  /// The closures keep the agent and the registry weakly.
+  /// No closure keeps a connection, as the agent keeps the connection (task
   /// `^173qn8n`):
   ///
-  /// - The registry keeps the sink for the life of the session entry. A
-  ///   strong reference to the agent would keep the agent and its models
-  ///   for as long as the publisher lives.
+  /// - The registry keeps the sink for the life of the session entry.
+  ///   A strong reference to the agent would keep the agent and its models for as long as the publisher lives.
   /// - Upstream, the connection releases the deferred work after it ran.
-  ///   The skills watcher that `session/new` starts lives on, so a strong
-  ///   reference to the registry would still keep the registry, its
-  ///   builtins, the session they read and the models of the profile for
-  ///   as long as the publisher lives.
+  ///   The skills watcher that `session/new` starts lives on.
+  ///   So a strong reference to the registry would still keep the registry and its builtins.
+  ///   It would also keep the session they read and the models of the profile.
+  ///   It would keep them for as long as the publisher lives.
   ///
-  /// The session entry keeps the registry for as long as it publishes. A
-  /// session whose connection has no outbound path (the
-  /// ``ConnectionId/direct`` caller) has no response to follow, so it
-  /// starts no publisher.
+  /// The session entry keeps the registry for as long as it publishes.
+  /// A session whose connection has no outbound path (the
+  /// ``ConnectionId/direct`` caller) has no response to follow.
+  /// So it starts no publisher.
   ///
   /// - Parameters:
   ///   - commands: The session's loaded registry.
@@ -1089,11 +1082,11 @@ extension RoutedACPAgent {
     }
   }
 
-  /// Sends one `available_commands_update` with `list` through the
-  /// connection of the session, and keeps it in the retained history,
-  /// when `list` differs from the list that the client has. The history
-  /// holds that list: the response seeded it, and each update after the
-  /// response changed it.
+  /// Sends one `available_commands_update` with `list` when `list` differs from the list that the client has.
+  /// It sends the update through the connection of the session.
+  /// It also keeps the update in the retained history.
+  /// The history holds that list.
+  /// The response seeded it, and each update after the response changed it.
   ///
   /// - Parameters:
   ///   - list: The new command list.
@@ -1110,13 +1103,12 @@ extension RoutedACPAgent {
 }
 
 extension RoutedLLM {
-  /// Vends one session with the derived auto-compaction budget (the
-  /// context size comes from the model, never from configuration):
-  /// `compaction` carries the fractions and the
-  /// tool-output cap, and this model carries the resolved working
-  /// context the fractions measure against. `session/new` and the
-  /// model-slot switch both vend through this one door, so the two
-  /// paths cannot drift.
+  /// Vends one session with the derived auto-compaction budget.
+  /// The context size comes from the model, never from configuration.
+  /// `compaction` carries the fractions and the tool-output cap.
+  /// This model carries the resolved working context that the fractions measure against.
+  /// `session/new` and the model-slot switch both vend through this one door.
+  /// So the two paths cannot drift.
   ///
   /// - Parameters:
   ///   - instructions: The session's assembled instructions text.
@@ -1126,22 +1118,22 @@ extension RoutedLLM {
   ///   - compaction: The `compaction:` section the budget derives from.
   ///   - repetition: The `repetition:` section the repetition detector of
   ///     the session takes (task ^k51h6bb).
-  ///   - inlineSettleGrace: The settle period of the session, in seconds:
-  ///     the ``SessionSurface/inlineSettleGrace`` of the mounted surface,
-  ///     thus the same period that each agent run of the surface gets.
+  ///   - inlineSettleGrace: The settle period of the session, in seconds.
+  ///     It is the ``SessionSurface/inlineSettleGrace`` of the mounted surface.
+  ///     So it is the same period that each agent run of the surface gets.
   ///   - userPresence: Whether a user can answer the questions of the
   ///     session (``RoutedACPAgent/userPresence``). `session/new` and the
   ///     model-slot switch give it; the default is Router's default.
   ///   - mailOnlyAnswerLimit: The most answers in a row that run mail
   ///     alone starts (``RoutedACPAgent/mailOnlyAnswerLimit``). The default
   ///     is Router's default.
-  ///   - hookLineage: The hook lineage that the host gives the session, or
-  ///     `nil` (the default) to let Router give it: then the key is the id
-  ///     of the session. `session/new` gives the lineage of its working
-  ///     directory (``HookLineage/init(workingDirectory:origin:)``), and the
-  ///     model-slot switch gives the same key with the origin
-  ///     `replacement`, so each session of one folder shares one snapshot
-  ///     timeline.
+  ///   - hookLineage: The hook lineage that the host gives the session.
+  ///     Or `nil` (the default) to let Router give it.
+  ///     Then the key is the id of the session.
+  ///     `session/new` gives the lineage of its working directory
+  ///     (``HookLineage/init(workingDirectory:origin:)``).
+  ///     The model-slot switch gives the same key with the origin `replacement`.
+  ///     So each session of one folder shares one snapshot timeline.
   /// - Returns: A new session over this model, with automatic
   ///   compaction on. The compaction keeps each skill that the model
   ///   loads with `use skill` (``SkillOutputProtection``). While an
@@ -1159,12 +1151,14 @@ extension RoutedLLM {
     mailOnlyAnswerLimit: Int = SessionConfiguration.defaultMailOnlyAnswerLimit,
     hookLineage: HookLineage? = nil
   ) -> any RoutedSession {
-    // The resolved context decides two things that a reader cannot see
-    // otherwise: the fold point of the compaction, and the token ceiling
-    // of each generation call, which Router derives from the same number.
+    // The resolved context decides two things that a reader cannot see otherwise.
+    // They are the fold point of the compaction, and the token ceiling
+    // of each generation call.
+    // Router derives the ceiling from the same number.
     // A prompt that ends `_truncated` is read against this record.
-    // `notice`, not `info`: a reader of a long run looks for this record
-    // after the run, and a backend often keeps only `notice` and more.
+    // The level is `notice`, not `info`.
+    // A reader of a long run looks for this record after the run.
+    // A backend often keeps only `notice` and more.
     ACPAgentTelemetry.logger(.session).notice(
       "The session has its token budget.",
       metadata: [
@@ -1206,20 +1200,20 @@ extension RoutedLLM {
   ///   - instructions: The freshly assembled instructions, or `nil` to keep
   ///     the recorded instructions.
   ///   - tools: The tools the model can call.
-  ///   - userPresence: The user presence of the client that resumes the
-  ///     session now (``RoutedACPAgent/userPresence``). It is required,
-  ///     never `nil`: a restore writes no new configuration, so with `nil` Router
-  ///     would apply the presence recorded when the session was created,
-  ///     which belongs to the client of that time. The value covers the
-  ///     restored root and each restored child.
-  ///   - hookSessionKey: The key that the hooks of the restored root see, or
-  ///     `nil` (the default) to let Router give it: then the key is the id
-  ///     of the session. `session/resume` gives the key of the working
-  ///     directory (``HookLineage/init(workingDirectory:origin:)``), so the
-  ///     resumed session shares the one snapshot timeline of its folder.
-  ///     The `SessionStart` of the root has the origin `resumed`, and Router
-  ///     gives the key to each fork in the same folder and each restored
-  ///     sub-agent.
+  ///   - userPresence: The user presence of the client that resumes the session now (``RoutedACPAgent/userPresence``).
+  ///     It is required, never `nil`.
+  ///     A restore writes no new configuration.
+  ///     So with `nil` Router would apply the presence recorded when the session was created.
+  ///     That presence belongs to the client of that time.
+  ///     The value covers the restored root and each restored child.
+  ///   - hookSessionKey: The key that the hooks of the restored root see.
+  ///     Or `nil` (the default) to let Router give it.
+  ///     Then the key is the id of the session.
+  ///     `session/resume` gives the key of the working directory
+  ///     (``HookLineage/init(workingDirectory:origin:)``).
+  ///     So the resumed session shares the one snapshot timeline of its folder.
+  ///     The `SessionStart` of the root has the origin `resumed`.
+  ///     Router gives the key to each fork in the same folder and to each restored sub-agent.
   /// - Returns: The restored session and its reports, with the host rules of
   ///   ``makeBudgetedSession(instructions:workingDirectory:recordingRoot:tools:compaction:repetition:inlineSettleGrace:)``.
   /// - Throws: Whatever Router's restore throws.

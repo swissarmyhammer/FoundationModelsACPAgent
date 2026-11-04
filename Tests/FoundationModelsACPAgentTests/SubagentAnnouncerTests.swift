@@ -124,9 +124,9 @@ extension SubagentAnnouncerTests {
       }
     }
 
-    /// Waits until the test opens the release gate of an outlet. A wait that
-    /// fails is a failed test: it records an issue, so an answer after a failed
-    /// wait is never read as an answer after the release.
+    /// Waits until the test opens the release gate of an outlet. A wait that fails is a failed
+    /// test. It records an issue. So an answer after a failed wait is never read as an answer
+    /// after the release.
     ///
     /// - Parameter released: The gate. It is `true` after the release.
     private static func waitForRelease(of released: WatchedValue<Bool>) async {
@@ -725,7 +725,7 @@ extension SubagentAnnouncerTests {
       await announcer.stop()
     }
 
-    /// A run that ended with a blocked outlet settles too: its child must end although the
+    /// A run that ended with a blocked outlet settles too. Its child must end, although the
     /// client never learned of it.
     @Test
     func aFinalRunWhoseOutletBlocksSettles() async throws {

@@ -6,31 +6,31 @@ import Synchronization
 
 // The retained history of a session (ACP schema-v2.0.0-alpha.7).
 //
-// `session/resume` replays the "retained history" of the session. A message
-// that the agent keeps and replays must keep the id that the client saw
-// live. The Router journal cannot give those ids: Router takes the prompt as
-// a plain string and makes its own segment ids, and the agent makes the live
-// id of each agent message before Router records the entry. After a
-// compaction the Router journal also holds a summary in place of the
-// messages that it folded. Thus the agent keeps its own history: one
-// `SessionMergeEngine` for each session, in the session entry. Each
-// `session/update` that the agent sends for the session goes into it, and a
-// compaction changes only the model context, never this history. The agent
-// writes the history to a file beside the transcript, so a new process can
-// replay the same messages with the same ids. The Router journal serves
-// the restore of the model context, and one part of the replay: the plans
-// of the session (task ^jwx92y8). A plan has its own id, and Router writes
-// each plan event to disk at once, so a resume merges the recorded plans
-// into the history.
+// `session/resume` replays the "retained history" of the session.
+// A message that the agent keeps and replays must keep the id that the client saw live.
+// The Router journal cannot give those ids.
+// Router takes the prompt as a plain string and makes its own segment ids.
+// The agent makes the live id of each agent message before Router records the entry.
+// After a compaction the Router journal also holds a summary in place of the messages that it folded.
+// Thus the agent keeps its own history: one `SessionMergeEngine` for each session, in the session entry.
+// Each `session/update` that the agent sends for the session goes into it.
+// A compaction changes only the model context, never this history.
+// The agent writes the history to a file beside the transcript.
+// So a new process can replay the same messages with the same ids.
+// The Router journal serves the restore of the model context.
+// It also serves one part of the replay: the plans of the session (task ^jwx92y8).
+// A plan has its own id.
+// Router writes each plan event to disk at once.
+// So a resume merges the recorded plans into the history.
 
 /// The file that keeps the retained history of one session, in the
 /// transcript directory of the session (`<recording root>/<sessionId>/`).
 ///
-/// The file holds the history as the session updates that rebuild it: the
-/// transcript and the session state, one update for each entry or field,
-/// each with its id. Router reads no file in that directory but its own
-/// journal, and `session/delete` removes the directory, thus the file goes
-/// with the session.
+/// The file holds the history as the session updates that rebuild it.
+/// The updates cover the transcript and the session state.
+/// There is one update for each entry or field, each with its id.
+/// Router reads no file in that directory but its own journal.
+/// `session/delete` removes the directory, thus the file goes with the session.
 enum SessionHistoryFile {
   /// The name of the file in the transcript directory of the session.
   static let fileName = "session-history.json"
@@ -42,9 +42,9 @@ enum SessionHistoryFile {
     let updates: [SessionUpdate]
   }
 
-  /// Writes `history` to the file in `directory`, and replaces the file
-  /// that is there. The directory is made when it does not exist yet: an
-  /// action command records nothing in Router, so Router did not make it.
+  /// Writes `history` to the file in `directory`, and replaces the file that is there.
+  /// The directory is made when it does not exist yet.
+  /// An action command records nothing in Router, so Router did not make it.
   ///
   /// - Parameters:
   ///   - history: The retained history of the session.
@@ -85,12 +85,14 @@ enum SessionHistoryFile {
 /// `user_message` recorder of the connection share.
 ///
 /// `AgentSideConnection.insertUserMessage(_:messageId:into:)` gives the echo
-/// to a synchronous `@Sendable` closure. The connection calls that closure on
-/// its own dispatch task, after the success response and before the echo goes
-/// out, thus after the prompt handler returned. An actor cannot take a
-/// synchronous write from that closure, so a `Mutex` keeps the engine. Each
-/// write is one locked operation: a read, a change and a write back in two
-/// steps can lose an update that the connection writes between the steps.
+/// to a synchronous `@Sendable` closure.
+/// The connection calls that closure on its own dispatch task.
+/// It calls the closure after the success response and before the echo goes out.
+/// That is after the prompt handler returned.
+/// An actor cannot take a synchronous write from that closure, so a `Mutex` keeps the engine.
+/// Each write is one locked operation.
+/// A read, a change and a write back in two steps can lose an update.
+/// The connection can write that update between the steps.
 final class RetainedHistory: Sendable {
   /// The merged history, under the lock.
   private let engine: Mutex<SessionMergeEngine>
@@ -168,9 +170,9 @@ extension SessionMergeEngine {
   /// activity. The current state goes out after the replay, from the
   /// ledger of the session (``SessionStateLedger/announceCurrentState()``).
   ///
-  /// The replay goes out before the resume response. Thus the command
-  /// list and the configuration options of the response come last, and
-  /// they replace the kept ones at the client.
+  /// The replay goes out before the resume response.
+  /// Thus the command list and the configuration options of the response come last.
+  /// They replace the kept ones at the client.
   ///
   /// - Parameter cursor: Where the replay begins.
   /// - Returns: The updates, in transcript order.
@@ -204,33 +206,36 @@ extension RoutedACPAgent {
     sessions[sessionId]?.retainedHistory.apply(update)
   }
 
-  /// The sink of the updates of one session: it merges each update into
-  /// the retained history of the session, then sends it through the
-  /// connection of the session as it is when the update goes out
-  /// (``ConnectionTable/path(forSession:)``). Each `session/update`
-  /// that the agent sends for a session goes through one such sink, with
-  /// two exceptions: the replay of the history itself, and the
-  /// `_mcp_server_status` report of the MCP servers
-  /// (``MCPServerStatusReport``). That report is a live status and not
-  /// part of the session history, so the retained history and a replay
-  /// never hold it.
+  /// The sink of the updates of one session.
+  /// It merges each update into the retained history of the session.
+  /// Then it sends the update through the connection of the session.
+  /// It reads the connection from the table when the update goes out
+  /// (``ConnectionTable/path(forSession:)``).
+  /// Each `session/update` that the agent sends for a session goes through one such sink.
+  /// There are two exceptions.
+  /// One is the replay of the history itself.
+  /// The other is the `_mcp_server_status` report of the MCP servers
+  /// (``MCPServerStatusReport``).
+  /// That report is a live status and not part of the session history.
+  /// So the retained history and a replay never hold it.
   ///
-  /// An update that goes out while the session has no connection with an
-  /// outbound path still goes into the history, so a later
-  /// `session/resume` replays it, and goes to no client: no client is there
-  /// to see it.
+  /// An update can go out while the session has no connection with an outbound path.
+  /// It still goes into the history, so a later
+  /// `session/resume` replays it.
+  /// The update goes to no client, because no client is there to see it.
   ///
-  /// The sink keeps the agent weakly, and the table keeps each connection
-  /// weakly, as the agent keeps the connection (task `^173qn8n`): the
-  /// prompt-state owner keeps the sink in the session entry, and a
-  /// long-lived task, such as the terminal projection, keeps it for the
-  /// life of the session. The sink sends through the connection that it
-  /// read from the table for this update, strongly for the send.
+  /// The sink keeps the agent weakly.
+  /// The table keeps each connection weakly, as the agent keeps the connection (task `^173qn8n`).
+  /// The prompt-state owner keeps the sink in the session entry.
+  /// A long-lived task, such as the terminal projection, keeps it for the
+  /// life of the session.
+  /// The sink sends through the connection that it read from the table for this update, strongly for the send.
   ///
   /// A session with a gate (``SessionAnnouncementGate``) keeps each update
-  /// in its history, and gives the send to the gate. The gate sends it when
-  /// it is open. An update that goes out before the gate opens waits in the
-  /// gate, and goes out in order when the gate opens.
+  /// in its history, and gives the send to the gate.
+  /// The gate sends it when it is open.
+  /// An update that goes out before the gate opens waits in the gate.
+  /// It goes out in order when the gate opens.
   ///
   /// - Parameters:
   ///   - sessionId: The session the updates belong to.
@@ -288,19 +293,19 @@ extension RoutedACPAgent {
   }
 
   /// Inserts the prompt of `params` as the user message of its session
-  /// (ACP schema-v2.0.0-alpha.7). After the success response to the
-  /// current request, the connection gives the `user_message` echo to the
-  /// retained history and then sends the echo. After an error response the
-  /// history and the client get nothing.
+  /// (ACP schema-v2.0.0-alpha.7).
+  /// The connection gives the `user_message` echo to the retained history after the success response to the current request.
+  /// Then it sends the echo.
+  /// After an error response the history and the client get nothing.
   ///
-  /// Call it in the handler of the `session/prompt` request, after each
-  /// check that can refuse the prompt and before the prompt defers its
-  /// work, so the echo goes out before the `running` state.
+  /// Call it in the handler of the `session/prompt` request.
+  /// Call it after each check that can refuse the prompt.
+  /// Call it before the prompt defers its work, so the echo goes out before the `running` state.
   ///
   /// - Parameters:
   ///   - params: The prompt request.
-  ///   - messageId: The id of the user message: the description of the
-  ///     `MailID` of a model prompt, or `nil` for a new id.
+  ///   - messageId: The id of the user message.
+  ///     It is the description of the `MailID` of a model prompt, or `nil` for a new id.
   ///   - connection: The bound connection that sends the echo.
   /// - Returns: The id of the user message, for the prompt response.
   func insertUserMessage(
@@ -320,12 +325,12 @@ extension RoutedACPAgent {
   }
 
   /// Writes the retained history of a session to its file
-  /// (``SessionHistoryFile``), so a new process can replay it. A history
-  /// with no transcript entry writes nothing, so a session with no prompt
-  /// leaves no directory. A replay-only session writes nothing either: it
-  /// ran no prompt, so its file stays as the session that ran left it. A
-  /// failed write is logged: the history in the table stays, and the next
-  /// write tries again.
+  /// (``SessionHistoryFile``), so a new process can replay it.
+  /// A history with no transcript entry writes nothing, so a session with no prompt leaves no directory.
+  /// A replay-only session writes nothing either.
+  /// It ran no prompt, so its file stays as the session that ran left it.
+  /// A failed write is logged.
+  /// The history in the table stays, and the next write tries again.
   ///
   /// - Parameter sessionId: The session whose history to write.
   func writeHistory(of sessionId: SessionId) {
@@ -342,14 +347,16 @@ extension RoutedACPAgent {
     }
   }
 
-  /// The retained history of a session that `session/resume` restores:
-  /// the history in the table when this process ran the session, else
-  /// the history in the file of an earlier process, else an empty
-  /// history. The Router journal is never a source of a message: its
-  /// messages have no ACP ids, and after a compaction it holds a summary in
-  /// place of the messages that it folded. Its plans are a source, and
-  /// ``resumedHistory(kept:directory:rootId:sessionId:)`` adds them. A file
-  /// that does not read is logged, and the history starts empty.
+  /// The retained history of a session that `session/resume` restores.
+  /// It is the history in the table when this process ran the session.
+  /// Else it is the history in the file of an earlier process.
+  /// Else it is an empty history.
+  /// The Router journal is never a source of a message.
+  /// Its messages have no ACP ids.
+  /// After a compaction it holds a summary in place of the messages that it folded.
+  /// Its plans are a source, and
+  /// ``resumedHistory(kept:directory:rootId:sessionId:)`` adds them.
+  /// A file that does not read is logged, and the history starts empty.
   ///
   /// - Parameters:
   ///   - kept: The history in the table, or `nil`.
@@ -372,19 +379,19 @@ extension RoutedACPAgent {
     }
   }
 
-  /// The history that `session/resume` restores: the retained history
-  /// (``retainedHistory(kept:directory:sessionId:)``), with each plan that
-  /// the Router journal of the session recorded (task ^jwx92y8).
+  /// The history that `session/resume` restores.
+  /// It is the retained history (``retainedHistory(kept:directory:sessionId:)``).
+  /// It also holds each plan that the Router journal of the session recorded (task ^jwx92y8).
   ///
-  /// The plans are the one part of the history that the Router journal
-  /// gives. Router writes each plan event to disk at once, but the agent
-  /// writes the history file only at the end of a prompt and at
-  /// `session/close`. So a process that stopped during a prompt can leave a
-  /// plan in the journal that the history file does not hold. The history
-  /// merges each recorded plan in post order, as the live projection did
-  /// (``ACPEventTranslator/planUpdate(for:)``). Thus it holds the last plan of
-  /// each plan id, and a plan that the history holds already does not
-  /// change.
+  /// The plans are the one part of the history that the Router journal gives.
+  /// Router writes each plan event to disk at once.
+  /// But the agent writes the history file only at the end of a prompt and at `session/close`.
+  /// So a process that stopped during a prompt can leave a plan in the journal.
+  /// The history file may not hold that plan.
+  /// The history merges each recorded plan in post order, as the live projection did
+  /// (``ACPEventTranslator/planUpdate(for:)``).
+  /// Thus it holds the last plan of each plan id.
+  /// A plan that the history holds already does not change.
   ///
   /// - Parameters:
   ///   - kept: The history in the table, or `nil`.
@@ -405,11 +412,11 @@ extension RoutedACPAgent {
   /// Each plan that the Router journal of one session recorded, in post
   /// order.
   ///
-  /// The read keeps only the events of the session itself. The transcript
-  /// directory of a session also holds the journals of its forks, and the
-  /// client must not get a plan of a session that did not make it. A
-  /// journal that does not read is logged, and the resume replays no
-  /// recorded plan: the history file can still hold the plans.
+  /// The read keeps only the events of the session itself.
+  /// The transcript directory of a session also holds the journals of its forks.
+  /// The client must not get a plan of a session that did not make it.
+  /// A journal that does not read is logged, and the resume replays no recorded plan.
+  /// The history file can still hold the plans.
   ///
   /// - Parameters:
   ///   - rootId: The recorded id of the session.

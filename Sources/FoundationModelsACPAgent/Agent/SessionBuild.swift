@@ -120,8 +120,8 @@ extension RoutedACPAgent {
   /// The gate that holds the updates of a nested session until the announcer opens it.
   ///
   /// The agents tool starts a nested session, so its surface has an announcer. A surface with
-  /// none is an unexpected state: the session then gets a gate that discards each update, and
-  /// the surprise is recorded here, in the debug build and in the log of a release build.
+  /// none is an unexpected state. The session then gets a gate that discards each update.
+  /// The surprise is recorded here, in the debug build and in the log of a release build.
   ///
   /// - Parameters:
   ///   - session: The Router session.

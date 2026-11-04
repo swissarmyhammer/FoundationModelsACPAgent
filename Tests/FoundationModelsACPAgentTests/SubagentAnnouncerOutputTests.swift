@@ -8,8 +8,10 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// The events that the announcer keeps for the projector of a child session, the lookup of the
-/// live session of a run, and the end of the run: the outputs end, the child settles, and the hold
+/// The tests of three parts of the announcer.
+/// The first part keeps the events for the projector of a child session.
+/// The second part looks up the live session of a run.
+/// The third part is the end of the run. The outputs end, the child settles, and the hold
 /// on the final status of its `agents` call ends.
 extension SubagentAnnouncerTests {
   /// The outputs, the session lookup and the end of a run, with an outlet that records what it gets.
@@ -107,8 +109,8 @@ extension SubagentAnnouncerTests {
 
     // MARK: The order and the end of the outputs
 
-    /// The outputs of a run reach the projector of its child in the order of the events,
-    /// from the first event.
+    /// The outputs of a run reach the projector of its child in the order of the events.
+    /// They start at the first event.
     @Test
     func theKeptOutputsKeepTheOrderOfTheEvents() async throws {
       let session = try await Self.makeSession()
@@ -231,8 +233,8 @@ extension SubagentAnnouncerTests {
       await session.close()
     }
 
-    /// The outputs of a run end when its state is dropped, so the projector of the child reads to
-    /// the end.
+    /// The outputs of a run end when its state is dropped.
+    /// So the projector of the child reads to the end.
     @Test
     func theOutputsEndWhenTheRunEnds() async throws {
       let session = try await Self.makeSession()
@@ -255,8 +257,8 @@ extension SubagentAnnouncerTests {
 
     // MARK: The stop
 
-    /// The stop ends the outputs of a run that is live, settles the run, and releases its hold, so
-    /// the final status of its call goes out and the projector of the child ends.
+    /// The stop ends the outputs of a run that is live. It settles the run and releases its hold.
+    /// So the final status of its call goes out, and the projector of the child ends.
     @Test
     func theStopEndsTheOutputsSettlesTheLiveRunsAndReleasesTheHolds() async throws {
       let session = try await Self.makeSession()
@@ -284,7 +286,7 @@ extension SubagentAnnouncerTests {
     // MARK: The order of the hold and the end
 
     /// A run that ended at its first event leaves no hold. The hold of the call comes after the
-    /// end of the run, so it is not placed, and the final status of the call is not kept for ever.
+    /// end of the run, so it is not placed. The final status of the call is not kept for ever.
     @Test
     func aRunThatEndedAtItsFirstEventLeavesNoHold() async throws {
       let announcer = SubagentAnnouncer()

@@ -17,10 +17,12 @@ import Testing
 private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
 
 /// The standalone `agents` tool of FoundationModelsAgents in the tool catalog
-/// (task ^c4a6mwy): the mount beside the `skills` tool, the one skills
-/// registry of the root session and the runs, the shared settle period, the
-/// `start agent` answers, and the stop of the runs before the root session
-/// closes.
+/// (task ^c4a6mwy). This suite covers these points:
+/// - The mount beside the `skills` tool.
+/// - The one skills registry of the root session and the runs.
+/// - The shared settle period.
+/// - The `start agent` answers.
+/// - The stop of the runs before the root session closes.
 ///
 /// Each test writes local agent folders `agents/<name>/AGENT.md` in the
 /// project layer of a temporary working directory. No test reads a
@@ -70,8 +72,8 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   /// The prompt of the root session that starts the slow run.
   static let rootSlowPrompt = "ROOT-SLOW-MARKER"
 
-  /// A settle period that is much shorter than the default, so that a test
-  /// can see that the root session uses the value of the context.
+  /// A settle period that is much shorter than the default.
+  /// A test can thus see that the root session uses the value of the context.
   static let shortSettlePeriod: TimeInterval = 0.5
 
   /// The text that the pending envelope of the Router holds.
@@ -145,9 +147,8 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
       inlineSettleGrace: inlineSettleGrace)
   }
 
-  /// The script of the `start agent` proofs: each run plays the branch of
-  /// its prompt, and the root session starts the run that its prompt
-  /// names.
+  /// The script of the `start agent` proofs. Each run plays the branch of
+  /// its prompt. The root session starts the run that its prompt names.
   ///
   /// - Parameter hold: The hold that the slow run waits on.
   /// - Returns: The script.
@@ -223,8 +224,8 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     }
   }
 
-  /// The text of one transcript segment: the text of a text segment, or
-  /// the JSON of a structured segment, which is the form of a tool output
+  /// The text of one transcript segment. A text segment gives its text.
+  /// A structured segment gives its JSON. This is the form of a tool output
   /// that is a `String`. Each other segment gives the empty string.
   ///
   /// - Parameter segment: The segment.
@@ -242,7 +243,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   // MARK: - The mount
 
   /// A default context mounts the `agents` tool as a top-level tool after
-  /// the `skills` tool, and the Multitool surface has no agents verb.
+  /// the `skills` tool. The Multitool surface has no agents verb.
   @Test func aDefaultContextMountsTheAgentsToolBesideTheSkillsTool() async throws {
     let context = try await Self.makeContext(label: "mount")
 
@@ -258,9 +259,9 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     await surface.shutdown()
   }
 
-  /// The config cannot turn the `agents` tool off. The scalar
-  /// `agents: false` and the body `enabled: false` that the loader reads
-  /// each give a session with the `agents` tool and an agent runner.
+  /// The config cannot turn the `agents` tool off. The loader reads the
+  /// scalar `agents: false` and the body `enabled: false`. Each one gives
+  /// a session with the `agents` tool and an agent runner.
   @Test(arguments: ["agents: false", "agents:\n    enabled: false"])
   func aConfigThatTurnsTheAgentsToolOffStillMountsTheAgentsTool(entry: String) async throws {
     let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig(
@@ -277,8 +278,8 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   }
 
   /// The runs read the skills registry that the session gives the
-  /// surface, and they get the Multitool session tools and the `skills`
-  /// tool of the agent environment by name.
+  /// surface. They get the Multitool session tools by name. They get the
+  /// `skills` tool of the agent environment by name.
   @Test func theRunsGetTheSkillsToolOfTheOneRegistryAndTheSessionTools() async throws {
     let context = try await Self.makeContext(label: "skills")
     let skills = await SurfaceCatalog.makeSkillsSource(context: context)
@@ -294,9 +295,10 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     await surface.shutdown()
   }
 
-  /// A factory of the run tools gives a new session tool of the name it
-  /// asks for, and not the fallback tool, when the session tools build.
-  /// The fallback here has an other name, thus a result that is the
+  /// A factory of the run tools gives a new session tool. The tool has the
+  /// name that the factory asks for. This happens when the session tools
+  /// build. It does not give the fallback
+  /// tool. The fallback here has an other name. Thus a result that is the
   /// fallback fails the test.
   @Test func aFreshSessionToolHasTheAskedNameAndIsNotTheFallback() async throws {
     let context = try await Self.makeContext(label: "fresh")
@@ -316,8 +318,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   // MARK: - The settle period
 
   /// The agent environment and the root session take the settle period of
-  /// the catalog context, and the default is the settle period of the
-  /// Router.
+  /// the catalog context. The default is the settle period of the Router.
   @Test func theAgentEnvironmentAndTheSurfaceShareTheSettlePeriodOfTheContext() async throws {
     let context = try await Self.makeContext(
       label: "settle", inlineSettleGrace: Self.shortSettlePeriod)
@@ -384,7 +385,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   }
 
   /// `session/new` gives the session that `makeBudgetedSession` makes the
-  /// settle period of the agent in its `SessionConfiguration`: the record
+  /// settle period of the agent in its `SessionConfiguration`. The record
   /// of the root session holds the short period, not the default. The
   /// test reads the record, not a clock.
   @Test
@@ -401,9 +402,9 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
 
   /// A model-slot switch gives the replacement session that
   /// `makeBudgetedSession` makes the settle period of the agent in its
-  /// `SessionConfiguration`: after the switch, the record of the root
-  /// session and the record of the replacement both hold the short
-  /// period. The test reads the records, not a clock.
+  /// `SessionConfiguration`. After the switch, the record of the root
+  /// session holds the short period. The record of the replacement holds
+  /// it too. The test reads the records, not a clock.
   @Test
   func aSlotSwitchGivesTheReplacementSessionTheSettlePeriodOfTheAgent() async throws {
     let agent = try await Self.makeAgent(
@@ -424,11 +425,12 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   // MARK: - The start agent answers
 
   /// A `start agent` call to a run that ends in the settle period gives
-  /// the final message of the run as the output of the call, with no
-  /// pending envelope, and no mail comes after it.
+  /// the final message of the run. This message is the output of the call.
+  /// It gives no
+  /// pending envelope. No mail comes after it.
   ///
   /// The settle period waits on a `ManualRunClock` that the test never
-  /// advances, so the period cannot end before the quick run. On the real
+  /// advances. Thus the period cannot end before the quick run. On the real
   /// clock, a machine with a high load could end the period first.
   @Test
   func aQuickRunGivesItsFinalMessageAsTheOutputOfTheCall() async throws {
@@ -456,18 +458,18 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   /// run comes later as mail, one time.
   ///
   /// The settle period is zero, on a `ManualRunClock` that the test never
-  /// advances. The deadline of the period is thus reached when the call
-  /// starts to wait, and the held run cannot end before it, so the call
+  /// advances. Thus the call reaches the deadline of the period when it
+  /// starts to wait. The held run cannot end before that. So the call
   /// gives the pending envelope in a fixed order, with no clock. When the
-  /// held run ends, `awaitIdle()` waits for the open run and for the
-  /// answer of its mail. These tests prove the settle period without a
-  /// clock:
-  /// ``theAgentEnvironmentAndTheSurfaceShareTheSettlePeriodOfTheContext()``
-  /// for the agent environment and the surface,
-  /// ``aNewSessionGetsTheSettlePeriodOfTheAgentInItsConfiguration()`` for
-  /// the root session, and
-  /// ``aSlotSwitchGivesTheReplacementSessionTheSettlePeriodOfTheAgent()``
-  /// for the session after a slot switch.
+  /// held run ends, `awaitIdle()` waits for the open run. It also waits
+  /// for the answer of its mail. These tests prove the settle period
+  /// without a clock:
+  /// - ``theAgentEnvironmentAndTheSurfaceShareTheSettlePeriodOfTheContext()``
+  ///   for the agent environment and the surface,
+  /// - ``aNewSessionGetsTheSettlePeriodOfTheAgentInItsConfiguration()``
+  ///   for the root session, and
+  /// - ``aSlotSwitchGivesTheReplacementSessionTheSettlePeriodOfTheAgent()``
+  ///   for the session after a slot switch.
   @Test
   func aSlowRunGoesToTheBackgroundAndItsFinalMessageComesAsMailOneTime() async throws {
     let hold = ScriptedHold()
@@ -483,8 +485,8 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     #expect(!output.contains(Self.slowFinalText))
     #expect(output.contains(Self.pendingMarker), "\(output)")
     hold.release()
-    // The open run counts as work, so the idle comes after the run ended
-    // and after the answer of its mail.
+    // The open run counts as work. So the idle comes after the run ended.
+    // It also comes after the answer of its mail.
     #expect(await session.awaitIdle())
     let mail = Self.promptTexts(in: await session.transcript).filter {
       $0.contains(Self.slowFinalText)
@@ -519,8 +521,8 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   /// The completion token of a tool run of an agent run.
   static let agentToolRunToken = "01AGENTSTOOLRUNTOKEN000001"
 
-  /// The open record of a tool run of an agent run, which Router of the
-  /// agent run joined to an SDK call of the agent run.
+  /// The open record of a tool run of an agent run. Router of the agent
+  /// run joined this run to an SDK call of the agent run.
   static let agentToolRunOpenRecord: SessionEvent = .toolInvocation(
     ToolInvocationRecord(
       tool: "shell", op: "execute command", correlationID: agentToolRunToken,
@@ -529,9 +531,10 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
 
   /// The agent environment gives each session event of an agent run to the
   /// join table of the surface. The open record of a tool run of the agent
-  /// run writes "no join" for that run while the agent run is in operation,
-  /// so the terminal stream announces the run on its completion token and
-  /// does not wait for the end of the agent run.
+  /// run writes "no join" for that run. This holds while the agent run is
+  /// in operation.
+  /// So the terminal stream announces the run on its completion token.
+  /// It does not wait for the end of the agent run.
   @Test
   func theOpenRecordOfAToolRunOfAnAgentRunWritesItsEntryWhileTheRunIsInOperation() async throws {
     let hold = ScriptedHold()
@@ -554,7 +557,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   }
 
   /// `session/close` stops the agent runs of the session before the root
-  /// session closes: when the close sweep of the root session finishes its
+  /// session closes. When the close sweep of the root session finishes its
   /// event stream, the run is already cancelled.
   @Test
   func closingASessionStopsItsAgentRunsBeforeTheRootSessionCloses() async throws {
@@ -583,12 +586,13 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
 
   // MARK: - The trace of the wake on agent mail (task ^3p03s3r)
 
-  /// Runs one ACP prompt whose `start agent` call leaves the slow run in
-  /// the background inside one capture, ends the prompt, releases the run,
-  /// and waits until the submission that the mail of the run starts ended.
+  /// Runs one ACP prompt inside one capture. The `start agent` call of
+  /// the prompt leaves the slow run in the background. The function ends
+  /// the prompt and releases the run. Then it waits until the submission
+  /// that the mail of the run starts ended.
   ///
-  /// The settle period of the call runs on the real clock: the prompt ends
-  /// when the period ends, and the held run cannot end before the test
+  /// The settle period of the call runs on the real clock. The prompt ends
+  /// when the period ends. The held run cannot end before the test
   /// releases it.
   ///
   /// - Returns: The spans of the run.
@@ -617,10 +621,10 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   }
 
   /// The prompt ends while the agent run that it started waits in the
-  /// background. The answer that the final message of the run starts
-  /// later, as mail to the root session, is in the trace of the prompt: its
-  /// submission is no root span, its parent is a span of the subtree of the
-  /// prompt span, and it links to the span that sent the mail.
+  /// background. The final message of the run starts an answer later, as
+  /// mail to the root session. This answer is in the trace of the prompt.
+  /// Its submission is no root span. Its parent is a span of the subtree
+  /// of the prompt span. It links to the span that sent the mail.
   @Test
   func theWakeOnAgentMailAfterThePromptIsInTheTraceOfThePrompt() async throws {
     let spans = try await Self.runTheWakeOnAgentMail()

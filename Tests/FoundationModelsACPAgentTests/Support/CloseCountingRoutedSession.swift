@@ -5,9 +5,9 @@ import FoundationModelsRouter
 
 // MARK: - A Router session double that counts its closes
 //
-// A test that must prove when a Router session closes, and how many
-// times, wraps a real session in this double. Each call goes to the real
-// session. The double adds two facts: the number of `close()` calls, and
+// A test that must prove when a Router session closes wraps a real
+// session in this double. The test also proves how many times it closes.
+// Each call goes to the real session. The double adds two facts: the number of `close()` calls, and
 // each elicitation answer that went through it.
 
 /// A `RoutedSession` that sends each call to a real session and counts
@@ -16,8 +16,8 @@ import FoundationModelsRouter
 /// A `nonisolated` requirement goes to the real session at once, because
 /// the real session declares it `nonisolated` too. A synchronous requirement
 /// that the real session isolates cannot go to the actor of the real
-/// session, because that call needs an `await`. The code under test does not
-/// use these requirements, so each one stops the test with a message that
+/// session. That call needs an `await`. The code under test does not
+/// use these requirements. So each one stops the test with a message that
 /// names it.
 actor CloseCountingRoutedSession: RoutedSession {
   /// The real session that each call goes to.

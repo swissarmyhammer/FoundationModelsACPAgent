@@ -2,8 +2,8 @@ import FoundationModelsACP
 import FoundationModelsRouter
 import Synchronization
 
-/// The completion token of one tool run: the key that the join table, the
-/// shell output stream and the holds name a run by.
+/// The completion token of one tool run.
+/// The join table, the shell output stream and the holds use it as the key of a run.
 ///
 /// A wrapper, and not a plain `String`, because the SDK tool-call id of the
 /// same run is a `String` too. A caller that swaps the two does not compile.

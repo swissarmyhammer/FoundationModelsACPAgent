@@ -52,7 +52,7 @@ import Testing
 
   /// The number of `runCode` calls that the root makes before its `agents` call in a run that
   /// the validator reads. The scripted model gives the id `scripted-call-N` to the call N of
-  /// each session. The validator reads a tool call id as one name in the whole trace, but ACP
+  /// each session. The validator reads a tool call id as one name in the whole trace. ACP
   /// scopes the id to its session. These calls move the id of the `agents` call away from the
   /// ids of the two calls of the child.
   private static let rootWarmupCalls = 2
@@ -280,8 +280,8 @@ import Testing
     await wire.fixture.close()
   }
 
-  /// The text of the child goes out under the child id, and the root
-  /// stream holds no text of the child.
+  /// The text of the child goes out under the child id.
+  /// The root stream holds no text of the child.
   @Test
   func theTextOfAChildGoesOutUnderTheChildIdOnly() async throws {
     let wire = try await Self.run(childPlay: Self.toolCallingChild())
@@ -294,8 +294,8 @@ import Testing
     await wire.fixture.close()
   }
 
-  /// The root stream holds no tool call of the child: the snippet of the
-  /// child is in the stream of the child only.
+  /// The root stream holds no tool call of the child.
+  /// The snippet of the child is in the stream of the child only.
   @Test
   func theRootStreamHoldsNoToolCallOfTheChild() async throws {
     let wire = try await Self.run(childPlay: Self.toolCallingChild())
@@ -362,9 +362,9 @@ import Testing
   /// the child, and after its final `idle`.
   ///
   /// A foreground call returns after its child ends, so this order holds without the hold too.
-  /// This test does not prove the hold. The proof of the hold is
-  /// ``aBackgroundRunKeepsTheFinalStatusOfItsCallUntilTheChildEnds()`` for the wire, and
-  /// `AgentCallHoldsTests` for a foreground call that returns before the child ends.
+  /// This test does not prove the hold. ``aBackgroundRunKeepsTheFinalStatusOfItsCallUntilTheChildEnds()``
+  /// proves the hold on the wire. `AgentCallHoldsTests` proves it for a foreground call that
+  /// returns before the child ends.
   @Test
   func theFinalStatusOfTheAgentsCallComesAfterTheLastUpdateOfTheChild() async throws {
     let wire = try await Self.run(
@@ -507,8 +507,8 @@ import Testing
   }
 
   /// The child ends with two `idle` updates: the first has no stop reason, and the second has it.
-  /// The wire validator accepts the pair. The client removes the child at the final status of
-  /// its call, so the test reads the stop reason on the wire.
+  /// The wire validator accepts the pair. The client removes the child at the final status
+  /// of its call. So the test reads the stop reason on the wire.
   @Test
   func theTwoIdleUpdatesAtTheEndOfTheChildAreAccepted() async throws {
     let wire = try await Self.run(

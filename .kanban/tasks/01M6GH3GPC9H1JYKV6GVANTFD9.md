@@ -53,10 +53,24 @@ comments:
   id: 01m6hefax1yd49paa1hawbbegv
   text: 'REVIEW - findings. Engine: 0 findings (2 refuted), scope review sha 5c17720~1..5c17720. Manual read: 13 open items, written in the description. Main items: the hold is placed after watchEnd (a leak and a hang of the agents call), the hold starts at the first event (a background run before it), stop() does not release holds, the session lookup runs once, the output buffer and the gate list have no bound, and several tests pass without the hold. Next: the implementer fixes each item and runs the review again.'
   timestamp: 2026-11-03T19:34:14.177277+00:00
+- actor: claude-code
+  id: 01m6j18j8qxwnb1g4sfqq18zwk
+  text: |-
+    ### implement — changed
+    - Verified the 13 findings against HEAD. Findings 1-12 were already fixed in commits a83bc62 and e6b9ffb (card ^snb0qg4) with tests: runObserved before watchEnd (AgentCallHolds, SubagentAnnouncerOutputTests aRunThatEndedAtItsFirstEventLeavesNoHold); adoptRun for a call that returns before the first event (AgentCallHoldsTests); stop() settles live runs and calls releaseAll (theStopEndsTheOutputs...); session lookup retried per event (aSessionThatAppearsAtALaterEventIsFound); output bound (theOutputsOfARunKeepTheNewestOnesAtTheBound); gate pending bound and discard (SessionAnnouncementGateTests); submit waits for its own send; never-announced run (SubagentSettleWireTests); foreground hold test (AgentCallHoldsTests); retired-test precondition; double idle test and source comment.
+    - Finding 13 (STE sentence length) was open. Split every comment sentence over 20 words in all files of 5c17720 (whole files): SessionSetup, SessionHistory, SessionProjector, RunCallJoinTable, SessionBuild, and the tests AgentsToolTests, SessionSetupNestedTests, CloseCountingRoutedSession, ChildSessionProjectionTests, SubagentAnnouncerTests, SessionAnnouncementGateTests, AgentCallHoldsTests, SubagentAnnouncerOutputTests, SubagentSettleWireTests. Diff holds comment lines only. swift format run.
+    - Tests: filtered run of AgentCallHoldsTests, ChildSessionProjectionTests, SessionAnnouncementGateTests, SubagentAnnouncer*, SubagentSettleWireTests, SessionSetupNestedTests, AgentsToolTests, SessionHistory: 148 tests in 13 suites pass.
+    - next: /review. The review description items still show unchecked boxes; the review step must re-check them.
+
+    step: implement
+    outcome: changed
+    evidence: 14 files (comment-only edits); 148 filtered tests pass
+    task: ^vantfd9
+  timestamp: 2026-11-04T01:02:35.287624+00:00
 depends_on:
 - 01M6GH30709S58BK3AQ1VMBAM7
-position_column: review
-position_ordinal: '8380'
+position_column: doing
+position_ordinal: '8280'
 title: Project a child session to the wire with the same projector as the root, under the child session id
 ---
 ## What
