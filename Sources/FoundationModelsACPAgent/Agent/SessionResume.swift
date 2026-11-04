@@ -475,6 +475,10 @@ extension RoutedACPAgent {
   /// resumed session replaces it, so its shell stream is finished and
   /// its server pool is shut down before the new entry mounts.
   ///
+  /// A closed entry has no surface to shut down: its teardown (``tearDownSession(_:entry:isShutdown:)``)
+  /// shut the surface down already, and a second shutdown would give back each lease two times.
+  /// A live entry that the resume replaced was torn down before, so it is closed too.
+  ///
   /// - Parameter sessionId: The session being replaced.
   private func releaseReplacedSession(_ sessionId: SessionId) async {
     guard let existing = sessions.removeValue(forKey: sessionId) else {
@@ -482,7 +486,9 @@ extension RoutedACPAgent {
     }
     recordActiveSessions()
     existing.surface.shellOutput?.finish()
-    await existing.surface.shutdown()
+    if !existing.isClosed {
+      await existing.surface.shutdown()
+    }
   }
 
   // MARK: - Replay
