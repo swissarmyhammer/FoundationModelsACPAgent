@@ -33,3 +33,22 @@ extension SessionEventSubscription {
     return seen
   }
 }
+
+extension SessionUpdate {
+  /// The announcement that this update holds, or `nil` for any other update. The one place that
+  /// reads a `subagent_update` out of a session update in the tests.
+  public var announcement: SubagentUpdate? {
+    if case .subagentUpdate(let announced) = self {
+      return announced
+    }
+    return nil
+  }
+
+  /// Whether this update is an announcement of `child`.
+  ///
+  /// - Parameter child: The child.
+  /// - Returns: `true` for a `subagent_update` that names `child`.
+  public func announces(_ child: SessionId) -> Bool {
+    announcement?.sessionId == child
+  }
+}

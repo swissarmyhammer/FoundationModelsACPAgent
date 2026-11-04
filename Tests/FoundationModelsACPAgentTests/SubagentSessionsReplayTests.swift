@@ -52,24 +52,12 @@ import Testing
     /// - Parameter child: The announced child.
     /// - Returns: The position, or `nil` when the wire holds no announcement of it.
     func announcement(of child: SessionId) -> Int? {
-      updates.firstIndex { Self.announcement(in: $0)?.sessionId == child }
+      updates.firstIndex { $0.update.announcement?.sessionId == child }
     }
 
     /// Every announcement on the wire, in wire order.
     var announcements: [SubagentUpdate] {
-      updates.compactMap(Self.announcement(in:))
-    }
-
-    /// The one place that matches a notification as an announcement.
-    ///
-    /// - Parameter notification: The notification.
-    /// - Returns: The announcement it carries, or `nil` for any other update.
-    private static func announcement(in notification: UpdateSessionNotification) -> SubagentUpdate?
-    {
-      if case .subagentUpdate(let update) = notification.update {
-        return update
-      }
-      return nil
+      updates.compactMap { $0.update.announcement }
     }
 
     /// Proves that the replay sent something to check, so a check that nothing of a kind went
@@ -297,14 +285,8 @@ import Testing
 
     let announced = try #require(tree.announcements.first)
 
-    guard case .subagentUpdate(let update) = announced.update,
-      case .value(.idle(let idle)) = update.state
-    else {
-      Issue.record("The announcement of the child does not carry an idle state.")
-      return
-    }
-    #expect(idle.stopReason == .cancelled)
-    #expect(idle.background == nil)
+    let update = try #require(announced.update.announcement)
+    #expect(update.state == .value(.idle(IdleStateUpdate(background: nil, stopReason: .cancelled))))
   }
 
   /// The trace of the whole resume follows the rules of the validator for sub-agent sessions.

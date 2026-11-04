@@ -98,6 +98,25 @@ comments:
     - files: Sources/FoundationModelsACPAgent/Agent/SessionResumeChildSync.swift, Sources/FoundationModelsACPAgent/Agent/SessionResumeReplay.swift, Sources/FoundationModelsACPAgent/Agent/SessionHistory.swift, Tests/FoundationModelsACPAgentTests/ResumeChildSyncTests.swift, Tests/FoundationModelsACPAgentTests/ResumeNestedSessionsTests.swift, Tests/FoundationModelsACPAgentTests/SubagentSessionsReplayTests.swift, Tests/FoundationModelsACPAgentTestSupport/WireTraceReading.swift (new)
     - next: /review
   timestamp: 2026-11-04T14:53:31.853571+00:00
+- actor: claude-code
+  id: 01m6kh27f3a3bvch9ka8ycek9q
+  text: |-
+    ### review — stuck
+    - evidence: `review sha d4bc35f~1..8897e2d`, 2 findings (1 confirmed conflict, 1 open): SessionResumeChildSync.swift:112, SubagentSessionsReplayTests.swift:67
+    - conflict: `swift/preconditions` (earlier finding, fixed) requires `assertionFailure` at SessionResumeChildSync.swift:112. `completeness/public-output-contract` requires its removal. A person must correct a rule.
+    - next: a person decides which rule is correct. The finding at SubagentSessionsReplayTests.swift:67 stays open.
+  timestamp: 2026-11-04T14:57:59.267035+00:00
+- actor: claude-code
+  id: 01m6kj5bks6hx5gkz5k0j0f01f
+  text: |-
+    ### implement — changed
+    - Item A (SessionResumeChildSync.swift:112): no conflict. The old finding text was NOT damaged (it reads `assertionFailure("…: \(error)")`, one backslash), so no restore was needed. Rules read: `swift/preconditions` (unexpected recoverable condition gets assertionFailure AND log) and `completeness/public-output-contract` (no new hard failure on a recoverable path; no silent swallow). Design that satisfies both: the catch is removed. New `SAH.RestoreFailure.written(into:)` (SessionResumeChildSync.swift) writes `_meta.sah.restoreFailure` without a throwing step (the payload is one string), with the same merge rules as `inject(into:)`. `announceFailure` always sends the reason on the wire. No `assertionFailure`, no catch, no swallow. TDD: new `RestoreFailureMetaTests` failed first (no member `written`), then passed: 8 meta shapes equal `try inject(into:)`, and the reason reads back with `extract`.
+    - Item B (SubagentSessionsReplayTests.swift:67): `SessionUpdate.announcement` and `announces(_:)` now live once in Tests/FoundationModelsACPAgentTestSupport/WireTraceReading.swift (public, because it is a separate module). The fileprivate copies in ResumeChildSyncTests.swift and the private `announcement(in:)` helper are deleted. Same cause removed from the whole file: the `guard case .subagentUpdate` match in `theReplayedAnnouncementCarriesTheIdleStateOfTheChild` now uses `try #require(announced.update.announcement)` and one `#expect` on the full idle state (stopReason and background nil kept).
+    - The two boxes of the 08:54 review are ticked. The Blocker section is left as written (no rewrite beyond boxes); it is obsolete because the conflict is gone.
+    - evidence: filtered `swift test --filter "ResumeChildSyncTests|SubagentSessionsReplayTests|RestoreFailureMetaTests|ResumeNestedSessionsTests"`: 43 tests, 4 suites, pass. Full `swift test` (foreground): 1758 tests, 192 suites, pass, 1 known issue (HarnessSmokeTests, intentional). No other issue. One build warning exists in AgentTranscriptWiringTests.swift (redundant #require), not from this work.
+    - files: Sources/FoundationModelsACPAgent/Agent/SessionResumeChildSync.swift, Tests/FoundationModelsACPAgentTestSupport/WireTraceReading.swift, Tests/FoundationModelsACPAgentTests/ResumeChildSyncTests.swift, Tests/FoundationModelsACPAgentTests/SubagentSessionsReplayTests.swift, Tests/FoundationModelsACPAgentTests/RestoreFailureMetaTests.swift (new)
+    - next: /review
+  timestamp: 2026-11-04T15:17:10.393545+00:00
 depends_on:
 - 01M6GM0N9BFK37GGBWPAG9VE1X
 - 01M6GH30709S58BK3AQ1VMBAM7
@@ -151,3 +170,22 @@ Do (in the resume path of `Sources/FoundationModelsACPAgent/Agent/SessionResume.
 - [x] `Tests/FoundationModelsACPAgentTests/ResumeNestedSessionsTests.swift:87` `reuse/reuse` — The new loop in `recordInterruptedChain` suspends every live session. The existing `quit(_:)` helper in the same file already does this loop, so the suspend logic now appears in two places. Extract the suspend loop into a helper, for example `suspendAll(of agent:)`, and call it from both `quit(_:)` and `recordInterruptedChain`. The interrupted recording does not close the fixture, so the helper must stay separate from the close step.
 - [x] `Tests/FoundationModelsACPAgentTests/SubagentSessionsReplayTests.swift:110` `reuse/reuse` — The new reader task in `resume(replayFrom:)` is a near-copy of the reader task in `ResumeChildSyncTests.resume`. Both subscribe to all sessions, map each event with `WireTraceEvent(sequenced)`, and collect events until the response. The two copies can drift apart, for example in how they handle events that do not map. Move the subscribe-and-collect loop into one shared helper in the test support, with an optional stop test. Both suites should call it, so the wire reading is defined once.
 - [x] `Tests/FoundationModelsACPAgentTests/SubagentSessionsReplayTests.swift:118` `swift/state-modeling` — The `switch` over `WireTraceEvent`, a domain enum, ends in `default: continue`. A newly added event case is silently skipped by the reader, so the compiler cannot flag it. Replace `default: continue` with explicit cases for the other `WireTraceEvent` cases, each one a `continue`. Then the compiler reports any new case that the reader must handle.
+
+## Review Findings (2026-11-04 08:54)
+
+> Scope: `review sha d4bc35f~1..8897e2d` — reviewed the diffs only — lines this change added or modified. 8 file(s) reviewed, 16 not reviewed.
+
+> 16 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 16 file(s)
+
+- [x] `Sources/FoundationModelsACPAgent/Agent/SessionResumeChildSync.swift:112` `completeness/public-output-contract` — The change adds an assertionFailure to the encode-error branch of announceFailure. Before this change the branch only logged the error and sent the announcement without a reason. In a debug build the new assertion stops the process on the same path the log line handles. The task asked for the error to be logged, not for a hard stop, so a previously recoverable path now fails hard in debug builds. Remove the assertionFailure and keep the logged error. If a debug trap is wanted, state the reason in the task. Add a test or a note that says what the encode failure should do.
+- [x] `Tests/FoundationModelsACPAgentTests/SubagentSessionsReplayTests.swift:67` `reuse/reuse` — The new helper `announcement(in:)` repeats the logic of the `announcement` property on `SessionUpdate`. That property is in `ResumeChildSyncTests.swift` and is declared `fileprivate`, so this file cannot call it. The same mapping from a notification to a `SubagentUpdate` is now written in two places. A change to one copy can leave the other wrong. Move the `SessionUpdate.announcement` extension out of `ResumeChildSyncTests.swift` into `Tests/FoundationModelsACPAgentTestSupport/WireTraceReading.swift`, and make it non-private. Then `SubagentSessionsReplayTests` can call `notification.update.announcement` and the private helper can be removed. Use the same property in `ResumeChildSyncTests`.
+
+## Blocker (2026-11-04)
+
+True conflict between two rules. A person must correct a rule and restart the work. Do not resolve this conflict in code.
+
+- The first finding of the review of 2026-11-04 08:38 (`swift/preconditions`, `SessionResumeChildSync.swift`) required an `assertionFailure` in the catch branch of `announceFailure`. That finding is fixed and checked.
+- The first finding of the review of 2026-11-04 08:54 (`completeness/public-output-contract`, `SessionResumeChildSync.swift:112`) requires removal of the same `assertionFailure`.
+- Both rules cannot be correct for the same line. If the implementer obeys one, the next review reports the other.
+- The second finding of the review of 2026-11-04 08:54 (`SubagentSessionsReplayTests.swift:67`) does not conflict. It stays open for the implementer.

@@ -15,8 +15,16 @@ comments:
     - [ ] Tests/FoundationModelsACPAgentTests/ModelSlotSwitchSessionIdTests.swift:48 reuse/reuse: The new helper switchToFlash repeats the body of switchModelSlot in HookCompositionTests. The copy does not drain the hook dispatcher, so the two helpers can diverge. Keep one helper for the slot switch. Move the slot-switch helper to the shared test support (for example ScriptedPromptFixture) as one internal function. Let it take a flag or a second step for the dispatcher drain. Use it from both HookCompositionTests and ModelSlotSwitchSessionIdTests, and delete the private copies.
     - next: the peer session fixes both findings.
   timestamp: 2026-11-04T14:46:45.937330+00:00
-position_column: done
-position_ordinal: ffffaa80
+- actor: claude-code
+  id: 01m6khnbhjhnbc0wbd34ehe5jk
+  text: |-
+    ### review — findings
+    - evidence: `review sha 28571d0~1..efabcd0`, 4 findings (4 confirmed, 8 refuted): BuiltinCommands.swift:123, SubagentMessageWireTests.swift:145, SubagentMessageWireTests.swift:254, ScriptedPromptFixture.swift:379. The 2 earlier findings (ModelSlotSwitch.swift:175, ModelSlotSwitchSessionIdTests.swift:48) do not return. The finding at ScriptedPromptFixture.swift:379 is the same cause as the second earlier finding, and the duplicate helper in HookCompositionTests still exists.
+    - note: the range also holds commit e4566e8 (task ^nwsamy7). The two findings in SubagentMessageWireTests.swift come from that commit.
+    - next: the implementer fixes the 4 findings. The task is back in review.
+  timestamp: 2026-11-04T15:08:26.034199+00:00
+position_column: review
+position_ordinal: '8180'
 title: 'A model slot switch keeps the session id: suspend, then restore on the new slot'
 ---
 ## What
@@ -51,3 +59,12 @@ The user expects the two ids to be the same: an ACP session is backed by a Route
 
 ## Workflow
 - Use `/tdd`. Start after card ^zgqxj7z is merged to main: both change SessionSetup.swift. #transcripts
+
+## Review Findings (2026-11-04 08:58)
+
+> Scope: `review sha 28571d0~1..efabcd0` — reviewed the diffs only — lines this change added or modified. 33 file(s) reviewed, 0 not reviewed.
+
+- [ ] `Sources/FoundationModelsACPAgent/Commands/BuiltinCommands.swift:123` `completeness/public-output-contract` — `replaceSession` returns without any effect when the binding or its registry is missing. The restored session is then never installed, and no warning or log line says so. `/compact` and `/context` keep acting on the old session after a model slot switch. Log a warning, or make the function return a Bool, when the swap cannot happen. Add a test that calls `replaceSession` before `bind` and checks that the outcome is visible.
+- [ ] `Tests/FoundationModelsACPAgentTests/SubagentMessageWireTests.swift:145` `test-integrity/no-test-cheating` — The assertion passes when the child's final view and the caller's incoming final view are both missing. Both sides are nil, so the comparison is true. The test does not prove that the final message was linked to its incoming view. Use `try #require` for `final` and `incoming`. Then assert `final.recipientMessageId == .value(incoming.messageId)`.
+- [ ] `Tests/FoundationModelsACPAgentTests/SubagentMessageWireTests.swift:254` `test-integrity/no-test-cheating` — The assertion passes when the child's incoming view and the root session's outgoing view are both missing. The test does not prove that the child received the root's send with a matching message id. Unwrap `incoming` and `outgoing` with `try #require(...)` before the comparison. Then assert `incoming.senderMessageId == .value(outgoing.messageId)`.
+- [ ] `Tests/FoundationModelsACPAgentTests/Support/ScriptedPromptFixture.swift:379` `reuse/reuse` — The new `switchModelSlot` helper repeats the slot switch that already exists in `HookCompositionTests`. Two copies of the same `session/set_config_option` call can drift apart. A change to one copy can leave the other wrong. Make `HookCompositionTests::switchModelSlot` call `ScriptedPromptFixture.switchModelSlot`, or remove its copy and use the shared helper at each call site. If the contracts differ, parameterize the shared helper instead of keeping a parallel copy.

@@ -644,24 +644,6 @@ import Testing
   }
 }
 
-extension SessionUpdate {
-  /// The announcement that this update holds, or `nil` for any other update.
-  fileprivate var announcement: SubagentUpdate? {
-    if case .subagentUpdate(let announced) = self {
-      return announced
-    }
-    return nil
-  }
-
-  /// Whether this update is an announcement of `child`.
-  ///
-  /// - Parameter child: The child.
-  /// - Returns: `true` for a `subagent_update` that names `child`.
-  fileprivate func announces(_ child: SessionId) -> Bool {
-    announcement?.sessionId == child
-  }
-}
-
 extension WireTraceEvent {
   /// Whether this event is an announcement of `child`, on any stream.
   ///

@@ -106,14 +106,7 @@ extension RoutedACPAgent {
     if case .value(let meta) = update.meta {
       held = meta
     }
-    do {
-      update.meta = .value(try SAH.RestoreFailure(reason: failed.reason).inject(into: held))
-    } catch {
-      assertionFailure("The restore failure of a child did not encode: \(error)")
-      ACPAgentTelemetry.logger(.sessionResume).error(
-        "The restore failure of a child did not encode. The announcement has no reason.",
-        metadata: ACPAgentTelemetry.sessionMetadata(child, parent: parent))
-    }
+    update.meta = .value(SAH.RestoreFailure(reason: failed.reason).written(into: held))
     await send(update, on: parent, through: connection)
   }
 
@@ -148,5 +141,44 @@ extension SessionMergeEngine {
   /// - Returns: The announcement, or `nil` when the history holds none.
   func announced(_ child: SessionId) -> SubagentUpdate? {
     subagents.first { $0.sessionId == child }
+  }
+}
+
+extension SAH.RestoreFailure {
+  /// Writes this object into `_meta.sah.restoreFailure` of a `_meta` value, the way
+  /// ``inject(into:)`` does, but without a throwing encoder step: the object is one string, so
+  /// the announcement of a failed child always carries its reason.
+  ///
+  /// The function keeps every other member of `_meta` and of `_meta.sah`, and replaces an earlier
+  /// `restoreFailure`. When `meta` or `_meta.sah` is a value that is not an object, the function
+  /// returns `meta` unchanged.
+  ///
+  /// - Parameter meta: The `_meta` value to write into, or `nil`.
+  /// - Returns: The `_meta` value to send.
+  func written(into meta: FoundationModelsACP.JSONValue?) -> FoundationModelsACP.JSONValue {
+    guard var members = Self.writableMembers(of: meta),
+      var sahMembers = Self.writableMembers(of: members[SAH.metaKey])
+    else {
+      return meta ?? .null
+    }
+    sahMembers[Self.metaKey] = .object(["reason": .string(reason)])
+    members[SAH.metaKey] = .object(sahMembers)
+    return .object(members)
+  }
+
+  /// The members that a write starts from.
+  ///
+  /// - Parameter value: The value to write into, or `nil`.
+  /// - Returns: The members of an object, an empty set for `nil` or JSON `null`, or `nil` for a
+  ///   different value, which a write must not replace.
+  private static func writableMembers(of value: FoundationModelsACP.JSONValue?) -> [String: FoundationModelsACP.JSONValue]? {
+    switch value {
+    case nil, .null?:
+      return [:]
+    case .object(let members)?:
+      return members
+    case .bool?, .number?, .string?, .array?:
+      return nil
+    }
   }
 }
