@@ -106,6 +106,10 @@ actor SessionProjector {
   /// The join table of the session, which the translator writes.
   nonisolated let runCallJoins: RunCallJoinTable
 
+  /// Tells the host that the projector handled the settlement of a run. The host waits on it
+  /// after it completes a claimed call (``SettlementWatch``).
+  nonisolated let settlements = SettlementWatch()
+
   /// The id of the ACP session.
   private nonisolated let sessionId: SessionId
 
@@ -162,6 +166,7 @@ actor SessionProjector {
       stateLedger.map { background.reporting(sentThrough: send, to: $0.backgroundReport) } ?? send
     let send = interruption.filtering(runCallJoins.deferringFinalStatus(of: announcing))
     let (stream, inbox) = AsyncStream.makeStream(of: Input.self)
+    let settlements = self.settlements
     self.inbox = inbox
     // The views of the messages between a caller and a child go through the inbox. So a view
     // keeps its order with the events of the session.
@@ -179,7 +184,8 @@ actor SessionProjector {
         holds: runCallJoins.holds,
         relay: relay,
         stateLedger: stateLedger,
-        background: background)
+        background: background,
+        settlements: settlements)
       if let relay {
         let endElicitation: ElicitationEndHandler = { end in await relay.end(end) }
         state.translator.endElicitation = endElicitation
@@ -191,6 +197,8 @@ actor SessionProjector {
       for await input in stream {
         await state.handle(input)
       }
+      // No settlement comes after the last input, so no host waits for one.
+      settlements.close()
       await state.endOpenPrompts(stop: .cancelled)
       // Router ended each open question before the end of the feed.
       // A round trip that is still in flight is a defect.
@@ -430,6 +438,9 @@ private struct ProjectionState {
   /// The watch of the runs that go on after their SDK call returned.
   let background: BackgroundWatch
 
+  /// Tells the host that a settlement was handled.
+  let settlements: SettlementWatch
+
   /// The open prompts, in the order that they opened. A stream message
   /// goes alone in its submission, so an event holds the `MailID` of at
   /// most one prompt.
@@ -529,6 +540,11 @@ private struct ProjectionState {
     await translator.project(event)
     for change in background.didTranslate(event, joins: translator.runCallJoins) {
       await stateLedger?.background(change)
+    }
+    // The update of the settlement went out, and the ledger took its change. A host that waits
+    // for the settlement of a run goes on now.
+    if case .runSettled(let operation) = event, operation.kind == .completed {
+      settlements.settled(operation.correlationID)
     }
     // The work state of the session (elicitation-plan task 2): the ledger
     // sends `running` and `idle` from it. A prompt that ended at an

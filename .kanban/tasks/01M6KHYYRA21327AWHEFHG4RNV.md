@@ -27,10 +27,18 @@ comments:
     - Note: `makeSearchSelection` runs once for each manager and once for each surface, so there are 2 `RoutedSelectionModel` values on the same flash slot of one profile (a struct over the profile; one slot, one model lock).
     - next: /review
   timestamp: 2026-11-04T20:01:35.625845+00:00
+- actor: claude-code
+  id: 01m6m2jv0hw85m0wqz0pnxkdd4
+  text: |-
+    ### review - clean
+    - evidence: review sha 54a5043~1..54a5043, 3 files reviewed (CodeContextLease.swift, ToolCatalog.swift, CodeContextSharingTests.swift). counts: 0 findings, 0 confirmed, 1 refuted, 7 attempted, 0 failed, 0 skipped. 4 files under .kanban/ were excluded by .reviewignore.
+    - open: the last Tests box ("full swift test") is still open. The tester run in the same directory proves it. No tester result is in the comments yet. IntegrationTests were built, not run (CI only).
+    - next: record the tester result on the card.
+  timestamp: 2026-11-04T20:04:09.361221+00:00
 depends_on:
 - 01M6GK6AX0RWQ1PDT89GC0991F
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffffbc80
 title: Pass a selection model to CodeContext (breaking API change from FoundationModelsCodeContext)
 ---
 ## What

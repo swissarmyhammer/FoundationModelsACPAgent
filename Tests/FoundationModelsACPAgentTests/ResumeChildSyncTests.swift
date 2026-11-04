@@ -63,6 +63,15 @@ import Testing
     /// The request, the updates and the response, in wire order.
     let trace: [WireTraceEvent]
 
+    /// The trace in words, one line for each event: the position, the event and the stream
+    /// that carried it. A failed expectation shows it, so the update that breaks a rule
+    /// of the validator has a name.
+    var traceDescription: String {
+      trace.enumerated().map { position, event in
+        "\(position): \(event.summary)"
+      }.joined(separator: "\n")
+    }
+
     /// The position of the response.
     var responsePosition: Int {
       trace.firstIndex { event in
@@ -700,12 +709,26 @@ import Testing
 
     let violations = SubagentWireTraceValidator().validate(wire.trace)
 
-    #expect(violations == [])
+    #expect(violations == [], Comment(rawValue: wire.traceDescription))
     await wire.fixture.close()
   }
 }
 
 extension WireTraceEvent {
+  /// This event in words: an update, with the stream that carried it.
+  fileprivate var summary: String {
+    switch self {
+    case .resumeRequest(_, let sessionId):
+      return "resume request for \(sessionId.rawValue)"
+    case .resumeResponse:
+      return "resume response"
+    case .agentRequest(_, let method, let sessionId):
+      return "request \(method) for \(sessionId.rawValue)"
+    case .update(let sessionId, let update):
+      return "update in \(sessionId.rawValue): \(update)"
+    }
+  }
+
   /// Whether this event is an announcement of `child`, on any stream.
   ///
   /// - Parameter child: The child.

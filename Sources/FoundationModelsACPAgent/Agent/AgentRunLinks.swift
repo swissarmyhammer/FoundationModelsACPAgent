@@ -9,7 +9,8 @@ extension RoutedACPAgent {
   ///
   /// A run marks its session as ended through the session directory when it reaches a real end.
   /// A restored run mails its result to a root session through the same directory. A claimed
-  /// `start agent` call of a live root session ends through the session of the table.
+  /// `start agent` call of a live root session ends through the session of the table, and the
+  /// end returns after the projector of the session sent the final status of the call.
   ///
   /// - Parameter recordingRoot: The recording root of the session that owns the surface.
   /// - Returns: The links.
@@ -39,11 +40,15 @@ extension RoutedACPAgent {
         }
       },
       claimCompletion: { [weak self] caller, key, outcome, detail in
-        guard let session = await self?.sessions[SessionId(rawValue: caller.description)]?.session
-        else {
+        guard let entry = await self?.sessions[SessionId(rawValue: caller.description)] else {
           return false
         }
-        return await session.completeClaimedRun(key, outcome: outcome, detail: detail)
+        // The completion goes through the Router session and the projector, in tasks of their
+        // own. The host goes on after the projector sent the final status of the call, so a
+        // later update of the host, for example the current state of a resume, comes after it.
+        return await entry.projector.settlements.completing(key.correlationID) {
+          await entry.session.completeClaimedRun(key, outcome: outcome, detail: detail)
+        }
       })
   }
 }
