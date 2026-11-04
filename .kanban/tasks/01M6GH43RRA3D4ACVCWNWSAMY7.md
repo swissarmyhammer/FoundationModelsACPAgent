@@ -64,10 +64,35 @@ comments:
   id: 01m6hg8wzeqhdcch4kyjgvcryj
   text: 'UPDATE: the gap of open question 1 is closed on the Agents side. Agents main 3984a94: AgentRun.deliver(_:from:) now returns AgentRunMessageOutcome.delivered(MailID) or .ended(AgentRunState) (isDelivered, mailID), and AgentEnvironment.CallerMail returns MailID?. So the join for send agent is: the MailID of the deliver result = the MailID of the .mailDelivered(MailID) event of the child session. Step 2 can build send agent too, once the agent package uses the new Agents pin. Order of work stays: send caller and the final message first, then send agent.'
   timestamp: 2026-11-03T20:05:40.462565+00:00
+- actor: claude-code
+  id: 01m6jagc7hvcp9wksg9xts09w5
+  text: |-
+    ### implement — stuck
+    - reason: The agent cannot see the mail of `send agent`. The join in the design comment (MailID of the deliver result = MailID of the child `.mailDelivered(MailID)`) does not reach the host.
+    - checked in the pinned sources (Agents a8597b6, Router, Extras):
+      - `AgentsToolOperations.deliver(to:in:)` calls `run.deliver(message, from: sender)` inside the `agents` tool. It keeps the outcome and its MailID inside the tool. It writes only telemetry (`AgentMessageRecord`, no id) and the answer text `AgentsToolText.messageSent(to:)` (no id).
+      - `AgentEnvironment` has no hook for a delivered message. `callerMail` gets a MailID only for a caller that is not a run.
+      - The child event `SessionEvent.mailDelivered(MailID)` has no sender and no body.
+      - `Mail` is public, but the session shows it only in `pendingMessages()`, and only while it waits in the queue. A mail that the pump took is gone. A snapshot at the tool result is a race with an idle child. `MailRecord` and `MailRecordSegment` are internal.
+      - `RouterSessionDirectory.message(_:to:)` reads the ledger of `directory.send`. `run.deliver` does not write to the ledger.
+    - Match by order of the n-th caller message is rejected in the design (fragile). I did not use it.
+    - not blocked: `send caller` and the final message. `.runMessage(OperationEvent)` and `.runSettled(OperationEvent)` on the caller session carry the text, the completion token and the mail origin.
+    - no code changed. Nothing is half done.
+    - DECISION NEEDED from the user (a change in a sibling package, so I did not make it). Choose one:
+      - (A) Agents: `AgentEnvironment` gets an observer for each delivered caller message: run, sender, MailID, text. `AgentRun.deliver` calls it. The agent joins the MailID to the child `.mailDelivered(MailID)`.
+      - (B) Router: `SessionEvent.mailDelivered` carries the `Mail` (sender and body), or a new event does. The child stream then has all the data.
+      - (C) Both directions through the order match. Not recommended.
+    - next: after the decision and the sibling card, run /implement again on this card. Build all four criteria in one pass.
+
+    step: implement
+    outcome: stuck
+    evidence: no files changed; the MailID of `send agent` is not visible to the host (Agents a8597b6 tool path, Router SessionEvent.mailDelivered)
+    task: ^nwsamy7
+  timestamp: 2026-11-04T03:44:08.433996+00:00
 depends_on:
 - 01M6GH30709S58BK3AQ1VMBAM7
-position_column: todo
-position_ordinal: '8780'
+position_column: doing
+position_ordinal: '8380'
 title: Send session_message for the messages between a caller and a child
 ---
 ## What

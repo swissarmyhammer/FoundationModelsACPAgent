@@ -234,15 +234,19 @@ import Testing
   ///   - code: The snippet the pass runs.
   ///   - capabilities: The client capabilities `initialize` announces.
   ///   - label: The directory label of the calling test.
+  ///   - hasToolLayers: Whether the tools have the layers of the live loader. A test of
+  ///     `session/cancel` needs them.
   /// - Returns: The fixture.
   /// - Throws: Whatever the wiring throws.
   private static func makeLoopbackFixture(
     code: String,
     capabilities: ClientCapabilities = ACPClient.advertisedCapabilities,
-    label: String
+    label: String,
+    hasToolLayers: Bool = false
   ) async throws -> ScriptedPromptFixture {
     try await ScriptedPromptFixture.makeLoopback(
-      code: code, capabilities: capabilities, label: label, onPromptContaining: promptText)
+      code: code, capabilities: capabilities, label: label, onPromptContaining: promptText,
+      hasToolLayers: hasToolLayers)
   }
 
   /// Prompts the fixture's one session with the shared prompt text.
@@ -833,7 +837,7 @@ import Testing
   // MARK: - Cancellation
 
   /// `session/cancel` during a pending elicitation ends the prompt with
-  /// `idle(cancelled)` and ends the question. The `cancelAll()` signal of
+  /// `idle(cancelled)` and ends the question. The `cancelForeground()` signal of
   /// Router first sends the terminal event of the prompt's mail, and then
   /// ends the question with `cancel` and the reason "run cancelled", and
   /// the relay ends the client request. The states are `running`,
@@ -850,7 +854,7 @@ import Testing
   func sessionCancelDuringAPendingElicitationDeliversCancelBeforeIdle() async throws {
     let captured = try await TelemetryCapture.run(forbidding: []) { context in
       let fixture = try await Self.makeLoopbackFixture(
-        code: Self.urlSnippet, label: "ElicitationRelayTests-cancel")
+        code: Self.urlSnippet, label: "ElicitationRelayTests-cancel", hasToolLayers: true)
       try await Self.prompt(fixture)
       _ = try await ElicitationWait.firstPendingElicitation(in: fixture.session)
 

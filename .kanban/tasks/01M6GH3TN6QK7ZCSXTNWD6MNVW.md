@@ -27,12 +27,23 @@ comments:
   id: 01m6hk2m78pydkj3eapj8zdy71
   text: 'ROUTER REVIEW (2026-11-03): (1) PromptExecution cancelRunningPrompt near line 940 calls entry.session.cancelAll() for ACP session/cancel. Change it to cancelForeground() (spares detached background runs). Keep cancelAll() in tearDownSession. (4) session/close on a root: cancelRun per child, then stopAgentRuns cancels the same runs again, and cancelRun pushes idle(cancelled) for a child whose run just ended. Fix if duplicate idle updates show; add a test. (5) cancelRun(of:) uses run.state == .running, not the ledger; a held (holdStart) child may count as running. Check it and test it.'
   timestamp: 2026-11-03T20:54:40.616244+00:00
+- actor: claude-code
+  id: 01m6jdbq6eqer4zzj36hez6xzh
+  text: |-
+    ### implement — changed
+    - git history: commits 2cdf4b5 and f615abc exist only on branch wt-agents (not on main), written for an older base. Main did not have them, so the work was done fresh on main. A child cancel already works on main through the one session path (the child Router session cancel ends its run), so no cancelRun method is added. The review items (4) and (5) named cancelRun of wt-agents; on main there is no cancelRun, and tests show one cancelled idle per working child on close and none for an ended child.
+    - Changed: PromptExecution cancelRunningPrompt now calls cancelForeground() (cancelAll() stays in tearDownSession); SessionLifecycle tearDownSession records the cancelled stop reason for each working nested session (and its nested sessions) before the runs stop, so the client sees one idle(cancelled) per working child on a user close; comments in SessionProjector and ACPAgentTelemetry; README cancel bullet.
+    - Tests: new SubagentCancelTests (12 tests: child cancel ends only its run, parent open, child idle cancelled and sibling none, run marked ended cancelled, no new idle with no work, grandchild cancelled, parent cancel spares a background run, parent cancel ends the inline child, close cancels every child, close cancels nested child, one cancelled idle per child on close, none for an ended child). RED seen: the background-run test failed with cancelAll(). A hang found: cancelForeground only stops a tool call that the Router sees as in flight, and that needs the tool layers of the live loader (makeHookLayeredModelLoader). So the chain tests and the ElicitationRelayTests cancel test use them (new hasToolLayers parameter in LoopbackElicitation).
+    - Note for a later card: the background list on main lists an inline child too (a child is listed while it is not idle), but the RFD note says a child that the turn waits for is not listed. Not changed here.
+    - Filtered tests pass: SubagentCancelTests, CancellationTests, PromptExecutionTests, SessionSurfaceLoggingTests, ElicitationRelayTests, ElicitationCancelReasonTests, SessionCapabilityTests, QueuedScriptedModelTests, ChildElicitationTests, TelemetryContentSafetyTests, RequestTracingTests, and Close/Shutdown/ResumeNested/SubagentAnnouncer/BackgroundList suites. swift format run.
+    - next: /review
+  timestamp: 2026-11-04T04:34:01.550653+00:00
 depends_on:
 - 01M6GH30709S58BK3AQ1VMBAM7
 - 01M6GH353HTRBREVKKN3N2WZW8
 - 01M6GM17FQDM22JNPV0D9NSYVC
-position_column: todo
-position_ordinal: '8580'
+position_column: doing
+position_ordinal: '8480'
 title: Cancel one child with session/cancel on the child id; parent cancel and close follow the RFD
 ---
 ## What
@@ -45,14 +56,14 @@ Make `session/cancel` work on a child id, and set the cancel rules of the RFD.
 - Pending requests of a cancelled child are answered `cancelled`.
 
 ## Acceptance Criteria
-- [ ] `session/cancel` on a child id ends only that run; the parent and the siblings continue.
-- [ ] The client sees child `idle` with `stopReason: "cancelled"`.
-- [ ] `session/cancel` on the parent does not cancel a background child.
-- [ ] `session/close` on the parent cancels all children, nested too.
+- [x] `session/cancel` on a child id ends only that run; the parent and the siblings continue.
+- [x] The client sees child `idle` with `stopReason: "cancelled"`.
+- [x] `session/cancel` on the parent does not cancel a background child.
+- [x] `session/close` on the parent cancels all children, nested too.
 
 ## Tests
-- [ ] `Tests/FoundationModelsACPAgentTests/SubagentCancelTests.swift`: child cancel, sibling unaffected, parent cancel with a background child, close of parent with a nested child.
-- [ ] Run `swift test --filter SubagentCancelTests`. All pass.
+- [x] `Tests/FoundationModelsACPAgentTests/SubagentCancelTests.swift`: child cancel, sibling unaffected, parent cancel with a background child, close of parent with a nested child.
+- [x] Run `swift test --filter SubagentCancelTests`. All pass.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #subagents

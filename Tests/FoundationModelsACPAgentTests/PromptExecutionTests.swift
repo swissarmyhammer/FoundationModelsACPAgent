@@ -232,7 +232,7 @@ import Testing
 
   /// A cancel that comes before the mail of a prompt ends that prompt with
   /// the `cancelled` stop reason, and no mail goes into the session:
-  /// `cancelAll()` cannot reach a mail that is not queued (task ^he1rmw6,
+  /// `cancelForeground()` cannot reach a mail that is not queued (task ^he1rmw6,
   /// difference 3).
   @Test
   func aCancelBeforeTheMailEndsThePromptCancelledWithNoMail() async throws {
@@ -260,7 +260,7 @@ import Testing
     #expect(!transcript.contains { if case .prompt = $0 { true } else { false } })
   }
 
-  /// A `session/cancel` with no prompt open sends `cancelAll()` to the
+  /// A `session/cancel` with no prompt open sends `cancelForeground()` to the
   /// session and no state update (task ^9xs24pn, decisions Q2 and G6).
   @Test
   func aCancelWithNoPromptOpenSendsNoStateUpdate() async throws {

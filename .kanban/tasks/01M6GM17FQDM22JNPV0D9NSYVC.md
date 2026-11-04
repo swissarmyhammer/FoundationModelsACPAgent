@@ -22,11 +22,19 @@ comments:
 
     Open: the acceptance item "session/cancel of the parent leaves the listed work running" is NOT done here. The card text gives it to the cancel task ^wd6mnvw, which depends on this card. It needs the change from cancelAll() to cancelForeground() in cancelRunningPrompt, with the README and the tests of the cancel behavior. The box stays unchecked.
   timestamp: 2026-11-04T03:32:53.548774+00:00
+- actor: claude-code
+  id: 01m6jabktkaw6s71jfnq11r9et
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD. 0 findings, 0 confirmed, 2 refuted, 21 attempted, 0 failed. No file:line items.
+    - unchecked item "session/cancel of the parent leaves the listed work running": the card text gives it to card ^wd6mnvw. That card has the criterion "session/cancel on the parent does not cancel a background child" and a test for it. It depends on this card. The card text releases this item. It is not a finding.
+    - next: card moved to done.
+  timestamp: 2026-11-04T03:41:32.371076+00:00
 depends_on:
 - 01M6GM0N9BFK37GGBWPAG9VE1X
 - 01M6GH30709S58BK3AQ1VMBAM7
-position_column: doing
-position_ordinal: '8380'
+position_column: done
+position_ordinal: ffffa280
 title: State snapshots carry the background list (tool calls, terminals, running sub-agents) with announce-before-list ordering
 ---
 ## What

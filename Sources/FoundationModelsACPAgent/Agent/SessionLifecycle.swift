@@ -295,6 +295,11 @@ extension RoutedACPAgent {
         await owner.waitForPromptEnd()
       }
     }
+    // A user close cancels the work of each nested session. The client sees `idle` with the
+    // stop reason cancelled for each one that works, when its run ends below.
+    if !isShutdown {
+      await noteClosingCancelsWork(of: entry.children)
+    }
     // The agent runs stop first: the Router does not know the runs that
     // a `start agent` call started, thus the session sweep below cannot
     // cancel them, and a run that outlives the root session would send
@@ -338,6 +343,22 @@ extension RoutedACPAgent {
     // The retained history goes to its file last, with each update that
     // came after the last prompt, so a new process resumes it whole.
     writeHistory(of: sessionId)
+  }
+
+  /// Records, for each session of `sessionIds` that works, and for the sessions nested in them,
+  /// that the close of its parent cancels that work. The stop reason of the next `idle` of such
+  /// a session is cancelled. A session that is idle gets no new `idle`.
+  ///
+  /// - Parameter sessionIds: The sessions nested in the session that closes.
+  private func noteClosingCancelsWork(of sessionIds: [SessionId]) async {
+    for sessionId in sessionIds {
+      guard let nested = sessions[sessionId] else { continue }
+      if !(await nested.stateLedger.isIdle) {
+        await nested.stateLedger.promptEnded(
+          IdleStateUpdate(stopReason: .cancelled), started: false)
+      }
+      await noteClosingCancelsWork(of: nested.children)
+    }
   }
 
   // MARK: - The disk removal

@@ -492,9 +492,16 @@ code gives the local detail.
   sub-agent is listed while its session is not `idle`, or while its own list
   is not empty. A `session/resume` with no replay sends the current update of
   each listed item before the state.
-- **`session/cancel` is a signal.** It sends `cancelAll()` to the Router
-  session. Each open prompt ends `cancelled` at once, and its response says
-  so. The `idle` comes when the work of the session ends. You can only stop
+- **`session/cancel` is a signal.** It sends `cancelForeground()` to the Router
+  session. It stops the queued mail, the model work, and the inline runs that
+  the prompt waits for. A run in the background goes on, and so does each
+  sub-agent that the `background` list names. Each open prompt ends
+  `cancelled` at once, and its response says so. A `session/cancel` on the id
+  of a sub-agent cancels only the run of that sub-agent and the runs that it
+  waits for. Its client sees `idle` with the stop reason `cancelled`, and the
+  parent and the siblings go on. A `session/close` of a parent cancels all the
+  runs below it, nested ones too, and each working sub-agent sends `idle` with
+  the stop reason `cancelled`. The `idle` comes when the work of the session ends. You can only stop
   what you stop: model work that ignores cancellation runs to its end, so
   that `idle` can come later than the response, and the client can send
   input before it. With no prompt open and no work, it sends the signal and

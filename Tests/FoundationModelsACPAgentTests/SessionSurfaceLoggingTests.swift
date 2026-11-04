@@ -55,7 +55,7 @@ import Testing
 
   /// A `session/cancel` for a session with a running prompt writes one
   /// `info` record. The record holds the session id and the `SignalID` of
-  /// the `cancelAll()` signal in its metadata.
+  /// the `cancelForeground()` signal in its metadata.
   @Test
   func cancelOfARunningPromptWritesOneInfoWithTheCancelSignalInMetadata() async throws {
     let cancelSignalKey = ACPAgentTelemetry.LogMetadataKey.cancelSignalId

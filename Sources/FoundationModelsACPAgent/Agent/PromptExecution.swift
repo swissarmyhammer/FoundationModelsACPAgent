@@ -267,7 +267,7 @@ struct PromptExecution: Sendable {
         awaitAnswer: { id in try await session.awaitAnswer(of: id) },
         owner: promptState, modelName: modelName, onEnd: onEnd))
     // A `session/cancel` or a close before this point already sent
-    // `cancelAll()`, which cannot reach a mail that is not queued yet.
+    // `cancelForeground()` or `cancelAll()`, which cannot reach a mail that is not queued yet.
     guard await !promptState.cancelRequested else {
       projector.cancelUnsentMail(mail.id)
       return
@@ -932,8 +932,9 @@ extension RoutedACPAgent {
   /// Stops the work of one session: records the request on each open
   /// prompt, answers every pending elicitation with `cancel` — the
   /// suspended tool must resume — then cancels the work of the Router
-  /// session with `cancelAll()`: the queued mail, the model work in
-  /// flight, and the background runs. A submission that waits for the
+  /// session with `cancelForeground()`: the queued mail, the model work in
+  /// flight, and the inline runs with their pending requests. A run in the
+  /// background goes on, because the prompt did not wait for it. A submission that waits for the
   /// model while it generates for another session is in flight too, and
   /// the cancel reaches it: the wait ends at once, so the `idle(cancelled)`
   /// terminator does not wait for the submission of another session. A
@@ -956,7 +957,7 @@ extension RoutedACPAgent {
 
   /// Cancels the work of one session and its open prompts: the work of
   /// ``sessionCancel(_:)``. Each open prompt ends with the `cancelled` stop
-  /// reason no later than the `signalDone` of the `cancelAll()` signal, and
+  /// reason no later than the `signalDone` of the `cancelForeground()` signal, and
   /// its response says `cancelled` at once. The `idle` with `cancelled`
   /// comes at the `workEnded` of Router (``SessionStateLedger``). You can
   /// only stop what you stop: model work that ignores cancellation runs to
@@ -977,13 +978,14 @@ extension RoutedACPAgent {
     for owner in entry.openPrompts {
       await owner.noteCancelRequested()
     }
-    // `cancelAll()` stops all the work of the session, also with no
-    // prompt open: queued mail, the answer in flight, and the background
-    // runs (elicitation-plan task 3). Router ends each open question
+    // `cancelForeground()` stops the foreground work of the session, also with no
+    // prompt open: queued mail, the answer in flight, and the inline runs with their
+    // pending requests (elicitation-plan task 3). It spares the runs in the
+    // background, because the prompt did not wait for them. Router ends each open question
     // with `elicitationEnded`, and the relay ends its client request
     // (gap ^crjmk34). With no prompt open, no state
     // update goes out (task ^9xs24pn, decisions Q2 and G6).
-    let signal = entry.session.cancelAll()
+    let signal = entry.session.cancelForeground()
     if !entry.openPrompts.isEmpty {
       entry.projector.cancelSent(signal)
     }

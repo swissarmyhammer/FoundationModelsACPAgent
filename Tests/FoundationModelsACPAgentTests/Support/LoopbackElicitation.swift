@@ -24,16 +24,22 @@ extension ScriptedPromptFixture {
   ///   - capabilities: The client capabilities `initialize` announces.
   ///   - label: The directory label of the calling test.
   ///   - marker: A text that only the prompts that run `code` contain.
+  ///   - hasToolLayers: Whether the tools have the layers of the live loader
+  ///     (``makeHookLayeredModelLoader(script:)``). A foreground cancel needs them: it stops the
+  ///     tool call that the Router sees as a call in flight.
   /// - Returns: The fixture.
   /// - Throws: Whatever the wiring throws.
   static func makeLoopback(
     code: String,
     capabilities: ClientCapabilities = ACPClient.advertisedCapabilities,
     label: String,
-    onPromptContaining marker: String
+    onPromptContaining marker: String,
+    hasToolLayers: Bool = false
   ) async throws -> ScriptedPromptFixture {
-    try await make(
-      script: makeToolPromptScript(code: code, onPromptContaining: marker),
+    let script = try makeToolPromptScript(code: code, onPromptContaining: marker)
+    return try await make(
+      loader: hasToolLayers
+        ? makeHookLayeredModelLoader(script: script) : makeScriptedModelLoader(script: script),
       label: label,
       capabilities: capabilities,
       mcpServers: [makeLoopbackServer()])
