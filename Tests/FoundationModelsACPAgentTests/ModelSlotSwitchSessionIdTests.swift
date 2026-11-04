@@ -41,17 +41,6 @@ import Testing
     try await ScriptedPromptFixture.make(script: [.textDelta(answer), .endPass], label: label)
   }
 
-  /// Switches the session of `fixture` to the flash slot over the wire.
-  ///
-  /// - Parameter fixture: The wired fixture.
-  /// - Throws: Whatever `session/set_config_option` throws.
-  private static func switchToFlash(of fixture: ScriptedPromptFixture) async throws {
-    _ = try await fixture.harness.connection.setSessionConfigOption(
-      SetSessionConfigOptionRequest(
-        configId: ConfigOptions.modelOptionId, sessionId: fixture.sessionId,
-        value: .id(SessionConfigValueId(rawValue: ModelSlot.flash.rawValue))))
-  }
-
   /// The table entry of the session of `fixture`.
   ///
   /// - Parameter fixture: The wired fixture.
@@ -107,7 +96,7 @@ import Testing
   func aSlotSwitchKeepsTheRouterSessionId() async throws {
     let fixture = try await Self.makeFixture(label: "ModelSlotSwitchSessionIdTests-id")
 
-    try await Self.switchToFlash(of: fixture)
+    try await fixture.switchModelSlot()
 
     let entry = try await Self.entry(of: fixture)
     await fixture.close()
@@ -121,7 +110,7 @@ import Testing
     let fixture = try await Self.makeFixture(label: "ModelSlotSwitchSessionIdTests-live")
     let replaced = try await Self.entry(of: fixture).session
 
-    try await Self.switchToFlash(of: fixture)
+    try await fixture.switchModelSlot()
 
     let entry = try await Self.entry(of: fixture)
     let live = try #require(fixture.harness.agent.sessionDirectory.session(id: replaced.id))
@@ -136,7 +125,7 @@ import Testing
     let fixture = try await Self.makeFixture(label: "ModelSlotSwitchSessionIdTests-suspend")
     let replaced = try await Self.entry(of: fixture).session
 
-    try await Self.switchToFlash(of: fixture)
+    try await fixture.switchModelSlot()
 
     await fixture.close()
     #expect(replaced.isSuspended)
@@ -150,7 +139,7 @@ import Testing
   func aSlotSwitchGivesTheBuiltinCommandsTheRestoredSession() async throws {
     let fixture = try await Self.makeFixture(label: "ModelSlotSwitchSessionIdTests-commands")
 
-    try await Self.switchToFlash(of: fixture)
+    try await fixture.switchModelSlot()
 
     let entry = try await Self.entry(of: fixture)
     let bound = try #require(entry.builtinContext?.binding?.session)
@@ -165,7 +154,7 @@ import Testing
   func aSlotSwitchKeepsOneRecordingFolder() async throws {
     let fixture = try await Self.makeFixture(label: "ModelSlotSwitchSessionIdTests-folder")
 
-    try await Self.switchToFlash(of: fixture)
+    try await fixture.switchModelSlot()
 
     let entry = try await Self.entry(of: fixture)
     let folders = try RecordedSessionFiles.files(
@@ -180,7 +169,7 @@ import Testing
   func aSlotSwitchRecordsOneModelChangedEvent() async throws {
     let fixture = try await Self.makeFixture(label: "ModelSlotSwitchSessionIdTests-event")
 
-    try await Self.switchToFlash(of: fixture)
+    try await fixture.switchModelSlot()
 
     let entry = try await Self.entry(of: fixture)
     let lines = try RecordedTranscriptFile.lines(
@@ -200,7 +189,7 @@ import Testing
       label: "ModelSlotSwitchSessionIdTests-smaller")
     try Self.recordALargerContext(in: try await Self.entry(of: fixture))
 
-    try await Self.switchToFlash(of: fixture)
+    try await fixture.switchModelSlot()
 
     let updates = try await ScriptedPromptFixture.waitForUpdates(
       of: fixture.collector, toReach: "a compaction entry after the switch"
@@ -218,7 +207,7 @@ import Testing
       loader: CompactionStubBackend.makeLoader(shouldFail: false),
       label: "ModelSlotSwitchSessionIdTests-same")
 
-    try await Self.switchToFlash(of: fixture)
+    try await fixture.switchModelSlot()
     _ = try await ScriptedPromptFixture.runPrompt(on: fixture, text: "after the switch")
 
     let compactions = await fixture.collector.updates(ofKind: .compactionUpdate)
@@ -247,7 +236,7 @@ import Testing
       AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "first"))
     try await ScriptedPromptFixture.waitForRunning(fixture.collector)
 
-    try await Self.switchToFlash(of: fixture)
+    try await fixture.switchModelSlot()
     hold.release()
     _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
     _ = try await fixture.harness.connection.prompt(
@@ -305,7 +294,7 @@ import Testing
     }
     await fixture.harness.agent.awaitPromptsFinished(of: fixture.sessionId)
 
-    try await Self.switchToFlash(of: fixture)
+    try await fixture.switchModelSlot()
 
     let entry = try await Self.entry(of: fixture)
     let folders = try RecordedSessionFiles.files(

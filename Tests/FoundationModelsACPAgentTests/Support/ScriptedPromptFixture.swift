@@ -367,6 +367,25 @@ struct ScriptedPromptFixture {
     return .toolCall(name: runCodeToolName, argumentsJSON: arguments)
   }
 
+  /// Switches the session of this fixture to `slot` over the wire with
+  /// `session/set_config_option`.
+  ///
+  /// - Parameters:
+  ///   - slot: The slot to select. The default is the flash slot.
+  ///   - drainingHooks: Whether to drain the hook dispatcher of the agent
+  ///     after the switch, so a reader of the hook events sees the
+  ///     `SessionEnd` and the `SessionStart` of the switch.
+  /// - Throws: Whatever `session/set_config_option` throws.
+  func switchModelSlot(to slot: ModelSlot = .flash, drainingHooks: Bool = false) async throws {
+    _ = try await harness.connection.setSessionConfigOption(
+      SetSessionConfigOptionRequest(
+        configId: ConfigOptions.modelOptionId, sessionId: sessionId,
+        value: .id(SessionConfigValueId(rawValue: slot.rawValue))))
+    if drainingHooks {
+      await harness.agent.hooks.dispatcher.drain()
+    }
+  }
+
   // MARK: - Waits
 
   /// Waits until `condition` accepts the collected sequence, then returns

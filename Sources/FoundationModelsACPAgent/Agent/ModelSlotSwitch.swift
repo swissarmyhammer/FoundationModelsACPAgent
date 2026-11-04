@@ -172,7 +172,7 @@ extension RoutedACPAgent {
   ///   - restored: The restored session and its reports.
   ///   - sessionId: The ACP session.
   ///   - slot: The slot of the restored session.
-  ///   - replacingId: The id of the session root of the restore.
+  ///   - id: The id of the session root of the restore.
   private func install(
     _ restored: RestoredSession, in sessionId: SessionId, slot: ModelSlot, replacing id: ULID
   ) async {

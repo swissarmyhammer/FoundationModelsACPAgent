@@ -210,7 +210,7 @@ import Testing
       script: [.textDelta("an answer"), .endPass], label: "HookCompositionTests-switch",
       hookVisitors: [recorder])
 
-    try await Self.switchModelSlot(of: fixture)
+    try await fixture.switchModelSlot(drainingHooks: true)
 
     let starts = recorder.events.value.filter(\.isSessionStart)
     #expect(starts.map(\.kind) == [.sessionStart(.new), .sessionStart(.resumed)])
@@ -500,20 +500,6 @@ import Testing
     try JSONDecoder().decode(EndpointReply<Payload>.self, from: Data(json.utf8))
   }
 
-  /// Switches the session of `fixture` to the flash slot over the wire,
-  /// and drains the dispatcher. The session was idle, so the switch
-  /// suspended the Router session, and its `SessionEnd` released the key.
-  ///
-  /// - Parameter fixture: The wired fixture.
-  /// - Throws: Whatever `session/set_config_option` throws.
-  private static func switchModelSlot(of fixture: ScriptedPromptFixture) async throws {
-    _ = try await fixture.harness.connection.setSessionConfigOption(
-      SetSessionConfigOptionRequest(
-        configId: ConfigOptions.modelOptionId, sessionId: fixture.sessionId,
-        value: .id(SessionConfigValueId(rawValue: ModelSlot.flash.rawValue))))
-    await fixture.harness.agent.hooks.dispatcher.drain()
-  }
-
   /// Subscribes to the changes of `sessionId` after the newest cursor of
   /// the `snapshots` endpoint of the agent of `fixture`.
   ///
@@ -545,7 +531,7 @@ import Testing
   func aTakeAfterASwitchIsAChangeOfTheACPSession() async throws {
     let fixture = try await Self.makeSnapshotFixture(
       script: try Self.makeSnapshotScript(), label: "HookCompositionTests-switch-change")
-    try await Self.switchModelSlot(of: fixture)
+    try await fixture.switchModelSlot(drainingHooks: true)
     var changes = try await Self.subscribeToChanges(of: fixture.sessionId, in: fixture)
 
     _ = try await Self.runTurn(Self.writePromptText, in: fixture)
@@ -564,7 +550,7 @@ import Testing
   func aRollbackOfTheACPSessionAfterASwitchActsAsTheRestoredSession() async throws {
     let fixture = try await Self.makeSnapshotFixture(
       script: try Self.makeSnapshotScript(), label: "HookCompositionTests-switch-rollback")
-    try await Self.switchModelSlot(of: fixture)
+    try await fixture.switchModelSlot(drainingHooks: true)
     _ = try await Self.runTurn(Self.writePromptText, in: fixture)
 
     let json = try await fixture.harness.agent.snapshotsEndpoint.execute(
@@ -586,7 +572,7 @@ import Testing
   func theListAfterASwitchNamesTheACPSessionAsOwner() async throws {
     let fixture = try await Self.makeSnapshotFixture(
       script: try Self.makeSnapshotScript(), label: "HookCompositionTests-switch-list")
-    try await Self.switchModelSlot(of: fixture)
+    try await fixture.switchModelSlot(drainingHooks: true)
 
     _ = try await Self.runTurn(Self.writePromptText, in: fixture)
     let listed = try await Self.runTurn(Self.listOwnersPromptText, in: fixture)
