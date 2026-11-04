@@ -152,12 +152,8 @@ import Testing
   private static func isCancelledIdle(
     _ notification: UpdateSessionNotification, of sessionId: SessionId
   ) -> Bool {
-    guard notification.sessionId == sessionId, case .stateUpdate(let state) = notification.update,
-      case .idle(let idle) = state
-    else {
-      return false
-    }
-    return idle.stopReason == .cancelled
+    guard notification.sessionId == sessionId else { return false }
+    return idleState(of: notification.update)?.stopReason == .cancelled
   }
 
   /// The count of the `idle` updates of `sessionId` with the stop reason `cancelled`.

@@ -38,12 +38,36 @@ comments:
     - Filtered tests pass: SubagentCancelTests, CancellationTests, PromptExecutionTests, SessionSurfaceLoggingTests, ElicitationRelayTests, ElicitationCancelReasonTests, SessionCapabilityTests, QueuedScriptedModelTests, ChildElicitationTests, TelemetryContentSafetyTests, RequestTracingTests, and Close/Shutdown/ResumeNested/SubagentAnnouncer/BackgroundList suites. swift format run.
     - next: /review
   timestamp: 2026-11-04T04:34:01.550653+00:00
+- actor: claude-code
+  id: 01m6jdpa5ba43t34grzpaj3v6r
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD. 1 finding: Tests/FoundationModelsACPAgentTests/SubagentCancelTests.swift:155 (isCancelledIdle copies the unwrap that idleState(of:) already does).
+    - next: Use idleState(of:) in isCancelledIdle. The task stays in review.
+  timestamp: 2026-11-04T04:39:48.651607+00:00
+- actor: claude-code
+  id: 01m6jdpj3v795jgk2rs6cx5dd4
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 10 files, 6 of 6 items checked
+    - test: red — root 1632 tests, only the known blocker ShellSessionOwnerTests (card ^wd0cwz7) failed; IntegrationTests deterministic 38 passed
+    - commit: c3aff30
+    - review: findings — Tests/FoundationModelsACPAgentTests/SubagentCancelTests.swift:155
+    - next: implement works the 1 open finding
+  timestamp: 2026-11-04T04:39:56.795067+00:00
+- actor: claude-code
+  id: 01m6jdqr71pj2p3yx0htwq6dwr
+  text: |-
+    ### implement — changed
+    - evidence: Tests/FoundationModelsACPAgentTests/SubagentCancelTests.swift — isCancelledIdle now guards on the session id and uses the shared idleState(of:). No other hand-rolled unwrap is in the file. Finding box flipped to [x]. swift test --filter SubagentCancelTests: 12 tests passed.
+    - next: /review
+  timestamp: 2026-11-04T04:40:35.809380+00:00
 depends_on:
 - 01M6GH30709S58BK3AQ1VMBAM7
 - 01M6GH353HTRBREVKKN3N2WZW8
 - 01M6GM17FQDM22JNPV0D9NSYVC
-position_column: doing
-position_ordinal: '8480'
+position_column: review
+position_ordinal: '80'
 title: Cancel one child with session/cancel on the child id; parent cancel and close follow the RFD
 ---
 ## What
@@ -67,3 +91,15 @@ Make `session/cancel` work on a child id, and set the cancel rules of the RFD.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #subagents
+
+## Review Findings (2026-11-03 22:36)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 9 file(s) reviewed, 7 not reviewed.
+
+> 6 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 6 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `README.md` — no validator matches this file
+
+- [x] `Tests/FoundationModelsACPAgentTests/SubagentCancelTests.swift:155` `reuse/reuse` — isCancelledIdle hand-rolls the unwrap of a stateUpdate into an idle state. The shared helper idleState(of:) already does this unwrap, and PromptExecutionTests uses it. A second copy can drift from the shared one. Rewrite isCancelledIdle to guard on notification.sessionId == sessionId, then return idleState(of: notification.update)?.stopReason == .cancelled. This removes the duplicate match and keeps one canonical unwrap.
