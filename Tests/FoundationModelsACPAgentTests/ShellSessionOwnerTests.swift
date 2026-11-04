@@ -8,8 +8,9 @@ import Testing
 @testable import FoundationModelsACPAgent
 
 /// Each shell command records the ACP session id of the session that ran it
-/// (task ^v3xvh4t). A model slot switch makes a new Router session with a new
-/// id over the same tools, and the shell still records the ACP id.
+/// (task ^v3xvh4t). A model slot switch keeps the session id: the Router
+/// session after the switch has the id of the ACP session, so the shell
+/// records the ACP id.
 ///
 /// The proof drives the real agent over the scripted model: the scripted
 /// model calls `runCode`, the snippet calls `tools.shell.execute`, and the
@@ -58,7 +59,7 @@ import Testing
     let matches = try #require(grep["matches"] as? [[String: Any]])
     await fixture.close()
 
-    #expect(entry.session.id.description != fixture.sessionId.rawValue)
+    #expect(entry.session.id.description == fixture.sessionId.rawValue)
     #expect(matches.map { $0["sessionID"] as? String } == [fixture.sessionId.rawValue])
   }
 }

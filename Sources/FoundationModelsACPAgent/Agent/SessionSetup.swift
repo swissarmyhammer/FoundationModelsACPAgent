@@ -47,7 +47,8 @@ struct ActiveSession: Sendable {
   /// The Router session that answers this ACP session's prompts.
   /// Retaining it keeps the resident profile alive for the lifetime of the session.
   /// It is born as the root session from the standard slot.
-  /// A model-slot switch replaces it with one vended from the handle of the selected slot.
+  /// A model-slot switch suspends it and restores it onto the handle of the selected slot.
+  /// The restored session has the same id.
   var session: any RoutedSession
 
   /// The merged per-cwd configuration this session was composed from.
@@ -95,7 +96,7 @@ struct ActiveSession: Sendable {
 
   /// The user presence that the session got when the agent opened it
   /// (``RoutedACPAgent/userPresence``). A model slot switch gives it to
-  /// the replacement session, so the presence of the session does not
+  /// the restored session, so the presence of the session does not
   /// change.
   let userPresence: UserPresence
 
@@ -159,6 +160,19 @@ struct ActiveSession: Sendable {
   /// that no cold resume restored, and for a nested session. The child sync task announces the
   /// failed children. The re-drive task starts the runs.
   var nestedRestore: RestoreReport?
+
+  /// The slot that a client selected while a prompt was open, or `nil`.
+  /// The end of the last open prompt switches the session to it
+  /// (``RoutedACPAgent/applyPendingModelSlot(of:)``).
+  var pendingSlot: ModelSlot?
+
+  /// The model slot switch that runs now, or `nil`. A prompt, a close and a
+  /// second switch wait for it (``RoutedACPAgent/awaitSlotSwitch(of:)``).
+  var slotSwitch: Task<Void, any Error>?
+
+  /// The context of the builtin commands of the session, or `nil` for a
+  /// nested session. A model slot switch gives it the new Router session.
+  var builtinContext: BuiltinCommandContext?
 
   /// Whether `session/close` released this session.
   var isClosed = false
@@ -766,10 +780,6 @@ extension RoutedACPAgent {
     }
 
     let sessionId = SessionId(rawValue: session.id.description)
-    // Each shell command of the session records this ACP session id as its owner.
-    // A model slot switch replaces the Router session over the same surface and binds nothing.
-    // So the id stays the ACP id.
-    composition.surface.shellSessionIdentity?.bind(sessionId.rawValue)
 
     // Assemble the command registry now the session exists.
     // The six builtins capture a context bound to the live session.
@@ -814,6 +824,7 @@ extension RoutedACPAgent {
         composition: composition, placement: placement, commands: commands,
         selectedSlot: ConfigOptions.defaultSlot, announcedConfigOptions: configOptions,
         titleRecorded: titleRecorded, history: history))
+    sessions[sessionId]?.builtinContext = commandContext
 
     // The announcer of the agent runs of the surface sends through this agent from now on. So
     // each run is announced on this root session.
@@ -996,7 +1007,7 @@ extension RoutedACPAgent {
   /// Its ``home`` gives the marketplace cache folder and the machine state folder of the session.
   /// `session/new` and `session/resume` compose through this function.
   /// A model-slot switch composes nothing.
-  /// The replacement session gets the tools of this composition.
+  /// The restored session gets the tools of this composition.
   ///
   /// - Parameters:
   ///   - context: The resolved per-cwd configuration.
@@ -1124,8 +1135,7 @@ extension RoutedLLM {
   /// The context size comes from the model, never from configuration.
   /// `compaction` carries the fractions and the tool-output cap.
   /// This model carries the resolved working context that the fractions measure against.
-  /// `session/new` and the model-slot switch both vend through this one door.
-  /// So the two paths cannot drift.
+  /// `session/new` vends through this one door.
   ///
   /// - Parameters:
   ///   - instructions: The session's assembled instructions text.
@@ -1139,8 +1149,8 @@ extension RoutedLLM {
   ///     It is the ``SessionSurface/inlineSettleGrace`` of the mounted surface.
   ///     So it is the same period that each agent run of the surface gets.
   ///   - userPresence: Whether a user can answer the questions of the
-  ///     session (``RoutedACPAgent/userPresence``). `session/new` and the
-  ///     model-slot switch give it; the default is Router's default.
+  ///     session (``RoutedACPAgent/userPresence``). `session/new` gives it;
+  ///     the default is Router's default.
   ///   - mailOnlyAnswerLimit: The most answers in a row that run mail
   ///     alone starts (``RoutedACPAgent/mailOnlyAnswerLimit``). The default
   ///     is Router's default.
@@ -1149,7 +1159,6 @@ extension RoutedLLM {
   ///     Then the key is the id of the session.
   ///     `session/new` gives the lineage of its working directory
   ///     (``HookLineage/init(workingDirectory:origin:)``).
-  ///     The model-slot switch gives the same key with the origin `replacement`.
   ///     So each session of one folder shares one snapshot timeline.
   ///   - transcriptReader: The reader that a tool of the session uses to read the
   ///     transcript of a session (``RoutedACPAgent/transcriptReader``).
@@ -1243,6 +1252,9 @@ extension RoutedLLM {
   ///   - transcriptReader: The reader that a tool of the restored session uses to read the
   ///     transcript of a session. A recording holds no live reader, so the caller gives it again.
   ///     It covers the restored root and each restored child.
+  ///   - switchingModel: `false` (the default) to restore the session onto the model that it
+  ///     was recorded on. `true` to restore it onto this model, with the same id (the model
+  ///     slot switch). The caller suspends and closes the old session first.
   /// - Returns: The restored session and its reports, with the host rules of
   ///   ``makeBudgetedSession(instructions:workingDirectory:recordingRoot:tools:compaction:repetition:inlineSettleGrace:)``.
   /// - Throws: Whatever Router's restore throws.
@@ -1254,7 +1266,8 @@ extension RoutedLLM {
     userPresence: UserPresence,
     hookSessionKey: String? = nil,
     claimingRuns: Set<RunKey> = [],
-    transcriptReader: (any SessionTranscriptReader)?
+    transcriptReader: (any SessionTranscriptReader)?,
+    switchingModel: Bool = false
   ) async throws -> RestoredSession {
     try await restoreSession(
       id: id,
@@ -1266,7 +1279,8 @@ extension RoutedLLM {
       userPresence: userPresence,
       hookSessionKey: hookSessionKey,
       claimingRuns: claimingRuns,
-      transcriptReader: transcriptReader)
+      transcriptReader: transcriptReader,
+      switchingModel: switchingModel)
   }
 }
 

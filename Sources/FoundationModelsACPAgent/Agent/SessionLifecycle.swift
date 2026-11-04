@@ -324,6 +324,11 @@ extension RoutedACPAgent {
   func tearDownSession(
     _ sessionId: SessionId, entry: ActiveSession, isShutdown: Bool = false
   ) async {
+    // A close ends a switch that waits for a prompt, and it waits for a switch
+    // that runs. It then closes the Router session that the switch left.
+    sessions[sessionId]?.pendingSlot = nil
+    await awaitSlotSwitch(of: sessionId)
+    let entry = sessions[sessionId] ?? entry
     guard !entry.isClosed else {
       return
     }
@@ -368,9 +373,6 @@ extension RoutedACPAgent {
     // every `streamSessionEvents()` subscription. `deinit` does not run
     // it, so the host must call `close()`.
     await entry.session.close()
-    // The closed Router session released its store key, so the
-    // `snapshots` endpoints no longer act as it for the ACP session.
-    SnapshotSessionKeys.shared.forgetLiveOwner(of: sessionId)
     for descendant in entry.descendants {
       await descendant.close()
     }

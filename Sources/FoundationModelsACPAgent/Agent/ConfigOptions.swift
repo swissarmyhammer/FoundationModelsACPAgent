@@ -213,67 +213,10 @@ extension RoutedACPAgent {
       throw RequestError.invalidConfigOptionValue(id: params.configId)
     }
 
-    await applyModelSlot(slot, to: params.sessionId, entry: entry)
+    try await applyModelSlot(slot, to: params.sessionId)
     let options = ConfigOptions.options(profile: residentProfile, selectedSlot: slot)
     recordAnnouncedConfigOptions(options, for: params.sessionId)
     return SetSessionConfigOptionResponse(configOptions: options)
-  }
-
-  /// Switches the session's generation slot: the entry's Router
-  /// session is replaced by one vended from the selected slot's
-  /// resident handle, so later prompts generate on the switched slot.
-  /// Both slots are resident, so the switch loads nothing and blocks
-  /// on nothing. It does not need pooled residency; only a profile
-  /// switch would.
-  ///
-  /// The replacement records under the session's own transcript
-  /// directory, so the lineage stays on disk the way a fork's nesting
-  /// states it: the nesting is the lineage record. The replaced session is closed when it
-  /// is idle; a prompt still in flight keeps it and finishes there.
-  ///
-  /// - Parameters:
-  ///   - slot: The selected slot. A set to the current slot changes
-  ///     nothing.
-  ///   - sessionId: The session to switch.
-  ///   - entry: The session's table entry, read by the caller.
-  private func applyModelSlot(
-    _ slot: ModelSlot, to sessionId: SessionId, entry: ActiveSession
-  ) async {
-    guard slot != entry.selectedSlot else { return }
-    // The replacement keeps automatic compaction on: the same
-    // `compaction:` section the session was composed from, against the
-    // selected slot's resolved context (the context size comes from the
-    // model, never from configuration), and the same
-    // `repetition:` section, and the same user presence. The hooks see
-    // one lineage: the replacement has the key of the working directory,
-    // the key of the session that it replaces.
-    let replacement = ConfigOptions.handle(for: slot, of: residentProfile)
-      .makeBudgetedSession(
-        instructions: entry.instructions,
-        workingDirectory: entry.workingDirectory,
-        recordingRoot: entry.transcriptDirectory,
-        tools: entry.surface.tools,
-        compaction: entry.configuration.compaction,
-        repetition: entry.configuration.repetition,
-        inlineSettleGrace: entry.surface.inlineSettleGrace,
-        userPresence: entry.userPresence,
-        mailOnlyAnswerLimit: mailOnlyAnswerLimit,
-        hookLineage: HookLineage(workingDirectory: entry.workingDirectory, origin: .replacement),
-        transcriptReader: transcriptReader)
-    // The replacement has a Router id of its own, and it owns the store
-    // key once the replaced session releases it: the `snapshots`
-    // endpoints name the ACP session as the owner of its checkpoints, and
-    // act as it for the ACP session.
-    SnapshotSessionKeys.shared.recordReplacement(replacement.id.description, of: sessionId)
-    // The projector reads the replacement before any prompt can mail it.
-    // The reader of the replaced session stays until that session
-    // closes (task ^9xs24pn, decision Q3).
-    await entry.projector.attach(replacement)
-    sessions[sessionId]?.session = replacement
-    sessions[sessionId]?.selectedSlot = slot
-    if entry.availability == .idle {
-      await entry.session.close()
-    }
   }
 
   /// Records the option state the client last saw, so the divergence

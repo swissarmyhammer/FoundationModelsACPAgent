@@ -9,8 +9,8 @@ import Logging
 ///
 /// The projector reads `streamSessionEvents()` of each Router session that
 /// the ACP session uses.
-/// These are the root session, and the replacement session of a
-/// model slot switch.
+/// It is the root session. A model slot switch gives the projector a
+/// restored session with the same id (``replace(with:)``).
 /// It sends each event to the client through one
 /// ``ACPEventTranslator``, in the order of one inbox.
 /// Thus the client also gets an event that comes while no prompt is open.
@@ -198,6 +198,22 @@ actor SessionProjector {
     attach(await session.streamSessionEvents(), from: Source(id: session.id, session: session))
   }
 
+  /// Reads the events of the session that replaces the session of the same id.
+  /// A model slot switch restores the Router session with the id that it had.
+  /// The caller closed the old session, so the reader of the old session ends
+  /// after its last event. This method waits for that end and then reads the
+  /// new session. The end of the old reader goes into the inbox before any
+  /// event of the new session, so it never ends a prompt of the new session.
+  /// After ``stop()``, do nothing.
+  ///
+  /// - Parameter session: The restored Router session to read.
+  func replace(with session: any RoutedSession) async {
+    if let reader = readers.removeValue(forKey: session.id) {
+      await reader.value
+    }
+    await attach(session)
+  }
+
   /// Starts to read `outputs` as the outputs of `source`. A synthetic test
   /// gives its own outputs here; ``attach(_:)`` gives the outputs of a
   /// Router session.
@@ -337,7 +353,6 @@ actor SessionProjector {
   /// Thus the projector sends each event of a closed session.
   /// The stop does not depend on how a cancelled stream treats the outputs that it still holds.
   /// The stop cancels the reader of each other source.
-  /// An example is a replaced session that a prompt kept busy at a model slot switch.
   ///
   /// - Parameter closed: The ids of the sources whose outputs ended or
   ///   end without a cancel.

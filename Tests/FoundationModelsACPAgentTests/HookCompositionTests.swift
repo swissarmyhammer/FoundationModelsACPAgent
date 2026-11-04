@@ -200,11 +200,11 @@ import Testing
     #expect(events.allSatisfy { $0.session.sessionKey == AgentHome.projectKey(of: fixture.cwd) })
   }
 
-  /// A model-slot switch makes a replacement session in the same lineage:
-  /// its `SessionStart` has the key of the session it replaces, the key of
-  /// the working directory, and the origin `replacement`.
+  /// A model-slot switch restores the session in the same lineage: its
+  /// `SessionStart` has the key of the session it restores, the key of the
+  /// working directory, and the origin `resumed`.
   @Test
-  func aModelSlotSwitchStartsAReplacementWithTheSameKey() async throws {
+  func aModelSlotSwitchRestartsTheSessionWithTheSameKey() async throws {
     let recorder = RecordingHookVisitor()
     let fixture = try await ScriptedPromptFixture.make(
       script: [.textDelta("an answer"), .endPass], label: "HookCompositionTests-switch",
@@ -213,7 +213,7 @@ import Testing
     try await Self.switchModelSlot(of: fixture)
 
     let starts = recorder.events.value.filter(\.isSessionStart)
-    #expect(starts.map(\.kind) == [.sessionStart(.new), .sessionStart(.replacement)])
+    #expect(starts.map(\.kind) == [.sessionStart(.new), .sessionStart(.resumed)])
     #expect(starts.allSatisfy { $0.session.sessionKey == AgentHome.projectKey(of: fixture.cwd) })
     await fixture.close()
   }
@@ -501,8 +501,8 @@ import Testing
   }
 
   /// Switches the session of `fixture` to the flash slot over the wire,
-  /// and drains the dispatcher. The session was idle, so the replaced
-  /// Router session has ended, and its `SessionEnd` released the key.
+  /// and drains the dispatcher. The session was idle, so the switch
+  /// suspended the Router session, and its `SessionEnd` released the key.
   ///
   /// - Parameter fixture: The wired fixture.
   /// - Throws: Whatever `session/set_config_option` throws.
@@ -537,12 +537,12 @@ import Testing
     return stream.makeAsyncIterator()
   }
 
-  /// After a model-slot switch, the replaced Router session has released
-  /// the key, and the replacement owns it alone. A checkpoint that the
-  /// replacement takes is a change of the ACP session, whose owner is the
-  /// ACP session, not the Router id of the replacement.
+  /// After a model-slot switch, the suspended Router session has released
+  /// the key, and the restored session owns it alone. A checkpoint that the
+  /// restored session takes is a change of the ACP session, and its owner is
+  /// the id of the ACP session.
   @Test(.timeLimit(.minutes(1)))
-  func aTakeOfTheReplacementOfASwitchIsAChangeOfTheACPSession() async throws {
+  func aTakeAfterASwitchIsAChangeOfTheACPSession() async throws {
     let fixture = try await Self.makeSnapshotFixture(
       script: try Self.makeSnapshotScript(), label: "HookCompositionTests-switch-change")
     try await Self.switchModelSlot(of: fixture)
@@ -557,11 +557,11 @@ import Testing
     await fixture.close()
   }
 
-  /// After a model-slot switch, the replaced Router session has released
-  /// the key. `rollbackTimeline` of the ACP session acts as the live
-  /// replacement, and its checkpoint names the ACP session as its owner.
+  /// After a model-slot switch, the suspended Router session has released
+  /// the key. `rollbackTimeline` of the ACP session acts as the restored
+  /// session, and its checkpoint names the ACP session as its owner.
   @Test
-  func aRollbackOfTheACPSessionAfterASwitchActsAsTheReplacement() async throws {
+  func aRollbackOfTheACPSessionAfterASwitchActsAsTheRestoredSession() async throws {
     let fixture = try await Self.makeSnapshotFixture(
       script: try Self.makeSnapshotScript(), label: "HookCompositionTests-switch-rollback")
     try await Self.switchModelSlot(of: fixture)
@@ -581,9 +581,9 @@ import Testing
   }
 
   /// After a model-slot switch, `tools.snapshots.list` names the ACP
-  /// session as the owner of a checkpoint that the replacement took.
+  /// session as the owner of a checkpoint that the restored session took.
   @Test
-  func theListOfTheReplacementOfASwitchNamesTheACPSessionAsOwner() async throws {
+  func theListAfterASwitchNamesTheACPSessionAsOwner() async throws {
     let fixture = try await Self.makeSnapshotFixture(
       script: try Self.makeSnapshotScript(), label: "HookCompositionTests-switch-list")
     try await Self.switchModelSlot(of: fixture)
@@ -591,57 +591,7 @@ import Testing
     _ = try await Self.runTurn(Self.writePromptText, in: fixture)
     let listed = try await Self.runTurn(Self.listOwnersPromptText, in: fixture)
 
-    let replacement = try await Self.liveRouterSession(of: fixture)
     #expect(listed.toolCallText.contains("\(Self.ownersLabel)\(fixture.sessionId.rawValue)"))
-    #expect(!listed.toolCallText.contains(replacement))
-    await fixture.close()
-  }
-
-  /// The Router id of the session that serves the ACP session of
-  /// `fixture` now: after a model-slot switch, the replacement.
-  ///
-  /// - Parameter fixture: The wired fixture.
-  /// - Returns: The Router id.
-  /// - Throws: A failed requirement when the agent has no such session.
-  private static func liveRouterSession(of fixture: ScriptedPromptFixture) async throws -> String {
-    try #require(await fixture.harness.agent.sessions[fixture.sessionId]).session.id.description
-  }
-
-  /// `session/close` of a switched session releases the replacement: the
-  /// ACP session has no live store owner any more, and the replacement
-  /// keeps the ACP session as its host session, so its checkpoints still
-  /// name the ACP session.
-  @Test
-  func aCloseAfterASwitchForgetsTheLiveOwnerOfTheACPSession() async throws {
-    let fixture = try await ScriptedPromptFixture.make(
-      script: [.textDelta("an answer"), .endPass], label: "HookCompositionTests-switch-close")
-    try await Self.switchModelSlot(of: fixture)
-    let replacement = try await Self.liveRouterSession(of: fixture)
-    let acpSession = fixture.sessionId.rawValue
-    #expect(SnapshotSessionKeys.shared.storeOwner(of: acpSession) == replacement)
-
-    _ = try await fixture.harness.connection.closeSession(
-      CloseSessionRequest(sessionId: fixture.sessionId))
-
-    #expect(SnapshotSessionKeys.shared.storeOwner(of: acpSession) == nil)
-    #expect(SnapshotSessionKeys.shared.hostSession(of: replacement) == acpSession)
-    await fixture.close()
-  }
-
-  /// `session/delete` of a switched session forgets the host session of
-  /// the replacement.
-  @Test
-  func aDeleteAfterASwitchForgetsTheHostSessionOfTheReplacement() async throws {
-    let fixture = try await ScriptedPromptFixture.make(
-      script: [.textDelta("an answer"), .endPass], label: "HookCompositionTests-switch-delete")
-    try await Self.switchModelSlot(of: fixture)
-    let replacement = try await Self.liveRouterSession(of: fixture)
-    #expect(SnapshotSessionKeys.shared.hostSession(of: replacement) == fixture.sessionId.rawValue)
-
-    _ = try await fixture.harness.connection.deleteSession(
-      DeleteSessionRequest(sessionId: fixture.sessionId))
-
-    #expect(SnapshotSessionKeys.shared.hostSession(of: replacement) == nil)
     await fixture.close()
   }
 

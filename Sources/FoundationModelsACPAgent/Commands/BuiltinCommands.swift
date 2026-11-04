@@ -113,6 +113,20 @@ final class BuiltinCommandContext: Sendable {
     bound.withLock { $0 = binding }
   }
 
+  /// Gives the commands a new live session. A model slot switch restores the
+  /// session of the ACP session, so `/compact` and `/context` act on the
+  /// restored session. Call it after ``bind(_:)``.
+  ///
+  /// - Parameter session: The restored root session.
+  func replaceSession(_ session: any RoutedSession) {
+    bound.withLock { binding in
+      guard let current = binding, let registry = current.registry else { return }
+      binding = Binding(
+        session: session, sessionId: current.sessionId,
+        transcriptDirectory: current.transcriptDirectory, registry: registry)
+    }
+  }
+
   /// The late-bound references, or `nil` before ``bind(_:)``.
   var binding: Binding? {
     bound.withLock { $0 }

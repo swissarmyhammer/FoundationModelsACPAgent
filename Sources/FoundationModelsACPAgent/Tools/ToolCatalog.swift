@@ -45,11 +45,6 @@ public struct SessionSurface: Sendable {
   /// gives the lease back.
   let shellStoreLease: ShellStoreLease?
 
-  /// The ACP session id that the shell records as the owner of each
-  /// command, or `nil` when the shell section is off. The activation of
-  /// the session binds it.
-  let shellSessionIdentity: ShellSessionIdentity?
-
   /// The outcome of each MCP server of the session, in mount order: the
   /// config-derived servers first, then the client-supplied servers, then
   /// the refused client-supplied servers that have a name. The MCP server
@@ -104,7 +99,6 @@ public struct SessionSurface: Sendable {
     self.init(
       tools: tools, serverPool: serverPool, filesReadVerb: filesReadVerb,
       shellOutput: shellOutput, codeContextLease: nil, shellStoreLease: nil,
-      shellSessionIdentity: nil,
       mcpServerOutcomes: [], inlineSettleGrace: inlineSettleGrace, agents: nil,
       runCallJoins: RunCallJoinTable())
   }
@@ -123,8 +117,6 @@ public struct SessionSurface: Sendable {
   ///     is off.
   ///   - shellStoreLease: The lease of the session on the shell store of
   ///     its store directory, or `nil` when the shell section is off.
-  ///   - shellSessionIdentity: The ACP session id that the shell records,
-  ///     or `nil` when the shell section is off.
   ///   - mcpServerOutcomes: The outcome of each MCP server, in mount
   ///     order.
   ///   - mcpServers: The connected MCP servers, in mount order. Empty by
@@ -141,7 +133,6 @@ public struct SessionSurface: Sendable {
     shellOutput: ShellOutputChunkStream?,
     codeContextLease: CodeContextLease?,
     shellStoreLease: ShellStoreLease?,
-    shellSessionIdentity: ShellSessionIdentity?,
     mcpServerOutcomes: [MCPComposition.ServerOutcome],
     mcpServers: [FoundationModelsMultitool.MCPServer] = [],
     inlineSettleGrace: TimeInterval,
@@ -154,7 +145,6 @@ public struct SessionSurface: Sendable {
     self.shellOutput = shellOutput
     self.codeContextLease = codeContextLease
     self.shellStoreLease = shellStoreLease
-    self.shellSessionIdentity = shellSessionIdentity
     self.mcpServerOutcomes = mcpServerOutcomes
     self.mcpServers = mcpServers
     self.inlineSettleGrace = inlineSettleGrace
@@ -177,7 +167,6 @@ public struct SessionSurface: Sendable {
       shellOutput: shellOutput,
       codeContextLease: codeContextLease,
       shellStoreLease: shellStoreLease,
-      shellSessionIdentity: shellSessionIdentity,
       mcpServerOutcomes: mcpServerOutcomes,
       mcpServers: mcpServers,
       inlineSettleGrace: inlineSettleGrace,
@@ -309,25 +298,16 @@ public enum ToolCatalog {
     /// The lease of the build on the shared shell store of its store
     /// directory, or `nil` when the shell section is off.
     let shellStoreLease: ShellStoreLease?
-
-    /// The ACP session id that the shell records as the owner of each
-    /// command, or `nil` when the shell section is off.
-    let shellSessionIdentity: ShellSessionIdentity?
   }
 
-  /// What the shell mount of one session holds: the live output stream,
-  /// the lease on the shared store, and the session id each command
-  /// records.
+  /// What the shell mount of one session holds: the live output stream
+  /// and the lease on the shared store.
   struct ShellMount: Sendable {
     /// The host-owned live view of every shell run of the session.
     let output: ShellOutputChunkStream
 
     /// The lease of the session on the shared shell store.
     let storeLease: ShellStoreLease
-
-    /// The ACP session id that each command records, bound at the
-    /// activation of the session.
-    let sessionIdentity: ShellSessionIdentity
   }
 
   /// Builds the composed session surface: the Multitool session tools —
@@ -399,7 +379,6 @@ public enum ToolCatalog {
       shellOutput: built.shellOutput,
       codeContextLease: built.codeContextLease,
       shellStoreLease: built.shellStoreLease,
-      shellSessionIdentity: built.shellSessionIdentity,
       mcpServerOutcomes: built.mcpServerOutcomes,
       mcpServers: built.mcpServers,
       inlineSettleGrace: context.inlineSettleGrace,
@@ -496,9 +475,9 @@ public enum ToolCatalog {
   /// the shell store of the project in the local root of the home: never
   /// the working directory, which can be in the synced root. The sessions
   /// of one store directory share one store, so each reads the commands
-  /// that another ran. Each command records the ACP session id that the
-  /// activation of the session binds in the returned identity; until the
-  /// bind it records none.
+  /// that another ran. Each command records the session of its
+  /// `ToolContext` as its owner: the Router session id, which is the ACP
+  /// session id.
   ///
   /// Each shell command inherits the environment of the process, not the
   /// context environment: `withShell(...)` of Multitool takes no
@@ -525,14 +504,11 @@ public enum ToolCatalog {
     // The host-owned live view of every shell run: the capability tees
     // each raw chunk into it, the terminal projection reads it, and the
     // settlement reads `snapshot(for:)` on the same stream.
-    let mount = ShellMount(
-      output: ShellOutputChunkStream(), storeLease: lease, sessionIdentity: ShellSessionIdentity())
-    let identity = mount.sessionIdentity
+    let mount = ShellMount(output: ShellOutputChunkStream(), storeLease: lease)
     do {
       try SandboxComposition.composeShell(
         into: builder,
         store: lease.store,
-        sessionID: { identity.current },
         configuration: context.configuration.sandbox,
         rootSet: [context.workingDirectory] + context.additionalRoots,
         outputChunkStream: mount.output)
@@ -602,8 +578,7 @@ public enum ToolCatalog {
         mcpServerOutcomes: composed.outcomes,
         shellOutput: shell?.output,
         codeContextLease: codeContextLease,
-        shellStoreLease: shell?.storeLease,
-        shellSessionIdentity: shell?.sessionIdentity)
+        shellStoreLease: shell?.storeLease)
     } catch {
       await codeContextLease?.release()
       throw error

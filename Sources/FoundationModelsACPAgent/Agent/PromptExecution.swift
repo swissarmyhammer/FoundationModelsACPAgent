@@ -815,6 +815,9 @@ extension RoutedACPAgent {
     _ params: PromptRequest, from caller: ConnectionId
   ) async throws -> (PromptResponse, PromptStateOwner, AgentSideConnection) {
     try requireInitialized(before: ACPMethod.sessionPrompt, from: caller)
+    // A model slot switch replaces the Router session. A prompt takes the
+    // session after the switch ended.
+    await awaitSlotSwitch(of: params.sessionId)
     guard let entry = sessions[params.sessionId] else {
       throw RequestError.unknownSession(id: params.sessionId)
     }
@@ -1054,6 +1057,8 @@ extension RoutedACPAgent {
   /// It first writes the retained history of the session
   /// (``writeHistory(of:)``), so a new process can resume the session with
   /// the messages of this prompt. When no prompt is open any more, it then
+  /// applies the model slot switch that a client asked for while a prompt
+  /// was open (``applyPendingModelSlot(of:)``). It then
   /// reconciles the config-option state: a prompt that ran on a model the
   /// announced options do not show pushes one `config_option_update`,
   /// after the terminator.
@@ -1069,6 +1074,7 @@ extension RoutedACPAgent {
     guard sessions[sessionId]?.openPrompts.isEmpty ?? false else {
       return
     }
+    await applyPendingModelSlot(of: sessionId)
     await reconcileConfigOptions(for: sessionId)
   }
 

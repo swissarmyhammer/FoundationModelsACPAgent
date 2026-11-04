@@ -425,13 +425,12 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     #expect(periods == [Self.shortSettlePeriod])
   }
 
-  /// A model-slot switch gives the replacement session that
-  /// `makeBudgetedSession` makes the settle period of the agent in its
-  /// `SessionConfiguration`. After the switch, the record of the root
-  /// session holds the short period. The record of the replacement holds
-  /// it too. The test reads the records, not a clock.
+  /// A model-slot switch restores the session with the recorded
+  /// configuration. After the switch, the one record of the session still
+  /// holds the short settle period of the agent. The test reads the
+  /// record, not a clock.
   @Test
-  func aSlotSwitchGivesTheReplacementSessionTheSettlePeriodOfTheAgent() async throws {
+  func aSlotSwitchKeepsTheSettlePeriodOfTheAgentInTheRecord() async throws {
     let agent = try await Self.makeAgent(
       label: "settle-switch", inlineSettleGrace: Self.shortSettlePeriod)
     let cwd = makeResolvedDirectory(label: "AgentsToolTests-settle-switch-repo")
@@ -444,7 +443,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
         value: .id(SessionConfigValueId(rawValue: ModelSlot.flash.rawValue))))
 
     let periods = try Self.recordedSettlePeriods(under: cwd)
-    #expect(periods == [Self.shortSettlePeriod, Self.shortSettlePeriod])
+    #expect(periods == [Self.shortSettlePeriod])
   }
 
   // MARK: - The start agent answers

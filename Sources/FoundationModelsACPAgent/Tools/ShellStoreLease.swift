@@ -1,6 +1,5 @@
 import Foundation
 import FoundationModelsMultitool
-import Synchronization
 
 /// The hold of one session on the shell store of its store directory.
 ///
@@ -119,30 +118,5 @@ actor ShellStores {
       return url.path
     }
     return resolvedPath(of: parent) + "/" + url.lastPathComponent
-  }
-}
-
-/// The ACP session id that the shell of one session records as the owner of
-/// each command it runs.
-///
-/// The shell capability is built before the session exists, so the id is
-/// bound late: the activation of the session binds it, once the session is
-/// made. The capability reads ``current`` when each command starts. A model
-/// slot switch makes a new Router session over the same tools and binds
-/// nothing, so the shell keeps the ACP session id.
-final class ShellSessionIdentity: Sendable {
-  /// The bound ACP session id, or `nil` until ``bind(_:)`` runs.
-  private let sessionID = Mutex<String?>(nil)
-
-  /// Binds the ACP session id of the session.
-  ///
-  /// - Parameter sessionID: The ACP session id.
-  func bind(_ sessionID: String) {
-    self.sessionID.withLock { $0 = sessionID }
-  }
-
-  /// The bound ACP session id, or `nil` before the bind.
-  var current: String? {
-    sessionID.withLock { $0 }
   }
 }

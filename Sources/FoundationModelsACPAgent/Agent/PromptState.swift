@@ -36,8 +36,7 @@ extension AgentSideConnection {
 /// that waits only for the user is no work. So an open question does not keep the session busy. A
 /// prompt counts too, because some prompts make no Router work. Examples are a slash command with
 /// no model pass and a refused mail. Another example is a prompt cancelled before its mail went in.
-/// More than one Router session can feed the session, as the replacement session of a model slot
-/// switch does. So the ledger keeps the set of the sessions that work.
+/// The ledger keeps the set of the Router sessions that work, by their ids.
 ///
 /// A question waits for the user from ``userWaitStarted(_:)`` to
 /// ``userWaitEnded(_:resumedWork:since:)``. The relay calls them for each

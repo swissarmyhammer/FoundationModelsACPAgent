@@ -10,15 +10,9 @@ import Testing
 /// ^v3xvh4t): one history, one log and one set of command records. Each
 /// session surface leases the store of its resolved store directory from
 /// ``ShellStores/shared``, the close of a session gives its lease back, and
-/// the last close drops the store. Each command records the session that ran
-/// it, and the readers of every session see that owner.
+/// the last close drops the store. The owner that each command records is the
+/// session of its `ToolContext`; ``ShellSessionOwnerTests`` proves it.
 @Suite struct ShellStoreSharingTests {
-  /// The ACP session id that the first session of a test binds.
-  private static let firstSessionID = "session-A"
-
-  /// The ACP session id that the second session of a test binds.
-  private static let secondSessionID = "session-B"
-
   /// How many lines each command of the concurrency proof writes.
   private static let concurrentLineCount = 400
 
@@ -67,23 +61,17 @@ import Testing
       environment: [:])
   }
 
-  /// Builds the registry of one session of `agent` in `workingDirectory`,
-  /// and binds its shell to `sessionID`, as the activation of a session
-  /// binds the ACP session id.
+  /// Builds the registry of one session of `agent` in `workingDirectory`.
   ///
   /// - Parameters:
   ///   - agent: The agent of the session.
   ///   - workingDirectory: The working directory of the session.
-  ///   - sessionID: The ACP session id of the session.
   /// - Returns: The built registry.
-  /// - Throws: Whatever the build throws, or when the shell is not mounted.
+  /// - Throws: Whatever the build throws.
   private static func openRegistry(
-    of agent: Agent, in workingDirectory: URL, sessionID: String
+    of agent: Agent, in workingDirectory: URL
   ) async throws -> ToolCatalog.BuiltRegistry {
-    let built = try await ToolCatalog.makeRegistry(
-      context: catalogContext(of: agent, in: workingDirectory))
-    try #require(built.shellSessionIdentity).bind(sessionID)
-    return built
+    try await ToolCatalog.makeRegistry(context: catalogContext(of: agent, in: workingDirectory))
   }
 
   /// Composes the surface of one session of `agent` in `workingDirectory`.
@@ -173,13 +161,11 @@ import Testing
 
   // MARK: One store per resolved store directory
 
-  @Test func sessionBReadsTheCommandThatSessionARanWithItsOwner() async throws {
+  @Test func sessionBReadsTheCommandThatSessionARan() async throws {
     let agent = try await Self.makeAgent()
     let workingDirectory = Self.makeWorkingDirectory(named: "shared")
-    let first = try await Self.openRegistry(
-      of: agent, in: workingDirectory, sessionID: Self.firstSessionID)
-    let second = try await Self.openRegistry(
-      of: agent, in: workingDirectory, sessionID: Self.secondSessionID)
+    let first = try await Self.openRegistry(of: agent, in: workingDirectory)
+    let second = try await Self.openRegistry(of: agent, in: workingDirectory)
     let marker = "ran-by-the-first-session"
 
     let report = try await ShellVerbSupport.executeReport(
@@ -189,11 +175,8 @@ import Testing
     let grep = try await ShellVerbSupport.grepHistory(in: second.registry, pattern: marker)
     let matches = try #require(grep["matches"] as? [[String: Any]])
 
-    #expect(report["sessionID"] as? String == Self.firstSessionID)
     #expect(lines["lines"] as? [String] == Self.readLines(of: [marker]))
-    #expect(lines["sessionID"] as? String == Self.firstSessionID)
     #expect(matches.map { $0["commandID"] as? String } == [commandID])
-    #expect(matches.map { $0["sessionID"] as? String } == [Self.firstSessionID])
     await first.shellStoreLease?.release()
     await second.shellStoreLease?.release()
   }
@@ -202,10 +185,8 @@ import Testing
     let agent = try await Self.makeAgent()
     let left = Self.makeWorkingDirectory(named: "left")
     let right = Self.makeWorkingDirectory(named: "right")
-    let leftSession = try await Self.openRegistry(
-      of: agent, in: left, sessionID: Self.firstSessionID)
-    let rightSession = try await Self.openRegistry(
-      of: agent, in: right, sessionID: Self.secondSessionID)
+    let leftSession = try await Self.openRegistry(of: agent, in: left)
+    let rightSession = try await Self.openRegistry(of: agent, in: right)
     let marker = "ran-in-the-left-directory"
 
     _ = try await Self.run("echo \(marker)", in: leftSession, workingDirectory: left)
@@ -224,10 +205,8 @@ import Testing
   @Test func concurrentCommandsFromTwoSessionsLeaveEveryLogLineWhole() async throws {
     let agent = try await Self.makeAgent()
     let workingDirectory = Self.makeWorkingDirectory(named: "concurrent")
-    let first = try await Self.openRegistry(
-      of: agent, in: workingDirectory, sessionID: Self.firstSessionID)
-    let second = try await Self.openRegistry(
-      of: agent, in: workingDirectory, sessionID: Self.secondSessionID)
+    let first = try await Self.openRegistry(of: agent, in: workingDirectory)
+    let second = try await Self.openRegistry(of: agent, in: workingDirectory)
     let count = Self.concurrentLineCount
 
     async let firstID = Self.run(

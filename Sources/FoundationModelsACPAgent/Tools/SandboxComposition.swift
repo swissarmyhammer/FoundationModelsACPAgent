@@ -98,8 +98,6 @@ public enum SandboxComposition {
   ///   - store: The shell store the capability keeps the history and the
   ///     captured output of the commands in, which the other sessions of
   ///     its store directory share.
-  ///   - sessionID: The ACP session id of the session, read when each
-  ///     command starts, which each command records as its owner.
   ///   - configuration: The decoded `sandbox:` section.
   ///   - rootSet: The session root set, working directory first.
   ///   - outputChunkStream: The host-owned live output stream the
@@ -110,7 +108,6 @@ public enum SandboxComposition {
   static func composeShell(
     into builder: MultiTool.Builder,
     store: ShellStore,
-    sessionID: @escaping @Sendable () -> String?,
     configuration: SandboxConfiguration,
     rootSet: [URL],
     outputChunkStream: ShellOutputChunkStream? = nil
@@ -118,7 +115,6 @@ public enum SandboxComposition {
     composeShell(
       into: builder,
       store: store,
-      sessionID: sessionID,
       sandbox: try makeShellSandbox(rootSet: rootSet, configuration: configuration),
       outputChunkStream: outputChunkStream,
       defaultWorkingDirectory: rootSet.first)
@@ -132,8 +128,6 @@ public enum SandboxComposition {
   ///   - builder: The registry builder the capability mounts into.
   ///   - store: The shell store the capability keeps the history and the
   ///     captured output of the commands in.
-  ///   - sessionID: The session id each command records as its owner,
-  ///     read when the command starts. The default records none.
   ///   - sandbox: The confinement every command spawns under.
   ///   - outputChunkStream: The host-owned live output stream the
   ///     capability tees raw bytes into, or `nil` to
@@ -145,14 +139,12 @@ public enum SandboxComposition {
   static func composeShell(
     into builder: MultiTool.Builder,
     store: ShellStore,
-    sessionID: @escaping @Sendable () -> String? = { nil },
     sandbox: any CommandSandbox,
     outputChunkStream: ShellOutputChunkStream? = nil,
     defaultWorkingDirectory: URL? = nil
   ) {
     builder.withShell(
       store: store,
-      sessionID: sessionID,
       sandbox: sandbox,
       outputChunkStream: outputChunkStream,
       defaultWorkingDirectory: defaultWorkingDirectory)
