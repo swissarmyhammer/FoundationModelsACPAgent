@@ -49,6 +49,25 @@ comments:
     - files: IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/{SubagentSessionsTests,RedriveInterruptedRunsProcessTests}.swift, Support/{ConnectedAgent,LiveTraceReading,NestedAgentFixture,NestedRootSession}.swift, Tests/FoundationModelsACPAgentTestSupport/MethodRefusalReading.swift, Tests/FoundationModelsACPAgentTests/SessionCapabilityTests.swift.
     - next: /review again.
   timestamp: 2026-11-04T19:04:50.570759+00:00
+- actor: claude-code
+  id: 01m6kzdqhdgypsh73xbk9nxnss
+  text: |-
+    ### review — findings
+    - evidence: review sha 4906c02~1..6510361; counts findings 1, confirmed 1, refuted 0, failed 0; IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Support/NestedRootSession.swift:48
+    - next: fix the swallowed prompt result, then review again. Boxes that only CI can prove stay open by design.
+  timestamp: 2026-11-04T19:08:56.237686+00:00
+- actor: claude-code
+  id: 01m6kzk1t7t1sxawcg7dqnqanq
+  text: |-
+    ### implement — changed
+    - finding fixed: NestedRootSession.closeClientSide() now cancels the prompt, closes the connection, then reads `prompt.result`. An error that is not expected is recorded with Issue.record, so the test fails.
+    - accepted set (from the SDK code in FoundationModelsACP Connection.swift): success; CancellationError (prompt.cancel() runs cancelOutbound, which fails the pending request with it); ConnectionError.closed (shutDown rejects every pending request with it on EOF after kill or end of the agent, on transport failure, and on close()). Rejected: RequestError (peer error), ConnectionError.timedOut, all others.
+    - quit (SubagentSessionsTests) and recordInterruptedRun (RedriveInterruptedRunsProcessTests) both call closeClientSide, so every use is covered.
+    - other new IntegrationTests files checked: no `try?`; no other unobserved Task with a dropped result (readLiveTrace reader is awaited; its limit timer Task only sleeps and its catch only sees the cancel of the sleep). Dropped `_ =` values are exit statuses, not errors; left as is.
+    - changed file: IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Support/NestedRootSession.swift
+    - builds: `swift build --build-tests --package-path IntegrationTests` complete, no warning; `swift build --build-tests` complete. IntegrationTests were not run (order).
+    - next: /review
+  timestamp: 2026-11-04T19:11:50.599092+00:00
 depends_on:
 - 01M6GM17VHZSWD4G2J27WTA3JT
 - 01M6GK6AH3R589GF241923KNDP
@@ -104,3 +123,16 @@ Note: the ACP client package (`FoundationModelsACPClient`) has no code for child
 - [x] `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Support/LiveTraceReading.swift:100` `reuse/reuse` — `isCancelledIdle(of:)` is a near-match of `isIdle(of:)` at line 89. It repeats the same stream check and `stateUpdate` extraction, and differs only by the stop reason. The right move was to parameterize `isIdle` by an optional stop reason instead of writing a parallel copy. Replace both with one function, for example `isIdle(of:stopReason:)`, where the stop reason defaults to nil and the check compares it when given. Keep the existing call sites working through a thin wrapper, or update them.
 - [x] `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Support/NestedAgentFixture.swift:49` `reuse/reuse` — `isCompletedCall` rewrites the `.update(stream, .toolCallUpdate(call))` pattern match by hand. The same extension already has the `stream` and `sessionUpdate` accessors, and `isToolCall(on:)` in LiveTraceReading.swift uses them. Each new copy of the pattern is another place to change if the update shape changes. Write it as `stream == session, case .toolCallUpdate(let call)? = sessionUpdate, call.toolCallId == id, call.status == .value(.completed)`, using the existing accessors.
 - [x] `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Support/NestedRootSession.swift:42` `reuse/reuse` — The spawn, connect and initialize sequence is written out again here. The same sequence exists in the `resume` helpers of both test suites, so the connection setup now lives in three places. Extract a helper that spawns the agent, connects the model and initializes it, and returns those values. `NestedRootSession.start` and both `resume` helpers call it. `start` then adds only the new session.
+
+## Review Findings (2026-11-04 13:05)
+
+> Scope: `review sha 4906c02~1..6510361` — reviewed the diffs only — lines this change added or modified. 8 file(s) reviewed, 8 not reviewed.
+
+> 6 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 6 file(s)
+
+> 2 file(s) not reviewed — no validator matches this file:
+> - `ARCHITECTURE.md` — no validator matches this file
+> - `README.md` — no validator matches this file
+
+- [x] `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Support/NestedRootSession.swift:48` `test-integrity/no-test-cheating` — The root prompt runs in an unobserved `Task`, and nothing awaits its result, so an error thrown by `connection.prompt` is discarded. A prompt that fails mid-run can leave the trace assertions passing while the root's failure goes unreported. This is a swallowed failure. Await the prompt's result in the test's end path, for example by calling `try await session.prompt.value` before `quit`, or by having `closeClientSide()` or `quit` check that the prompt ended without error or with the expected cancellation. Report any error that is not the expected cancel of the kill or close.

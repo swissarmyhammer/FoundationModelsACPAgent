@@ -1,6 +1,66 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m6kzbsr71x0h0kgae9864msv
+  text: |-
+    ### Answer: a cold resume of the children and the recorded cwd
+
+    Short answer: NO. If the recorded `cwd` does not exist on the other machine, the root resumes in replay-only mode and the children are NOT restored. The agent definitions `parent` and `leaf` in the USER layer do not change this. Two checks come before, and both need the recorded `cwd`.
+
+    What the code does (worktree wt-rec, same code as bb8cc3b), in order:
+
+    1. `SessionSetup.validatedWorkingDirectory` (Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift:280-287): the `cwd` of `session/resume` MUST be an absolute path. A relative path gives `RequestError.relativePath`. Thus a relative recorded cwd does not help: the client must still send an absolute path.
+    2. `restoreSession` (Agent/SessionResume.swift:170) loads the context for the REQUEST cwd. The recording root comes from it: the default location is `<cwd>/.acp-agent/transcripts` (`TranscriptLocation` project, AgentConfiguration.swift:274-275; `LoadedSessionContext.load`, SessionSetup.swift:544).
+    3. `requireRecordedWorkingDirectory` (SessionResume.swift:336-361): the request cwd MUST be equal, as a standardized path string, to the cwd in `index.md` of the root. If not equal, the refusal is `RequestError.mismatchedWorkingDirectory` (SessionResume.swift:354). This check needs no directory on disk, only the equal string.
+    4. `composeResumedSession` (SessionResume.swift:385-399): `SessionSetup.allDirectoriesExist` is false when the cwd (or an additional root) does not exist on the disk. Then the result is `.replayOnly(from: context)`: no instructions, `surface: .makeEmpty()` (Tools/ToolCatalog.swift:182), no tool, no `agents` tool. The agent never makes the directory. Only a notice is logged: "A directory of the resumed session does not exist. The session is replay-only."
+    5. `claimedRuns` (Agent/SessionResumeNested.swift:23) and `restoreNestedSessions` (SessionResumeNested.swift:44) both start with `guard let agents = composition.surface.agents`. In the replay-only composition `agents` is nil, so both return at once. `AgentRunner.restoreInterrupted` (FoundationModelsAgents Run/AgentRunRestore+Interrupted.swift:147) is never called. No child and no grandchild is restored. The root history is replayed, and each later `session/prompt` is refused.
+
+    Where the definition registry and the directory come from, when the cwd DOES exist:
+    - The registry is made in `AgentsComposition.makeAgentRegistry` (Sources/FoundationModelsACPAgent/Tools/AgentsComposition.swift:184-192) from the `agents` dotfolder stack for `context.workingDirectory`: defaults layer, USER layer, then the project layer `<cwd>/.agents`. A definition in the USER layer is found, and the project layer may be empty or missing.
+    - `AgentRunner.restoreChild` (FoundationModelsAgents Run/AgentRunner.swift) calls `startableDefinition(named: child.agentID)` on that registry. The children restore with `environment.recordingRoot` (the root of the host, from the cwd) and `environment.workingDirectory` (AgentSessionMaker.swift:124: `request.workingDirectory(default: environment.workingDirectory)`). `AgentsMd.documents(from:)` reads the AGENTS.md files from that cwd.
+    - The `directory:` argument of `restoreInterrupted` (SessionResumeNested.swift:48-49) is the Router session directory, not a folder of the file system. The recorded children are read through it, from the recording roots.
+
+    So the cwd is used in four places: the equal-path check (step 3), the recording root (step 2), the exists-check that decides replay-only (step 4), and the registry and the AGENTS.md of the children (the stack of the cwd).
+
+    Advice for the AgentViewKit demo (no production change is needed):
+    1. The demo MUST create the directory at the recorded cwd on the machine (an empty directory is enough: the USER layer holds the definitions, and a project without `.agents` is a normal case), and the client MUST send exactly that absolute path as `cwd` in `session/resume`.
+    2. The demo MUST put the copied transcripts where the recording root is: `<cwd>/.acp-agent/transcripts`. Or it sets `transcripts.location` to another place in the config.
+    3. A better option for the demo: add a make.py option (for example `--cwd <absolute path>`) that makes the recording with a portable fixed absolute cwd that the demo can create on any machine (for example a folder under the temp directory of the user with a fixed name), and not a path inside this repository. The `index.md` files then hold that path in the 3 places (cwd line, `workingDirectory:`, `recordingRoot:`). A relative cwd is not possible: step 1 refuses it.
+    4. The cwd of the new recording in this worktree is the path of the worktree (`.../FoundationModelsACPAgent-wt-rec/Recordings/interrupted-nested-child/workspace/`), because the recording was made there. It differs from the old cwd in the main directory. A consumer must use the cwd that is in the `index.md` of the committed recording.
+
+    Not proven by a run: I read the code only. I did not run a resume (the IntegrationTests package is not allowed in this task). A card with a test for the replay-only case with a missing cwd and `agents` children could prove it, but this task changes no code.
+
+    No production change is needed, and no finding is open.
+  timestamp: 2026-11-04T19:07:52.967562+00:00
+- actor: claude-code
+  id: 01m6kzc5vhqew40p2h9yvn9eb5
+  text: |-
+    ### implement — changed
+    - evidence: commit 4c4c0c9 on branch wt-rec (worktree /Users/wballard/github/swissarmyhammer/FoundationModelsACPAgent-wt-rec, from bb8cc3b), Recordings/interrupted-nested-child only: make.py, README.md, the old transcripts removed, the new transcripts added, script.json removed from git.
+    - make.py: new optional argument for the model id, default `mlx-community/Qwen3.8-27B-mxfp4`. The model is set in the USER layer of the isolated config (`config/acp-agent/config.yaml`, plain string, so no drafter). The defaults layer (`ACP_AGENT_DEFAULTS_DIR`) did NOT set the profile: `acp-agent-stub config show` still showed the 4bit model and the drafter. The first recording (made with the defaults layer) had the 4bit model and the drafter, and I replaced it. The stub script is now written in the scratch folder (it held a /var/folders path of this machine); script.json is no longer in the folder.
+    - new ids: root `01M6KZ8Z4GXEZCXF3F53NAEBVM`, child `01M6KZ8Z87G4B4DJXC5SWPVVVB` (agent parent), grandchild `01M6KZ8ZMRTYGA0DVHSTNW7C7S` (agent leaf). The old ids (`01M6JKRZ...`) are deleted from the folder.
+    - checked by reading the files: `session-history.json` of the root and of the child hold the `agents` tool call with status `paused`, and no other status for it; `agentSpawn` is in the `transcript.jsonl` and `index.md` of the child (parent = root, via call `01M6KZ8Z826GS69C0KZ8JBCT0P`) and of the grandchild (parent = child); `grep -rl endedAt` prints nothing; the `model:` line of the 3 `index.md` is `mlx-community/Qwen3.8-27B-mxfp4`; `grep -rn drafter` prints nothing; `slot: standard`.
+    - note: the Router `transcript.jsonl` of the root and of the child holds a model-level tool output "Agent ... was cancelled." and the final scripted text. This is the model transcript. The ACP history (`session-history.json`) is the one that holds `paused`.
+    - absolute paths of this machine: only in `index.md` of each of the 3 sessions: line 3 `cwd:`, and the `workingDirectory:` and `recordingRoot:` lines in the config block (file:// URLs); and in README.md, where the recorded path is written. No path in the transcripts, the history files, make.py or the agent folders.
+    - cwd of this recording is the worktree path (`.../FoundationModelsACPAgent-wt-rec/Recordings/...`), not the main directory path, because the recording was made in the worktree.
+    - the answer to the cwd question is in the comment before this one.
+    - next: /review. Not run: unit tests (no code changed), the IntegrationTests package (not allowed).
+  timestamp: 2026-11-04T19:08:05.361600+00:00
+- actor: claude-code
+  id: 01m6kzj4znp213n7j359802988
+  text: |-
+    ### implement — changed
+    - evidence: commit 52197d7 on wt-rec (Recordings/interrupted-nested-child only).
+    - make.py: new options `--cwd` (default /tmp/AgentViewKitDemo-nested-work, must be absolute) and `--model`. It makes the cwd, deletes only <cwd>/.acp-agent and <cwd>/.agents, writes `parent` and `leaf` into the USER layer ($XDG_CONFIG_HOME/agents) of the isolated config, copies them to `agents/` of the folder, records, then copies <cwd>/.acp-agent/transcripts to workspace/.acp-agent/transcripts.
+    - spelling of cwd: the host does `URL(fileURLWithPath:).standardizedFileURL.path` on both sides (SessionSetup.validatedWorkingDirectory, SessionResume.requireRecordedWorkingDirectory). I checked with a small Swift program: it keeps `/tmp/x` as `/tmp/x` and `/private/tmp/x` as `/private/tmp/x` (no symlink resolving). The host records the string of session/new. So the recorded cwd is `/tmp/AgentViewKitDemo-nested-work`, and the resume must send the same string.
+    - new ids: root 01M6KZFJJQ3RGRAXDP42Q9GV3J, child 01M6KZFJKJZWF47K4NWB69RP7R (parent), grandchild 01M6KZFJZNK29EZVQ9KV2F4BFV (leaf). The definitions in the USER layer were found (agentSpawn on both).
+    - checks by reading: paused in session-history.json of root and child (1 each, only status); agentSpawn on child and grandchild with the correct parents; no endedAt; model mlx-community/Qwen3.8-27B-mxfp4, slot standard, no drafter; `cwd:` lines, workingDirectory and recordingRoot = /tmp/AgentViewKitDemo-nested-work; grep for /Users, wballard, FoundationModelsACPAgent-wt, /var/folders in the folder prints nothing.
+    - README.md rewritten: replay steps (make the dir, copy transcripts to <cwd>/.acp-agent/transcripts or transcripts.location, USER layer or project layer for the definitions, content of both AGENT.md, standard model, send session/resume with the same cwd).
+    - manual diagnostic (not a test): scratch script in the scratchpad: fresh empty /tmp/AgentViewKitDemo-nested-work, committed transcripts copied in, USER layer from agents/, stub `acp`, initialize, then session/resume with the cwd. The response was a result (no error), and the log held no replay-only or refusal notice. I did not check that the children run again after the resume. The directory was removed after.
+    - not run: unit tests (no Sources change), IntegrationTests. Nothing pushed or merged.
+  timestamp: 2026-11-04T19:11:21.077606+00:00
 position_column: doing
 position_ordinal: '80'
 title: Remake the interrupted nested recording with the mxfp4 standard model and answer how a cold resume uses the recorded cwd
@@ -15,9 +75,9 @@ Request from AgentViewKit (session agentviewkit-20). It copied `Recordings/inter
 4. Unit tests: none needed unless you change code. The recording is made by running the stub (a manual diagnostic run of the script is allowed; do not run the IntegrationTests package).
 
 ## Acceptance Criteria
-- [ ] `make.py` records with the mxfp4 standard model and no drafter, by default.
-- [ ] The committed recording holds paused `agents` calls and the mxfp4 model.
-- [ ] The comment on this card answers the cwd question, with file:line.
+- [x] `make.py` records with the mxfp4 standard model and no drafter, by default.
+- [x] The committed recording holds paused `agents` calls and the mxfp4 model.
+- [x] The comment on this card answers the cwd question, with file:line.
 
 ## Workflow
 - #subagents

@@ -2,6 +2,7 @@ import Foundation
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
+import Testing
 
 /// A spawned `acp-agent-stub acp` with a connected client, one root session, and the prompt of
 /// that session in flight. The wire of every session of the tree comes in one stream.
@@ -53,11 +54,29 @@ struct NestedRootSession {
       subscription: subscription, prompt: prompt)
   }
 
-  /// Ends the client side: cancels the prompt of the root and closes the connection. The kill or
-  /// the orderly quit of the agent stays with the caller, because the tests end the process in
-  /// different ways.
+  /// Ends the client side: cancels the prompt of the root, closes the connection, and reads how the
+  /// prompt ended. The kill or the orderly quit of the agent stays with the caller, because the
+  /// tests end the process in different ways.
+  ///
+  /// The prompt may have returned its response, or the cancel here may have ended it
+  /// (`CancellationError`), or the end of the wire may have ended it (`ConnectionError.closed`:
+  /// the kill, the end of the agent, or the close here). Any other end is a failure of the root
+  /// that the trace does not show, so it is recorded as an issue of the test.
   func closeClientSide() async {
     prompt.cancel()
     await connection.close()
+    if case .failure(let error) = await prompt.result, !Self.isExpectedPromptEnd(error) {
+      Issue.record(error, "The prompt of the root session failed before the end of the test.")
+    }
+  }
+
+  /// Whether `error` is an end of the root prompt that the end of the test causes: the cancel of
+  /// the prompt task, or the close of the connection.
+  ///
+  /// - Parameter error: The error that the prompt threw.
+  /// - Returns: `true` for `CancellationError` and `ConnectionError.closed`. A peer error, a
+  ///   timeout and every other error give `false`.
+  static func isExpectedPromptEnd(_ error: any Error) -> Bool {
+    error is CancellationError || (error as? ConnectionError) == .closed
   }
 }
