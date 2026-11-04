@@ -109,12 +109,7 @@ import Testing
     /// - Parameter session: The session.
     /// - Returns: The position in the trace.
     func firstCompletion(on session: SessionId) -> Int? {
-      trace.firstIndex { event in
-        guard case .update(session, .toolCallUpdate(let call)) = event else {
-          return false
-        }
-        return call.status == .value(.completed)
-      }
+      firstCallUpdate(on: session) { $0 == .value(.completed) }
     }
 
     /// The position of the first in-progress or paused update of any call on the stream of
@@ -123,11 +118,24 @@ import Testing
     /// - Parameter session: The session.
     /// - Returns: The position in the trace.
     func firstOpenCall(on session: SessionId) -> Int? {
+      firstCallUpdate(on: session) { $0 == .value(.inProgress) || $0 == .value(.paused) }
+    }
+
+    /// The position of the first call update on the stream of `session` whose status satisfies
+    /// `matches`, or `nil`.
+    ///
+    /// - Parameters:
+    ///   - session: The session.
+    ///   - matches: Tells whether the status of a call update is the one wanted.
+    /// - Returns: The position in the trace.
+    private func firstCallUpdate(
+      on session: SessionId, where matches: (PatchField<FoundationModelsACP.ToolCallStatus>) -> Bool
+    ) -> Int? {
       trace.firstIndex { event in
         guard case .update(session, .toolCallUpdate(let call)) = event else {
           return false
         }
-        return call.status == .value(.inProgress) || call.status == .value(.paused)
+        return matches(call.status)
       }
     }
   }
@@ -266,7 +274,7 @@ import Testing
     let id = try #require(ULID(ulidString: session.rawValue))
     let directory = fixture.harness.agent.sessionDirectory
     var outcomes: [OperationOutcome] = []
-    for _ in 0..<journalPollLimit {
+    try await pollUntil(limit: journalPollLimit, interval: journalPollInterval) {
       let statuses = try await directory.runStatuses(of: id)
       outcomes = statuses.values.compactMap { status in
         if case .completed(let outcome) = status {
@@ -274,10 +282,7 @@ import Testing
         }
         return nil
       }
-      if isMet(outcomes) {
-        break
-      }
-      try await Task.sleep(for: journalPollInterval)
+      return isMet(outcomes)
     }
     return outcomes
   }

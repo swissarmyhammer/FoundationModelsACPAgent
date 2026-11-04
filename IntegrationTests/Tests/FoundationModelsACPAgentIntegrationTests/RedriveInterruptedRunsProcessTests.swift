@@ -68,16 +68,6 @@ struct RedriveInterruptedRunsProcessTests {
     """
   }
 
-  /// Writes the agent folder of the child in the project folder.
-  private static func writeChildAgent(in workspace: URL) throws {
-    let folder = workspace.appendingPathComponent(".agents/agents/\(childAgent)", isDirectory: true)
-    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-    let document =
-      "---\nname: \(childAgent)\ndescription: The helper test agent.\n---\n\nDo the task.\n"
-    try document.write(
-      to: folder.appendingPathComponent("AGENT.md"), atomically: true, encoding: .utf8)
-  }
-
   /// The environment of a spawned agent: the script, and the configuration home.
   private static func environment(script: String, configHome: URL, label: String) throws
     -> [String: String]
@@ -160,7 +150,7 @@ struct RedriveInterruptedRunsProcessTests {
   func theSecondProcessStartsTheChildAgainAndCompletesTheOriginalCall() async throws {
     let workspace = makeResolvedDirectory(label: "RedriveInterruptedRunsProcessTests-repo")
     let configHome = makeResolvedDirectory(label: "RedriveInterruptedRunsProcessTests-config")
-    try Self.writeChildAgent(in: workspace)
+    try TierThreeFixture.writeAgent(id: childAgent, in: workspace)
     let recording = try await Self.recordInterruptedRun(workspace: workspace, configHome: configHome)
 
     let trace = try await Self.resume(recording, workspace: workspace, configHome: configHome)

@@ -53,20 +53,10 @@ struct ScriptedStubProcessTests {
     """
   }
 
-  /// Writes the agent folder of the child in the project folder.
-  private static func writeChildAgent(in workspace: URL) throws {
-    let folder = workspace.appendingPathComponent(".agents/agents/\(childAgent)", isDirectory: true)
-    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-    let document =
-      "---\nname: \(childAgent)\ndescription: The helper test agent.\n---\n\nDo the task.\n"
-    try document.write(
-      to: folder.appendingPathComponent("AGENT.md"), atomically: true, encoding: .utf8)
-  }
-
   /// Runs `acp-agent-stub run --verbose <prompt>` over the script.
   private static func run(script text: String, label: String) async throws -> BuiltExecutableRun {
     let workspace = makeResolvedDirectory(label: "\(label)-repo")
-    try writeChildAgent(in: workspace)
+    try TierThreeFixture.writeAgent(id: childAgent, in: workspace)
     let file = try TierThreeFixture.writeStubScript(text, label: label)
     return try await BuiltExecutableRun.run(
       executableNamed: TierThreeFixture.stubAgentExecutableName,

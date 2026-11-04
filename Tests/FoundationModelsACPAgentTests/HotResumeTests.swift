@@ -198,27 +198,10 @@ import Testing
     tree.hold.release()
     let root = tree.rootId
     let updates = try await collector.wait(for: "the root ends its turn") { updates in
-      updates.contains { Self.endStopReason(of: root, in: [$0]) != nil }
+      ScriptedPromptFixture.idleStopReason(in: updates.filter { $0.sessionId == root }) != nil
     }
     _ = try await tree.prompt.value
-    return Self.endStopReason(of: root, in: updates)
-  }
-
-  /// The stop reason of the first `idle` state of a session that has one.
-  ///
-  /// - Parameters:
-  ///   - session: The session.
-  ///   - updates: The notifications.
-  /// - Returns: The stop reason, or `nil`.
-  private static func endStopReason(
-    of session: SessionId, in updates: [UpdateSessionNotification]
-  ) -> StopReason? {
-    updates.lazy.compactMap { notification -> StopReason? in
-      if notification.sessionId == session, case .stateUpdate(.idle(let idle)) = notification.update {
-        return idle.stopReason
-      }
-      return nil
-    }.first
+    return ScriptedPromptFixture.idleStopReason(in: updates.filter { $0.sessionId == root })
   }
 
   // MARK: - The work goes on
@@ -246,12 +229,8 @@ import Testing
 
     tree.hold.release()
     let updates = try await #require(second.collector).wait(for: "the child ends its turn") { updates in
-      updates.contains { notification in
-        if notification.sessionId == child, case .stateUpdate(.idle(let idle)) = notification.update
-        {
-          return idle.stopReason == .endTurn
-        }
-        return false
+      updates.filter { $0.sessionId == child }.contains { notification in
+        ScriptedPromptFixture.idleStopReason(in: [notification]) == .endTurn
       }
     }
 

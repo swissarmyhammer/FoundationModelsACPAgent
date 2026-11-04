@@ -65,6 +65,14 @@ import Testing
     #expect(failure.written(into: meta) == (try failure.inject(into: meta)))
   }
 
+  /// The reason reads back from the written `_meta`, for each object shape.
+  @Test(arguments: objectMetas)
+  func theReasonReadsBackFromAnObjectMeta(meta: FoundationModelsACP.JSONValue?) {
+    let failure = SAH.RestoreFailure(reason: Self.reason)
+
+    #expect(SAH.RestoreFailure.extract(from: failure.written(into: meta)) == failure)
+  }
+
   /// The reason reads back from the written `_meta`.
   @Test func theReasonReadsBack() {
     let failure = SAH.RestoreFailure(reason: Self.reason)

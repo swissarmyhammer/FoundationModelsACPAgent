@@ -251,10 +251,8 @@ import Testing
   /// - Throws: An issue when the ledger does not note the work in time.
   private static func startWork(of child: ActiveSession) async throws -> Task<Void, Never> {
     let work = Task { await child.stateLedger.workStarted(on: ULID()) }
-    var polls = 0
-    while await child.stateLedger.isIdle, polls < workPollLimit {
-      polls += 1
-      try await Task.sleep(for: workPollInterval)
+    try await pollUntil(limit: workPollLimit, interval: workPollInterval) {
+      await !child.stateLedger.isIdle
     }
     try #require(await !child.stateLedger.isIdle)
     return work
@@ -270,14 +268,10 @@ import Testing
   private static func backgroundList(
     becoming expected: [BackgroundWork], of session: ActiveSession
   ) async throws -> [BackgroundWork] {
-    var list = await session.stateLedger.backgroundList
-    var polls = 0
-    while list != expected, polls < workPollLimit {
-      polls += 1
-      try await Task.sleep(for: workPollInterval)
-      list = await session.stateLedger.backgroundList
+    try await pollUntil(limit: workPollLimit, interval: workPollInterval) {
+      await session.stateLedger.backgroundList == expected
     }
-    return list
+    return await session.stateLedger.backgroundList
   }
 
   // MARK: - With a replay

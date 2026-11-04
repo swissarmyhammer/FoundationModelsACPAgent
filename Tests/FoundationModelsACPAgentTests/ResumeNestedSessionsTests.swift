@@ -225,10 +225,8 @@ import Testing
   /// - Parameter session: The restored session.
   /// - Throws: An issue when the ledger stays busy for the whole wait.
   private static func waitUntilIdle(_ session: ActiveSession) async throws {
-    var polls = 0
-    while await !session.stateLedger.isIdle, polls < idlePollLimit {
-      polls += 1
-      try await Task.sleep(for: idlePollInterval)
+    try await pollUntil(limit: idlePollLimit, interval: idlePollInterval) {
+      await session.stateLedger.isIdle
     }
     try #require(await session.stateLedger.isIdle)
   }

@@ -56,7 +56,7 @@ import Testing
 
     await Self.perform(quit, on: working)
     working.hold.release()
-    _ = await working.promptTask.result
+    try await working.finishPrompt()
 
     #expect(try await working.agentsCallStatuses() == [.paused])
   }
@@ -69,7 +69,7 @@ import Testing
 
     await Self.perform(quit, on: working)
     working.hold.release()
-    _ = await working.promptTask.result
+    try await working.finishPrompt()
     let statuses = try await working.directory.runStatuses(of: working.rootID)
 
     #expect(Array(statuses.values) == [.orphaned], "\(statuses)")
@@ -82,7 +82,7 @@ import Testing
 
     await Self.perform(quit, on: working)
     working.hold.release()
-    _ = await working.promptTask.result
+    try await working.finishPrompt()
     let children = try await working.directory.recordedChildren(of: working.rootID)
 
     #expect(children.map(\.ended?.reason) == [nil])
