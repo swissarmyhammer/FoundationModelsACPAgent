@@ -39,8 +39,18 @@ import Testing
     /// The id of the root session in the Router.
     let rootID: ULID
 
+    /// The prompt of the root session. It ends when the test releases the hold.
+    let promptTask: Task<Void, any Error>
+
     /// The directory of the Router sessions of the agent.
     var directory: RouterSessionDirectory { fixture.harness.agent.sessionDirectory }
+
+    /// Waits for the end of the prompt of the root session. A failed prompt fails the test.
+    ///
+    /// - Throws: The error of the prompt.
+    func finishPrompt() async throws {
+      try await promptTask.value
+    }
   }
 
   // MARK: - Fixtures
@@ -66,8 +76,8 @@ import Testing
     let fixture = try await ScriptedPromptFixture.make(
       script: script, label: "\(label)-\(name)", workingDirectory: cwd)
     let root = fixture.sessionId
-    Task {
-      _ = try? await fixture.harness.connection.prompt(
+    let promptTask = Task {
+      _ = try await fixture.harness.connection.prompt(
         AgentClientHarness.makePromptRequest(sessionId: root, text: rootPrompt))
     }
     _ = try await fixture.collector.wait(for: "the first text of the child") { updates in
@@ -75,7 +85,8 @@ import Testing
         .contains(childStartedText)
     }
     let entry = try #require(await fixture.harness.agent.sessions[root])
-    return Working(fixture: fixture, hold: hold, rootID: entry.session.id)
+    return Working(
+      fixture: fixture, hold: hold, rootID: entry.session.id, promptTask: promptTask)
   }
 
   // MARK: - The shutdown
@@ -87,6 +98,7 @@ import Testing
 
     await working.fixture.harness.agent.shutdown()
     working.hold.release()
+    try await working.finishPrompt()
     let children = try await working.directory.recordedChildren(of: working.rootID)
 
     #expect(children.map(\.ended?.reason) == [nil])
@@ -99,6 +111,7 @@ import Testing
 
     await working.fixture.harness.agent.shutdown()
     working.hold.release()
+    try await working.finishPrompt()
     let statuses = try await working.directory.runStatuses(of: working.rootID)
 
     #expect(Array(statuses.values) == [.orphaned])
@@ -127,6 +140,7 @@ import Testing
     _ = try await working.fixture.harness.connection.closeSession(
       CloseSessionRequest(sessionId: working.fixture.sessionId))
     working.hold.release()
+    try await working.finishPrompt()
     let children = try await working.directory.recordedChildren(of: working.rootID)
 
     #expect(children.map(\.ended?.reason) == [.cancelled])

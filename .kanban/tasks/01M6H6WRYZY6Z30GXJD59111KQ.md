@@ -19,6 +19,31 @@ comments:
     evidence: 7 files changed (listed above); all 7 checkboxes checked; 38 filtered tests pass
     task: ^59111kq
   timestamp: 2026-11-04T02:51:37.802982+00:00
+- actor: claude-code
+  id: 01m6j7rn057vavxgf8af3vmme1
+  text: |-
+    ### review — findings
+    - evidence: 6 findings (6 confirmed, 2 refuted). Sources/FoundationModelsACPAgent/Agent/SessionLifecycle.swift:207 (2 findings), Sources/acp-agent/AcpCommand.swift:94, Sources/acp-agent/RunPrompt.swift:200, Tests/FoundationModelsACPAgentTests/OrderlyShutdownTests.swift:69, Tests/FoundationModelsACPAgentTests/OrderlyShutdownTests.swift:70
+    - scope: review sha HEAD~1..HEAD
+    - next: the implementer fixes each finding in the section "Review Findings (2026-11-03 20:53)". The task stays in review.
+  timestamp: 2026-11-04T02:56:13.829446+00:00
+- actor: claude-code
+  id: 01m6j7s3d5efbk1c4rrt982gsk
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 7 files, 6 of 6 items checked
+    - test: red — root 1576 tests, only the known blocker ShellSessionOwnerTests (card ^wd0cwz7) failed; IntegrationTests deterministic 38 passed
+    - commit: 7444132
+    - review: findings — 6 open: SessionLifecycle.swift:207 (2), AcpCommand.swift:94, RunPrompt.swift:200, OrderlyShutdownTests.swift:69, OrderlyShutdownTests.swift:70
+    - next: implement works the 6 open findings
+  timestamp: 2026-11-04T02:56:28.581088+00:00
+- actor: claude-code
+  id: 01m6j7tyb6pebz9h5ngeckfh3s
+  text: |-
+    ### implement — changed
+    - evidence: SessionLifecycle.swift (closeSessions(where:isShutdown:) now serves shutdown(); duplicate loop and drain deleted), ComposedAgent.swift (new shutdownAfterConnectionTeardown()), AcpCommand.swift and RunPrompt.swift (call it), OrderlyShutdownTests.swift (prompt Task handle stored in Working, awaited with try, no try?). 6 of 6 findings checked. Filtered tests: OrderlyShutdownTests, SessionLifecycleTests, ConnectionCloseTests, ResumeNestedSessionsTests: 25 tests passed.
+    - next: review
+  timestamp: 2026-11-04T02:57:28.934717+00:00
 position_column: doing
 position_ordinal: '8380'
 title: Orderly shutdown suspends the live sessions so working runs stay restorable
@@ -46,3 +71,20 @@ Do:
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #subagents
+
+## Review Findings (2026-11-03 20:53)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 6 file(s) reviewed, 5 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `README.md` — no validator matches this file
+
+- [x] `Sources/FoundationModelsACPAgent/Agent/SessionLifecycle.swift:207` `duplication/duplication` — The new shutdown() repeats the close loop and the hook drain of closeSessions(where:). Both loop over the open sessions, call tearDownSession on each one that is not closed, and then await hooks.dispatcher.drain(). A fix to one copy, such as a change to the close order or the drain, would not reach the other. Add an `isShutdown: Bool = false` parameter to closeSessions(where:) and pass it to tearDownSession. Then shutdown() becomes: sessionDirectory.suspendLiveSessions(); await closeSessions(where: { _ in true }, isShutdown: true); await settingsStore.stopWatching(). Delete the duplicated loop and drain from shutdown().
+- [x] `Sources/FoundationModelsACPAgent/Agent/SessionLifecycle.swift:207` `reuse/reuse` — `shutdown()` copies the loop of the existing private `closeSessions(where:)` (it closes each open session with `tearDownSession` and then drains the hook dispatcher). The copy exists only because `closeSessions` cannot pass `isShutdown: true` to `tearDownSession`. The duplicate loop will drift from the original, for example when the selection or drain rules change. Add an `isShutdown: Bool = false` parameter to `closeSessions(where:)` and pass it to `tearDownSession`. Then `shutdown()` becomes `sessionDirectory.suspendLiveSessions()`, then `await closeSessions(where: { _ in true }, isShutdown: true)`, then `await settingsStore.stopWatching()`. This keeps one loop and one drain.
+- [x] `Sources/acp-agent/AcpCommand.swift:94` `duplication/duplication` — The added call to composed.shutdown() repeats the teardown order that RunPrompt.swift already uses: waitForConnectionTeardown(), then shutdown(). The required order is now written in two places, and a later edit to one copy would not reach the other. Add one method on ComposedAgent, for example `closeAfterConnectionTeardown()`, that calls waitForConnectionTeardown() and then shutdown(). Call it from AcpCommand.swift:93-94 and from RunPrompt.swift:199-200, and delete both copies of the pair.
+- [x] `Sources/acp-agent/RunPrompt.swift:200` `duplication/duplication` — The added call to composed.shutdown() repeats the two-step teardown order that AcpCommand.swift already uses: waitForConnectionTeardown(), then shutdown(). The required order (wait for the connection teardown first, then shut down) is now written in two places. A later edit to one copy, such as calling shutdown() before the wait, would not reach the other. Add one method on ComposedAgent, for example `closeAfterConnectionTeardown()`, that calls waitForConnectionTeardown() and then shutdown(). Call it from RunPrompt.swift:199-200 and from AcpCommand.swift:93-94, and delete the two copies of the pair.
+- [x] `Tests/FoundationModelsACPAgentTests/OrderlyShutdownTests.swift:69` `swift/concurrency` — The helper starts a detached `Task { ... }` and does not store its handle. The prompt runs for the whole test, and nothing cancels or awaits it. The rule asks for stored Task handles that are cancelled at teardown, so a leaked prompt can outlive the fixture. Keep the handle in the `Working` value, for example `let promptTask: Task<Void, Never>`. Cancel it or await it in the test teardown after `hold.release()`. Or use `async let` if the fixture can await the prompt in structured form.
+- [x] `Tests/FoundationModelsACPAgentTests/OrderlyShutdownTests.swift:70` `test-integrity/no-test-cheating` — The root prompt is sent inside a Task with `try?`, which discards any error from `connection.prompt`. If the prompt fails, the test cannot show why. It only waits until its timeout, so the swallowed failure hides the real cause. Store the Task and await its result with `try await task.value`, or record the error and assert it is nil, so a failed prompt fails the test with its cause.

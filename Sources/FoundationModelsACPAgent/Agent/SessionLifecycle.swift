@@ -204,10 +204,7 @@ extension RoutedACPAgent {
   /// closes nothing and returns.
   public func shutdown() async {
     sessionDirectory.suspendLiveSessions()
-    for (sessionId, entry) in sessions where !entry.isClosed {
-      await tearDownSession(sessionId, entry: entry, isShutdown: true)
-    }
-    await hooks.dispatcher.drain()
+    await closeSessions(where: { _ in true }, isShutdown: true)
     await settingsStore.stopWatching()
   }
 
@@ -229,10 +226,15 @@ extension RoutedACPAgent {
   /// closes one, and then waits until the hook dispatcher delivered each
   /// post event. A session already closed is skipped.
   ///
-  /// - Parameter isSelected: Whether the session with this id is closed.
-  private func closeSessions(where isSelected: (SessionId) -> Bool) async {
+  /// - Parameters:
+  ///   - isSelected: Whether the session with this id is closed.
+  ///   - isShutdown: `true` for the shutdown of the process (``shutdown()``), passed to
+  ///     ``tearDownSession(_:entry:isShutdown:)``.
+  private func closeSessions(
+    where isSelected: (SessionId) -> Bool, isShutdown: Bool = false
+  ) async {
     for (sessionId, entry) in sessions where !entry.isClosed && isSelected(sessionId) {
-      await tearDownSession(sessionId, entry: entry)
+      await tearDownSession(sessionId, entry: entry, isShutdown: isShutdown)
     }
     await hooks.dispatcher.drain()
   }

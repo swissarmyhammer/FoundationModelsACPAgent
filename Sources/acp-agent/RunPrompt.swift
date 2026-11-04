@@ -196,8 +196,7 @@ enum RunPrompt {
     // its session (ACPA-5d), so the run closes the open sessions itself:
     // the process must not exit before that close wrote the history and
     // stopped the MCP servers.
-    await composed.waitForConnectionTeardown()
-    await composed.shutdown()
+    await composed.shutdownAfterConnectionTeardown()
     return try outcome.get()
   }
 

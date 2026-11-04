@@ -90,8 +90,7 @@ extension AcpAgentCommand {
         untilInboundEnd: { await transport.waitForInboundEnd() },
         closing: {
           await connection.close()
-          await composed.waitForConnectionTeardown()
-          await composed.shutdown()
+          await composed.shutdownAfterConnectionTeardown()
         },
         watchedBy: TerminationHandler.onSIGTERM)
     }

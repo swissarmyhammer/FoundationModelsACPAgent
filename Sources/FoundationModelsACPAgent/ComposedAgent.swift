@@ -278,6 +278,17 @@ public struct ComposedAgent: Sendable {
     await agent.shutdown()
   }
 
+  /// The end of the host process, in the one correct order: waits until the connections
+  /// are torn down (``waitForConnectionTeardown()``), and then runs the orderly shutdown
+  /// (``shutdown()``).
+  ///
+  /// `acp-agent acp` and `acp-agent run` call it when the process ends. The order matters:
+  /// the shutdown must find the sessions that the closed connections freed.
+  public func shutdownAfterConnectionTeardown() async {
+    await waitForConnectionTeardown()
+    await shutdown()
+  }
+
   /// Makes the router of one model path.
   ///
   /// Both paths take the recordings directory, because that directory is
