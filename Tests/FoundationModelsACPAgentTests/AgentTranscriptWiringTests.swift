@@ -65,7 +65,8 @@ import Testing
 
   /// Makes the probe read a session.
   private static func aim(_ probe: TranscriptProbe, at sessionId: SessionId) throws {
-    probe.target = try #require(ULID(ulidString: sessionId.rawValue))
+    let target = try #require(ULID(ulidString: sessionId.rawValue))
+    probe.target = target
   }
 
   // MARK: - session/new

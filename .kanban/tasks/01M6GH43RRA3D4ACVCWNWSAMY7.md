@@ -118,6 +118,24 @@ comments:
     evidence: 7 new files, 8 changed files (see the commit on wt-msg)
     task: ^nwsamy7
   timestamp: 2026-11-04T13:39:57.909140+00:00
+- actor: claude-code
+  id: 01m6ktf58vhsnkjd7wnzrgxkp4
+  text: |-
+    ### review — findings
+    - evidence: review sha e4566e8~1..e4566e8, 3 findings, 3 confirmed, 13 refuted, 21 attempted, 0 failed (first run had 1 failed task and was run again). Files: Agent/SubagentAnnouncement.swift:167, Agent/SubagentMessageProjector.swift:324, Tests/FoundationModelsACPAgentTests/SubagentMessageWireTests.swift:145.
+    - note: the finding at SubagentMessageWireTests.swift:145 matches the range e4566e8 only. Commit df9f934 already changed that test to use #require for both views. Check HEAD, then check the box.
+    - acceptance boxes: left open. The commit message and the card comment claim all four criteria, but the review is not clean, and the test file named in the card (SubagentMessageProjectorTests) was not run in this review.
+    - next: fix the two source findings, then run /review again.
+  timestamp: 2026-11-04T17:42:20.187241+00:00
+- actor: claude-code
+  id: 01m6kv266edzqa1nrn6684m2qh
+  text: |-
+    ### implement — changed
+    - evidence: commit befc2fe on wt-msgfix. (1) New private helper messageRoute(of:through:) in SubagentAnnouncement.swift holds the one completionToken unwrap; bindMessages and sendFinalReply both call it. (2) New shared BoundedTable (limit is a parameter) in Agent/BoundedTable.swift; MessageTexts is now a thin wrapper and the projector State uses it; the private Table copy is deleted. New BoundedTableTests (4 tests): RED was a compile error (type missing), then GREEN. (3) Finding 3 was already fixed at HEAD by df9f934: both final and incoming use #require, then the recipient id is compared to .value(incoming.messageId). I checked every == in the five message test files of e4566e8: no == between two optionals remains (each optional side meets a non-optional value). Box flipped.
+    - tests: BoundedTable + SubagentMessageProjector/Wire/Translation suites: 47 tests passed; ACPEventTranslator, SubagentAnnouncer*, SubagentCancel, SubagentSessionsReplay, SubagentSettleWire: 140 tests passed.
+    - changed files: Sources/FoundationModelsACPAgent/Agent/BoundedTable.swift (new), ACPEventTranslator+Messages.swift, SubagentAnnouncement.swift, SubagentMessageProjector.swift, Tests/FoundationModelsACPAgentTests/BoundedTableTests.swift (new).
+    - next: /review
+  timestamp: 2026-11-04T17:52:43.726246+00:00
 depends_on:
 - 01M6GH30709S58BK3AQ1VMBAM7
 position_column: review
@@ -144,3 +162,11 @@ The `agents` tool has `send agent` (caller to run) and `send caller` (run to cal
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #subagents
+
+## Review Findings (2026-11-04 11:30)
+
+> Scope: `review sha e4566e8~1..e4566e8` — reviewed the diffs only — lines this change added or modified. 15 file(s) reviewed, 0 not reviewed.
+
+- [x] `Sources/FoundationModelsACPAgent/Agent/SubagentAnnouncement.swift:167` `duplication/duplication` — The guard that unwraps `report.completionToken` and returns early is copied verbatim in `bindMessages` and `sendFinalReply`. Both copies are marked `+` in this change, so the same unwrap can drift between the two. Move the unwrap into one helper that returns the token and the child and caller, or give `SubagentReport` a small accessor that returns the token only when present. Call it from both functions.
+- [x] `Sources/FoundationModelsACPAgent/Agent/SubagentMessageProjector.swift:324` `reuse/reuse` — The new generic `Table<Value>` reimplements a bounded, insertion-ordered, string-keyed table that already exists as `MessageTexts`. Both keep a `values` dictionary and an `order` array, evict the oldest entry at a limit, and remove by key. Two copies of this logic will drift apart. Move one generic bounded keyed table into a shared file, with the limit as a parameter. Make `MessageTexts` and this `Table` both use it, or make `MessageTexts` a thin wrapper over it. Keep one eviction and removal implementation.
+- [x] `Tests/FoundationModelsACPAgentTests/SubagentMessageWireTests.swift:145` `test-integrity/no-test-cheating` — The assertion passes when both the child's final outgoing view and the caller's final incoming view are missing. Both sides are nil, so nil == nil holds. The test does not prove that the final message was delivered. Use `#require` to unwrap `final` and `incoming` before the comparison, then assert the recipient id equals `.value(incoming.messageId)`.

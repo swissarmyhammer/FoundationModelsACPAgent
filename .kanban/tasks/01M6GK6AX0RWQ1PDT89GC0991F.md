@@ -135,12 +135,19 @@ comments:
     - tests: `swift build --build-tests` ok; `swift test --filter` Redrive, ResumeChildSync, ResumeNested: 42 tests passed. IntegrationTests `swift build --build-tests` ok, not run (CI only).
     - next: review
   timestamp: 2026-11-04T17:38:17.355235+00:00
+- actor: claude-code
+  id: 01m6ktmsg1sh7asew37v8ke9c1
+  text: |-
+    ### review — clean
+    - evidence: review sha 2687686~1..ca872e3, 14 files reviewed, findings 0, confirmed 0, refuted 6, attempted 7, failed 0, skipped 0. All prior findings are checked. The SessionResumeOpenCalls do/catch with logger.error and no assertionFailure raised no finding, so no rule conflict arose.
+    - next: none. Task moved to done.
+  timestamp: 2026-11-04T17:45:24.737350+00:00
 depends_on:
 - 01M6GJPPXWKQJ9E6SK5WD0CWZ7
 - 01M6GM17VHZSWD4G2J27WTA3JT
 - 01M6KGEQVH2T73SR32CD6VZDKG
-position_column: doing
-position_ordinal: '8880'
+position_column: done
+position_ordinal: ffffae80
 title: Re-drive interrupted nested runs after a cold resume, children first, completing the original agent tool call
 ---
 ## What

@@ -16,8 +16,15 @@ comments:
     - boxes: "session/close and session/delete still cancel" ticked (OrderlyShutdownTests aUserCloseCancelsTheAgentsCallOfTheRoot, aUserCloseMarksTheRunEndedAsCancelled pass). Others open.
     - next: /review, then CI integration run.
   timestamp: 2026-11-04T17:31:13.595436+00:00
-position_column: doing
-position_ordinal: '8780'
+- actor: claude-code
+  id: 01m6ktq2hghsmfe39b2g462cjg
+  text: |-
+    ### review — clean
+    - evidence: review sha 8715d82~1..8715d82, 4 files reviewed, findings 0, confirmed 0, refuted 0, attempted 7, failed 0, skipped 0.
+    - next: Task moved to done by order of the user. These boxes stay open on purpose: the three acceptance boxes for stdin close, SIGTERM, and quit with no open root prompt, and the test box "Integration tests with real binaries for the three quits". Reason: CI runs the integration tests; the user ordered that integration tests are not run in development. The box "Run the full swift test" also stays open: only the touched suites ran (30 tests in 7 suites).
+  timestamp: 2026-11-04T17:46:39.536774+00:00
+position_column: done
+position_ordinal: ffffaf80
 title: 'Process quit (stdin close or SIGTERM) with an open root prompt cancels the prompt and the child: pause them instead'
 ---
 ## What
