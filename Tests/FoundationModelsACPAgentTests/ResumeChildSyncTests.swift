@@ -494,6 +494,11 @@ import Testing
 
   // MARK: - A child that does not restore
 
+  /// The reason that the restore gives for a child whose agent definition is gone: the text of
+  /// the restore error `unknownAgent`.
+  private static let missingChildAgentReason = String(
+    describing: AgentRunRestoreError.unknownAgent(ResumeNestedSessionsTests.childAgent))
+
   /// A child that does not restore is announced after the response with no state, no
   /// capabilities, and the reason. The root still resumes.
   @Test(arguments: [true, false])
@@ -506,6 +511,7 @@ import Testing
     #expect(announced.state == .cleared)
     #expect(announced.capabilities == .cleared)
     #expect(failure?.reason.isEmpty == false)
+    #expect(failure?.reason == Self.missingChildAgentReason)
     #expect(await wire.fixture.harness.agent.sessions[wire.recording.root] != nil)
     await wire.fixture.close()
   }

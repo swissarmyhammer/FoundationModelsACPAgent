@@ -117,12 +117,29 @@ comments:
     - files: Sources/FoundationModelsACPAgent/Agent/SessionResumeChildSync.swift, Tests/FoundationModelsACPAgentTestSupport/WireTraceReading.swift, Tests/FoundationModelsACPAgentTests/ResumeChildSyncTests.swift, Tests/FoundationModelsACPAgentTests/SubagentSessionsReplayTests.swift, Tests/FoundationModelsACPAgentTests/RestoreFailureMetaTests.swift (new)
     - next: /review
   timestamp: 2026-11-04T15:17:10.393545+00:00
+- actor: claude-code
+  id: 01m6kjfnrydpt4v81n7atn70zd
+  text: |-
+    ### review — findings
+    - evidence: review sha 900e1e8~1..91b222b, 1 finding (1 confirmed, 2 refuted), run complete: Tests/FoundationModelsACPAgentTests/ResumeChildSyncTests.swift:508
+    - next: assert the exact restore failure reason in the test.
+  timestamp: 2026-11-04T15:22:48.478545+00:00
+- actor: claude-code
+  id: 01m6kjqj9ep894zhky1f47wqtm
+  text: |-
+    ### implement — changed
+    - finding ResumeChildSyncTests.swift:508 (test-integrity/no-test-cheating): the test checked only that the reason is not empty. Now it also asserts the exact reason: `String(describing: AgentRunRestoreError.unknownAgent("worker"))`, the text that the restore gives for a missing child agent (named constant `missingChildAgentReason`). The non-empty check stays in addition. No production change.
+    - same cause in the whole file: this was the only non-empty-only reason check; the descendant test already asserts `FailedChild.ancestorReason` exactly.
+    - evidence: `swift test --filter ResumeChildSyncTests` 20 tests passed; full `swift test` 1759 tests in 192 suites passed, 1 known issue (HarnessSmokeTests, intentional). Only build message: "missing creator for mutated node" for the mlx bundle (build system, not code).
+    - files: Tests/FoundationModelsACPAgentTests/ResumeChildSyncTests.swift, .kanban/tasks/01M6GM17VHZSWD4G2J27WTA3JT.md (box flipped)
+    - next: /review. Task stays in doing.
+  timestamp: 2026-11-04T15:27:07.054365+00:00
 depends_on:
 - 01M6GM0N9BFK37GGBWPAG9VE1X
 - 01M6GH30709S58BK3AQ1VMBAM7
 - 01M6GH3ZHE52GHWAZ53AWNKJ0K
-position_column: doing
-position_ordinal: '8480'
+position_column: review
+position_ordinal: '8280'
 title: Resume announces the children and sends their current snapshots after the response, with or without replayFrom
 ---
 ## What
@@ -189,3 +206,12 @@ True conflict between two rules. A person must correct a rule and restart the wo
 - The first finding of the review of 2026-11-04 08:54 (`completeness/public-output-contract`, `SessionResumeChildSync.swift:112`) requires removal of the same `assertionFailure`.
 - Both rules cannot be correct for the same line. If the implementer obeys one, the next review reports the other.
 - The second finding of the review of 2026-11-04 08:54 (`SubagentSessionsReplayTests.swift:67`) does not conflict. It stays open for the implementer.
+
+## Review Findings (2026-11-04 09:17)
+
+> Scope: `review sha 900e1e8~1..91b222b` — reviewed the diffs only — lines this change added or modified. 9 file(s) reviewed, 20 not reviewed.
+
+> 20 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 20 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTests/ResumeChildSyncTests.swift:508` `test-integrity/no-test-cheating` — The test is named for the announced reason, but its only check on the reason is that it is not empty. Any non-empty string passes, so a wrong reason would not fail the test. Assert the exact reason the restore path produces for a missing child agent, such as the `SAH.RestoreFailure` value from `FailedChild`, or compare it to the reason recorded in the failed-child list. Keep the non-empty check only in addition to an exact check.
