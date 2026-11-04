@@ -54,10 +54,17 @@ comments:
     - evidence: Tests/FoundationModelsACPAgentTests/SessionCapabilityTests.swift. Finding 1 (aRefusedCloseLeavesTheChildOpen) and finding 2 (aRefusedDeleteLeavesTheEntryOfTheChild) fixed: each test keeps the refusal result and asserts Self.isRefusal for sessionClose / sessionDelete, then keeps the second check. No other test in the file discards a refusal result. swift format run. `swift test --filter SessionCapabilityTests`: 15 tests passed.
     - next: review
   timestamp: 2026-11-04T02:38:02.306965+00:00
+- actor: claude-code
+  id: 01m6j6sbw4167tdq4hdt4y675z
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD. Counts: 0 findings, 0 confirmed, 0 refuted. Both prior items are fixed in SessionCapabilityTests.swift: aRefusedCloseLeavesTheChildOpen and aRefusedDeleteLeavesTheEntryOfTheChild now keep the refusal result and assert Self.isRefusal. Every prior item is checked.
+    - next: the task moves to done. The description was not changed (append only).
+  timestamp: 2026-11-04T02:39:08.676284+00:00
 depends_on:
 - 01M6GH2K0VV6RWV5R6SN3HB9SV
-position_column: doing
-position_ordinal: '8380'
+position_column: done
+position_ordinal: ffff9f80
 title: 'Per-session capabilities: a child allows only what it advertises; refuse every other client mutation of a child'
 ---
 ## What

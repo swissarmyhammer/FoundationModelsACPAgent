@@ -8,8 +8,15 @@ comments:
   id: 01m6hd4zakx0rh8920fpm76kyk
   text: 'Landed on origin/main as commit 753dd02. Root tests: 136 passed. Integration ScriptedStubProcessTests: 2 passed.'
   timestamp: 2026-11-03T19:11:06.067767+00:00
-position_column: todo
-position_ordinal: '9180'
+- actor: claude-code
+  id: 01m6j6v9v48hzsjcc4jqaay24e
+  text: |-
+    ### implement — no-change
+    - evidence: All items verified against the code from commit 753dd02 and later commits. ScriptedStubModelTests: 26 pass (swift test --filter ScriptedStubModelTests). IntegrationTests ScriptedStubProcessTests: 2 pass (root calls the agents tool; bad script stops the run with an error). The stub binary acp-agent-stub reads ACP_AGENT_STUB_SCRIPT (ScriptedStubScript, ScriptedPassStep, ScriptedPlaybook: one implementation). All 8 checkboxes set in the .md file. No file was changed in the source.
+    - next: /review
+  timestamp: 2026-11-04T02:40:12.132961+00:00
+position_column: doing
+position_ordinal: '8380'
 title: 'Scripted stub model for the spawned acp-agent: ACP_AGENT_STUB_SCRIPT'
 ---
 ## What
@@ -25,16 +32,16 @@ DESIGN (decided by the coordinator, so the client can write its test now):
 - Move or share the scripted pass machinery (`ScriptedPassStep`) so the in-process test support and the stub path use one implementation; no copy. One code path.
 
 ## Acceptance Criteria
-- [ ] With `ACP_AGENT_STUB_SCRIPT` set to a file of the format above, a spawned `acp-agent` runs a root session whose first pass calls the `agents` tool; the child session runs its own scripted passes, and the grandchild too.
-- [ ] A `gate` step holds the pass until the file exists or the pipe gets a byte, and a process kill during the gate leaves the run interrupted.
-- [ ] A session that matches no entry echoes as before; with the variable unset nothing changes.
-- [ ] A bad file (not JSON, unknown step) stops the stub path with a clear error on stderr, never a silent echo.
-- [ ] One implementation of the scripted pass steps is used by the in-process tests and the stub path.
+- [x] With `ACP_AGENT_STUB_SCRIPT` set to a file of the format above, a spawned `acp-agent` runs a root session whose first pass calls the `agents` tool; the child session runs its own scripted passes, and the grandchild too.
+- [x] A `gate` step holds the pass until the file exists or the pipe gets a byte, and a process kill during the gate leaves the run interrupted.
+- [x] A session that matches no entry echoes as before; with the variable unset nothing changes.
+- [x] A bad file (not JSON, unknown step) stops the stub path with a clear error on stderr, never a silent echo.
+- [x] One implementation of the scripted pass steps is used by the in-process tests and the stub path.
 
 ## Tests
-- [ ] `Tests/FoundationModelsACPAgentTests/ScriptedStubModelTests.swift`: the parse of the file (each step, errors), the match by first prompt, passes in order, the gate.
-- [ ] An IntegrationTests test that spawns the real binary with a script (root calls the `agents` tool, child answers) and checks the final text and the nested tool call.
-- [ ] Run `swift test --filter ScriptedStubModelTests`. All pass.
+- [x] `Tests/FoundationModelsACPAgentTests/ScriptedStubModelTests.swift`: the parse of the file (each step, errors), the match by first prompt, passes in order, the gate.
+- [x] An IntegrationTests test that spawns the real binary with a script (root calls the `agents` tool, child answers) and checks the final text and the nested tool call.
+- [x] Run `swift test --filter ScriptedStubModelTests`. All pass.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #subagents
