@@ -68,15 +68,6 @@ struct RedriveInterruptedRunsProcessTests {
     """
   }
 
-  /// The environment of a spawned agent: the script, and the configuration home.
-  private static func environment(script: String, configHome: URL, label: String) throws
-    -> [String: String]
-  {
-    let file = try TierThreeFixture.writeStubScript(script, label: label)
-    return try TierThreeFixture.stubScriptEnvironment(file: file)
-      .merging([TierThreeFixture.configHomeVariable: configHome.path]) { _, home in home }
-  }
-
   /// What the first process recorded.
   private struct Recording {
     /// The root session.
@@ -102,24 +93,15 @@ struct RedriveInterruptedRunsProcessTests {
   {
     let label = "RedriveInterruptedRunsProcessTests-first"
     let gate = makeResolvedDirectory(label: "\(label)-gate").appendingPathComponent("never")
-    let agent = try SpawnedACPAgent.start(
+    let session = try await NestedRootSession.start(
       workspace: workspace,
-      environment: try environment(
-        script: firstScript(gate: gate), configHome: configHome, label: label))
-    let model = await ConnectionModel()
-    let connection = await model.connect(over: agent.transport)
-    _ = try await model.initialize(AgentClientHarness.makeInitializeRequest())
-    let session = try await model.newSession(
-      NewSessionRequest(cwd: AbsolutePath(rawValue: workspace.path)))
-    let root = session.sessionId
-    let events = connection.subscribeToAllSessions().events
-    let prompt = Task {
-      try await connection.prompt(
-        AgentClientHarness.makePromptRequest(sessionId: root, text: rootPrompt))
-    }
+      environment: try NestedAgentFixture.environment(
+        script: firstScript(gate: gate), configHome: configHome, label: label),
+      prompt: rootPrompt)
+    let root = session.root
     var child: SessionId?
     var call: ToolCallId?
-    for await sequenced in events {
+    for await sequenced in session.subscription.events {
       guard case .update(let stream, let update) = WireTraceEvent(sequenced) else {
         continue
       }
@@ -135,9 +117,9 @@ struct RedriveInterruptedRunsProcessTests {
     }
     // A kill leaves the runs open in the recording. A close of the wire would cancel the open prompt
     // of the root, and with it the child, and a cancelled child is a finished one.
-    _ = try await agent.killAndWait()
-    prompt.cancel()
-    await connection.close()
+    _ = try await session.agent.killAndWait()
+    session.prompt.cancel()
+    await session.connection.close()
     return Recording(
       root: root, child: try #require(child), call: try #require(call))
   }
@@ -184,7 +166,8 @@ struct RedriveInterruptedRunsProcessTests {
     let label = "RedriveInterruptedRunsProcessTests-second"
     let agent = try SpawnedACPAgent.start(
       workspace: workspace,
-      environment: try environment(script: secondScript, configHome: configHome, label: label))
+      environment: try NestedAgentFixture.environment(
+        script: secondScript, configHome: configHome, label: label))
     let model = await ConnectionModel()
     let connection = await model.connect(over: agent.transport)
     _ = try await model.initialize(AgentClientHarness.makeInitializeRequest())
@@ -202,21 +185,5 @@ struct RedriveInterruptedRunsProcessTests {
     await connection.close()
     _ = try await agent.closeStandardInputAndWait()
     return trace
-  }
-}
-
-extension WireTraceEvent {
-  /// Whether this event is a `tool_call_update` of the call `id` with the status `completed` on
-  /// the stream of `session`. A call that ended as `lost` has another status.
-  ///
-  /// - Parameters:
-  ///   - id: The id of the call.
-  ///   - session: The session.
-  /// - Returns: `true` for the completed call on that stream.
-  fileprivate func isCompletedCall(_ id: ToolCallId, on session: SessionId) -> Bool {
-    if case .update(let stream, .toolCallUpdate(let call)) = self {
-      return stream == session && call.toolCallId == id && call.status == .value(.completed)
-    }
-    return false
   }
 }

@@ -330,23 +330,180 @@ The sandbox bounds writing and deleting only. Reads are free and the network is 
 
 ## Shutdown and restart
 
-The agent leaves the working agent runs restorable when the process ends in an orderly way. The
-order at a shutdown (the end of the input, `SIGTERM`, or the end of `acp-agent run`) is:
+The agent leaves the working agent runs restorable when the process ends in an orderly way. An
+orderly shutdown pauses the work. It does not cancel the work. The shutdown happens at the end of
+the input, at `SIGTERM`, and at the end of `acp-agent run`. The order is:
 
 1. `RouterSessionDirectory.suspendLiveSessions()`. After this, the journal of each session
    refuses every terminal event, so a run that works stays an orphan in the journal of its
    caller.
-2. The prompts of each session are cancelled, and `AgentRunner.stop()` stops the agent runs. A
-   stop marks no run as ended and posts no result.
-3. Each session closes, the history is written, and the MCP servers stop.
+2. Each tool call that runs gets the status `paused`, in the session and in each session nested
+   in it. A `paused` call gets no final status, neither on the wire nor in the history. Each
+   open prompt ends with the stop reason `_interrupted`, and no call gets the status
+   `cancelled`.
+3. `AgentRunner.stop()` stops the agent runs. A stop marks no run as ended and posts no result.
+4. Each session closes, the parent before the child. The history is written, and the MCP
+   servers stop.
 
 The shutdown never calls `cancelRuns(caller:)`. It would mark each run as ended, and nothing
-would be restored.
+would be restored. `acp-agent acp` and `acp-agent run` run the shutdown first, and then wait
+until the connections are torn down. The reverse order is wrong: the teardown of a connection
+waits for its open prompts, and a prompt that waits for a child can end only after the run
+grace. The child would then be complete, and not restorable.
 
 A user `session/close` is not a shutdown. It cancels the work with `cancelRuns(caller:)`, and
 each run of the session is marked as ended with the reason cancelled. A connection that closes
 while the process lives is not a shutdown either: the sessions stay active, and nothing is
 suspended.
+
+The history of a `paused` call has no final status. The next `session/resume` reads this as an
+interrupted call, and restores the child that the call started (see
+[Sub-agent sessions](#sub-agent-sessions)).
+
+## Sub-agent sessions
+
+A sub-agent is an ACP child session. The `agents` tool starts an agent run, and the agent shows
+the run to the client as a session with its own `sessionId`. A run can start runs of its own.
+The sessions then make a tree. The root of the tree is the session that the client made with
+`session/new`. A child session is the same kind of session as a root session. It has a parent
+link and a set of permitted methods. No code path is special for a child.
+
+### The sessions and their ids
+
+- The id of a child session is the id of its run. It is the ULID of the Router session of the
+  run. The id is the same after a restore, also in the next process.
+- No client request makes a child session. `session/new` makes roots only.
+- The agent announces a child with a `subagent_update` on the stream of its parent. The
+  announcement comes before any message that uses the id of the child. It has the agent name
+  as `title`, the agent description, the `capabilities` and the `state`. A run of a run is
+  announced on the stream of its parent run, after that parent.
+- Each session sends its own events under its own id: text, tool calls, `state_update` and the
+  announcements of its own children. The `state_update` of a child is `running` while its run
+  works, and `idle` when it ends.
+- The final `tool_call_update` of an `agents` call comes after the last update of its child and
+  after the final `idle` of that child.
+- `session/list` shows root sessions only. A child has its own recording, and the list leaves it
+  out.
+- A client that reads all sessions in one stream (`subscribeToAllSessions()` of the client
+  connection) sees the wire order. `SubagentWireTraceValidator` of FoundationModelsACP checks a
+  recorded trace against the rules. The suites `SubagentSessionsTests` (real processes) and
+  `SubagentSessionsReplayTests` (in process) use it.
+
+### What a client can do with a session
+
+Each session has a set of permitted methods. A root session permits every method. A child
+session permits only the methods that its `subagent_update` advertises in `capabilities`.
+The agent advertises `cancel` only. A method that the set does not name is refused with an
+invalid params error. The error `data` holds the session id, the method and the reason. The
+handlers of `session/prompt`, `session/close`, `session/delete`, `session/resume` and
+`session/set_config_option` check the set. A `session/cancel` for a session that does not
+permit it is ignored.
+
+### Cancel and close
+
+- `session/cancel` on the id of a child cancels the foreground work of that child only: its
+  model work, its queued mail, and the runs that it waits for inline. The client sees `idle`
+  with the stop reason `cancelled` for the child, and for each run that it waited for. The
+  parent and the sibling sessions go on.
+- `session/cancel` on a parent stops the foreground work of the parent. A child that the
+  prompt waits for inline is cancelled. A child that the `background` list names goes on.
+- `session/close` on a root session cancels all the runs below it, nested ones too. Each
+  working sub-agent sends `idle` with the stop reason `cancelled`, and the open `agents` call
+  of the root gets the final status `cancelled`. `session/close` on a child is refused.
+
+### Messages between sessions
+
+The agent shows a message between a caller and a child as `session_message` updates. A message
+has two views. The outgoing view is in the transcript of the sender. The incoming view is in the
+transcript of the receiver. Each view has its own `messageId`. The outgoing view names the
+incoming view in `recipientMessageId` and `recipientSessionId`. The incoming view names the
+outgoing view in `senderMessageId` and `senderSessionId`. Both ids come from one key, so the
+same message has the same two ids after a restore. Three routes make messages:
+
+- The mail that the `agents` tool sends with `send agent` and `send caller`.
+- A message that a run posts to its caller.
+- The final reply of a run. A run that failed or was cancelled has no reply, so it has no
+  outgoing view.
+
+### Cold resume
+
+A cold resume is a `session/resume` of a root session that is not live in this process. This
+is the case after a restart of the process.
+
+1. The agent restores the root session. It then restores each child whose `agents` call has no
+   final status in the history. These children are the interrupted runs. A shutdown of the
+   process leaves them like this, because it pauses the calls and does not cancel them. The
+   agent builds the tools and the instructions of a restored child from the current agent
+   definition. A child whose call has a final status is finished. The agent does not restore
+   it, but a replay still sends its history.
+2. With `replayFrom: start`, the agent replays the history of the tree before the response. The
+   announcements go first, the parent before the child. Then each session sends its history
+   under its own id. A replayed announcement has no `capabilities`. A replay sends no
+   `state_update` of a child and no request to the client.
+3. The agent sends the current `state_update` of the root with its `background` list, the
+   `session_info_update`, and then the response.
+4. After the response, the agent sends the current snapshot of each child, the parent before
+   the child: a `subagent_update` with the state, the `capabilities` and the working
+   directory, and then the `state_update` of the child. A restored child is `idle` in its
+   snapshot. A child that did not restore gets one `subagent_update` with no state, no
+   capabilities, and the reason in `_meta.sah.restoreFailure`. The same holds for its
+   descendants.
+5. After the snapshots, the agent starts the restored runs again (the re-drive), the children
+   before their callers. Each run gets a first message that says the process stopped while it
+   worked. The end of a re-driven child completes the original `agents` call of its caller.
+   The agent starts nothing when the root closed, or lost its connection, since the resume.
+   A child that did not restore has no run to start. Its original call already ended with the
+   status `lost`.
+
+The response is the freshness boundary. All history comes before it. All current state of the
+children comes after it. A snapshot of a child is the first update of that child after the
+response.
+
+### Hot resume
+
+A hot resume is a `session/resume` of a root session that is live in this process. The new
+connection takes over the whole live tree, the root and the sessions nested in it, and the work
+goes on. Nothing is torn down: the open prompts stay open, the running sub-agent runs keep
+running, and the Router sessions stay as they are. The order is:
+
+1. The agent takes the session for the new connection. A `userDevice` connection takes each
+   session. An `external` connection takes only a session that has no owner. Otherwise the
+   request fails with `SESSION_HAS_OWNER`, and the owner does not change.
+2. The agent withdraws the open questions of the tree from the old connection.
+3. The agent replays the tree (with `replayFrom: start`), sends the current state, and sends
+   the response.
+4. After the response, the agent sends the current snapshot of each child, and asks the
+   withdrawn questions again on the new owner. A question goes out after the snapshot of its
+   child.
+
+### The stub script in tests
+
+The test-only product `acp-agent-stub` is the command tree of `acp-agent` over a stub model. The
+environment variable `ACP_AGENT_STUB_SCRIPT` names a JSON file that tells the stub model what
+each session says and calls:
+
+```json
+{ "sessions": [
+    { "match": { "promptContains": "<text>" },
+      "passes": [ [ <step>, ... ], [ <step>, ... ] ] } ] }
+```
+
+- The first prompt of a session chooses its entry: the first entry whose `promptContains` text
+  is in the prompt. Each session plays its own copy of the passes.
+- A pass is one model call. The passes play in order. After the last pass, and for a prompt that
+  no entry matches, each call echoes the prompt.
+- A step has one key: `text` (a text delta), `reasoning`, `toolCall` (`name` and `arguments`),
+  `gate` (a path: the pass waits until a file exists there, or until one byte can be read
+  from the named pipe there; a stop of the run ends the wait while the file is missing) and
+  `elicit` (a form question to the user; the session needs the `runCode` tool).
+- A file that is not valid stops the agent with an error that names the place. It never
+  becomes a silent echo.
+
+To start a nested agent, a pass calls the `agents` tool:
+`{"toolCall":{"name":"agents","arguments":{"op":"start agent","name":"<agent>","prompt":"<text>"}}}`.
+The project folder must hold `.agents/agents/<agent>/AGENT.md`. An agent that starts agents of its
+own needs the line `tools: agents` in its front matter. `SubagentSessionsTests` in
+`IntegrationTests` plays a chain of three sessions this way.
 
 ## Settings folders
 
@@ -447,9 +604,10 @@ code gives the local detail.
   the package name.
 - **One ACP session is one root Router session.** The ACP `sessionId` is the
   ULID of the root Router session. There is no mapping table, because a table
-  can drift and a resume then restores the wrong conversation. A fork or a
-  sub-agent is never an ACP session: `session/list` does not show it, and it
-  does not accept `session/prompt`.
+  can drift and a resume then restores the wrong conversation. A fork is
+  never an ACP session. A sub-agent is an ACP child session of its parent
+  (see [Sub-agent sessions](#sub-agent-sessions)): `session/list` does not
+  show it, and it does not accept `session/prompt`.
 - **An agent run is announced with `subagent_update`.** The agent sends one
   `subagent_update` on the parent session before any message that uses the id
   of the child. The id of the child is the id of its run. The update has the
