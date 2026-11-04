@@ -19,6 +19,32 @@ struct RegisteredRecordingRoots: Sendable {
     /// The settings of one registered project cannot be read. The
     /// resolution gives no root for that project.
     case projectUnreadable(project: URL, error: any Error)
+
+    /// The error that the resolution met.
+    var error: any Error {
+      switch self {
+      case .registryUnreadable(let error), .projectUnreadable(_, let error):
+        return error
+      }
+    }
+
+    /// The fixed message of the log record of this failure. It holds no path, because a path can
+    /// hold content.
+    var logMessage: String {
+      switch self {
+      case .registryUnreadable:
+        return "The project store cannot be read. No registered project gives a recording root."
+      case .projectUnreadable:
+        return
+          "The settings of a registered project cannot be read. That project gives no recording root."
+      }
+    }
+
+    /// Writes one `warning` record: the fixed message and the type of the error.
+    func log() {
+      ACPAgentTelemetry.logger(.transcripts).warning(
+        "\(logMessage)", metadata: ACPAgentTelemetry.errorMetadata(error))
+    }
   }
 
   /// The resolved recording roots, one for each registered project whose

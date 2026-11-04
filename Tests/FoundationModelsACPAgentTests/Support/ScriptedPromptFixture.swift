@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModels
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
@@ -156,6 +157,8 @@ struct ScriptedPromptFixture {
   ///   - secretStore: The store that gives the value of each secret
   ///     reference of the configuration. The default is an empty
   ///     in-memory store.
+  ///   - hostTools: The tools that the agent mounts in each session after
+  ///     its own tools, registered before `session/new`.
   /// - Returns: The fixture.
   /// - Throws: Whatever the construction or the handshake throws.
   static func make(
@@ -173,7 +176,8 @@ struct ScriptedPromptFixture {
     mailOnlyAnswerLimit: Int? = nil,
     recorder: PromptRecorder? = nil,
     hookVisitors: [any HookVisitor] = [],
-    secretStore: any SecretStore = InMemorySecretStore()
+    secretStore: any SecretStore = InMemorySecretStore(),
+    hostTools: [any FoundationModels.Tool] = []
   ) async throws -> ScriptedPromptFixture {
     try await make(
       loader: makeScriptedModelLoader(script: script, recorder: recorder),
@@ -189,7 +193,8 @@ struct ScriptedPromptFixture {
       runClock: runClock,
       mailOnlyAnswerLimit: mailOnlyAnswerLimit,
       hookVisitors: hookVisitors,
-      secretStore: secretStore)
+      secretStore: secretStore,
+      hostTools: hostTools)
   }
 
   /// Wires an agent over `loader`, completes `initialize`, and opens
@@ -233,6 +238,8 @@ struct ScriptedPromptFixture {
   ///   - secretStore: The store that gives the value of each secret
   ///     reference of the configuration. The default is an empty
   ///     in-memory store.
+  ///   - hostTools: The tools that the agent mounts in each session after
+  ///     its own tools, registered before `session/new`.
   /// - Returns: The fixture.
   /// - Throws: Whatever the construction or the handshake throws.
   static func make(
@@ -250,7 +257,8 @@ struct ScriptedPromptFixture {
     runClock: (any RunClock)? = nil,
     mailOnlyAnswerLimit: Int? = nil,
     hookVisitors: [any HookVisitor] = [],
-    secretStore: any SecretStore = InMemorySecretStore()
+    secretStore: any SecretStore = InMemorySecretStore(),
+    hostTools: [any FoundationModels.Tool] = []
   ) async throws -> ScriptedPromptFixture {
     let userDirectory = makeResolvedDirectory(label: "\(label)-user")
     let cwd = workingDirectory ?? makeResolvedDirectory(label: "\(label)-repo")
@@ -272,6 +280,7 @@ struct ScriptedPromptFixture {
     }
     await agent.registerCommandProviders(commandProviders)
     await agent.registerHookVisitors(hookVisitors)
+    await agent.registerHostTools(hostTools)
     if let mailOnlyAnswerLimit {
       await agent.useMailOnlyAnswerLimit(mailOnlyAnswerLimit)
     }

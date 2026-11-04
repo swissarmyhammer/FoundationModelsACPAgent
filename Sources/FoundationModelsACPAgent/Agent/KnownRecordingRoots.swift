@@ -32,17 +32,36 @@ final class KnownRecordingRoots: Sendable {
 }
 
 extension RoutedACPAgent {
-  /// Makes the reader of the recording roots that the session directory uses: the roots of the
-  /// composed sessions (``knownRecordingRoots``) and the roots of the project store of the home
-  /// (``RegisteredRecordingRoots``), without a repeated root.
+  /// Makes the reader of the recording roots that the session directory and the transcript reader
+  /// use: the roots of the composed sessions (``knownRecordingRoots``) and the roots of the project
+  /// store of the home (``RegisteredRecordingRoots``), without a repeated root.
   ///
   /// - Returns: The reader. It reads the project store at each call.
   nonisolated func recordingRootsOfTheDirectory() -> @Sendable () async -> [URL] {
-    let known = knownRecordingRoots
-    let store = settingsStore
-    return {
+    Self.recordingRoots(known: knownRecordingRoots, store: settingsStore)
+  }
+
+  /// Makes the reader of the roots from its two sources. The initializer calls it before the agent
+  /// is complete, so it takes the sources as arguments.
+  ///
+  /// Each failure of the resolution of the project store gets one `warning` record
+  /// (``RegisteredRecordingRoots/Failure/log()``). The roots of the composed sessions still go in
+  /// the result.
+  ///
+  /// - Parameters:
+  ///   - known: The roots of the composed sessions.
+  ///   - store: The settings store that gives the project store.
+  /// - Returns: The reader of the roots.
+  nonisolated static func recordingRoots(
+    known: KnownRecordingRoots, store: SettingsStore
+  ) -> @Sendable () async -> [URL] {
+    {
       var roots = known.all
-      for root in await RegisteredRecordingRoots.resolve(in: store).roots {
+      let registered = await RegisteredRecordingRoots.resolve(in: store)
+      for failure in registered.failures {
+        failure.log()
+      }
+      for root in registered.roots {
         let standardized = root.standardizedFileURL
         if !roots.contains(standardized) {
           roots.append(standardized)

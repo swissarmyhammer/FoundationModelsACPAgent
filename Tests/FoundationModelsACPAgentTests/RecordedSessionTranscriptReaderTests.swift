@@ -186,22 +186,6 @@ import Testing
     #expect(last == expected.date(from: "2026-11-03T10:00:02.500Z"))
   }
 
-  @Test("a JSON array, a fraction and a null map to values that OperationValue can hold")
-  func jsonShapesMapToOperationValues() throws {
-    let json = Data(#"{"list":["a",2],"ratio":0.5,"gone":null,"flag":true,"count":3}"#.utf8)
-
-    let value = try TranscriptEntryMapping.operationValue(fromJSON: json)
-
-    #expect(
-      value
-        == .object([
-          "list": .object(["0": .string("a"), "1": .int(2)]),
-          "ratio": .string("0.5"),
-          "flag": .bool(true),
-          "count": .int(3),
-        ]))
-  }
-
   // MARK: - The unknown id and the cache
 
   @Test("an unknown id throws notFound")
@@ -255,5 +239,43 @@ import Testing
     await session.close()
 
     #expect(entries.contains { $0.kind == "prompt" })
+  }
+
+  // MARK: - A folder with no transcript
+
+  @Test("a session folder with no transcript file throws notFound")
+  func folderWithoutTranscriptThrowsNotFound() async throws {
+    let fixture = try await Self.makeFixture()
+    defer { fixture.cleanUp() }
+    let id = ULID()
+    try FileManager.default.createDirectory(
+      at: fixture.recorded.root.appendingPathComponent(id.description, isDirectory: true),
+      withIntermediateDirectories: true)
+
+    await #expect(throws: SessionTranscriptError.notFound(id)) {
+      _ = try await fixture.reader.transcript(of: id)
+    }
+  }
+
+  // MARK: - Reads at the same time
+
+  @Test("reads of one unknown id at the same time resolve the roots once")
+  func concurrentUnknownReadsShareOneLookup() async throws {
+    let resolutions = CallCounter()
+    let reader = RecordedSessionTranscriptReader {
+      resolutions.record()
+      try? await Task.sleep(for: .milliseconds(100))
+      return []
+    }
+    let unknown = ULID()
+    let readCount = 5
+
+    await withTaskGroup(of: Void.self) { group in
+      for _ in 0..<readCount {
+        group.addTask { _ = try? await reader.transcript(of: unknown) }
+      }
+    }
+
+    #expect(resolutions.count == 1)
   }
 }

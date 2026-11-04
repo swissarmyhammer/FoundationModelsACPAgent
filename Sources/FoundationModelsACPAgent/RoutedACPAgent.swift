@@ -152,8 +152,13 @@ public actor RoutedACPAgent: Agent {
 
   /// The reader that each session of the agent gives its tools, to read the transcript of a session
   /// (``RecordedSessionTranscriptReader``).
-  /// It searches the recording roots of the registered projects of ``settingsStore``.
+  /// It searches the recording roots of the registered projects of ``settingsStore`` and the roots
+  /// of the sessions that the agent composed (``knownRecordingRoots``).
   /// Every session that the agent makes or restores gets this one reader.
+  ///
+  /// **Risk.** Every tool of every session can read every transcript that the reader reaches, MCP
+  /// tools included. A transcript can hold a secret. There is no setting that turns the reader off,
+  /// and the agent redacts nothing. See ``RecordedSessionTranscriptReader`` for the whole text.
   nonisolated let transcriptReader: RecordedSessionTranscriptReader
 
   /// The one `settings` endpoint of the agent over ``settingsStore``
@@ -438,10 +443,8 @@ public actor RoutedACPAgent: Agent {
       settingsFolders: settingsFolders, transcriptLocation: transcriptLocation,
       secretStore: self.secretStore)
     self.settingsEndpoint = try SettingsGraph(store: settingsStore)
-    let readerStore = settingsStore
-    self.transcriptReader = RecordedSessionTranscriptReader {
-      await RegisteredRecordingRoots.resolve(in: readerStore).roots
-    }
+    self.transcriptReader = RecordedSessionTranscriptReader(
+      recordingRoots: Self.recordingRoots(known: knownRecordingRoots, store: settingsStore))
     // The sessions of one working directory share one key, so the
     // endpoint reads the key of each session, and the ACP session of each
     // Router session that owns the store, from the one map that the
