@@ -58,9 +58,6 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   /// The folder of a layer root that holds the agent folders.
   static let agentsFolderName = "agents"
 
-  /// The document of an agent folder.
-  static let agentDocumentName = "AGENT.md"
-
   /// The agent whose run ends at once.
   static let quickAgent = "quick"
 
@@ -130,15 +127,9 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   static func writeAgent(
     named name: String, in cwd: URL, tools: String? = nil, disallowedTools: String? = nil
   ) throws {
-    let folder = agentFolder(named: name, in: cwd)
-    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-    let toolsLine = tools.map { "tools: \($0)\n" } ?? ""
-    let disallowedLine = disallowedTools.map { "disallowedTools: \($0)\n" } ?? ""
-    let document =
-      "---\nname: \(name)\ndescription: The \(name) test agent.\n\(toolsLine)\(disallowedLine)---\n\nDo the task.\n"
-    try document.write(
-      to: folder.appendingPathComponent(agentDocumentName, isDirectory: false),
-      atomically: true, encoding: .utf8)
+    let extraKeys = [tools.map { "tools: \($0)" }, disallowedTools.map { "disallowedTools: \($0)" }]
+      .compactMap { $0 }
+    try AgentFolderFixture.writeProjectAgent(id: name, in: cwd, extraKeys: extraKeys)
   }
 
   /// Makes a catalog context over a fresh working directory that holds

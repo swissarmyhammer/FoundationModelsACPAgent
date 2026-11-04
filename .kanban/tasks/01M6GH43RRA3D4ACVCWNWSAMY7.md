@@ -136,10 +136,33 @@ comments:
     - changed files: Sources/FoundationModelsACPAgent/Agent/BoundedTable.swift (new), ACPEventTranslator+Messages.swift, SubagentAnnouncement.swift, SubagentMessageProjector.swift, Tests/FoundationModelsACPAgentTests/BoundedTableTests.swift (new).
     - next: /review
   timestamp: 2026-11-04T17:52:43.726246+00:00
+- actor: claude-code
+  id: 01m6kw5b63y1p43pzp6hrvnqdk
+  text: |-
+    ### review — findings
+    - evidence: review sha e4566e8~1..540e5b2. Engine counts: 8 findings, 8 confirmed, 13 refuted. 1 finding is in the files of this task: Tests/FoundationModelsACPAgentTests/SubagentMessageTranslationTests.swift:125. The other 7 are in files of other tasks and are not recorded here. The 3 earlier findings are fixed and checked.
+    - next: add the #require precondition to the test, then run review again.
+  timestamp: 2026-11-04T18:11:55.715293+00:00
+- actor: claude-code
+  id: 01m6kwwm6jpw95hc7bqdqekwa4
+  text: |-
+    ### implement — changed
+    - evidence: commit edcfebf on wt-nws2. Pin test of the JSON (SentMessageRecordTests) passed on the old type (4 tests) and on the new type. `swift test --filter 'SentMessageRecordTests|SubagentMessage|BoundedTableTests'`: 53 tests in 5 suites passed. An earlier run showed one fault in my own new check (final reply of the bound run reaches the child inbox); fixed with a count before and after; then green.
+    - work: (1) Finding 11:53 fixed. Each negative check now has a precondition that proves the path ran: SubagentMessageTranslationTests (no early incoming view, sent record not tool-call content, run of another tool), SubagentMessageProjectorTests (early incoming view, unknown mail, run message waits for bind, detached session, journal before end, unbound run end), BoundedTableTests (remove of unknown key). SubagentMessageWireTests has no negative check; its optional-chain comparisons compare to a non-nil value. (2) Finding 12:20 fixed: SentMessageRecord holds `receiver: Receiver` (`.run(id:)` / `.caller`); custom Codable keeps keys mailId, direction, receiverRunId, receiverSessionId, with receiverRunId absent for a caller; decode rejects a child with no run id and a caller with a run id (tests added).
+    - files: Sources/FoundationModelsACPAgent/Agent/SentMessageRecord.swift, Tests/FoundationModelsACPAgentTests/{SentMessageRecordTests (new),SubagentMessageTranslationTests,SubagentMessageProjectorTests,BoundedTableTests}.swift
+    - next: /review
+  timestamp: 2026-11-04T18:24:38.610524+00:00
+- actor: claude-code
+  id: 01m6kx40wwfjzw83qapc2xhney
+  text: |-
+    ### review — clean
+    - evidence: review sha 540e5b2~1..540e5b2 and 61fb4da~1..61fb4da: 0 findings each, 0 failed. swift test --filter SubagentMessage: 43 tests in 3 suites passed. All prior findings checked.
+    - next: none. Acceptance and test boxes all ticked; no integration or CI item left open on this task.
+  timestamp: 2026-11-04T18:28:40.988829+00:00
 depends_on:
 - 01M6GH30709S58BK3AQ1VMBAM7
-position_column: review
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffffb380
 title: Send session_message for the messages between a caller and a child
 ---
 ## What
@@ -151,14 +174,14 @@ The `agents` tool has `send agent` (caller to run) and `send caller` (run to cal
 - Source: the mail records of the child session and of the parent session (Router `MailRecordSegment`), seen through the run event observer in `Sources/FoundationModelsACPAgent/Tools/AgentsComposition.swift`. Write a `SubagentMessageProjector` in `Sources/FoundationModelsACPAgent/Agent/`.
 
 ## Acceptance Criteria
-- [ ] `send agent` makes an outgoing `session_message` in the parent transcript and an incoming one in the child transcript after the child received it.
-- [ ] `send caller` makes the same in the other direction.
-- [ ] The final message of a run is a `session_message` to the caller.
-- [ ] No incoming message appears before the child received it.
+- [x] `send agent` makes an outgoing `session_message` in the parent transcript and an incoming one in the child transcript after the child received it.
+- [x] `send caller` makes the same in the other direction.
+- [x] The final message of a run is a `session_message` to the caller.
+- [x] No incoming message appears before the child received it.
 
 ## Tests
-- [ ] `Tests/FoundationModelsACPAgentTests/SubagentMessageProjectorTests.swift`: both directions, link ids, no early incoming entry.
-- [ ] Run `swift test --filter SubagentMessageProjectorTests`. All pass.
+- [x] `Tests/FoundationModelsACPAgentTests/SubagentMessageProjectorTests.swift`: both directions, link ids, no early incoming entry.
+- [x] Run `swift test --filter SubagentMessageProjectorTests`. All pass.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #subagents
@@ -170,3 +193,15 @@ The `agents` tool has `send agent` (caller to run) and `send caller` (run to cal
 - [x] `Sources/FoundationModelsACPAgent/Agent/SubagentAnnouncement.swift:167` `duplication/duplication` — The guard that unwraps `report.completionToken` and returns early is copied verbatim in `bindMessages` and `sendFinalReply`. Both copies are marked `+` in this change, so the same unwrap can drift between the two. Move the unwrap into one helper that returns the token and the child and caller, or give `SubagentReport` a small accessor that returns the token only when present. Call it from both functions.
 - [x] `Sources/FoundationModelsACPAgent/Agent/SubagentMessageProjector.swift:324` `reuse/reuse` — The new generic `Table<Value>` reimplements a bounded, insertion-ordered, string-keyed table that already exists as `MessageTexts`. Both keep a `values` dictionary and an `order` array, evict the oldest entry at a limit, and remove by key. Two copies of this logic will drift apart. Move one generic bounded keyed table into a shared file, with the limit as a parameter. Make `MessageTexts` and this `Table` both use it, or make `MessageTexts` a thin wrapper over it. Keep one eviction and removal implementation.
 - [x] `Tests/FoundationModelsACPAgentTests/SubagentMessageWireTests.swift:145` `test-integrity/no-test-cheating` — The assertion passes when both the child's final outgoing view and the caller's final incoming view are missing. Both sides are nil, so nil == nil holds. The test does not prove that the final message was delivered. Use `#require` to unwrap `final` and `incoming` before the comparison, then assert the recipient id equals `.value(incoming.messageId)`.
+
+## Review Findings (2026-11-04 11:53)
+
+> Scope: `review sha e4566e8~1..540e5b2` — reviewed the diffs only. Only the finding in the files of this task is recorded here: SubagentAnnouncement.swift, SubagentMessageProjector.swift, BoundedTable.swift, ACPEventTranslator+Messages.swift, the SubagentMessage* tests, BoundedTableTests. The 7 other findings of the run are in files of other tasks and are not recorded on this task.
+
+- [x] `Tests/FoundationModelsACPAgentTests/SubagentMessageTranslationTests.swift:125` `test-integrity/no-test-cheating` — The test asserts that no tool-call content contains the mail id, but it never checks that any tool-call update exists. If `toolCallUpdates(in:)` returns an empty list, `content` is empty and the `!content.contains` check passes. The test can then pass without proving that the sent-message record stays out of tool-call content. Such a test cannot prove its claim when the path under test produces no updates. Add a precondition before the negative check, for example `try #require(!toolCallUpdates(in: updates).isEmpty)`, so the test fails when the prompt emits no tool-call update at all. Keep the `!content.contains` assertion after it.
+
+## Review Findings (2026-11-04 12:20)
+
+> Scope: wider review run, reported by the coordinator.
+
+- [x] `Sources/FoundationModelsACPAgent/Agent/SentMessageRecord.swift:30` `swift/state-modeling` — The record holds two fields that depend on each other: `direction` and `receiverRunId: String?`. The doc comment says `receiverRunId` is nil exactly for a message to a caller, so `direction == .toCaller` with a non-nil run id is an impossible state that the type still allows, and Codable decoding accepts it. Encode the pairing in the type, for example `enum Receiver { case run(id: String); case caller }`, or make `Direction` carry the run id as an associated value (`case toChild(receiverRunId: String)`, `case toCaller`). Keep the Codable wire shape stable with a custom encoder if the JSON must not change.

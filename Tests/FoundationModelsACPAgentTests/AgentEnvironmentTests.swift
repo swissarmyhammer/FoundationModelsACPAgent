@@ -58,9 +58,6 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   /// folders.
   static let agentsFolderName = "agents"
 
-  /// The document of an agent folder.
-  static let agentDocumentName = "AGENT.md"
-
   /// The document of a skill folder.
   static let skillDocumentName = "SKILL.md"
 
@@ -212,14 +209,10 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   @Test
   func theAgentsStackOfEachSessionReadsTheDefaultsLayerOfTheHostEnvironment() async throws {
     let defaults = makeResolvedDirectory(label: "AgentEnvironmentTests-agents-defaults")
-    let agentFolder =
-      defaults
-      .appendingPathComponent(Self.agentsFolderName, isDirectory: true)
-      .appendingPathComponent(Self.hostAgentName, isDirectory: true)
-    try FileManager.default.createDirectory(at: agentFolder, withIntermediateDirectories: true)
-    try SkillsMarketplaceTests.document(named: Self.hostAgentName).write(
-      to: agentFolder.appendingPathComponent(Self.agentDocumentName, isDirectory: false),
-      atomically: true, encoding: .utf8)
+    let agentsLayer = defaults.appendingPathComponent(Self.agentsFolderName, isDirectory: true)
+    try AgentFolderFixture.write(
+      id: Self.hostAgentName, under: agentsLayer,
+      description: SkillsMarketplaceTests.description(of: Self.hostAgentName))
 
     let session = try await Self.openAndSwitchSession(
       label: "agents", environment: [Self.agentsDefaultsKey: defaults.path])

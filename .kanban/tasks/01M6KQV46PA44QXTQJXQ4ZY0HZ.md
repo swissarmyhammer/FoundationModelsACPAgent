@@ -23,8 +23,15 @@ comments:
     - evidence: review sha 8715d82~1..8715d82, 4 files reviewed, findings 0, confirmed 0, refuted 0, attempted 7, failed 0, skipped 0.
     - next: Task moved to done by order of the user. These boxes stay open on purpose: the three acceptance boxes for stdin close, SIGTERM, and quit with no open root prompt, and the test box "Integration tests with real binaries for the three quits". Reason: CI runs the integration tests; the user ordered that integration tests are not run in development. The box "Run the full swift test" also stays open: only the touched suites ran (30 tests in 7 suites).
   timestamp: 2026-11-04T17:46:39.536774+00:00
+- actor: claude-code
+  id: 01m6kxq7ajcb0shyj91zbrsbyz
+  text: |-
+    ### implement — changed
+    - evidence: commit c6ac0b8 on wt-late. The three `_ = await working.promptTask.result` lines in ProcessQuitShutdownTests now use `try await working.finishPrompt()`, so a prompt failure fails the test. Suite ProcessQuitShutdownTests passed (the prompt ends without an error on quit).
+    - next: review
+  timestamp: 2026-11-04T18:39:10.162185+00:00
 position_column: done
-position_ordinal: ffffaf80
+position_ordinal: ffffb680
 title: 'Process quit (stdin close or SIGTERM) with an open root prompt cancels the prompt and the child: pause them instead'
 ---
 ## What
@@ -51,3 +58,9 @@ Only a SIGKILL leaves an interrupted child that a cold resume can re-drive.
 
 ## Workflow
 - Use `/tdd`. #subagents
+
+## Review Findings (2026-11-04 12:30)
+
+> Scope: late review of a wide range of commits, on code of a task that was already `done`.
+
+- [x] `Tests/FoundationModelsACPAgentTests/ProcessQuitShutdownTests.swift:59` `test-integrity/no-test-cheating` — The test discards the result of the root prompt task with `_ = await working.promptTask.result`. An error that the prompt throws is never checked, so the test can pass when the prompt failed. Wait for the prompt with `try await working.finishPrompt()` (or assert the expected `Result` case explicitly), so a prompt failure fails the test. If the prompt is expected to end with an error on quit, assert that error by type.

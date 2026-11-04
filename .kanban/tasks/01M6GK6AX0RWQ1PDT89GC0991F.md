@@ -142,12 +142,27 @@ comments:
     - evidence: review sha 2687686~1..ca872e3, 14 files reviewed, findings 0, confirmed 0, refuted 6, attempted 7, failed 0, skipped 0. All prior findings are checked. The SessionResumeOpenCalls do/catch with logger.error and no assertionFailure raised no finding, so no rule conflict arose.
     - next: none. Task moved to done.
   timestamp: 2026-11-04T17:45:24.737350+00:00
+- actor: claude-code
+  id: 01m6kxq452gvd5vzxade352k48
+  text: |-
+    ### implement — changed
+    - evidence: commit c6ac0b8 on wt-late. Finding 1: TierThreeFixture.writeAgent(id:description:in:) is the one writer; RedriveInterruptedRunsProcessTests and ScriptedStubProcessTests call it. Finding 2: firstCallUpdate(on:where:) holds the trace walk; firstCompletion and firstOpenCall call it. Finding 3: pollUntil(limit:interval:) in Tests/FoundationModelsACPAgentTestSupport/BoundedPoll.swift is used by waitUntilIdle, startWork, backgroundList and completedOutcomes (same cause in the same file). IntegrationTests built (swift build --build-tests, not run). Unit suites passed.
+    - next: review
+  timestamp: 2026-11-04T18:39:06.914938+00:00
+- actor: claude-code
+  id: 01m6ky4g2rgxw1pez5mny6cm0a
+  text: |-
+    ### implement — changed
+    - evidence: working tree on main, not committed. Finding (TierThreeFixture.swift:115, three near-copies of writeAgent): ONE writer now, Tests/FoundationModelsACPAgentTestSupport/AgentFolderFixture.swift (write(id:under:description:extraKeys:), writeProjectAgent(id:in:description:extraKeys:), document(...)). Copies deleted: TierThreeFixture.writeAgent, SettingsFoldersTests.writeAgent body, the inline write in AgentEnvironmentTests (same cause, found by repo search), the format string in SkillsMarketplaceTests.document (now calls the shared document). AgentsToolTests.writeAgent stays as a thin adapter (tools and disallowedTools become extraKeys) because about 30 calls in other suites use it; it holds no file logic. Three unused agentDocumentName constants removed. Distinct behavior kept as parameters: description text (test agent / test marketplace / helper test agent), extra frontmatter keys, layer folder. Callers: RedriveInterruptedRunsProcessTests and ScriptedStubProcessTests call AgentFolderFixture.writeProjectAgent. No production change; SessionSetup.swift and ConfigOptions.swift untouched.
+    - tests: root `swift build --build-tests` ok; IntegrationTests `swift build --build-tests` ok (not run); `swift test --filter` AgentsToolTests, SettingsFoldersTests, AgentEnvironmentTests, SkillsMarketplaceTests, SubagentCancelTests, ResumeNestedSessionsTests, HotResumeTests: 66 tests in 7 suites passed, no warnings of this code.
+    - next: review
+  timestamp: 2026-11-04T18:46:25.112441+00:00
 depends_on:
 - 01M6GJPPXWKQJ9E6SK5WD0CWZ7
 - 01M6GM17VHZSWD4G2J27WTA3JT
 - 01M6KGEQVH2T73SR32CD6VZDKG
-position_column: done
-position_ordinal: ffffae80
+position_column: review
+position_ordinal: '80'
 title: Re-drive interrupted nested runs after a cold resume, children first, completing the original agent tool call
 ---
 ## What
@@ -204,3 +219,17 @@ Do not start this task until the user has decided the Router and Agents cards.
 - [x] `Sources/FoundationModelsACPAgent/Agent/SessionResumeOpenCalls.swift:115` `swift/preconditions` — Silent default for an unexpected encoding failure. If `inject(into:)` fails, the meta is replaced by an empty object with no record, so the link of the call to its run is lost without any trace. Use `do`/`catch` around the `inject(into:)` call. In the catch, call `assertionFailure` and write a `logger.error` line that names the run, then keep the empty default.
 - [x] `Tests/FoundationModelsACPAgentTests/RedriveInterruptedRunsTests.swift:48` `reuse/reuse` — `Wire.responsePosition` re-implements the response check inline as a closure with `if case .resumeResponse`. The same check exists as `isResumeResponse` in the process test file, and `WireTraceReading.swift` already holds the shared trace helpers. The check now lives in three places. Move `isResumeResponse` into `Tests/FoundationModelsACPAgentTestSupport/WireTraceReading.swift` as a `public` extension property, then use it from `responsePosition` and from the process tests.
 - [x] `Tests/FoundationModelsACPAgentTests/RedriveInterruptedRunsTests.swift:385` `test-integrity/no-test-cheating` — The test name says the completion of the root call has no stray id, but the only assertion is that the stray list is empty. If the root call never completes, the read ends at the timeout, the stray list stays empty, and the test passes. The test does not prove that a completion arrived. This is a weak assertion that cannot fail when the behavior is missing. Add an assertion that a completed call exists on the root stream before checking for strays, for example `#expect(wire.trace.contains { $0.isCompletedCall(...) })`, or use `#require` on the first completion index. Keep the stray-id check after it.
+
+## Review Findings (2026-11-04 12:30)
+
+> Scope: late review of a wide range of commits, on code of tasks that were already `done`.
+
+- [x] `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/RedriveInterruptedRunsProcessTests.swift:72` `reuse/reuse` — writeChildAgent(in:) writes the agent folder and AGENT.md for a test agent. That capability already exists in the integration test target as ScriptedStubProcessTests.writeChildAgent, and a near-copy also exists as AgentsToolTests.writeAgent. The new code repeats it instead of calling or extending the existing helper. Move the shared agent-folder writer into a common support file of the integration target (for example TierThreeFixture), parameterized by agent id and description, and have both RedriveInterruptedRunsProcessTests and ScriptedStubProcessTests call it. Remove the duplicate body.
+- [x] `Tests/FoundationModelsACPAgentTests/RedriveInterruptedRunsTests.swift:125` `reuse/reuse` — `firstOpenCall(on:)` repeats the scan of `firstCompletion(on:)` (lines 111-118): the same `trace.firstIndex` walk, the same `.update(session, .toolCallUpdate(let call))` guard, and a status comparison. Only the predicate differs. Extract one helper, for example `firstCallUpdate(on: session, where: (ToolCallStatus) -> Bool) -> Int?`, that holds the trace walk and the guard. Define `firstCompletion` and `firstOpenCall` as one-line calls to it. Reuse the same guard in `strayCompletions` if it fits.
+- [x] `Tests/FoundationModelsACPAgentTests/ResumeNestedSessionsTests.swift:229` `reuse/reuse` — waitUntilIdle repeats the bounded poll loop that ResumeChildSyncTests already uses in startWork and backgroundList. Add one shared bounded-poll helper that takes a predicate, a limit and an interval, and returns when the predicate holds or the limit is reached. Use it in waitUntilIdle, startWork and backgroundList. Keep each suite's limit and interval as its own constants.
+
+## Review Findings (2026-11-04 12:39)
+
+> Scope: `review sha 24e7cab~1..24e7cab` — reviewed the diffs only — lines this change added or modified. 10 file(s) reviewed, 0 not reviewed.
+
+- [x] `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Support/TierThreeFixture.swift:115` `reuse/reuse` — The new `writeAgent` reimplements a helper that already exists. It creates the agent folder under `.agents/agents/<id>` and writes an `AGENT.md` file, and `AgentsToolTests.writeAgent(named:in:)` does the same job. `SettingsFoldersTests.writeAgent(id:under:)` is a third near-copy. Three copies of the same file-writing logic will drift apart. Move one shared `writeAgent` into `Tests/FoundationModelsACPAgentTestSupport` if the integration test target can depend on that module. Then have `TierThreeFixture`, `AgentsToolTests`, and `SettingsFoldersTests` call it. If the module dependency is not possible, state in a comment why the integration target keeps its own copy. Note that the `AGENT.md` document text differs across the copies, so the shared helper must take the description as a parameter.

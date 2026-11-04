@@ -61,7 +61,15 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   /// - Parameter name: The name of the skill or of the agent.
   /// - Returns: The document text.
   static func document(named name: String) -> String {
-    "---\nname: \(name)\ndescription: The \(name) of the test marketplace.\n---\n\nDo the task.\n"
+    AgentFolderFixture.document(id: name, description: description(of: name))
+  }
+
+  /// The description of one skill or one agent of the test marketplace.
+  ///
+  /// - Parameter name: The name of the skill or of the agent.
+  /// - Returns: The description text.
+  static func description(of name: String) -> String {
+    "The \(name) of the test marketplace."
   }
 
   /// Makes a local git repository on ``marketplaceBranch`` that holds one

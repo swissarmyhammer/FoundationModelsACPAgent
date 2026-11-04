@@ -150,7 +150,8 @@ struct RedriveInterruptedRunsProcessTests {
   func theSecondProcessStartsTheChildAgainAndCompletesTheOriginalCall() async throws {
     let workspace = makeResolvedDirectory(label: "RedriveInterruptedRunsProcessTests-repo")
     let configHome = makeResolvedDirectory(label: "RedriveInterruptedRunsProcessTests-config")
-    try TierThreeFixture.writeAgent(id: childAgent, in: workspace)
+    try AgentFolderFixture.writeProjectAgent(
+      id: Self.childAgent, in: workspace, description: "The helper test agent.")
     let recording = try await Self.recordInterruptedRun(workspace: workspace, configHome: configHome)
 
     let trace = try await Self.resume(recording, workspace: workspace, configHome: configHome)

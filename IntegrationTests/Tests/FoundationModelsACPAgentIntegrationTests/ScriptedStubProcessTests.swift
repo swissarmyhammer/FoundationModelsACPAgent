@@ -56,7 +56,8 @@ struct ScriptedStubProcessTests {
   /// Runs `acp-agent-stub run --verbose <prompt>` over the script.
   private static func run(script text: String, label: String) async throws -> BuiltExecutableRun {
     let workspace = makeResolvedDirectory(label: "\(label)-repo")
-    try TierThreeFixture.writeAgent(id: childAgent, in: workspace)
+    try AgentFolderFixture.writeProjectAgent(
+      id: childAgent, in: workspace, description: "The helper test agent.")
     let file = try TierThreeFixture.writeStubScript(text, label: label)
     return try await BuiltExecutableRun.run(
       executableNamed: TierThreeFixture.stubAgentExecutableName,

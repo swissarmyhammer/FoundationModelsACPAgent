@@ -104,24 +104,6 @@ enum TierThreeFixture {
     return file
   }
 
-  /// Writes the agent folder and `AGENT.md` of a test agent in the project
-  /// folder.
-  ///
-  /// - Parameters:
-  ///   - id: The agent id, which is the folder name and the `name` field.
-  ///   - description: The `description` field of the agent.
-  ///   - workspace: The project folder.
-  /// - Throws: The directory-creation or write error.
-  static func writeAgent(
-    id: String, description: String = "The helper test agent.", in workspace: URL
-  ) throws {
-    let folder = workspace.appendingPathComponent(".agents/agents/\(id)", isDirectory: true)
-    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-    let document = "---\nname: \(id)\ndescription: \(description)\n---\n\nDo the task.\n"
-    try document.write(
-      to: folder.appendingPathComponent("AGENT.md"), atomically: true, encoding: .utf8)
-  }
-
   /// The environment of a stub run over a script file: the offline defaults
   /// layer, and the pair that names `file` as the script of the stub model.
   ///

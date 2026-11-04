@@ -16,8 +16,8 @@ depends_on:
 - 01M6GH3TN6QK7ZCSXTNWD6MNVW
 - 01M6GH43RRA3D4ACVCWNWSAMY7
 - 01M6GH3ZHE52GHWAZ53AWNKJ0K
-position_column: todo
-position_ordinal: '8880'
+position_column: doing
+position_ordinal: '80'
 title: 'Integration test: nested sub-agent run end to end over the ACP wire, and update the docs'
 ---
 ## What

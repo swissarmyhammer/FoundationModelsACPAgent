@@ -1,6 +1,19 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m6kxyw9pppn3pxv54mh0s47e
+  text: |-
+    ### Final CodeContext signature (from the CodeContext session; local commits, not yet on main)
+    - `CodeContext(rootDirectory: URL, embedder: PooledEmbedding?, selection: @escaping SelectionFactory, autoInstall:, eventSource:, indexDirectory:) async throws`
+    - `CodeContextManager(embedder: PooledEmbedding?, selection: @escaping SelectionFactory, autoInstall:, eventSource:, indexDirectory:) async`
+    - `SelectionFactory = @Sendable (_ ids: [String]) throws -> SelectionConfig` (public). The host must pass it. No default, no nil.
+    - `CodeContextManager.searchCode` is now `async throws`. An error from the selection model is the error of the call.
+    - New tracing span `select`, a child of the `search` span.
+    - The host passes the model. Multitool needs no change.
+    - START this task only after the CodeContext session says that its change is pushed to main. Then run `swift package update` first.
+  timestamp: 2026-11-04T18:43:21.014964+00:00
 depends_on:
 - 01M6GK6AX0RWQ1PDT89GC0991F
 position_column: todo

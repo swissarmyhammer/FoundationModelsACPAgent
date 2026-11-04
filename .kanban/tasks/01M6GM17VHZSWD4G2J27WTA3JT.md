@@ -177,12 +177,19 @@ comments:
     - evidence: review sha 349aca2~1..f4397fb. Counts: findings 0, confirmed 0, refuted 1, attempted 7, failed 0, skipped 0. Only .kanban files were skipped (ignore rule). All prior findings are checked. The Blocker section is obsolete.
     - next: task moved to done.
   timestamp: 2026-11-04T15:45:08.094002+00:00
+- actor: claude-code
+  id: 01m6kxq8g0j25pekm4n1fj5ph6
+  text: |-
+    ### implement — changed
+    - evidence: commit c6ac0b8 on wt-late. New parameterized test theReasonReadsBackFromAnObjectMeta over objectMetas: extract(from: written(into: meta)) == failure. Suite RestoreFailureMetaTests passed.
+    - next: review
+  timestamp: 2026-11-04T18:39:11.360430+00:00
 depends_on:
 - 01M6GM0N9BFK37GGBWPAG9VE1X
 - 01M6GH30709S58BK3AQ1VMBAM7
 - 01M6GH3ZHE52GHWAZ53AWNKJ0K
 position_column: done
-position_ordinal: ffffab80
+position_ordinal: ffffb780
 title: Resume announces the children and sends their current snapshots after the response, with or without replayFrom
 ---
 ## What
@@ -276,3 +283,9 @@ True conflict between two rules. A person must correct a rule and restart the wo
 > - `.kanban/ (from .reviewignore)` — 20 file(s)
 
 - [x] `Tests/FoundationModelsACPAgentTests/SubagentSessionsReplayTests.swift:55` `reuse/reuse` — The changed `announcement(of:)` rebuilds the test in `SubagentUpdate` matching that `announces(_:)` already provides. The helper is the same comparison: `update.announcement?.sessionId == child`. Two copies of one rule can drift apart. Replace the body with `updates.firstIndex { $0.update.announces(child) }`.
+
+## Review Findings (2026-11-04 12:30)
+
+> Scope: late review of a wide range of commits, on code of a task that was already `done`.
+
+- [x] `Tests/FoundationModelsACPAgentTests/RestoreFailureMetaTests.swift:61` `completeness/inverse-operation-coverage` — The object-shaped `_meta` values in `objectMetas` are fed only to `written(into:)` and compared against `inject(into:)`. No test reads the reason back with `extract(from:)` from any of these shapes. Add a read-back assertion for each `objectMetas` shape: `#expect(SAH.RestoreFailure.extract(from: failure.written(into: meta)) == failure)`. Either extend `theWriteEqualsTheTypedPayload` or add a parameterized sibling test over `objectMetas`.

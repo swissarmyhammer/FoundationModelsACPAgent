@@ -60,9 +60,6 @@ struct SettingsFoldersTests {
   /// The text of the project `Instructions.md`.
   private static let projectInstructions = "The instructions of the project."
 
-  /// The document of an agent folder.
-  private static let agentDocumentName = "AGENT.md"
-
   /// The id of the agent that only the synced root holds.
   private static let rootAgentID = "planner"
 
@@ -406,11 +403,8 @@ struct SettingsFoldersTests {
   ///   - layer: The folder that holds the agent folder.
   /// - Throws: The directory-creation or write error.
   private static func writeAgent(id: String, under layer: URL) throws {
-    let folder = layer.appendingPathComponent(id, isDirectory: true)
-    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-    try SkillsMarketplaceTests.document(named: id).write(
-      to: folder.appendingPathComponent(agentDocumentName, isDirectory: false),
-      atomically: true, encoding: .utf8)
+    try AgentFolderFixture.write(
+      id: id, under: layer, description: SkillsMarketplaceTests.description(of: id))
   }
 
   /// The agent catalog that the session composition loads over the folders
