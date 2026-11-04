@@ -77,6 +77,31 @@ import Testing
   /// - Returns: The chain.
   /// - Throws: Whatever the fixture or a wait throws.
   static func recordInterruptedChain() async throws -> Recording {
+    try await recordChain(stopping: quit)
+  }
+
+  /// Records the chain as ``recordInterruptedChain()`` does, and ends the first agent with the
+  /// orderly shutdown of the process (``RoutedACPAgent/shutdown()``). The shutdown stops the
+  /// runs and cancels none, so the history of the chain is the one that a restart finds.
+  ///
+  /// - Returns: The chain.
+  /// - Throws: Whatever the fixture or a wait throws.
+  static func recordShutDownChain() async throws -> Recording {
+    try await recordChain { fixture in
+      await fixture.harness.agent.shutdown()
+      await fixture.harness.close()
+    }
+  }
+
+  /// Records the chain of three sessions, and ends the first agent while the child and the
+  /// grandchild work.
+  ///
+  /// - Parameter stopping: Ends the first agent.
+  /// - Returns: The chain.
+  /// - Throws: Whatever the fixture or a wait throws.
+  private static func recordChain(
+    stopping: (ScriptedPromptFixture) async -> Void
+  ) async throws -> Recording {
     let cwd = makeResolvedDirectory(label: "\(label)-repo")
     try AgentsToolTests.writeAgent(
       named: childAgent, in: cwd, tools: AgentsToolTests.agentsToolName)
@@ -108,7 +133,7 @@ import Testing
     }
     let child = try #require(AnnouncedChild.first(in: updates, on: root))
     let leaf = try #require(AnnouncedChild.first(in: updates, on: child))
-    await quit(fixture)
+    await stopping(fixture)
     _ = try? await prompt.value
     return Recording(cwd: cwd, root: root, child: child, leaf: leaf)
   }

@@ -487,7 +487,7 @@ extension RoutedACPAgent {
 
   // MARK: - Replay
 
-  /// Replays the retained history of the session (ACP
+  /// Replays the retained history of the session tree (ACP
   /// schema-v2.0.0-alpha.7), before the resume response returns: each
   /// message that the client saw live, as one whole-message upsert with
   /// the id it had live, and never the `*_chunk` forms, so a client that
@@ -498,6 +498,12 @@ extension RoutedACPAgent {
   /// The plans that the journal recorded are in the history already
   /// (``resumedHistory(kept:directory:rootId:sessionId:)``), so the replay
   /// sends the last plan of each plan id.
+  ///
+  /// The tree goes out in two steps (``replayedTree(of:history:)``). First the announcements of
+  /// every session, the parent before the child, so no update of a child comes before its
+  /// announcement. Then the history of each session under its own session id
+  /// (``replayTree(_:from:through:)``). The replay sends no request of the agent to the
+  /// client.
   ///
   /// - Parameters:
   ///   - history: The retained history of the session.
@@ -515,9 +521,11 @@ extension RoutedACPAgent {
       throw RequestError.internalError(
         detail: "the agent has no connection to notify through")
     }
-    for update in history.replayUpdates(from: cursor) {
-      await connection.post(update, in: sessionId)
+    let tree = replayedTree(of: sessionId, history: history)
+    for announcement in tree.announcements {
+      await connection.post(announcement.update, in: announcement.sessionId)
     }
+    await replayTree(tree, from: cursor, through: connection)
   }
 
   // MARK: - The current-state sync

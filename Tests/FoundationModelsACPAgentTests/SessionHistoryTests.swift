@@ -97,15 +97,14 @@ import Testing
 
   /// The replay from the start sends the full retained history. Each transcript entry goes out as
   /// one whole update with its id. Then each state field that has a value goes out. The retained
-  /// `state_update` does not go out. It is a past state. The current state goes out after the
-  /// replay.
+  /// `state_update` and the retained `session_info_update` do not go out. They are a past state.
+  /// The current ones go out after the replay.
   @Test func theReplayFromTheStartSendsTheFullHistory() {
     let replay = Self.sampleHistory.replayUpdates(from: .start)
 
     #expect(
       replay.map(\.kind) == [
         .userMessage, .agentMessage, .toolCallUpdate, .availableCommandsUpdate, .usageUpdate,
-        .sessionInfoUpdate,
       ])
     #expect(
       ReplayedMessage.replayed(in: replay) == [

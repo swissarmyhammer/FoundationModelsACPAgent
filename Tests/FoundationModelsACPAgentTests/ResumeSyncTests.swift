@@ -257,8 +257,8 @@ import Testing
 
   // MARK: - The replay path
 
-  /// The replay of the history sends no `state_update`. The retained one is a record of the past,
-  /// and not the current state.
+  /// The replay of the history sends no `state_update` and no `session_info_update`. The retained
+  /// ones are a record of the past, and not the current state. The sync sends the current ones.
   @Test
   func theReplayOfARetainedHistoryHoldsNoStateUpdate() {
     let history = SessionMergeEngine(replaying: [
@@ -269,7 +269,7 @@ import Testing
     let replay = history.replayUpdates(from: .start)
 
     #expect(stateNames(of: replay).isEmpty)
-    #expect(Self.kinds(of: replay).contains(.info))
+    #expect(!Self.kinds(of: replay).contains(.info))
   }
 
   // MARK: - The wire order

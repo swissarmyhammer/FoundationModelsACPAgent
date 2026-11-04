@@ -54,7 +54,9 @@ extension RoutedACPAgent {
     sessions[sessionId]?.nestedRestore = report
   }
 
-  /// Registers the restored session of one run as a session nested in its caller.
+  /// Registers the restored session of one run as a session nested in its caller. The retained
+  /// history of the session starts from the history file of the session
+  /// (``retainedHistory(kept:directory:sessionId:)``), so a replay sends it.
   ///
   /// - Parameter run: The restored run, not started.
   private func registerRestoredRun(_ run: AgentRun) async {
@@ -67,7 +69,9 @@ extension RoutedACPAgent {
     }
     let parent = SessionId(rawValue: caller.description)
     do {
-      try await registerNestedSession(session, parent: parent)
+      let history = retainedHistory(
+        kept: nil, directory: session.recordingDirectory, sessionId: sessionId)
+      try await registerNestedSession(session, parent: parent, history: history)
     } catch {
       ACPAgentTelemetry.logger(.sessionResume).error(
         "The session of a restored run did not register. The run has no session of its own.",

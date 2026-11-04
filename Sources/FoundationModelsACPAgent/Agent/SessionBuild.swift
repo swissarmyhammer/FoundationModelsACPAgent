@@ -91,8 +91,8 @@ struct SessionBuild {
   }
 
   /// The build of a nested session. It borrows the parts of the mounted
-  /// surface from its parent. It starts with an empty history and a join
-  /// table of its own. The nested session has its own join table. The stop of
+  /// surface from its parent. It starts with the history it is given, and a
+  /// join table of its own. The nested session has its own join table. The stop of
   /// its projector closes that table. The close must not seal the runs that
   /// the parent waits for. The tool call ids of the nested session and of its
   /// parent never meet. Each session has its own table. The two tables share
@@ -100,8 +100,12 @@ struct SessionBuild {
   /// (``AgentCallHolds``). The runs of the whole surface are held in one
   /// place.
   ///
-  /// - Parameter parent: The entry of the parent session.
-  init(borrowingFrom parent: ActiveSession) {
+  /// - Parameters:
+  ///   - parent: The entry of the parent session.
+  ///   - history: The history that the retained history of the nested session
+  ///     starts from. A session that starts new has none. A session that a
+  ///     resume restores has the history of its file.
+  init(borrowingFrom parent: ActiveSession, history: SessionMergeEngine = SessionMergeEngine()) {
     configuration = parent.configuration
     instructions = parent.instructions
     workingDirectory = parent.workingDirectory
@@ -115,7 +119,7 @@ struct SessionBuild {
     // The Router owns the record of a sub-agent session, so the first
     // prompt of the agent never writes its title.
     titleRecorded = true
-    history = SessionMergeEngine()
+    self.history = history
     runCallJoins = RunCallJoinTable(holds: parent.surface.runCallJoins.holds)
     capabilities = SessionCapabilitySet(advertised: SubagentAnnouncer.childCapabilities)
   }
@@ -299,12 +303,15 @@ extension RoutedACPAgent {
   ///     or a nested session that is in the table.
   ///   - events: The outputs that the projector reads, or `nil` to
   ///     subscribe to `session` (``registerSession(_:sessionId:parent:build:events:)``).
+  ///   - history: The history that the retained history of the nested session
+  ///     starts from. It is empty for a new run.
   /// - Returns: The ACP session id of the nested session.
   /// - Throws: Whatever ``registerSession(_:sessionId:parent:build:events:)``
   ///   throws.
   @discardableResult
   func registerNestedSession(
-    _ session: any RoutedSession, parent: SessionId, events: AsyncStream<SessionOutput>? = nil
+    _ session: any RoutedSession, parent: SessionId, events: AsyncStream<SessionOutput>? = nil,
+    history: SessionMergeEngine = SessionMergeEngine()
   ) async throws -> SessionId {
     guard let parentEntry = sessions[parent] else {
       throw RequestError.unknownSession(id: parent)
@@ -317,7 +324,7 @@ extension RoutedACPAgent {
     do {
       try await registerSession(
         session, sessionId: sessionId, parent: parent,
-        build: SessionBuild(borrowingFrom: parentEntry),
+        build: SessionBuild(borrowingFrom: parentEntry, history: history),
         events: events)
     } catch {
       SnapshotSessionKeys.shared.forget(sessionId)

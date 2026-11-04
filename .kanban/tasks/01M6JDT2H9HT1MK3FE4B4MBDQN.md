@@ -14,8 +14,25 @@ comments:
     - not done: the card asks to send the path and steps to session agentviewkit-20. This agent has no tool to message that session. The caller must send the README path.
     - next: /review. The recording is not committed (Recordings/ is untracked).
   timestamp: 2026-11-04T06:26:40.337962+00:00
-position_column: doing
-position_ordinal: '8480'
+- actor: claude-code
+  id: 01m6jmbjm7sht3802r7kf2tp21
+  text: |-
+    ### review — clean
+    - evidence: review sha 0e56c33~1..0e56c33, second run: findings 0, confirmed 0, refuted 8, attempted 8, failed 0. First run had 1 of 8 tasks failed (incomplete), so I ran it again. 1 file was reviewed (make.py); the other files have no matching validator or are excluded.
+    - known blocker, not a finding: ShellSessionOwnerTests.aCommandAfterAModelSlotSwitchRecordsTheACPSessionID (Multitool 746da544).
+    - next: none
+  timestamp: 2026-11-04T06:36:16.903768+00:00
+- actor: claude-code
+  id: 01m6jmcbwkz67vym7z0fe14z7k
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — Recordings/interrupted-nested-child (README.md, make.py, script files, workspace recording)
+    - test: red — 1632 tests, only the known blocker ShellSessionOwnerTests
+    - commit: 0e56c33
+    - review: clean — 0 findings, task done
+  timestamp: 2026-11-04T06:36:42.771484+00:00
+position_column: done
+position_ordinal: ffffa580
 title: Make a recording with an interrupted nested child for AgentViewKit (stub model, agentSpawn, no endedAt)
 ---
 AgentViewKit needs a recording to test the resume of a nested session tree. The recording must come from the agent, not from hand-written Router records.

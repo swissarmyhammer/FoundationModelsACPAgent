@@ -89,6 +89,18 @@ comments:
     evidence: no files changed; the MailID of `send agent` is not visible to the host (Agents a8597b6 tool path, Router SessionEvent.mailDelivered)
     task: ^nwsamy7
   timestamp: 2026-11-04T03:44:08.433996+00:00
+- actor: claude-code
+  id: 01m6jnfgtd6dncxshfk3f1ckea
+  text: |-
+    ### unblocked by Agents 5e8d090 (peer report)
+    - Read the record from SessionEvent.toolCallReport(report): report.attachments with schemaName == "FoundationModelsAgents.AgentMessageSent". report.op is "agents", not "send agent".
+    - contentJSON keys: mailId (String, ULID of the mail in the receiver session); direction ("toChild" for send agent, "toCaller" for send caller); receiverRunId (String?, only for toChild; it is the child session id); receiverSessionId (String). There is no message text.
+    - A toChild attachment arrives on the CALLER session event stream. A toCaller attachment arrives on the child run stream (runEventObserver).
+    - Limit: send caller from a run to a host-session caller makes no mail and no attachment. The host already sees it as a runMessage event.
+    - The message text must come from the mail in the receiver session.
+    - Run `swift package update` first, because the package resolves Agents from main.
+    - Order: finish ^awnkj0k first, then this task.
+  timestamp: 2026-11-04T06:55:54.701160+00:00
 depends_on:
 - 01M6GH30709S58BK3AQ1VMBAM7
 position_column: doing

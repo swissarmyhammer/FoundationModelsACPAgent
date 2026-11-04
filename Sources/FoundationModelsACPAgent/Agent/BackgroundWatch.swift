@@ -164,7 +164,7 @@ final class BackgroundWatch: Sendable {
   ///
   /// - Parameter status: The patch of an update.
   /// - Returns: `true` for a status that is not `pending`, `in_progress` or `paused`.
-  private static func isFinal(_ status: PatchField<FoundationModelsACP.ToolCallStatus>) -> Bool {
+  static func isFinal(_ status: PatchField<FoundationModelsACP.ToolCallStatus>) -> Bool {
     guard case .value(let value) = status else {
       return false
     }

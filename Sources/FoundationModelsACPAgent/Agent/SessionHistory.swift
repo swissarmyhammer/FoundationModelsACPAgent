@@ -160,15 +160,31 @@ extension SessionMergeEngine {
     return info
   }
 
+  /// The announcements of the children that a `session/resume` replay sends. The history folded
+  /// them from the live `subagent_update` updates of the session. A child state in a replay is
+  /// history, so the announcement keeps the capabilities out: they are a current fact, and the
+  /// current snapshot after the response gives them.
+  ///
+  /// - Returns: One announcement for each child, in the order of the first announcement.
+  var replayAnnouncements: [SessionUpdate] {
+    subagents.map { announced in
+      var historical = announced
+      historical.capabilities = .unchanged
+      return .subagentUpdate(historical)
+    }
+  }
+
   /// The updates that a `session/resume` replay sends, at or after
-  /// `cursor`: the full retained history. Each transcript
-  /// entry goes as one whole update with its id, then each state field
-  /// that has a value.
+  /// `cursor`: the retained history without the announcements of the children
+  /// (``replayAnnouncements``). Each transcript entry goes as one whole update with its id,
+  /// then each state field that has a value.
   ///
   /// The retained `state_update` is not in the replay. It records a past
   /// state, and a client that gets it would show that state as current
   /// activity. The current state goes out after the replay, from the
   /// ledger of the session (``SessionStateLedger/announceCurrentState()``).
+  /// The retained `session_info_update` is not in the replay either. The current one follows
+  /// the current state, and a replayed one would come before it.
   ///
   /// The replay goes out before the resume response.
   /// Thus the command list and the configuration options of the response come last.
@@ -179,7 +195,7 @@ extension SessionMergeEngine {
   func replayUpdates(from cursor: ReplayCursor) -> [SessionUpdate] {
     switch cursor {
     case .start:
-      return transcriptUpdates + stateUpdates.filter { !$0.isStateUpdate }
+      return transcriptUpdates + stateUpdates.filter { $0.isReplayedState }
     }
   }
 }
@@ -217,6 +233,18 @@ extension SessionUpdate {
       return true
     }
     return false
+  }
+
+  /// Whether a replay sends this state update. A replay sends no announcement
+  /// (``SessionMergeEngine/replayAnnouncements``), no `state_update` and no
+  /// `session_info_update`.
+  var isReplayedState: Bool {
+    switch self {
+    case .stateUpdate, .subagentUpdate, .sessionInfoUpdate:
+      return false
+    default:
+      return true
+    }
   }
 }
 
