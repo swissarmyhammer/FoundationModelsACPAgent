@@ -157,12 +157,19 @@ comments:
     - tests: root `swift build --build-tests` ok; IntegrationTests `swift build --build-tests` ok (not run); `swift test --filter` AgentsToolTests, SettingsFoldersTests, AgentEnvironmentTests, SkillsMarketplaceTests, SubagentCancelTests, ResumeNestedSessionsTests, HotResumeTests: 66 tests in 7 suites passed, no warnings of this code.
     - next: review
   timestamp: 2026-11-04T18:46:25.112441+00:00
+- actor: claude-code
+  id: 01m6ky7r3x7c2vwy2qx90x1wb9
+  text: |-
+    ### review — clean
+    - evidence: review sha bb8cc3b~1..bb8cc3b ran once, complete (attempted 7, failed 0, skipped 0); findings 0, confirmed 0, refuted 0. All prior findings are checked.
+    - next: task moved to done.
+  timestamp: 2026-11-04T18:48:11.645154+00:00
 depends_on:
 - 01M6GJPPXWKQJ9E6SK5WD0CWZ7
 - 01M6GM17VHZSWD4G2J27WTA3JT
 - 01M6KGEQVH2T73SR32CD6VZDKG
-position_column: review
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffffb880
 title: Re-drive interrupted nested runs after a cold resume, children first, completing the original agent tool call
 ---
 ## What

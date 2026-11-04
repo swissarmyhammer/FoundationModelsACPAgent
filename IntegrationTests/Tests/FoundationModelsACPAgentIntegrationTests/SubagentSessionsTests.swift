@@ -41,6 +41,12 @@ struct SubagentSessionsTests {
   /// The start of the first message of a restored run.
   private static let restoredRunMessage = "The process stopped while you worked"
 
+  /// The wire name of the method that a child refuses to prompt.
+  private static let promptMethod = "session/prompt"
+
+  /// The wire name of the method that a child refuses to close.
+  private static let closeMethod = "session/close"
+
   /// The longest time that a read of the wire waits for the events that settle it.
   private static let readTimeout = Duration.seconds(90)
 
@@ -88,7 +94,7 @@ struct SubagentSessionsTests {
   /// - Parameter label: The label of the folder of the gate.
   /// - Returns: The JSON text of the steps.
   private static func holdingLeafSteps(label: String) -> String {
-    let gate = makeResolvedDirectory(label: "\(label)-gate").appendingPathComponent("never")
+    let gate = NestedAgentFixture.gateFile(label: label)
     return "{\"text\":\"\(leafText)\"},{\"gate\":\"\(gate.path)\"}"
   }
 
@@ -139,14 +145,14 @@ struct SubagentSessionsTests {
   /// - Returns: `true` when the root announced a child, the child announced a grandchild, and the
   ///   grandchild sent its text.
   private static func leafIsWorking(_ trace: [WireTraceEvent], root: SessionId) -> Bool {
-    guard let child = trace.firstChild(of: root), let leaf = trace.firstChild(of: child) else {
+    guard let chain = trace.chain(of: root) else {
       return false
     }
-    return trace.contains { $0.isAgentText(containing: leafText, on: leaf) }
+    return trace.contains { $0.isAgentText(containing: leafText, on: chain.leaf) }
   }
 
-  /// A chain that ran to its end: the three sessions went idle.
-  private struct FinishedChain {
+  /// A running chain of a root, a child and a grandchild, with the wire read so far.
+  private struct NestedChain {
     /// The session of the root, still connected.
     let session: NestedRootSession
 
@@ -158,6 +164,20 @@ struct SubagentSessionsTests {
 
     /// The child of the child.
     let leaf: SessionId
+
+    /// Makes the chain from a trace that names the child and the grandchild.
+    ///
+    /// - Parameters:
+    ///   - session: The session of the root.
+    ///   - trace: The wire read so far.
+    /// - Throws: A failed requirement when the wire names no child or no grandchild.
+    init(session: NestedRootSession, trace: [WireTraceEvent]) throws {
+      let names = try #require(trace.chain(of: session.root))
+      self.session = session
+      self.trace = trace
+      child = names.child
+      leaf = names.leaf
+    }
   }
 
   /// Runs a chain whose grandchild ends at once, and reads the wire until the root, the child and
@@ -167,20 +187,20 @@ struct SubagentSessionsTests {
   /// - Returns: The chain, with its trace.
   /// - Throws: The spawn or request error, or a failed requirement when the wire names no child
   ///   or no grandchild.
-  private static func runFinishedChain(label: String) async throws -> FinishedChain {
+  private static func runFinishedChain(label: String) async throws -> NestedChain {
     let session = try await startChain(
       in: Folders(label: label), leafSteps: finishingLeafSteps, label: label)
     let root = session.root
     let trace = await session.subscription.readLiveTrace(
       until: { trace in
-        guard let child = trace.firstChild(of: root), let leaf = trace.firstChild(of: child) else {
+        guard let chain = trace.chain(of: root) else {
           return false
         }
-        return [leaf, child, root].allSatisfy { id in trace.contains { $0.isIdle(of: id) } }
+        return [chain.leaf, chain.child, root].allSatisfy { id in
+          trace.contains { $0.isIdle(of: id) }
+        }
       }, timeout: readTimeout)
-    let child = try #require(trace.firstChild(of: root))
-    let leaf = try #require(trace.firstChild(of: child))
-    return FinishedChain(session: session, trace: trace, child: child, leaf: leaf)
+    return try NestedChain(session: session, trace: trace)
   }
 
   /// Ends the agent with the orderly shutdown of the process (the end of its input), and closes
@@ -192,8 +212,7 @@ struct SubagentSessionsTests {
   @discardableResult
   private static func quit(_ session: NestedRootSession) async throws -> SpawnedAgentExit {
     let exit = try await session.agent.closeStandardInputAndWait()
-    session.prompt.cancel()
-    await session.connection.close()
+    await session.closeClientSide()
     return exit
   }
 
@@ -256,21 +275,6 @@ struct SubagentSessionsTests {
 
   // MARK: - A working chain
 
-  /// A chain whose grandchild holds, so every session works.
-  private struct WorkingChain {
-    /// The session of the root, still connected.
-    let session: NestedRootSession
-
-    /// The wire of the run up to the first text of the grandchild.
-    let trace: [WireTraceEvent]
-
-    /// The child of the root.
-    let child: SessionId
-
-    /// The child of the child.
-    let leaf: SessionId
-  }
-
   /// Runs a chain whose grandchild holds at a gate, and reads the wire until the grandchild
   /// plays its first text.
   ///
@@ -281,16 +285,14 @@ struct SubagentSessionsTests {
   /// - Throws: The spawn or request error, or a failed requirement when the wire names no child
   ///   or no grandchild.
   private static func runWorkingChain(in folders: Folders, label: String) async throws
-    -> WorkingChain
+    -> NestedChain
   {
     let session = try await startChain(
       in: folders, leafSteps: holdingLeafSteps(label: label), label: label)
     let root = session.root
     let trace = await session.subscription.readLiveTrace(
       until: { leafIsWorking($0, root: root) }, timeout: readTimeout)
-    let child = try #require(trace.firstChild(of: root))
-    let leaf = try #require(trace.firstChild(of: child))
-    return WorkingChain(session: session, trace: trace, child: child, leaf: leaf)
+    return try NestedChain(session: session, trace: trace)
   }
 
   // MARK: - The methods of a child
@@ -304,10 +306,13 @@ struct SubagentSessionsTests {
     let connection = chain.session.connection
     let prompt = AgentClientHarness.makePromptRequest(sessionId: chain.child, text: "Hello.")
 
-    await #expect(throws: (any Error).self) { try await connection.prompt(prompt) }
-    await #expect(throws: (any Error).self) {
-      try await connection.closeSession(CloseSessionRequest(sessionId: chain.child))
+    let promptError = await requestErrorThrown { _ = try await connection.prompt(prompt) }
+    let closeError = await requestErrorThrown {
+      _ = try await connection.closeSession(CloseSessionRequest(sessionId: chain.child))
     }
+
+    #expect(isMethodRefusal(promptError, of: Self.promptMethod, on: chain.child))
+    #expect(isMethodRefusal(closeError, of: Self.closeMethod, on: chain.child))
     try await Self.quit(chain.session)
   }
 
@@ -329,15 +334,15 @@ struct SubagentSessionsTests {
       until: { trace in
         let after = trace.dropFirst(cancelledAt)
         return after.contains { $0.isIdle(of: root) }
-          && after.contains { $0.isCancelledIdle(of: chain.child) }
-          && after.contains { $0.isCancelledIdle(of: chain.leaf) }
+          && after.contains { $0.isIdle(of: chain.child, stopReason: .cancelled) }
+          && after.contains { $0.isIdle(of: chain.leaf, stopReason: .cancelled) }
       }, timeout: Self.readTimeout)
     let after = trace.dropFirst(cancelledAt)
 
-    #expect(after.contains { $0.isCancelledIdle(of: chain.child) })
-    #expect(after.contains { $0.isCancelledIdle(of: chain.leaf) })
+    #expect(after.contains { $0.isIdle(of: chain.child, stopReason: .cancelled) })
+    #expect(after.contains { $0.isIdle(of: chain.leaf, stopReason: .cancelled) })
     #expect(after.contains { $0.isIdle(of: root) })
-    #expect(!after.contains { $0.isCancelledIdle(of: root) })
+    #expect(!after.contains { $0.isIdle(of: root, stopReason: .cancelled) })
     try await Self.quit(chain.session)
   }
 
@@ -394,28 +399,12 @@ struct SubagentSessionsTests {
   /// - Returns: The trace of the wire, from the request.
   /// - Throws: The spawn, request or wait error.
   private static func resume(_ recording: Recording) async throws -> [WireTraceEvent] {
-    let label = "\(Self.label)-resume"
-    let agent = try SpawnedACPAgent.start(
-      workspace: recording.folders.workspace,
-      environment: NestedAgentFixture.environment(
-        script: restoredScript, configHome: recording.folders.configHome, label: label))
-    let model = await ConnectionModel()
-    let connection = await model.connect(over: agent.transport)
-    _ = try await model.initialize(AgentClientHarness.makeInitializeRequest())
-    let subscription = connection.subscribeToAllSessions()
-    let request = ResumeSessionRequest(
-      cwd: AbsolutePath(rawValue: recording.folders.workspace.path), sessionId: recording.root,
-      replayFrom: .start(ReplayFromStart()))
-    let trace = try await subscription.readResumeTrace(
-      startingWith: [.resumeRequest(id: .number(1), sessionId: recording.root)],
+    try await NestedAgentFixture.resumeTrace(
+      of: recording.root, workspace: recording.folders.workspace,
+      configHome: recording.folders.configHome, script: restoredScript,
+      label: "\(Self.label)-resume", replayFrom: .start(ReplayFromStart()),
       settledBy: { $0.isCompletedCall(recording.call, on: recording.root) },
-      timeout: readTimeout
-    ) {
-      _ = try await connection.resumeSession(request)
-    }
-    await connection.close()
-    _ = try await agent.closeStandardInputAndWait()
-    return trace
+      timeout: readTimeout)
   }
 
   /// The wire of a cold resume of a chain that the first process left running. The history of the

@@ -50,39 +50,6 @@ import Testing
     return (fixture, childId)
   }
 
-  /// Runs `call` and returns the refusal that it throws.
-  ///
-  /// - Parameter call: The request of the client.
-  /// - Returns: The typed error, or `nil` when the call did not throw one.
-  private static func refusal(of call: () async throws -> Void) async -> RequestError? {
-    do {
-      try await call()
-      return nil
-    } catch let error as RequestError {
-      return error
-    } catch {
-      return nil
-    }
-  }
-
-  /// Whether `error` is the refusal that names `method` and `sessionId`.
-  ///
-  /// - Parameters:
-  ///   - error: The error of the request.
-  ///   - method: The method that the refusal must name.
-  ///   - sessionId: The session that the refusal must name.
-  /// - Returns: `true` for the typed refusal of that method and session.
-  private static func isRefusal(
-    _ error: RequestError?, of method: String, on sessionId: SessionId
-  ) -> Bool {
-    guard let error else {
-      return false
-    }
-    return error.code == .invalidParams
-      && errorDataField("sessionId", of: error) == sessionId.rawValue
-      && errorDataField("method", of: error) == method
-  }
-
   // MARK: The sets
 
   /// The root session permits the prompt.
@@ -159,12 +126,12 @@ import Testing
   func promptOnAChildIsRefused() async throws {
     let (fixture, childId) = try await Self.makeFixtureWithChild()
 
-    let error = await Self.refusal {
+    let error = await requestErrorThrown {
       _ = try await fixture.harness.connection.prompt(
         AgentClientHarness.makePromptRequest(sessionId: childId, text: Self.rootPromptText))
     }
 
-    #expect(Self.isRefusal(error, of: ACPMethod.sessionPrompt, on: childId))
+    #expect(isMethodRefusal(error, of: ACPMethod.sessionPrompt, on: childId))
     await fixture.close()
   }
 
@@ -173,11 +140,11 @@ import Testing
   func closeOnAChildIsRefused() async throws {
     let (fixture, childId) = try await Self.makeFixtureWithChild()
 
-    let error = await Self.refusal {
+    let error = await requestErrorThrown {
       _ = try await fixture.harness.connection.closeSession(CloseSessionRequest(sessionId: childId))
     }
 
-    #expect(Self.isRefusal(error, of: ACPMethod.sessionClose, on: childId))
+    #expect(isMethodRefusal(error, of: ACPMethod.sessionClose, on: childId))
     await fixture.close()
   }
 
@@ -186,11 +153,11 @@ import Testing
   func aRefusedCloseLeavesTheChildOpen() async throws {
     let (fixture, childId) = try await Self.makeFixtureWithChild()
 
-    let error = await Self.refusal {
+    let error = await requestErrorThrown {
       _ = try await fixture.harness.connection.closeSession(CloseSessionRequest(sessionId: childId))
     }
 
-    #expect(Self.isRefusal(error, of: ACPMethod.sessionClose, on: childId))
+    #expect(isMethodRefusal(error, of: ACPMethod.sessionClose, on: childId))
     #expect(await fixture.harness.agent.sessions[childId]?.availability == .idle)
     await fixture.close()
   }
@@ -200,12 +167,12 @@ import Testing
   func deleteOnAChildIsRefused() async throws {
     let (fixture, childId) = try await Self.makeFixtureWithChild()
 
-    let error = await Self.refusal {
+    let error = await requestErrorThrown {
       _ = try await fixture.harness.connection.deleteSession(
         DeleteSessionRequest(sessionId: childId))
     }
 
-    #expect(Self.isRefusal(error, of: ACPMethod.sessionDelete, on: childId))
+    #expect(isMethodRefusal(error, of: ACPMethod.sessionDelete, on: childId))
     await fixture.close()
   }
 
@@ -214,12 +181,12 @@ import Testing
   func aRefusedDeleteLeavesTheEntryOfTheChild() async throws {
     let (fixture, childId) = try await Self.makeFixtureWithChild()
 
-    let error = await Self.refusal {
+    let error = await requestErrorThrown {
       _ = try await fixture.harness.connection.deleteSession(
         DeleteSessionRequest(sessionId: childId))
     }
 
-    #expect(Self.isRefusal(error, of: ACPMethod.sessionDelete, on: childId))
+    #expect(isMethodRefusal(error, of: ACPMethod.sessionDelete, on: childId))
     #expect(await fixture.harness.agent.sessions[childId] != nil)
     await fixture.close()
   }
@@ -229,12 +196,12 @@ import Testing
   func resumeOnAChildIsRefused() async throws {
     let (fixture, childId) = try await Self.makeFixtureWithChild()
 
-    let error = await Self.refusal {
+    let error = await requestErrorThrown {
       _ = try await fixture.harness.connection.resumeSession(
         ResumeSessionRequest(cwd: AbsolutePath(rawValue: fixture.cwd.path), sessionId: childId))
     }
 
-    #expect(Self.isRefusal(error, of: ACPMethod.sessionResume, on: childId))
+    #expect(isMethodRefusal(error, of: ACPMethod.sessionResume, on: childId))
     await fixture.close()
   }
 
@@ -243,14 +210,14 @@ import Testing
   func setConfigOptionOnAChildIsRefused() async throws {
     let (fixture, childId) = try await Self.makeFixtureWithChild()
 
-    let error = await Self.refusal {
+    let error = await requestErrorThrown {
       _ = try await fixture.harness.connection.setSessionConfigOption(
         SetSessionConfigOptionRequest(
           configId: ConfigOptions.modelOptionId, sessionId: childId,
           value: .id(SessionConfigValueId(rawValue: ModelSlot.standard.rawValue))))
     }
 
-    #expect(Self.isRefusal(error, of: ACPMethod.sessionSetConfigOption, on: childId))
+    #expect(isMethodRefusal(error, of: ACPMethod.sessionSetConfigOption, on: childId))
     await fixture.close()
   }
 
@@ -259,7 +226,7 @@ import Testing
   func theRefusalNamesTheChildAndTheMethodInItsReason() async throws {
     let (fixture, childId) = try await Self.makeFixtureWithChild()
 
-    let error = await Self.refusal {
+    let error = await requestErrorThrown {
       _ = try await fixture.harness.connection.closeSession(CloseSessionRequest(sessionId: childId))
     }
 

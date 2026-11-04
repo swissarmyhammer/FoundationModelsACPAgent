@@ -39,10 +39,8 @@ struct NestedRootSession {
   static func start(workspace: URL, environment: [String: String], prompt text: String)
     async throws -> NestedRootSession
   {
-    let agent = try SpawnedACPAgent.start(workspace: workspace, environment: environment)
-    let model = await ConnectionModel()
-    let connection = await model.connect(over: agent.transport)
-    _ = try await model.initialize(AgentClientHarness.makeInitializeRequest())
+    let connected = try await ConnectedAgent.start(workspace: workspace, environment: environment)
+    let (agent, model, connection) = (connected.agent, connected.model, connected.connection)
     let session = try await model.newSession(
       NewSessionRequest(cwd: AbsolutePath(rawValue: workspace.path)))
     let root = session.sessionId
@@ -53,5 +51,13 @@ struct NestedRootSession {
     return NestedRootSession(
       workspace: workspace, agent: agent, model: model, connection: connection, root: root,
       subscription: subscription, prompt: prompt)
+  }
+
+  /// Ends the client side: cancels the prompt of the root and closes the connection. The kill or
+  /// the orderly quit of the agent stays with the caller, because the tests end the process in
+  /// different ways.
+  func closeClientSide() async {
+    prompt.cancel()
+    await connection.close()
   }
 }

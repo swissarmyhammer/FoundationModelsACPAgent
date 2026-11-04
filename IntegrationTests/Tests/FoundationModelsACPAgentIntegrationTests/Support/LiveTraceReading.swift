@@ -84,24 +84,15 @@ extension WireTraceEvent {
 
   /// Whether this event is the `idle` state of `session`.
   ///
-  /// - Parameter session: The session.
+  /// - Parameters:
+  ///   - session: The session.
+  ///   - stopReason: The stop reason that the `idle` must carry, or `nil` for any stop reason.
   /// - Returns: `true` for an `idle` `state_update` on the stream of that session.
-  func isIdle(of session: SessionId) -> Bool {
-    guard stream == session, case .idle? = stateUpdate else {
-      return false
-    }
-    return true
-  }
-
-  /// Whether this event is the `idle` state of `session` with the stop reason `cancelled`.
-  ///
-  /// - Parameter session: The session.
-  /// - Returns: `true` for such an `idle` on the stream of that session.
-  func isCancelledIdle(of session: SessionId) -> Bool {
+  func isIdle(of session: SessionId, stopReason: StopReason? = nil) -> Bool {
     guard stream == session, case .idle(let idle)? = stateUpdate else {
       return false
     }
-    return idle.stopReason == .cancelled
+    return stopReason == nil || idle.stopReason == stopReason
   }
 
   /// Whether this event is the announcement of `child`, with a `subagent_update` on the stream
@@ -142,5 +133,16 @@ extension [WireTraceEvent] {
       return call.toolCallId
     }
     return nil
+  }
+
+  /// The child of `root` and the child of that child, from the first announcements.
+  ///
+  /// - Parameter root: The root session.
+  /// - Returns: The child and the grandchild, or `nil` when the trace does not name both yet.
+  func chain(of root: SessionId) -> (child: SessionId, leaf: SessionId)? {
+    guard let child = firstChild(of: root), let leaf = firstChild(of: child) else {
+      return nil
+    }
+    return (child, leaf)
   }
 }

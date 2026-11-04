@@ -92,7 +92,7 @@ struct RedriveInterruptedRunsProcessTests {
     -> Recording
   {
     let label = "RedriveInterruptedRunsProcessTests-first"
-    let gate = makeResolvedDirectory(label: "\(label)-gate").appendingPathComponent("never")
+    let gate = NestedAgentFixture.gateFile(label: label)
     let session = try await NestedRootSession.start(
       workspace: workspace,
       environment: try NestedAgentFixture.environment(
@@ -118,8 +118,7 @@ struct RedriveInterruptedRunsProcessTests {
     // A kill leaves the runs open in the recording. A close of the wire would cancel the open prompt
     // of the root, and with it the child, and a cancelled child is a finished one.
     _ = try await session.agent.killAndWait()
-    session.prompt.cancel()
-    await session.connection.close()
+    await session.closeClientSide()
     return Recording(
       root: root, child: try #require(child), call: try #require(call))
   }
@@ -163,27 +162,10 @@ struct RedriveInterruptedRunsProcessTests {
   private static func resume(
     _ recording: Recording, workspace: URL, configHome: URL
   ) async throws -> [WireTraceEvent] {
-    let label = "RedriveInterruptedRunsProcessTests-second"
-    let agent = try SpawnedACPAgent.start(
-      workspace: workspace,
-      environment: try NestedAgentFixture.environment(
-        script: secondScript, configHome: configHome, label: label))
-    let model = await ConnectionModel()
-    let connection = await model.connect(over: agent.transport)
-    _ = try await model.initialize(AgentClientHarness.makeInitializeRequest())
-    let subscription = connection.subscribeToAllSessions()
-    let first = WireTraceEvent.resumeRequest(id: .number(1), sessionId: recording.root)
-    let request = ResumeSessionRequest(
-      cwd: AbsolutePath(rawValue: workspace.path), sessionId: recording.root)
-    let trace = try await subscription.readResumeTrace(
-      startingWith: [first],
+    try await NestedAgentFixture.resumeTrace(
+      of: recording.root, workspace: workspace, configHome: configHome, script: secondScript,
+      label: "RedriveInterruptedRunsProcessTests-second",
       settledBy: { event in event.isCompletedCall(recording.call, on: recording.root) },
-      timeout: .seconds(redriveWaitSeconds)
-    ) {
-      _ = try await connection.resumeSession(request)
-    }
-    await connection.close()
-    _ = try await agent.closeStandardInputAndWait()
-    return trace
+      timeout: .seconds(redriveWaitSeconds))
   }
 }
