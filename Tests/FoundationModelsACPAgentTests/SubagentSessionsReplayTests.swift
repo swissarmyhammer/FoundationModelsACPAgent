@@ -52,7 +52,7 @@ import Testing
     /// - Parameter child: The announced child.
     /// - Returns: The position, or `nil` when the wire holds no announcement of it.
     func announcement(of child: SessionId) -> Int? {
-      updates.firstIndex { $0.update.announcement?.sessionId == child }
+      updates.firstIndex { $0.update.announces(child) }
     }
 
     /// Every announcement on the wire, in wire order.

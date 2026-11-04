@@ -152,6 +152,24 @@ comments:
     - files: Sources/FoundationModelsACPAgent/Agent/SessionResumeChildSync.swift, Tests/FoundationModelsACPAgentTests/RestoreFailureMetaTests.swift, .kanban/tasks/01M6GM17VHZSWD4G2J27WTA3JT.md (box flipped)
     - next: /review. Task stays in doing.
   timestamp: 2026-11-04T15:35:14.953354+00:00
+- actor: claude-code
+  id: 01m6kkdv4mx8kx2fsxxatjkrjr
+  text: |-
+    ### review — findings
+    - evidence: review sha 900e1e8~1..76869c1; 1 finding, 1 confirmed, 2 refuted, 7 attempted, 0 failed. Open: Tests/FoundationModelsACPAgentTests/SubagentSessionsReplayTests.swift:55
+    - next: the implementer fixes the finding, then review again.
+  timestamp: 2026-11-04T15:39:17.012751+00:00
+- actor: claude-code
+  id: 01m6kkj499czhp0n02qxc8tbak
+  text: |-
+    ### implement — changed
+    - finding SubagentSessionsReplayTests.swift:55 (reuse/reuse): `announcement(of:)` now is `updates.firstIndex { $0.update.announces(child) }`. The match exists once in SessionUpdate.announces.
+    - same cause in the whole file and ResumeChildSyncTests.swift: `Wire.snapshot(of:)` now uses `$0.update.announces(child)`. The running-snapshot test finds its snapshot with `first { root && announces(child) }?.update.announcement`, with no second `sessionId == child` match. Other matches (`compactMap(\.announcement)`, `!= nil`) read a different rule and stay.
+    - No production change. No assertion weakened, no test skipped.
+    - evidence: filtered `swift test --filter "SubagentSessionsReplayTests|ResumeChildSyncTests"`: 33 tests, 2 suites, pass. Full `swift test` (foreground): 1761 tests, 192 suites, pass, 1 known issue (HarnessSmokeTests, intentional). No other issue. Only build message: "missing creator for mutated node" for the mlx bundle (build system).
+    - files: Tests/FoundationModelsACPAgentTests/SubagentSessionsReplayTests.swift, Tests/FoundationModelsACPAgentTests/ResumeChildSyncTests.swift, .kanban/tasks/01M6GM17VHZSWD4G2J27WTA3JT.md (box flipped)
+    - next: /review. Task stays in doing.
+  timestamp: 2026-11-04T15:41:37.449661+00:00
 depends_on:
 - 01M6GM0N9BFK37GGBWPAG9VE1X
 - 01M6GH30709S58BK3AQ1VMBAM7
@@ -242,3 +260,12 @@ True conflict between two rules. A person must correct a rule and restart the wo
 > - `.kanban/ (from .reviewignore)` — 20 file(s)
 
 - [x] `Sources/FoundationModelsACPAgent/Agent/SessionResumeChildSync.swift:162` `completeness/public-output-contract` — The new `written(into:)` returns `meta ?? .null` when `_meta` or `_meta.sah` is not an object. The reason of a failed child is then dropped with no warning. The doc comment says the announcement of a failed child 'always carries its reason', so this contradicts the function's own contract. The failure is silent, not reported. Decide the contract for a non-object `_meta` or `_meta.sah`. Either replace it with a fresh object that holds the reason, or keep the value and log a warning that names the dropped reason. Update the doc comment to match. Add a test that reads the reason back for those shapes, or states that the reason is intentionally dropped.
+
+## Review Findings (2026-11-04 09:35)
+
+> Scope: `review sha 900e1e8~1..76869c1` — reviewed the diffs only — lines this change added or modified. 9 file(s) reviewed, 20 not reviewed.
+
+> 20 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 20 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTests/SubagentSessionsReplayTests.swift:55` `reuse/reuse` — The changed `announcement(of:)` rebuilds the test in `SubagentUpdate` matching that `announces(_:)` already provides. The helper is the same comparison: `update.announcement?.sessionId == child`. Two copies of one rule can drift apart. Replace the body with `updates.firstIndex { $0.update.announces(child) }`.

@@ -98,7 +98,7 @@ import Testing
     /// - Parameter child: The child.
     /// - Returns: The update, or `nil` when the wire holds none.
     func snapshot(of child: SessionId) -> Sent? {
-      afterResponse.first { $0.announcement?.sessionId == child }
+      afterResponse.first { $0.update.announces(child) }
     }
 
     /// The first `state_update` of `child` on its own stream after the response.
@@ -418,8 +418,8 @@ import Testing
     }
 
     let snapshot = try #require(
-      updates.lazy.filter { $0.sessionId == recording.root }
-        .compactMap { $0.update.announcement }.first { $0.sessionId == recording.child })
+      updates.first { $0.sessionId == recording.root && $0.update.announces(recording.child) }?
+        .update.announcement)
     var isRunning = false
     if case .value(.running) = snapshot.state {
       isRunning = true
