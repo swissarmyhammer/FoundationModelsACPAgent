@@ -303,13 +303,14 @@ import Testing
   // MARK: The state of the child
 
   /// The child reports `running` first and `idle` with the stop reason last.
+  /// Each state carries the list of the work that runs apart, and this list is empty.
   @Test
   func theChildGoesRunningAndEndsIdleWithItsStopReason() async throws {
     let wire = try await Self.run(childPlay: Self.toolCallingChild())
 
     let states = wire.childStates
 
-    #expect(states.first == .running(RunningStateUpdate()))
+    #expect(states.first == .running(RunningStateUpdate(background: [])))
     #expect(Self.stopReason(of: states.last) == .endTurn)
     await wire.fixture.close()
   }

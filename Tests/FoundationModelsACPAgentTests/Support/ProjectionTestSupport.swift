@@ -393,13 +393,15 @@ enum RoutedPrompt {
   ///   - runClock: The clock of the runs of the session (their timeouts
   ///     and settle periods), or `nil` for the real clock. A test that
   ///     reaches a run timeout gives a `ManualRunClock`, and advances it.
+  ///   - reportsBackground: Whether the projector and the prompt share one state ledger that
+  ///     sends the `background` list. The default is no ledger.
   ///   - observe: Gets each sent update, after the recorder has it. A test
   ///     opens a gate of a tool here, at a fixed point of the wire order.
   /// - Returns: The sent updates, in send order.
   /// - Throws: Whatever the profile or the session throws.
   static func sentUpdates(
     prompt: String = defaultPrompt, script: [ScriptedPassStep], tools: [any FoundationModels.Tool],
-    label: String, runClock: (any RunClock)? = nil,
+    label: String, runClock: (any RunClock)? = nil, reportsBackground: Bool = false,
     observe: @escaping @Sendable (SessionUpdate) -> Void = { _ in }
   ) async throws -> [SessionUpdate] {
     let directory = FileManager.default.temporaryDirectory
@@ -429,15 +431,17 @@ enum RoutedPrompt {
       await recorder.append(update)
       observe(update)
     }
+    let ledger = reportsBackground ? SessionStateLedger(send: send) : nil
     let projector = SessionProjector(
       sessionId: SessionId(rawValue: syntheticSessionIdValue), modelName: syntheticModelName,
       send: send,
-      relay: nil, runCallJoins: RunCallJoinTable())
+      relay: nil, runCallJoins: RunCallJoinTable(), stateLedger: ledger)
     await projector.attach(session)
     let (ends, end) = AsyncStream.makeStream(of: StopReason.self)
     var execution = PromptExecution(
       sessionId: SessionId(rawValue: syntheticSessionIdValue), promptBlocks: [],
-      promptState: PromptStateOwner(send: send), send: send, titleRecord: nil,
+      promptState: ledger.map { PromptStateOwner(ledger: $0) } ?? PromptStateOwner(send: send),
+      send: send, titleRecord: nil,
       modelName: syntheticModelName)
     execution.modelPrompt = prompt
     await execution.run(session: session, projector: projector) { _ in end.finish() }

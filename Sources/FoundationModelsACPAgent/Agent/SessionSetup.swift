@@ -876,7 +876,9 @@ extension RoutedACPAgent {
       return
     }
     TerminalStream.start(
-      over: shellOutput, runCallJoins: surface.runCallJoins, send: historySink(for: sessionId))
+      over: shellOutput, runCallJoins: surface.runCallJoins,
+      background: sessions[sessionId]?.stateLedger.backgroundReport,
+      send: historySink(for: sessionId))
   }
 
   /// Sends the status report of the MCP servers of a session.

@@ -184,6 +184,32 @@ extension SessionMergeEngine {
   }
 }
 
+extension SessionMergeEngine {
+  /// The update that holds the current state of a listed piece of work: the merged `tool_call`,
+  /// `terminal` or `subagent` that the history holds for it.
+  ///
+  /// - Parameter work: The listed work.
+  /// - Returns: The update, or `nil` when the history holds nothing for the work.
+  func currentUpdate(of work: FoundationModelsACP.BackgroundWork) -> SessionUpdate? {
+    switch work {
+    case .toolCall(let call):
+      return transcriptUpdates.first { update in
+        guard case .toolCallUpdate(let held) = update else { return false }
+        return held.toolCallId == call.toolCallId
+      }
+    case .terminal(let terminal):
+      return transcriptUpdates.first { update in
+        guard case .terminalUpdate(let held) = update else { return false }
+        return held.terminalId == terminal.terminalId
+      }
+    case .subagent(let child):
+      return subagents.first { $0.sessionId == child.sessionId }.map(SessionUpdate.subagentUpdate)
+    case .unknown:
+      return nil
+    }
+  }
+}
+
 extension SessionUpdate {
   /// Whether this update is a `state_update`.
   var isStateUpdate: Bool {

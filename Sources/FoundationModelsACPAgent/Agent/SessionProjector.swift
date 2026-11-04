@@ -146,7 +146,12 @@ actor SessionProjector {
     self.runCallJoins = runCallJoins
     // The final status of an `agents` call waits for the end of its child
     // (``AgentCallHolds``). Each send of the session goes through the hold.
-    let send = runCallJoins.deferringFinalStatus(of: send)
+    // The ledger learns of each update after the update went out, below the hold. So a call
+    // whose final status the hold keeps back stays on the background list.
+    let background = BackgroundWatch()
+    let announcing =
+      stateLedger.map { background.reporting(sentThrough: send, to: $0.backgroundReport) } ?? send
+    let send = runCallJoins.deferringFinalStatus(of: announcing)
     let (stream, inbox) = AsyncStream.makeStream(of: Input.self)
     self.inbox = inbox
     runCallJoins.openProjection()
@@ -159,7 +164,8 @@ actor SessionProjector {
         send: send,
         holds: runCallJoins.holds,
         relay: relay,
-        stateLedger: stateLedger)
+        stateLedger: stateLedger,
+        background: background)
       if let relay {
         let endElicitation: ElicitationEndHandler = { end in await relay.end(end) }
         state.translator.endElicitation = endElicitation
@@ -391,6 +397,9 @@ private struct ProjectionState {
   /// reads no work state.
   let stateLedger: SessionStateLedger?
 
+  /// The watch of the runs that go on after their SDK call returned.
+  let background: BackgroundWatch
+
   /// The open prompts, in the order that they opened. A stream message
   /// goes alone in its submission, so an event holds the `MailID` of at
   /// most one prompt.
@@ -485,7 +494,11 @@ private struct ProjectionState {
     let recorders = index.map { [open[$0].toolCalls] } ?? open.map(\.toolCalls)
     translator.send = recorders.reduce(send) { sink, toolCalls in toolCalls.recording(into: sink) }
     translator.relayElicitation = relayHandler(for: source.session)
+    background.willTranslate(event)
     await translator.project(event)
+    for change in background.didTranslate(event, joins: translator.runCallJoins) {
+      await stateLedger?.background(change)
+    }
     // The work state of the session (elicitation-plan task 2): the ledger
     // sends `running` and `idle` from it. A prompt that ended at an
     // earlier event already gave the ledger its stop reason.

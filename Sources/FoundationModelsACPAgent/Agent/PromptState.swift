@@ -49,11 +49,23 @@ extension AgentSideConnection {
 /// last `running`, the `idle` has no stop reason. A prompt that ends while
 /// Router still works sends no `idle`. The `idle` comes when the work ends.
 ///
+/// Every `state_update` carries the `background` list: the work that runs apart from the
+/// foreground work (``BackgroundBook``). The list is `[]` when nothing runs apart. The sources of
+/// the work tell the ledger through ``background(_:)``, after the wire update of the change went
+/// out. When the list changes, the ledger sends the state again with the new list.
+///
 /// The ledger sends one update at a time, in the order of the decisions.
 /// The sink suspends, and the actor is reentrant. So each send waits for the
 /// turn of the sends before it. A later change never overtakes an earlier
 /// change or an earlier snapshot.
 actor SessionStateLedger {
+  /// The receiver of the activity of a session. A parent ledger listens to its child.
+  ///
+  /// - Parameters:
+  ///   - isActive: Whether the session works, or runs work apart.
+  ///   - version: The number of the change. A newer change has a larger number.
+  typealias SessionActivityObserver = @Sendable (_ isActive: Bool, _ version: Int) async -> Void
+
   /// The state that the ledger reported last.
   private enum Reported {
     /// The session is not busy.
@@ -97,6 +109,24 @@ actor SessionStateLedger {
   /// or `nil` when no prompt ended since then.
   private var lastPromptEnd: IdleStateUpdate?
 
+  /// The work that runs apart from the foreground work.
+  private var book = BackgroundBook()
+
+  /// The list that the last state update carried.
+  private var reportedBackground: [BackgroundWork] = []
+
+  /// The receiver of the activity of this session, or `nil` for a root session.
+  private var activityObserver: SessionActivityObserver?
+
+  /// The number of changes of the activity of this session.
+  private var activityVersion = 0
+
+  /// Whether the last noted activity was active.
+  private var wasActive = false
+
+  /// The newest activity version of each child, so an old report is not taken.
+  private var childActivityVersions: [SessionId: Int] = [:]
+
   /// Whether a send runs now.
   private var isSending = false
 
@@ -116,6 +146,11 @@ actor SessionStateLedger {
   /// Whether a prompt is open now.
   var hasOpenPrompt: Bool {
     openCount > 0
+  }
+
+  /// The list of the work that runs apart now: what the next state update carries.
+  var backgroundList: [FoundationModelsACP.BackgroundWork] {
+    book.list
   }
 
   /// Whether the session is idle now: the state that a snapshot of the session carries.
@@ -164,7 +199,7 @@ actor SessionStateLedger {
     lastPromptEnd = idle
     if !started, !isBusy, reported == .idle {
       lastPromptEnd = nil
-      await deliver(.stateUpdate(.idle(idle.sayingNoWork())), recorded: true)
+      await deliver(.stateUpdate(stamped(.idle(idle.sayingNoWork()))), recorded: true)
       return
     }
     await sendChange()
@@ -234,18 +269,11 @@ actor SessionStateLedger {
   /// The `idle` carries no stop reason and no error. A snapshot is not a
   /// new completion and not a new cancellation. The client already got the
   /// stop reason of the last prompt. The snapshot changes nothing in the
-  /// ledger.
+  /// ledger. It carries the list of the work that runs apart now.
   ///
   /// - Returns: The current state.
   func currentSnapshot() -> StateUpdate {
-    switch current {
-    case .requiresAction:
-      return .requiresAction(RequiresActionStateUpdate())
-    case .running:
-      return .running(RunningStateUpdate())
-    case .idle:
-      return .idle(IdleStateUpdate().sayingNoWork())
-    }
+    stamped(currentState)
   }
 
   /// Sends the current state (``currentSnapshot()``), also when it equals
@@ -259,16 +287,129 @@ actor SessionStateLedger {
     await deliver(.stateUpdate(currentSnapshot()), recorded: false)
   }
 
-  /// Sends the new state when the state of the session changed since the
-  /// last report.
+  /// Takes one change of the work that runs apart from the foreground work. It sends the state
+  /// again when the list changes.
+  ///
+  /// The source calls this after the wire update of the change went out. So the list names an
+  /// item only after its announcement, and it drops the item after its final status.
+  ///
+  /// - Parameter change: The change.
+  func background(_ change: BackgroundChange) async {
+    book.apply(change)
+    await sendChange()
+  }
+
+  /// The receiver of the changes of the work that runs apart. It takes each change into this
+  /// ledger (``background(_:)``).
+  nonisolated var backgroundReport: BackgroundReport {
+    { await self.background($0) }
+  }
+
+  /// Sets the receiver of the activity of this session. A child session tells its parent
+  /// through it. The parent lists the child while the child is active.
+  ///
+  /// - Parameter observer: The receiver.
+  func observeActivity(_ observer: @escaping SessionActivityObserver) {
+    activityObserver = observer
+  }
+
+  /// Records that the `subagent_update` of a child went to the client.
+  ///
+  /// - Parameter child: The child session.
+  func subagentAnnounced(_ child: SessionId) async {
+    await background(.subagentAnnounced(child))
+  }
+
+  /// Takes the activity of a child session. A report that is older than the last one is dropped:
+  /// the reports of one child can arrive in another order than they were made.
+  ///
+  /// - Parameters:
+  ///   - child: The child session.
+  ///   - isActive: Whether the child works, or runs work apart.
+  ///   - version: The number of the report of the child.
+  func subagentActivity(_ child: SessionId, isActive: Bool, version: Int) async {
+    guard version > childActivityVersions[child, default: 0] else {
+      return
+    }
+    childActivityVersions[child] = version
+    await background(.subagentActivity(child, isActive: isActive))
+  }
+
+  /// Records that a child session is gone.
+  ///
+  /// - Parameter child: The child session.
+  func subagentRetired(_ child: SessionId) async {
+    childActivityVersions.removeValue(forKey: child)
+    await background(.subagentRetired(child))
+  }
+
+  /// The state that the session has now, with no stop reason and no list.
+  private var currentState: StateUpdate {
+    switch current {
+    case .requiresAction:
+      return .requiresAction(RequiresActionStateUpdate())
+    case .running:
+      return .running(RunningStateUpdate())
+    case .idle:
+      return .idle(IdleStateUpdate().sayingNoWork())
+    }
+  }
+
+  /// A state with the list of the work that runs apart now. The ledger notes this list as the
+  /// one that the client holds.
+  ///
+  /// - Parameter state: The state to send.
+  /// - Returns: The state with the list.
+  private func stamped(_ state: StateUpdate) -> StateUpdate {
+    let list = book.list
+    reportedBackground = list
+    return state.reporting(background: list)
+  }
+
+  /// Sends the new state when the state of the session or the list changed since the last
+  /// report. Then it tells the observer when the session became active or idle.
   private func sendChange() async {
+    let activity = noteActivity()
+    await deliverChange()
+    if let activity {
+      await activityObserver?(activity.isActive, activity.version)
+    }
+  }
+
+  /// Notes whether the session is active now: it works, or it runs work apart.
+  ///
+  /// - Returns: The new activity, or `nil` when it did not change.
+  private func noteActivity() -> (isActive: Bool, version: Int)? {
+    let isActive = current != .idle || !book.list.isEmpty
+    guard isActive != wasActive else {
+      return nil
+    }
+    wasActive = isActive
+    activityVersion += 1
+    return (isActive, activityVersion)
+  }
+
+  /// Sends the new state when the state of the session changed since the last report. When only
+  /// the list changed, it sends the current state again.
+  private func deliverChange() async {
     let next = current
     guard next != reported else {
+      await resendWhenListChanged()
       return
     }
     let previous = reported
     reported = next
-    await deliver(.stateUpdate(update(entering: next, from: previous)), recorded: true)
+    await deliver(
+      .stateUpdate(stamped(update(entering: next, from: previous))), recorded: true)
+  }
+
+  /// Sends the current state again when the list is not the one that the client holds. The state
+  /// did not change, so this is no new event of the session. It records nothing in the history.
+  private func resendWhenListChanged() async {
+    guard book.list != reportedBackground else {
+      return
+    }
+    await deliver(.stateUpdate(stamped(currentState)), recorded: false)
   }
 
   /// The state update for a change of the reported state.

@@ -84,6 +84,11 @@ struct TerminalStream {
   /// The sink every update of this projection goes to.
   let send: SessionUpdateSink
 
+  /// The receiver of the announce and of the exit of each terminal, or `nil` for none. The state
+  /// ledger of the session lists the terminal of a detached run from them. The stream reports
+  /// after the update went out.
+  var background: BackgroundReport?
+
   /// Where the forwarder of ``consume(_:)`` waits: for the next shell
   /// event of the upstream stream, or for its turn after the loop took
   /// one event. A test reads these steps to prove that the forwarder
@@ -159,6 +164,7 @@ struct TerminalStream {
   ///     table that no projector opens.
   ///   - forwarderObserver: Gets each step of the forwarder, or `nil`
   ///     (the default) to observe nothing. Only a test gives it.
+  ///   - background: The receiver of the announce and of the exit of each terminal, or `nil`.
   ///   - send: The sink every update goes to.
   /// - Returns: The running consumer task.
   @discardableResult
@@ -166,6 +172,7 @@ struct TerminalStream {
     over stream: ShellOutputChunkStream,
     runCallJoins: RunCallJoinTable = RunCallJoinTable(),
     forwarderObserver: (@Sendable (ForwarderStep) -> Void)? = nil,
+    background: BackgroundReport? = nil,
     send: @escaping SessionUpdateSink
   ) -> Task<Void, Never> {
     Task {
@@ -174,6 +181,7 @@ struct TerminalStream {
         runCallJoins: runCallJoins,
         send: send)
       projection.forwarderObserver = forwarderObserver
+      projection.background = background
       await projection.consume(stream)
     }
   }
@@ -379,6 +387,7 @@ struct TerminalStream {
           toolCallId: toolCallId,
           content: .value([Self.terminalItem(for: commandID)]),
           status: .value(.inProgress))))
+    await background?(.terminalAnnounced(TerminalId(rawValue: commandID), on: toolCallId))
   }
 
   /// Replaces the client's view of one run with the stored record: a
@@ -428,5 +437,6 @@ struct TerminalStream {
           terminalId: TerminalId(rawValue: commandID),
           exitStatus: .value(TerminalExitStatus()),
           output: output)))
+    await background?(.terminalExited(TerminalId(rawValue: commandID)))
   }
 }

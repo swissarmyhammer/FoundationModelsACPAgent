@@ -44,8 +44,15 @@ comments:
     - evidence: SessionLifecycle.swift (closeSessions(where:isShutdown:) now serves shutdown(); duplicate loop and drain deleted), ComposedAgent.swift (new shutdownAfterConnectionTeardown()), AcpCommand.swift and RunPrompt.swift (call it), OrderlyShutdownTests.swift (prompt Task handle stored in Working, awaited with try, no try?). 6 of 6 findings checked. Filtered tests: OrderlyShutdownTests, SessionLifecycleTests, ConnectionCloseTests, ResumeNestedSessionsTests: 25 tests passed.
     - next: review
   timestamp: 2026-11-04T02:57:28.934717+00:00
-position_column: doing
-position_ordinal: '8380'
+- actor: claude-code
+  id: 01m6j81jvysnyhn9z44gcdkcxr
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD. 0 findings, 0 confirmed, 0 refuted. 5 files reviewed. All prior items are checked.
+    - next: task moved to done.
+  timestamp: 2026-11-04T03:01:06.558512+00:00
+position_column: done
+position_ordinal: ffffa180
 title: Orderly shutdown suspends the live sessions so working runs stay restorable
 ---
 ## What

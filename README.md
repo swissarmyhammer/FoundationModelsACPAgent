@@ -482,6 +482,16 @@ code gives the local detail.
   `requires_action` while the user works in the browser. The copy of a
   question of a child session sends nothing. A `session/resume` sends the current state
   after the replay and before the response.
+- **Every `state_update` lists the background work.** The `background` list
+  holds the work that goes on apart from the foreground work. An item is a
+  terminal, a tool call, or a running sub-agent session. The list is `[]` when nothing
+  goes on apart. An item is listed only after its update went to the client.
+  It leaves the list only after its final status or its exit status went to
+  the client. When the list changes, the agent sends the state again with the
+  new list. A tool call whose terminal runs is listed as that terminal. A
+  sub-agent is listed while its session is not `idle`, or while its own list
+  is not empty. A `session/resume` with no replay sends the current update of
+  each listed item before the state.
 - **`session/cancel` is a signal.** It sends `cancelAll()` to the Router
   session. Each open prompt ends `cancelled` at once, and its response says
   so. The `idle` comes when the work of the session ends. You can only stop

@@ -8,11 +8,25 @@ comments:
   id: 01m6h6kmkzk3j7ahbexszq1887
   text: 'SPEC REVIEW (independent, 2026-11-03): no state_update has a background list today (SessionStateLedger.currentSnapshot returns running, requires_action, or idle with only the noWork meta). A running sub-agent is never listed and no subagent_update is sent before a listing snapshot. This task fixes it: every state_update carries background once the agent reports it; a listed item is announced before and finalized before removal; the resume sync sends the pre-response item updates before the current state_update.'
   timestamp: 2026-11-03T17:16:46.591620+00:00
+- actor: claude-code
+  id: 01m6j9vs5c2x9vrgprtape3zmg
+  text: |-
+    step: implement
+    outcome: changed
+    evidence: 14 files. New: Agent/BackgroundBook.swift, Agent/BackgroundWatch.swift, Tests/BackgroundListTests.swift. Changed: Agent/PromptState.swift, SessionProjector.swift, TerminalStream.swift, SessionBuild.swift, SubagentAnnouncement.swift, SessionResume.swift, SessionHistory.swift, SessionSetup.swift, Tests/Support/ProjectionTestSupport.swift, README.md. Filtered run (BackgroundListTests and the suites of the touched files): 280 tests passed, 0 issues.
+    task: ^d9nsyvc
+
+    How it works. The state ledger holds a BackgroundBook. Every state_update carries the list: [] when nothing runs apart. A list change sends the state again to the snapshot sink, so the retained history state stays. A source reports a change only after its wire update went out. Tool calls: BackgroundWatch sits under the final-status hold in the projector. A run is detached when its SDK toolStatus returns while the run is open and has progress. The call is listed after its tool_call_update. It leaves after the final status update reached the sink, so a held agents final status keeps the call listed. Terminals: TerminalStream reports the announce and the exit. A terminal replaces its call in the list. Sub-agents: a child ledger tells its parent when it is active (version numbers drop old reports). The parent lists the child after the subagent_update went out, and drops it when the child is idle or retired. Resume: syncCurrentState sends the current update of each listed item from the retained history before the snapshot, unless a replay ran.
+
+    Discoveries. (1) The close record of a plane run comes after its terminal event, so it is no detach signal. The SDK toolStatus before the settlement is the signal. This is the real Router order, and the RealStream tests prove it. (2) A gated child ledger blocks in deliver until its subagent_update went out, so a child can not be active before its announcement. (3) After a resume the entry has a new ledger, so the list is empty at a resume today. The item sync is ready for the hot resume task.
+
+    Open: the acceptance item "session/cancel of the parent leaves the listed work running" is NOT done here. The card text gives it to the cancel task ^wd6mnvw, which depends on this card. It needs the change from cancelAll() to cancelForeground() in cancelRunningPrompt, with the README and the tests of the cancel behavior. The box stays unchecked.
+  timestamp: 2026-11-04T03:32:53.548774+00:00
 depends_on:
 - 01M6GM0N9BFK37GGBWPAG9VE1X
 - 01M6GH30709S58BK3AQ1VMBAM7
-position_column: todo
-position_ordinal: 8d80
+position_column: doing
+position_ordinal: '8380'
 title: State snapshots carry the background list (tool calls, terminals, running sub-agents) with announce-before-list ordering
 ---
 ## What
@@ -35,15 +49,15 @@ Where: `SessionStateLedger` (`Sources/FoundationModelsACPAgent/Agent/PromptState
 Needs (not in this package): the `background` field on the Swift `StateUpdate` types. It is in the schema from alpha.12; the vendored schema is alpha.8 (re-vendor card on the FoundationModelsACP board, `01M6GJ8GX6C0YRHJW0W2ADAVTE`). Do not start before that card is done. Task `1vmbam7` (announce) is needed for the `subagent` entries.
 
 ## Acceptance Criteria
-- [ ] Every `state_update` of a session that reports background work carries `background`; `[]` when nothing runs.
-- [ ] A detached tool call appears in the list after its `tool_call` update and leaves after its final status.
-- [ ] A running sub-agent appears as `{type: subagent, sessionId}` after its `subagent_update`; an idle child without background work does not.
-- [ ] A resume sends a current update for each listed item that the replay did not cover, before the snapshot.
+- [x] Every `state_update` of a session that reports background work carries `background`; `[]` when nothing runs.
+- [x] A detached tool call appears in the list after its `tool_call` update and leaves after its final status.
+- [x] A running sub-agent appears as `{type: subagent, sessionId}` after its `subagent_update`; an idle child without background work does not.
+- [x] A resume sends a current update for each listed item that the replay did not cover, before the snapshot.
 - [ ] `session/cancel` of the parent leaves the listed work running (cancel task).
 
 ## Tests
-- [ ] `Tests/FoundationModelsACPAgentTests/BackgroundListTests.swift`: announce before list, finalize before removal, subagent rules, resume ordering, repeated snapshot is not a transition.
-- [ ] Run `swift test --filter BackgroundListTests`. All pass.
+- [x] `Tests/FoundationModelsACPAgentTests/BackgroundListTests.swift`: announce before list, finalize before removal, subagent rules, resume ordering, repeated snapshot is not a transition.
+- [x] Run `swift test --filter BackgroundListTests`. All pass.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #subagents

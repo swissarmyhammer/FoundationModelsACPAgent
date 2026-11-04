@@ -102,6 +102,10 @@ extension RoutedACPAgent {
   /// The first delivery also links the `agents` call to the child: one `tool_call_update` with
   /// `_meta.sah.agentRun`.
   ///
+  /// After the first delivery, the state ledger of the parent lists the child while it works
+  /// (``SessionStateLedger/subagentAnnounced(_:)``). The parent lists the child only after its
+  /// announcement went out.
+  ///
   /// The update carries all fields when the client does not know the child (`previous` is `nil`).
   /// After that, it carries only the changed fields. The parent is the session that started the
   /// run. For a run that no session started, the parent is the root session. The call sends
@@ -139,6 +143,9 @@ extension RoutedACPAgent {
     await send(.subagentUpdate(patch))
     if previous == nil, let link {
       await send(linkUpdate(of: link, to: child, on: parent))
+    }
+    if previous == nil {
+      await parent.stateLedger.subagentAnnounced(child)
     }
     return .sent(target)
   }

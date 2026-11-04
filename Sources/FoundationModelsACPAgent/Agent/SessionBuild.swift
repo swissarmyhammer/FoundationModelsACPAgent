@@ -200,6 +200,12 @@ extension RoutedACPAgent {
     let send = historySink(for: sessionId, gate: announcement)
     let stateLedger = SessionStateLedger(
       send: send, announce: unrecordedSink(for: sessionId, gate: announcement))
+    if let parent {
+      await stateLedger.observeActivity { [weak self] isActive, version in
+        await self?.sessions[parent]?.stateLedger.subagentActivity(
+          sessionId, isActive: isActive, version: version)
+      }
+    }
     let shellOutput = build.surface.shellOutput
     let table = connections
     let projector = SessionProjector(
@@ -347,6 +353,8 @@ extension RoutedACPAgent {
       return
     }
     await tearDownSession(sessionId, entry: entry)
+    // The child sent its last updates, so the list of the parent can drop it.
+    await sessions[parent]?.stateLedger.subagentRetired(sessionId)
     // The snapshot timeline belongs to the folder, and the child leaves it as it was. Only the
     // key of the child session goes.
     SnapshotSessionKeys.shared.forget(sessionId)

@@ -239,7 +239,7 @@ extension RoutedACPAgent {
     await restoreNestedSessions(of: params.sessionId, composition: composition)
 
     try await replayHistory(history, from: replayCursor, sessionId: params.sessionId)
-    await syncCurrentState(of: params.sessionId)
+    await syncCurrentState(of: params.sessionId, replayed: replayCursor != nil)
 
     let response = ResumeSessionResponse(
       availableCommands: activation.availableCommands,
@@ -524,9 +524,10 @@ extension RoutedACPAgent {
 
   /// Sends the current state of the resumed session (ACP v2 Session Setup,
   /// "Ordering"). It runs after the replay, if any, and before the resume
-  /// response. It sends one current `state_update`, and then the current
-  /// `session_info_update` when there is info. It runs for each resume,
-  /// with or without `replayFrom`, and it sends no history.
+  /// response. It sends one current update for each listed piece of work that the replay did not
+  /// send. Then it sends one current `state_update`, and then the current `session_info_update`
+  /// when there is info. It runs for each resume, with or without `replayFrom`, and it sends no
+  /// history.
   ///
   /// The `state_update` comes from the ledger of the session. The ledger
   /// sends it in order with the live changes, and it does not record it
@@ -535,10 +536,20 @@ extension RoutedACPAgent {
   /// (``SessionMergeEngine/replayUpdates(from:)``). A session that no
   /// connection serves sends nothing, as the sink does.
   ///
-  /// - Parameter sessionId: The resumed session.
-  func syncCurrentState(of sessionId: SessionId) async {
+  /// The `state_update` names the listed work, and the client must know each item before it
+  /// reads the list. A replay sends every entity of the history at its current state. So
+  /// without a replay the sync sends the current update of each listed item first
+  /// (``syncListedWork(of:in:)``).
+  ///
+  /// - Parameters:
+  ///   - sessionId: The resumed session.
+  ///   - replayed: Whether the resume replayed the history.
+  func syncCurrentState(of sessionId: SessionId, replayed: Bool = false) async {
     guard let entry = sessions[sessionId] else {
       return
+    }
+    if !replayed {
+      await syncListedWork(of: sessionId, in: entry)
     }
     await entry.stateLedger.announceCurrentState()
     let info = entry.history.sessionInfoSyncUpdate(recordedTitle: entry.session.facts.title)
@@ -546,6 +557,23 @@ extension RoutedACPAgent {
       return
     }
     await unrecordedSink(for: sessionId, gate: entry.announcement)(.sessionInfoUpdate(info))
+  }
+
+  /// Sends the current update of each piece of work that the session lists. The history holds
+  /// the merged update, so the update is the current state of the item. The history keeps its
+  /// copy as it is.
+  ///
+  /// - Parameters:
+  ///   - sessionId: The resumed session.
+  ///   - entry: The entry of the session.
+  private func syncListedWork(of sessionId: SessionId, in entry: ActiveSession) async {
+    let send = unrecordedSink(for: sessionId, gate: entry.announcement)
+    let history = entry.history
+    for work in await entry.stateLedger.backgroundList {
+      if let update = history.currentUpdate(of: work) {
+        await send(update)
+      }
+    }
   }
 
   // MARK: - The missing-tool report
