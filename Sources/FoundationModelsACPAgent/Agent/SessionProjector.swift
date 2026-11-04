@@ -109,6 +109,11 @@ actor SessionProjector {
   /// The id of the ACP session.
   private nonisolated let sessionId: SessionId
 
+  /// The pause of the tool calls at the orderly shutdown (task ^d6vzdkg). After
+  /// ``InterruptedToolCalls/begin()``, the sends of this session carry no final status of a
+  /// tool call.
+  nonisolated let interruption = InterruptedToolCalls()
+
   /// The input end of the inbox.
   private nonisolated let inbox: AsyncStream<Input>.Continuation
 
@@ -155,7 +160,7 @@ actor SessionProjector {
     let background = BackgroundWatch()
     let announcing =
       stateLedger.map { background.reporting(sentThrough: send, to: $0.backgroundReport) } ?? send
-    let send = runCallJoins.deferringFinalStatus(of: announcing)
+    let send = interruption.filtering(runCallJoins.deferringFinalStatus(of: announcing))
     let (stream, inbox) = AsyncStream.makeStream(of: Input.self)
     self.inbox = inbox
     // The views of the messages between a caller and a child go through the inbox. So a view
@@ -703,6 +708,9 @@ private struct ProjectionState {
     // The recorded request still ends the prompt as cancelled.
     if await ending.prompt.owner.cancelRequested {
       stop = .cancelled
+    } else if stop == .cancelled, await ending.prompt.owner.interruptRequested {
+      // The shutdown of the process closed the session under the prompt. Nobody cancelled it.
+      stop = .interrupted
     }
     // A completed prompt must not read as a normal `end_turn` in one case.
     // The case is no output and a usage report that says zero generated tokens (task

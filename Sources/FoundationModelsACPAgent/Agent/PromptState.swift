@@ -491,6 +491,9 @@ actor PromptStateOwner {
   /// Whether `session/cancel` asked this prompt to stop.
   private(set) var cancelRequested = false
 
+  /// Whether the orderly shutdown of the process stopped this prompt (``noteInterrupted()``).
+  private(set) var interruptRequested = false
+
   /// Whether ``promptDidStart()`` already sent `running` for the prompt.
   private var didStart = false
 
@@ -580,5 +583,12 @@ actor PromptStateOwner {
   /// completion.
   func noteCancelRequested() {
     cancelRequested = true
+  }
+
+  /// Records that the orderly shutdown of the process stops this prompt. The prompt then ends
+  /// as `interrupted` and not as `cancelled`, unless a `session/cancel` reached it too
+  /// (``PromptStop/interrupted``).
+  func noteInterrupted() {
+    interruptRequested = true
   }
 }

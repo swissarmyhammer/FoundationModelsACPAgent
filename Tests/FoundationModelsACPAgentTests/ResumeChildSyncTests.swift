@@ -178,6 +178,17 @@ import Testing
     return try await resume(recording, replays: replays) { $0.isOwnState(of: leaf) }
   }
 
+  /// Records the chain with the orderly shutdown of the process, and resumes it with a replay.
+  /// The read ends after the own `state_update` of the grandchild: the last send of the sync.
+  ///
+  /// - Returns: The wire of the resume.
+  /// - Throws: Whatever the fixture or the request throws.
+  private static func resumeShutDownChain() async throws -> Wire {
+    let recording = try await ResumeNestedSessionsTests.recordShutDownChain()
+    let leaf = recording.leaf
+    return try await resume(recording, replays: true) { $0.isOwnState(of: leaf) }
+  }
+
   /// Records the chain, removes the definition of the child agent, and resumes it. The child and
   /// the grandchild do not restore. The read ends after the announcement of the grandchild.
   ///
@@ -535,23 +546,87 @@ import Testing
     await wire.fixture.close()
   }
 
+  // MARK: - After an orderly shutdown
+
+  /// An orderly shutdown pauses the open `agents` call of each session. The replay sends the
+  /// merged call of the root and of the child, and both read `paused`.
+  @Test
+  func aShutdownLeavesEachAgentsCallPausedInTheReplay() async throws {
+    let wire = try await Self.resumeShutDownChain()
+
+    let calls = wire.beforeResponse.compactMap { sent -> ToolCallUpdate? in
+      if case .toolCallUpdate(let call) = sent.update,
+        call.name == .value(AgentsToolTests.agentsToolName)
+      {
+        return call
+      }
+      return nil
+    }
+
+    #expect(calls.map(\.status) == [.value(.paused), .value(.paused)])
+    await wire.fixture.close()
+  }
+
+  /// A call that the shutdown paused has no final status, so the resume restores its child: the
+  /// child and the grandchild get their current snapshot after the response.
+  @Test
+  func aShutdownRestoresTheChildrenAfterTheResume() async throws {
+    let wire = try await Self.resumeShutDownChain()
+
+    let restored = [wire.recording.child, wire.recording.leaf].map { wire.snapshot(of: $0) != nil }
+
+    #expect(restored == [true, true])
+    await wire.fixture.close()
+  }
+
+  /// The wire of the resume after an orderly shutdown follows the rules of the validator.
+  @Test
+  func theWireAfterAShutdownFollowsTheRulesOfTheValidator() async throws {
+    let wire = try await Self.resumeShutDownChain()
+    try #require(wire.snapshot(of: wire.recording.leaf) != nil)
+
+    #expect(SubagentWireTraceValidator().validate(wire.trace) == [])
+    await wire.fixture.close()
+  }
+
+  /// The prompt of the root was interrupted, and no prompt of it is completed. The state snapshot
+  /// of the root goes out before the response. It is `idle` with no stop reason: it reports
+  /// neither `end_turn` nor `cancelled`.
+  @Test
+  func theRootAfterAShutdownReportsNoCompletedPrompt() async throws {
+    let wire = try await Self.resumeShutDownChain()
+
+    let idles = wire.beforeResponse.compactMap { sent -> IdleStateUpdate? in
+      if sent.sessionId == wire.recording.root, case .stateUpdate(.idle(let idle)) = sent.update {
+        return idle
+      }
+      return nil
+    }
+    try #require(idles.count == 1)
+
+    #expect(idles.first?.stopReason == nil)
+    await wire.fixture.close()
+  }
+
   // MARK: - A child whose call is final
 
   /// The text of the update that marks the end of the sync on the wire.
   private static let syncEndMarker = "SYNC-END-MARKER"
 
-  /// Resumes the chain that an orderly shutdown recorded, with no wire request, runs the sync, and then posts a marker on
-  /// the stream of the root. The connection keeps the order of its posts, so the marker tells
-  /// that every update of the sync is out.
+  /// Resumes the chain that a user close recorded, with no wire request, runs the sync, and then
+  /// posts a marker on the stream of the root. The connection keeps the order of its posts, so the
+  /// marker tells that every update of the sync is out. The history of the resumed root holds a
+  /// final status for the `agents` call of the child: the call is the rule that the sync reads.
   ///
   /// - Returns: The updates up to the marker, and the chain.
   /// - Throws: Whatever the fixture, the request or the wait throws.
-  private static func syncOfTheShutDownChain() async throws -> (
+  private static func syncOfTheClosedChain() async throws -> (
     updates: [UpdateSessionNotification], recording: ResumeNestedSessionsTests.Recording
   ) {
-    let recording = try await ResumeNestedSessionsTests.recordShutDownChain()
+    let recording = try await ResumeNestedSessionsTests.recordClosedChain()
     let fixture = try await resumeWithoutWire(recording)
     let agent = fixture.harness.agent
+    try #require(await agent.sessions[recording.root]?.history.endsCall(of: recording.child) == true)
     await agent.syncChildren(of: recording.root)
     let connection = try #require(agent.connections.path(forSession: recording.root)?.connection)
     await connection.post(
@@ -572,7 +647,7 @@ import Testing
   /// child: it gets no snapshot after the response.
   @Test
   func aChildWhoseCallIsFinalGetsNoSnapshotAfterTheResponse() async throws {
-    let (updates, recording) = try await Self.syncOfTheShutDownChain()
+    let (updates, recording) = try await Self.syncOfTheClosedChain()
 
     let announced = updates.filter { notification in
       notification.update.announces(recording.child)
@@ -586,7 +661,7 @@ import Testing
   /// own after the response.
   @Test
   func aChildWhoseCallIsFinalSendsNoOwnStateAfterTheResponse() async throws {
-    let (updates, recording) = try await Self.syncOfTheShutDownChain()
+    let (updates, recording) = try await Self.syncOfTheClosedChain()
 
     let states = updates.filter { notification in
       [recording.child, recording.leaf].contains(notification.sessionId)

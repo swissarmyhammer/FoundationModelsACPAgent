@@ -190,8 +190,12 @@ extension RoutedACPAgent {
   ///
   /// The order matters. The suspend comes first: after it the journal of a session refuses
   /// every terminal event, so a run that works at this moment stays an orphan in the journal
-  /// of its caller, and the next start can restore it. Then each session closes, and the
-  /// agent runs of its surface are stopped (`AgentRunner.stop()`), never cancelled
+  /// of its caller, and the next start can restore it. Then each session closes. The shutdown
+  /// does not cancel the open prompt of a session: the open tool calls of the session and of
+  /// its children get the status `paused` and no final status, and the prompt ends as
+  /// interrupted (``interruptOpenWork(of:entry:)``). The history then reads the calls as
+  /// interrupted, and a resume restores the child of each. The
+  /// agent runs of the surface of a session are stopped (`AgentRunner.stop()`), never cancelled
   /// (`cancelRuns`): a stop marks no run as ended and posts no result. A user `session/close`
   /// is not a shutdown, and it keeps cancelling the runs and marking them as ended
   /// (``closeSession(_:)``).
@@ -300,7 +304,8 @@ extension RoutedACPAgent {
 
   // MARK: - The teardown
 
-  /// Runs the full `session/close` teardown of one session: cancel the open prompts,
+  /// Runs the full `session/close` teardown of one session: cancel the open prompts (at the
+  /// shutdown of the process: pause the open tool calls and interrupt the prompts),
   /// stop the agent runs, run the session sweep, close every descendant,
   /// finish the shell stream, shut the MCP servers down, and write the
   /// retained history to its file — in that order. The entry stays in the
@@ -319,8 +324,9 @@ extension RoutedACPAgent {
   /// - Parameters:
   ///   - sessionId: The session to tear down.
   ///   - entry: The session's table entry, captured before the teardown.
-  ///   - isShutdown: `true` for the shutdown of the process (``shutdown()``): the agent runs
-  ///     are stopped and not cancelled, so they stay restorable.
+  ///   - isShutdown: `true` for the shutdown of the process (``shutdown()``): the open prompts
+  ///     and tool calls are interrupted and paused (``interruptOpenWork(of:entry:)``), and the
+  ///     agent runs are stopped and not cancelled, so they stay restorable.
   func tearDownSession(
     _ sessionId: SessionId, entry: ActiveSession, isShutdown: Bool = false
   ) async {
@@ -332,22 +338,12 @@ extension RoutedACPAgent {
     guard !entry.isClosed else {
       return
     }
-    // A close during open prompts cancels them as `session/cancel` would,
-    // and waits for the end of each prompt before the close response, so
-    // a client with a spinner learns that the prompts ended with the
-    // `idle(cancelled)` terminator.
-    if !entry.openPrompts.isEmpty {
-      for owner in entry.openPrompts {
-        await owner.noteCancelRequested()
-      }
-      entry.session.cancelAll()
-      for owner in entry.openPrompts {
-        await owner.waitForPromptEnd()
-      }
-    }
-    // A user close cancels the work of each nested session. The client sees `idle` with the
-    // stop reason cancelled for each one that works, when its run ends below.
-    if !isShutdown {
+    if isShutdown {
+      await interruptOpenWork(of: sessionId, entry: entry)
+    } else {
+      await cancelOpenPrompts(of: entry)
+      // A user close cancels the work of each nested session. The client sees `idle` with the
+      // stop reason cancelled for each one that works, when its run ends below.
       await noteClosingCancelsWork(of: entry.children)
     }
     // The agent runs stop first: the Router does not know the runs that
@@ -390,6 +386,42 @@ extension RoutedACPAgent {
     // The retained history goes to its file last, with each update that
     // came after the last prompt, so a new process resumes it whole.
     writeHistory(of: sessionId)
+  }
+
+  /// A close during open prompts cancels them as `session/cancel` would, and waits for the end of
+  /// each prompt before the close response, so a client with a spinner learns that the prompts
+  /// ended with the `idle(cancelled)` terminator.
+  ///
+  /// - Parameter entry: The session that closes.
+  private func cancelOpenPrompts(of entry: ActiveSession) async {
+    guard !entry.openPrompts.isEmpty else {
+      return
+    }
+    for owner in entry.openPrompts {
+      await owner.noteCancelRequested()
+    }
+    entry.session.cancelAll()
+    for owner in entry.openPrompts {
+      await owner.waitForPromptEnd()
+    }
+  }
+
+  /// The shutdown of the process interrupts the open work and does not cancel it. The open tool
+  /// calls of the session and of the sessions nested in it pause
+  /// (``pauseOpenToolCalls(of:)``), and each open prompt of the session is marked as
+  /// interrupted (``PromptStateOwner/noteInterrupted()``). The prompt ends when the session
+  /// closes below, with the stop reason `_interrupted` and no cancelled status for any call. The
+  /// work is not cancelled, so the history holds no final status for it, and a resume restores
+  /// it.
+  ///
+  /// - Parameters:
+  ///   - sessionId: The session that closes.
+  ///   - entry: The table entry of the session.
+  private func interruptOpenWork(of sessionId: SessionId, entry: ActiveSession) async {
+    await pauseOpenToolCalls(of: sessionId)
+    for owner in entry.openPrompts {
+      await owner.noteInterrupted()
+    }
   }
 
   /// Records, for each session of `sessionIds` that works, and for the sessions nested in them,

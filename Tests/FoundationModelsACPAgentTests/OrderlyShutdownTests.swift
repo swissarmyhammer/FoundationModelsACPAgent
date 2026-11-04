@@ -7,8 +7,10 @@ import Testing
 @testable import FoundationModelsACPAgent
 @testable import FoundationModelsRouter
 
-/// An orderly shutdown of the process leaves a working nested run restorable. A user
-/// `session/close` is not a shutdown: it cancels the work and marks the run as ended.
+/// An orderly shutdown of the process leaves a working nested run restorable, and it pauses the
+/// open tool calls: the history holds no final status for them. A user `session/close` is not a
+/// shutdown: it cancels the work, gives the open tool calls the final status `cancelled`, and
+/// marks the run as ended.
 ///
 /// Each test uses the real Router and a scripted model. The root session starts a child run
 /// whose model holds, so the run works while the test ends the agent.
@@ -44,6 +46,29 @@ import Testing
 
     /// The directory of the Router sessions of the agent.
     var directory: RouterSessionDirectory { fixture.harness.agent.sessionDirectory }
+
+    /// The history of the root session, as the agent retains it.
+    var rootHistory: SessionMergeEngine {
+      get async throws {
+        try #require(await fixture.harness.agent.sessions[fixture.sessionId]).history
+      }
+    }
+
+    /// The status of each `agents` call in the history of the root session, in the order of the
+    /// calls.
+    ///
+    /// - Returns: The merged status of each call. A call with no status is not in the list.
+    func agentsCallStatuses() async throws -> [FoundationModelsACP.ToolCallStatus] {
+      try await rootHistory.transcriptUpdates.compactMap { update in
+        guard case .toolCallUpdate(let call) = update,
+          call.name == .value(AgentsToolTests.agentsToolName),
+          case .value(let status) = call.status
+        else {
+          return nil
+        }
+        return status
+      }
+    }
 
     /// Waits for the end of the prompt of the root session. A failed prompt fails the test.
     ///
@@ -117,6 +142,42 @@ import Testing
     #expect(Array(statuses.values) == [.orphaned])
   }
 
+  /// A shutdown pauses the open `agents` call of the root. The history holds `paused` for it: the
+  /// call is not final, so a resume restores the child.
+  @Test
+  func aShutdownPausesTheAgentsCallOfTheRoot() async throws {
+    let working = try await Self.startWorking(named: "paused")
+
+    await working.fixture.harness.agent.shutdown()
+    working.hold.release()
+    try await working.finishPrompt()
+
+    #expect(try await working.agentsCallStatuses() == [.paused])
+  }
+
+  /// A shutdown ends the open prompt of the root as interrupted: the `idle` of the root carries
+  /// the stop reason `_interrupted`, and never `cancelled`.
+  @Test
+  func aShutdownEndsThePromptOfTheRootAsInterrupted() async throws {
+    let working = try await Self.startWorking(named: "interrupted")
+    let root = working.fixture.sessionId
+
+    await working.fixture.harness.agent.shutdown()
+    working.hold.release()
+    try await working.finishPrompt()
+    let updates = try await working.fixture.collector.wait(for: "the idle of the root") { updates in
+      updates.contains { $0.sessionId == root && $0.update.isStateUpdate }
+    }
+    let stopReasons = updates.compactMap { notification -> StopReason? in
+      if notification.sessionId == root, case .stateUpdate(.idle(let idle)) = notification.update {
+        return idle.stopReason
+      }
+      return nil
+    }
+
+    #expect(stopReasons == [.unknown(PromptExecution.interruptedStopReasonValue)])
+  }
+
   /// A shutdown with no live session returns.
   @Test
   func aShutdownWithNoLiveSessionReturns() async throws {
@@ -130,6 +191,20 @@ import Testing
   }
 
   // MARK: - The user close
+
+  /// A user `session/close` gives the open `agents` call of the root the final status
+  /// `cancelled`.
+  @Test
+  func aUserCloseCancelsTheAgentsCallOfTheRoot() async throws {
+    let working = try await Self.startWorking(named: "closeCall")
+
+    _ = try await working.fixture.harness.connection.closeSession(
+      CloseSessionRequest(sessionId: working.fixture.sessionId))
+    working.hold.release()
+    try await working.finishPrompt()
+
+    #expect(try await working.agentsCallStatuses() == [.cancelled])
+  }
 
   /// A user `session/close` cancels the work and marks the run as ended with the reason
   /// cancelled.

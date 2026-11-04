@@ -170,12 +170,19 @@ comments:
     - files: Tests/FoundationModelsACPAgentTests/SubagentSessionsReplayTests.swift, Tests/FoundationModelsACPAgentTests/ResumeChildSyncTests.swift, .kanban/tasks/01M6GM17VHZSWD4G2J27WTA3JT.md (box flipped)
     - next: /review. Task stays in doing.
   timestamp: 2026-11-04T15:41:37.449661+00:00
+- actor: claude-code
+  id: 01m6kkrhzyeaxrq756a3hmet8t
+  text: |-
+    ### review — clean
+    - evidence: review sha 349aca2~1..f4397fb. Counts: findings 0, confirmed 0, refuted 1, attempted 7, failed 0, skipped 0. Only .kanban files were skipped (ignore rule). All prior findings are checked. The Blocker section is obsolete.
+    - next: task moved to done.
+  timestamp: 2026-11-04T15:45:08.094002+00:00
 depends_on:
 - 01M6GM0N9BFK37GGBWPAG9VE1X
 - 01M6GH30709S58BK3AQ1VMBAM7
 - 01M6GH3ZHE52GHWAZ53AWNKJ0K
-position_column: review
-position_ordinal: '8280'
+position_column: done
+position_ordinal: ffffab80
 title: Resume announces the children and sends their current snapshots after the response, with or without replayFrom
 ---
 ## What

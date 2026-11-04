@@ -21,6 +21,12 @@ enum PromptStop: Equatable, Sendable {
   /// The prompt was cancelled.
   case cancelled
 
+  /// The orderly shutdown of the process stopped the prompt. The prompt did not finish and
+  /// nobody cancelled it: its open tool calls are paused, not final, so a resume can continue
+  /// the work. The arm maps to the `_interrupted` extension value (the ACP `_` extension rule;
+  /// task ^d6vzdkg).
+  case interrupted
+
   /// The token budget ended the prompt.
   case budgetExhausted
 
@@ -140,6 +146,10 @@ struct PromptExecution: Sendable {
   /// The wire value a prompt that ended a stalled generation stops with,
   /// under the same `_`-prefix extension rule (task ^s0bw5cv).
   static let stalledStopReasonValue = "_stalled"
+
+  /// The wire value a prompt that the orderly shutdown of the process stopped ends with, under
+  /// the same `_`-prefix extension rule (task ^d6vzdkg).
+  static let interruptedStopReasonValue = "_interrupted"
 
   /// The seconds ``stalledGenerationBound`` is built from.
   private static let stalledGenerationBoundSeconds = 1800
@@ -314,6 +324,7 @@ struct PromptExecution: Sendable {
     case .completed: .endTurn
     case .refusal: .refusal
     case .cancelled: .cancelled
+    case .interrupted: .unknown(interruptedStopReasonValue)
     case .budgetExhausted: .maxTokens
     case .toolLoopCapped: .maxTurnRequests
     case .noOutput: .unknown(noOutputStopReasonValue)
@@ -356,7 +367,9 @@ struct PromptExecution: Sendable {
   ///
   /// A failed prompt fails each open tool call, and a cancelled prompt
   /// cancels each open tool call, before its `idle` (the ACP v2 prompt
-  /// lifecycle). The switch declares no `default`, so a new stop stops the
+  /// lifecycle). An interrupted prompt leaves them as they are: the shutdown paused them
+  /// already (``RoutedACPAgent/pauseOpenToolCalls(of:)``), and a pause is no final status. The
+  /// switch declares no `default`, so a new stop stops the
   /// build here until somebody decides its status.
   ///
   /// - Parameter stop: Why the prompt stopped.
@@ -365,8 +378,8 @@ struct PromptExecution: Sendable {
     switch stop {
     case .failed: .failed
     case .cancelled: .cancelled
-    case .completed, .refusal, .budgetExhausted, .toolLoopCapped, .noOutput, .truncated,
-      .endedInReasoning,
+    case .completed, .refusal, .interrupted, .budgetExhausted, .toolLoopCapped, .noOutput,
+      .truncated, .endedInReasoning,
       .repeated, .reasoningLimit, .stalled:
       nil
     }
@@ -506,8 +519,8 @@ struct PromptExecution: Sendable {
     case .reasoningLimit:
       cause =
         "Router stopped the last pass of the prompt at the reasoning token limit, because it reasoned and did not act and no recovery was left."
-    case .completed, .refusal, .cancelled, .budgetExhausted, .toolLoopCapped, .noOutput, .stalled,
-      .failed:
+    case .completed, .refusal, .cancelled, .interrupted, .budgetExhausted, .toolLoopCapped,
+      .noOutput, .stalled, .failed:
       cause = "The last submission of the prompt did not end by itself."
     }
     let files: String

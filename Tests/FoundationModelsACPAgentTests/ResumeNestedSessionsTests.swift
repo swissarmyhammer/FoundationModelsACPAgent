@@ -89,15 +89,31 @@ import Testing
   }
 
   /// Records the chain, and ends the first agent with the orderly shutdown of the process
-  /// (``RoutedACPAgent/shutdown()``). The shutdown cancels the open prompt of the root, so the
-  /// history of the root holds a final status for the `agents` call of the child, and the journal
-  /// of the run stays an orphan. The history of the chain is written, so a replay finds it.
+  /// (``RoutedACPAgent/shutdown()``). The shutdown cancels nothing: it pauses the open `agents`
+  /// call of each session, so the history of the chain holds no final status for them, and the
+  /// journal of the run stays an orphan. The history of the chain is written, so a replay finds
+  /// it.
   ///
   /// - Returns: The chain.
   /// - Throws: Whatever the fixture or a wait throws.
   static func recordShutDownChain() async throws -> Recording {
     try await recordChain { fixture in
       await fixture.harness.agent.shutdown()
+      await fixture.harness.close()
+    }
+  }
+
+  /// Records the chain, and ends the first agent with a user `session/close` of the root. The
+  /// close cancels the open prompt, so the history of the root holds the final status
+  /// `cancelled` for the `agents` call of the child. The history of the chain is written, so a
+  /// replay finds it.
+  ///
+  /// - Returns: The chain.
+  /// - Throws: Whatever the fixture or a wait throws.
+  static func recordClosedChain() async throws -> Recording {
+    try await recordChain { fixture in
+      _ = try? await fixture.harness.connection.closeSession(
+        CloseSessionRequest(sessionId: fixture.sessionId))
       await fixture.harness.close()
     }
   }
