@@ -164,6 +164,29 @@ actor ElicitationRelay {
   /// them.
   private var answerTasks: [String: Task<Void, Never>] = [:]
 
+  /// One wire request of a question, kept so the relay can ask it again on a new connection.
+  private struct OpenWireRequest {
+    /// The mapped `elicitation/create` request.
+    let request: CreateElicitationRequest
+
+    /// The mode of the request.
+    let mode: ElicitationMode
+  }
+
+  /// The current wire request of each question that waits, keyed by the elicitation id.
+  private var openWireRequests: [String: OpenWireRequest] = [:]
+
+  /// The generation of the current wire request of each question, keyed by the elicitation id.
+  /// The answer of an earlier wire request carries an older generation and is dropped.
+  private var wireGenerations: [String: Int] = [:]
+
+  /// The last generation that the relay gave to a wire request.
+  private var nextWireGeneration = 0
+
+  /// The ids of the questions that a move to a new connection took away from the old connection
+  /// and that wait to be asked again (``reaskWithdrawnQuestions()``).
+  private var withdrawnQuestions: Set<String> = []
+
   /// The cancellation boxes of the wire requests in flight, keyed by the
   /// elicitation id. ``end(_:)`` and ``drainOpenRoundTrips()`` set the
   /// reason on the box before they cancel the task, so the
@@ -629,28 +652,94 @@ actor ElicitationRelay {
         return
       }
       pendingAnswers[elicitationId] = continuation
-      let cancellation = OutboundCancellation()
-      cancellations[elicitationId] = cancellation
-      answerTasks[elicitationId] = Task {
-        guard let connection else {
-          ACPAgentTelemetry.logger(.elicitationRelay).warning(
-            "The connection to the client is gone. The relay delivers cancel.",
-            metadata: self.elicitationMetadata(elicitationId))
-          self.deliver(
-            .cancel(reason: CancelReason.noConnection.rawValue), toPending: elicitationId)
-          return
-        }
-        let raw: CreateElicitationResponse?
-        do {
-          raw = try await connection.createElicitation(wireRequest, cancellation: cancellation)
-        } catch {
-          ACPAgentTelemetry.logger(.elicitationRelay).warning(
-            "The elicitation/create request failed. The relay delivers cancel.",
-            metadata: self.elicitationMetadata(elicitationId, error: error))
-          raw = nil
-        }
-        self.deliver(Self.answer(from: raw, mode: mode), toPending: elicitationId)
+      startWireRequest(wireRequest, elicitationId: elicitationId, mode: mode, over: connection)
+    }
+  }
+
+  /// Starts the wire request of a question on its own task, and records it as the current wire
+  /// request of the question. A later start for the same question (``reaskWithdrawnQuestions()``)
+  /// replaces it, and an answer of the earlier request finds a newer generation and is dropped.
+  ///
+  /// - Parameters:
+  ///   - wireRequest: The mapped `elicitation/create` request.
+  ///   - elicitationId: The pending elicitation's id.
+  ///   - mode: The mode of the request.
+  ///   - connection: The connection the create goes through, or `nil` when the session has no
+  ///     outbound path: then the relay delivers `cancel`.
+  private func startWireRequest(
+    _ wireRequest: CreateElicitationRequest, elicitationId: String, mode: ElicitationMode,
+    over connection: AgentSideConnection?
+  ) {
+    nextWireGeneration += 1
+    let generation = nextWireGeneration
+    wireGenerations[elicitationId] = generation
+    openWireRequests[elicitationId] = OpenWireRequest(request: wireRequest, mode: mode)
+    let cancellation = OutboundCancellation()
+    cancellations[elicitationId] = cancellation
+    answerTasks[elicitationId] = Task {
+      guard let connection else {
+        ACPAgentTelemetry.logger(.elicitationRelay).warning(
+          "The connection to the client is gone. The relay delivers cancel.",
+          metadata: self.elicitationMetadata(elicitationId))
+        self.deliver(
+          .cancel(reason: CancelReason.noConnection.rawValue), toPending: elicitationId,
+          generation: generation)
+        return
       }
+      let raw: CreateElicitationResponse?
+      do {
+        raw = try await connection.createElicitation(wireRequest, cancellation: cancellation)
+      } catch {
+        ACPAgentTelemetry.logger(.elicitationRelay).warning(
+          "The elicitation/create request failed. The relay delivers cancel.",
+          metadata: self.elicitationMetadata(elicitationId, error: error))
+        raw = nil
+      }
+      self.deliver(
+        Self.answer(from: raw, mode: mode), toPending: elicitationId, generation: generation)
+    }
+  }
+
+  // MARK: - The move to a new owner
+
+  /// The reason of the `$/cancel_request` for a question that moves to a new connection.
+  static let movedCancelReason = "the session moved to a new connection"
+
+  /// Takes the open questions away from the old connection: the relay cancels the wire request
+  /// of each question that waits for the client, and keeps the question open. The old
+  /// connection gets no answer slot any more, and an answer that it sends late is dropped. A
+  /// hot resume calls it when the new owner takes the session. ``reaskWithdrawnQuestions()``
+  /// asks the questions again on the new owner.
+  func withdrawOpenQuestions() {
+    for elicitationId in pendingAnswers.keys
+    where answerTasks[elicitationId] != nil && !awaitingCompletion.contains(elicitationId) {
+      wireGenerations.removeValue(forKey: elicitationId)
+      cancelWireRequest(elicitationId, reason: Self.movedCancelReason)
+      withdrawnQuestions.insert(elicitationId)
+    }
+  }
+
+  /// Asks each withdrawn question again, one time, on the connection of the session as it is now.
+  /// A new connection that cannot answer the mode of the question gets no request, and the
+  /// question ends with `decline`, as for a question that comes new. A session with no connection
+  /// ends the question with `cancel`.
+  func reaskWithdrawnQuestions() {
+    let withdrawn = withdrawnQuestions
+    withdrawnQuestions = []
+    for elicitationId in withdrawn {
+      guard pendingAnswers[elicitationId] != nil, let open = openWireRequests[elicitationId] else {
+        continue
+      }
+      let path = outboundPath()
+      if let path, !Self.supports(open.mode, by: path.capabilities) {
+        deliver(Self.declineResponse(for: .unsupportedMode), toPending: elicitationId)
+        continue
+      }
+      if open.mode == .url {
+        flowConnections[elicitationId] = FlowConnection(connection: path?.connection)
+      }
+      startWireRequest(
+        open.request, elicitationId: elicitationId, mode: open.mode, over: path?.connection)
     }
   }
 
@@ -661,7 +750,17 @@ actor ElicitationRelay {
   /// - Parameters:
   ///   - answer: The decoded answer.
   ///   - elicitationId: The pending elicitation's id.
-  private func deliver(_ answer: ElicitationResponse, toPending elicitationId: String) {
+  private func deliver(
+    _ answer: ElicitationResponse, toPending elicitationId: String, generation: Int? = nil
+  ) {
+    if let generation, wireGenerations[elicitationId] != generation {
+      ACPAgentTelemetry.logger(.elicitationRelay).debug(
+        "An answer came from a wire request that the relay replaced. The relay dropped the answer.",
+        metadata: elicitationMetadata(elicitationId))
+      return
+    }
+    wireGenerations.removeValue(forKey: elicitationId)
+    openWireRequests.removeValue(forKey: elicitationId)
     answerTasks.removeValue(forKey: elicitationId)
     cancellations.removeValue(forKey: elicitationId)
     guard let continuation = pendingAnswers.removeValue(forKey: elicitationId) else {

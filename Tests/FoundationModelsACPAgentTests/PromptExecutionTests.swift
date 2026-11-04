@@ -184,18 +184,16 @@ import Testing
     #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .cancelled)
   }
 
-  /// The fixed order of a `session/resume` while a prompt is open (task ^he1rmw6, decision A).
-  /// The resume first does the teardown of `session/close`. The open prompt ends with one `idle`
-  /// and the `cancelled` stop reason. This comes before the resume response. No update of the old
-  /// session comes after it. The new projector serves the session. The next prompt answers, and
-  /// it ends with the third `idle`. The second `idle` is the current-state sync of the resume. It
-  /// comes after the teardown and before the response. It carries no stop reason.
+  /// A `session/resume` while a prompt is open is a hot resume (task ^23KNDP). The resume does not
+  /// cancel the prompt: no `idle` update comes before the response, and the running state stays.
+  /// A later cancel of the session ends the held prompt with one `idle` and the `cancelled` stop
+  /// reason. The next prompt answers, and it ends with the second `idle`.
   @Test
-  func aResumeWhileAPromptIsOpenEndsThatPromptCancelledFirst() async throws {
-    let holdMarker = "HOLD-UNTIL-RESUME"
+  func aResumeWhileAPromptIsOpenKeepsThatPromptOpen() async throws {
+    let holdMarker = "HOLD-UNTIL-CANCEL"
     let fixture = try await ScriptedPromptFixture.make(
       loader: makeScriptedModelLoader(script: [
-        .onPrompt(containing: holdMarker, play: [.hold]), .textDelta("after the resume"), .endPass,
+        .onPrompt(containing: holdMarker, play: [.hold]), .textDelta("after the cancel"), .endPass,
       ]),
       label: "PromptExecutionTests", tapsWire: true)
     _ = try await fixture.harness.connection.prompt(
@@ -210,21 +208,20 @@ import Testing
           cwd: AbsolutePath(rawValue: fixture.cwd.path), sessionId: fixture.sessionId))
       atResume = await fixture.collector.updates
     }
+    try await fixture.harness.connection.sessionCancel(
+      CancelSessionNotification(sessionId: fixture.sessionId))
+    _ = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: 1)
     _ = try await fixture.harness.connection.prompt(
       AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "the next prompt"))
-    let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: 3)
+    let updates = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: 2)
     await fixture.close()
 
-    // Both `idle` updates come before the response of the resume.
-    #expect(wireAtResume.filter { $0 == .state }.count == 2)
+    // The resume ends no prompt: no `idle` comes before its response.
     #expect(wireAtResume.last == .response)
-    #expect(ScriptedPromptFixture.idleCount(in: atResume) == 2)
-    #expect(ScriptedPromptFixture.idleStopReason(in: atResume) == .cancelled)
-    #expect(
-      idleState(of: atResume.last(where: { isIdleState($0.update) })?.update)?.stopReason == nil)
+    #expect(ScriptedPromptFixture.idleCount(in: atResume) == 0)
     let afterResume = Array(updates.dropFirst(atResume.count))
-    #expect(ScriptedPromptFixture.agentText(in: afterResume) == "after the resume")
-    #expect(ScriptedPromptFixture.idleCount(in: afterResume) == 1)
+    #expect(ScriptedPromptFixture.idleCount(in: afterResume) == 2)
+    #expect(ScriptedPromptFixture.agentText(in: afterResume) == "after the cancel")
     #expect(
       idleState(of: afterResume.last(where: { isIdleState($0.update) })?.update)?.stopReason
         == .endTurn)

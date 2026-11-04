@@ -179,6 +179,12 @@ extension RoutedACPAgent {
     let additionalRoots = try SessionSetup.additionalRoots(
       fromPaths: (params.additionalDirectories ?? []).map(\.rawValue))
 
+    // A session that is live in this process is taken over as it is, and nothing is torn down.
+    if let live = liveRoot(params.sessionId) {
+      return try await resumeLiveSession(
+        params, entry: live, replayCursor: replayCursor, from: caller)
+    }
+
     // The resume takes the session for the connection of the request
     // (D120 c) before anything else changes: an `external` connection
     // cannot take a session that another connection owns. From here on,
@@ -283,7 +289,7 @@ extension RoutedACPAgent {
   ///   - caller: The connection of the resume.
   /// - Throws: ``RequestError/sessionHasOwner(id:)`` when the rule refuses
   ///   the take.
-  private func takeSession(_ sessionId: SessionId, for caller: ConnectionId) throws {
+  func takeSession(_ sessionId: SessionId, for caller: ConnectionId) throws {
     guard connections.take(sessionId, by: caller) else {
       warnRefusedResume(
         "An external connection tried to take a session that has an owner. The agent refuses the resume.",
@@ -523,7 +529,7 @@ extension RoutedACPAgent {
   ///   - sessionId: The session the updates belong to.
   /// - Throws: An internal error when the session has no connection with
   ///   an outbound path.
-  private func replayHistory(
+  func replayHistory(
     _ history: SessionMergeEngine, from cursor: ReplayCursor?, sessionId: SessionId
   ) async throws {
     guard let cursor else {
