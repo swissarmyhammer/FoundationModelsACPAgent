@@ -18,7 +18,7 @@ import Testing
   private static let label = "RedriveInterruptedRunsTests"
 
   /// The text that the model of the second agent plays when a restored run starts.
-  fileprivate static let redriveText = "REDRIVEN-RUN-TEXT"
+  private static let redriveText = "REDRIVEN-RUN-TEXT"
 
   /// The start of the first message of a restored run (the Agents package writes it).
   private static let restoredRunMessage = "The process stopped while you worked"
@@ -58,7 +58,9 @@ import Testing
     /// - Parameter session: The session.
     /// - Returns: The position in the trace.
     func firstRedriveText(of session: SessionId) -> Int? {
-      trace.firstIndex { $0.isRedriveText(on: session) }
+      trace.firstIndex {
+        $0.isAgentText(containing: RedriveInterruptedRunsTests.redriveText, on: session)
+      }
     }
 
     /// The position of the first announcement of `child` after the response, or `nil`.
@@ -78,15 +80,59 @@ import Testing
     func firstRunning(of session: SessionId) -> Int? {
       trace.firstIndex { $0.isRunningState(on: session) }
     }
+
+    /// The ids of the calls that completed on the stream of `session` with no earlier in-progress
+    /// or paused update of the same call on that stream. Such a completion is a stray call for the
+    /// client: the call it knows stays open.
+    ///
+    /// - Parameter session: The session.
+    /// - Returns: The ids of the stray completions, in wire order.
+    func strayCompletions(on session: SessionId) -> [ToolCallId] {
+      var open: Set<ToolCallId> = []
+      var stray: [ToolCallId] = []
+      for event in trace {
+        guard case .update(session, .toolCallUpdate(let call)) = event else {
+          continue
+        }
+        switch call.status {
+        case .value(.completed):
+          if !open.contains(call.toolCallId) {
+            stray.append(call.toolCallId)
+          }
+        case .value(.inProgress), .value(.paused):
+          open.insert(call.toolCallId)
+        default:
+          break
+        }
+      }
+      return stray
+    }
+
+    /// The position of the first in-progress or paused update of any call on the stream of
+    /// `session`, or `nil`.
+    ///
+    /// - Parameter session: The session.
+    /// - Returns: The position in the trace.
+    func firstOpenCall(on session: SessionId) -> Int? {
+      trace.firstIndex { event in
+        guard case .update(session, .toolCallUpdate(let call)) = event else {
+          return false
+        }
+        return call.status == .value(.inProgress) || call.status == .value(.paused)
+      }
+    }
   }
 
   /// What the read of the wire saw of the restored sessions.
   private struct RedriveSeen {
     /// The sessions that played the marker text.
-    var spoken = Set<SessionId>()
+    var spoken: Set<SessionId> = []
 
     /// The sessions that showed the state `running`.
-    var running = Set<SessionId>()
+    var running: Set<SessionId> = []
+
+    /// Whether a call completed on the stream of the root.
+    var rootCallCompleted = false
 
     /// Notes what `event` shows of `session`.
     ///
@@ -94,7 +140,7 @@ import Testing
     ///   - event: The event of the wire.
     ///   - session: The session to look at.
     mutating func note(_ event: WireTraceEvent, on session: SessionId) {
-      if event.isRedriveText(on: session) {
+      if event.isAgentText(containing: RedriveInterruptedRunsTests.redriveText, on: session) {
         spoken.insert(session)
       }
       if event.isRunningState(on: session) {
@@ -102,12 +148,27 @@ import Testing
       }
     }
 
-    /// Whether every one of `sessions` spoke and ran.
+    /// Notes that a call completed on the stream of `root`.
     ///
-    /// - Parameter sessions: The restored sessions.
+    /// - Parameters:
+    ///   - event: The event of the wire.
+    ///   - root: The root session.
+    mutating func noteCompletion(_ event: WireTraceEvent, on root: SessionId) {
+      if case .update(root, .toolCallUpdate(let call)) = event, call.status == .value(.completed) {
+        rootCallCompleted = true
+      }
+    }
+
+    /// Whether every one of `sessions` spoke and ran, and the call of the root completed when the
+    /// read waits for it.
+    ///
+    /// - Parameters:
+    ///   - sessions: The restored sessions.
+    ///   - needsCompletion: Whether the read waits for the completion of a call of the root.
     /// - Returns: `true` when the read has all it needs.
-    func isComplete(for sessions: [SessionId]) -> Bool {
+    func isComplete(for sessions: [SessionId], needsCompletion: Bool = false) -> Bool {
       spoken.isSuperset(of: sessions) && running.isSuperset(of: sessions)
+        && (rootCallCompleted || !needsCompletion)
     }
   }
 
@@ -133,11 +194,15 @@ import Testing
   /// Resumes the root of `recording` in a second agent and reads the wire until both restored
   /// sessions played the marker text and showed the state `running`. A missing text ends the read at the timeout.
   ///
-  /// - Parameter recording: The chain that the first agent recorded.
+  /// - Parameters:
+  ///   - recording: The chain that the first agent recorded.
+  ///   - untilRootCallCompletes: Whether the read also waits for a completed call on the root.
+  ///   - replaying: Whether the request asks for the replay of the history.
   /// - Returns: The wire of the resume.
   /// - Throws: Whatever the fixture or the request throws.
   private static func resumeAndRedrive(
-    _ recording: ResumeNestedSessionsTests.Recording
+    _ recording: ResumeNestedSessionsTests.Recording, untilRootCallCompletes: Bool = false,
+    replaying: Bool = false
   ) async throws -> Wire {
     let fixture = try await secondAgent(for: recording)
     let connection = fixture.harness.connection
@@ -145,25 +210,25 @@ import Testing
     let first = WireTraceEvent.resumeRequest(id: .number(1), sessionId: recording.root)
     let sessions = [recording.child, recording.leaf]
     let seen = Mutex(RedriveSeen())
-    let reader = Task {
-      await subscription.readResumeTrace(startingWith: [first]) { event in
+    var request = ResumeSessionRequest(
+      cwd: AbsolutePath(rawValue: recording.cwd.path), sessionId: recording.root)
+    if replaying {
+      request.replayFrom = .start(ReplayFromStart())
+    }
+    let sentRequest = request
+    let trace = try await subscription.readResumeTrace(
+      startingWith: [first], settledBy: { event in
         seen.withLock { seen in
           for session in sessions {
             seen.note(event, on: session)
           }
-          return seen.isComplete(for: sessions)
+          seen.noteCompletion(event, on: recording.root)
+          return seen.isComplete(for: sessions, needsCompletion: untilRootCallCompletes)
         }
-      }
+      }, timeout: .seconds(redriveWaitSeconds)
+    ) {
+      _ = try await connection.resumeSession(sentRequest)
     }
-    let timeout = Task {
-      try? await Task.sleep(for: .seconds(redriveWaitSeconds))
-      reader.cancel()
-    }
-    let request = ResumeSessionRequest(
-      cwd: AbsolutePath(rawValue: recording.cwd.path), sessionId: recording.root)
-    _ = try await connection.resumeSession(request)
-    let trace = await reader.value
-    timeout.cancel()
     return Wire(fixture: fixture, recording: recording, trace: trace)
   }
 
@@ -183,18 +248,17 @@ import Testing
   ///   - fixture: The second agent.
   ///   - isMet: Tells whether the outcomes are the ones that the test waits for.
   /// - Returns: The outcomes of the completed calls of the journal at the end of the wait.
-  /// - Throws: Whatever the cancel of the sleep throws.
+  /// - Throws: An issue when `session` is no ULID, the read error of the journal, or the cancel of
+  ///   the sleep.
   private static func completedOutcomes(
     of session: SessionId, on fixture: ScriptedPromptFixture,
     until isMet: ([OperationOutcome]) -> Bool
   ) async throws -> [OperationOutcome] {
-    guard let id = ULID(ulidString: session.rawValue) else {
-      return []
-    }
+    let id = try #require(ULID(ulidString: session.rawValue))
     let directory = fixture.harness.agent.sessionDirectory
     var outcomes: [OperationOutcome] = []
     for _ in 0..<journalPollLimit {
-      let statuses = (try? await directory.runStatuses(of: id)) ?? [:]
+      let statuses = try await directory.runStatuses(of: id)
       outcomes = statuses.values.compactMap { status in
         if case .completed(let outcome) = status {
           return outcome
@@ -207,6 +271,20 @@ import Testing
       try await Task.sleep(for: journalPollInterval)
     }
     return outcomes
+  }
+
+  /// Removes each retained history file under `directory`, as a kill during a prompt leaves the
+  /// folders.
+  ///
+  /// - Parameter directory: The working directory of the chain.
+  /// - Throws: Whatever the removal throws.
+  private static func removeHistoryFiles(under directory: URL) throws {
+    let files = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: nil)
+    while let file = files?.nextObject() as? URL {
+      if file.lastPathComponent == SessionHistoryFile.fileName {
+        try FileManager.default.removeItem(at: file)
+      }
+    }
   }
 
   // MARK: - The re-drive
@@ -295,6 +373,35 @@ import Testing
     await wire.fixture.close()
   }
 
+  /// The original call on the wire (task acceptance 4): the client sees the `agents` call of the
+  /// root open, and its completion comes on the id of that call. A completion on another id would
+  /// leave the original call open for the client.
+  @Test
+  func theCompletionOfTheRootCallHasNoStrayId() async throws {
+    let wire = try await Self.resumeAndRedrive(
+      try await ResumeNestedSessionsTests.recordShutDownChain(), untilRootCallCompletes: true,
+      replaying: true)
+
+    #expect(wire.strayCompletions(on: wire.recording.root).isEmpty)
+    await wire.fixture.close()
+  }
+
+  /// The same, when the history file of the sessions is gone, as after a kill during the prompt
+  /// (the file is written at the end of a prompt). The replay then builds the open call from the
+  /// journal, and it comes before the response.
+  @Test
+  func theReplayOpensTheOriginalCallWhenNoHistoryWasWritten() async throws {
+    let recording = try await ResumeNestedSessionsTests.recordShutDownChain()
+    try Self.removeHistoryFiles(under: recording.cwd)
+    let wire = try await Self.resumeAndRedrive(recording, untilRootCallCompletes: true, replaying: true)
+    let opened = try #require(wire.firstOpenCall(on: wire.recording.root))
+
+    #expect(opened < wire.responsePosition)
+    #expect(wire.strayCompletions(on: wire.recording.root).isEmpty)
+    #expect(SubagentWireTraceValidator().validate(wire.trace) == [])
+    await wire.fixture.close()
+  }
+
   // MARK: - A child that cannot be re-driven
 
   /// A child whose definition is gone cannot run again. Its original call ends as `lost`, and the
@@ -317,19 +424,6 @@ import Testing
 }
 
 extension WireTraceEvent {
-  /// Whether this event is the marker text of a re-driven run on the stream of `session`.
-  ///
-  /// - Parameter session: The session.
-  /// - Returns: `true` for an `agent_message_chunk` with the marker text on that stream.
-  fileprivate func isRedriveText(on session: SessionId) -> Bool {
-    guard case .update(let stream, let update) = self, stream == session,
-      case .agentMessageChunk(let chunk) = update, case .text(let content) = chunk.content
-    else {
-      return false
-    }
-    return content.text.contains(RedriveInterruptedRunsTests.redriveText)
-  }
-
   /// Whether this event is a running `state_update` on the stream of `session`.
   ///
   /// - Parameter session: The session.

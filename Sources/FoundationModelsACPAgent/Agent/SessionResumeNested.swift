@@ -50,6 +50,7 @@ extension RoutedACPAgent {
     for run in report.restored {
       await registerRestoredRun(run)
     }
+    await restoreOpenCalls(of: report)
     logNestedRestore(report, of: sessionId)
     sessions[sessionId]?.nestedRestore = report
   }

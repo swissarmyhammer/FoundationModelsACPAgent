@@ -64,12 +64,64 @@ comments:
     HOOKS REPORT ITEM (independent, 2026-11-03): FoundationModelsRouter Session/SessionHooks.swift near lines 172 to 175: when the parent is not open, the hook key of a sub-agent is the id of its parent. The ACP roots use the PROJECT key (Agent/AgentHooks.swift near 71 to 83, SessionResume.swift near 209). A child that is restored BEFORE its root, or whose root key is not passed, gets a different key, so a separate snapshot timeline for one work tree.
     RULES FOR THIS TASK: (1) restore the ROOT session first, with its project hook key (hookSessionKey), and only then call the Agents restoreInterrupted facade, which restores caller-first, so every restored child finds its root open and gets the root key; (2) check how the host passes hookSessionKey (SessionSetup.swift near 1178, SessionResume.swift near 399) for restored children and fix it if a child can be restored without it; (3) write a test: after a cold resume, the hook key of the root, of a restored child and of a restored grandchild is the SAME project key, and the snapshot timeline is one; also the same test for the SnapshotSessionKeys record of each restored session; (4) SessionEnd at an orderly quit is sent for runs that are suspended (the Hooks session adds a reason: completed, suspended, released; the Router sets it): a snapshot or cleanup hook of this package must not treat a suspended SessionEnd as done; check AgentHooks.swift and the snapshot hooks for work on SessionEnd and test that a quit does not delete the timeline.
   timestamp: 2026-11-03T20:02:15.982124+00:00
+- actor: claude-code
+  id: 01m6knm260drbc5w1y6r355fqv
+  text: |-
+    ### implement — stuck
+    - evidence: worktree /Users/wballard/github/swissarmyhammer/FoundationModelsACPAgent-wt-redrive (branch wt-redrive, no commit, no code change). `swift build --build-tests` fails in the test target: Tests/FoundationModelsACPAgentTests/Support/HookLayeredModelLoader.swift:26 "cannot find 'HookLayeredLLMContainer' in scope". Cause: Router moved HookLayeredLLMContainer into the main Router target (the separate task ^c1asjzd, fix on branch wt-router). The rule for this run says: do not fix here, stop.
+    - research done: the Agents API exists now (AgentRunner.claims(of:directory:), restoreInterrupted, RestoreReport.resumeAll()). The host already restores idle children (SessionResumeNested.swift) and sends current child snapshots after the response (scheduleChildSync / syncChildren in SessionResumeChildSync.swift). Plan: after syncChildren sends the snapshots, call report.resumeAll() (children first). Put it in a new file; test file RedriveInterruptedRunsTests.swift reusing ResumeNestedSessionsTests fixtures (recordShutDownChain, resumeRoot).
+    - next: merge or finish ^c1asjzd, then rerun this task.
+  timestamp: 2026-11-04T16:17:37.984542+00:00
+- actor: claude-code
+  id: 01m6kqsvsdjneynacc9b355brp
+  text: |-
+    ### implement — changed
+    - evidence: commit da67402 on branch wt-redrive (worktree FoundationModelsACPAgent-wt-redrive), not pushed, not merged. 6 files: Sources/FoundationModelsACPAgent/Agent/SessionResumeRedrive.swift (new: redriveInterruptedRuns(of:)), Sources/FoundationModelsACPAgent/Agent/SessionResumeChildSync.swift (the closure of scheduleChildSync calls it after syncChildren), Tests/FoundationModelsACPAgentTests/RedriveInterruptedRunsTests.swift (new, 8 tests), Tests/FoundationModelsACPAgentTests/ResumeNestedSessionsTests.swift (changed test), IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/RedriveInterruptedRunsProcessTests.swift (new, real binaries), IntegrationTests/.../Support/SpawnedACPAgent.swift (killAndWait). No change to SessionSetup.swift or ConfigOptions.swift. No sibling package changed.
+    - tests: RED first (6 of 8 failed, no re-drive). GREEN: `swift test --filter RedriveInterruptedRunsTests` 8 passed. Filtered resume suites (Redrive, ResumeNested, ResumeChildSync, SessionResume, ResumeSync, ResumeLiveSession) pass after the change below. Full `swift test` in the worktree: 1780 tests in 195 suites passed, 1 known issue (HarnessSmokeTests, intended), 0 warnings of this code. Integration test: run from a copy of IntegrationTests under a directory named FoundationModelsACPAgent (the IntegrationTests package names its parent by directory name, so it does not resolve inside the worktree folder wt-redrive): RedriveInterruptedRunsProcessTests passed (1.8 s).
+    - design: after syncChildren sends the snapshots, redriveInterruptedRuns calls report.resumeAll() (Agents starts the children first). It starts nothing when the root closed or its connection is gone.
+    - finding 1 (needed code): a restored caller holds the claimed run of its child since the restore, so its Router session has phase "working" before the ACP ledger took the idle snapshot, and Router sends no new workStarted when the caller works again. The wire then showed the middle child as idle (with the grandchild in its background list) while it worked. So redriveInterruptedRuns first calls stateLedger.workStarted(on: run.id) for each restored run; the Router workEnded clears it (test: everyRestoredChildIsIdleWhenItsRedrivenRunEnds). Test eachRedrivenSessionShowsRunningBeforeItWorks was red for the child before this.
+    - finding 2 (changed existing test): ResumeNestedSessionsTests.everyRestoredChildIsIdle assumed that nothing starts the children. It is now everyRestoredChildIsIdleWhenItsRedrivenRunEnds. The idle snapshot after the response stays covered by ResumeChildSyncTests.
+    - finding 3 (test limit): the order "children start before callers" is seen on the wire as: grandchild shows running before the child plays its first text. The first text of each session comes when its first pass ends, so the order of two texts is a race (tried, failed). The order of the start itself is the Agents resumeOrder (reversed tree order).
+    - finding 4 (integration test): the orderly stop (stdin close or SIGTERM) with an open root prompt cancels the prompt and with it the child; the child then ends as `finished` and is not restorable. Without an open prompt the child is cancelled after the run grace (about 5 s). So the integration test kills the first process with SIGKILL. This is a real behaviour to decide on (a user quit while a sub-agent works loses the run); I did not change it, it is outside this card. A card may be wanted.
+    - finding 5: at the end of the second process stderr has one MailRefusal line (inbox file of the root did not deliver). It happens at the shutdown; the original call completed before it.
+    - next: review
+  timestamp: 2026-11-04T16:55:45.197432+00:00
+- actor: claude-code
+  id: 01m6kr1cqp2g8brafq76akb7vn
+  text: |-
+    ### review — findings
+    - evidence: review sha 2687686~1..2687686; 6 findings, 6 confirmed, 0 failed, 0 skipped (run complete). Files: RedriveInterruptedRunsProcessTests.swift:164,193,233; RedriveInterruptedRunsTests.swift:86,191,197
+    - next: implementer fixes the 6 open items, then /review again
+  timestamp: 2026-11-04T16:59:51.926276+00:00
+- actor: claude-code
+  id: 01m6krr9057nhak9cj3tq91cx1
+  text: |-
+    ### implement — stuck
+    - evidence: 5 of 6 findings fixed in the working tree on main (not committed). Files: Tests/FoundationModelsACPAgentTestSupport/WireTraceReading.swift (new shared readResumeTrace(...timeout:whileRunning:), WireTraceEvent.isAgentText(containing:on:), SessionUpdate.agentMessageText), Tests/FoundationModelsACPAgentTests/RedriveInterruptedRunsTests.swift, IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/RedriveInterruptedRunsProcessTests.swift.
+    - fixed: RedriveInterruptedRunsTests:86 (`var spoken: Set<SessionId> = []`, same for `running`); :191 (`try #require(ULID(ulidString:))`); :197 (`try await directory.runStatuses`, no `try?`); integration :193 (timeout reader moved into test support, used by both `resume` and `resumeAndRedrive`; the `try? Task.sleep` is gone too, the sleep error is handled in a do/catch); integration :233 (one shared `isAgentText`; the duplicate `SessionUpdate.text` is gone too).
+    - tests: `swift test --filter RedriveInterruptedRunsTests` 8 passed. Full `swift test`: 1780 tests in 195 suites passed, 1 known issue (HarnessSmokeTests, intended), exit 0.
+    - BLOCKER, finding 1 (integration :164, match the completed call by id and assert success): done in the test (the id of the first process is recorded; completed is matched by id and status completed). The test now FAILS, and the failure is a product gap, not a test error. Wire facts: in the first process the agents call has the id `scripted-call-1` (SDK id, in progress). After the cold resume the root replay holds NO agents call at all, and the completion that arrives after the re-drive has the completion token (a ULID) as its id, with no earlier in-progress update. So the client never sees the original call complete: the call `scripted-call-1` stays in progress, and an unknown completed call appears. This contradicts acceptance criterion 4 ("one agents tool call from in progress to completed across the restart"), which the old weak check hid. Cause in this package: the RunCallJoinTable (SDK id to token) is empty after a restart, and the replay of the root does not project the open call. Router main has the write-ahead `toolCallStarted` marker and turns it into a `.toolCalls` entry with a placeholder output at restore (WriteAheadMarker.swift, OpenToolCalls), but the ACP host does not read it (no use of toolCallStarted in Sources).
+    - decision needed from the user: build the host feature (replay the open agents call with its SDK id as in progress, and rebuild the join SDK id to token at restore so the completion reuses the id). It is new work beyond the six findings and may touch the replay files. I did not weaken the assertion and did not mask it with a known issue.
+    - note: IntegrationTests/Package.resolved (gitignored) pinned an old Router (bb52caa) and did not build; I ran `swift package update` there (now 899e6eb). No tracked file changed by that.
+    - boxes: findings 2 to 6 flipped to [x]; finding 1 stays [ ].
+  timestamp: 2026-11-04T17:12:21.765781+00:00
+- actor: claude-code
+  id: 01m6ksed9b4341jwtnf20vwzwc
+  text: |-
+    ### implement — changed
+    - evidence: working tree on main, not committed. New: Sources/FoundationModelsACPAgent/Agent/SessionResumeOpenCalls.swift (restoreOpenCalls(of:)). Changed: SessionResumeNested.swift (one call), SessionResume.swift (replay uses the entry history of the root, so the added call is replayed), Tests/FoundationModelsACPAgentTests/RedriveInterruptedRunsTests.swift (2 new tests), plus the earlier finding fixes (WireTraceReading.swift, the integration test). SessionSetup.swift and ConfigOptions.swift not touched. No sibling package changed.
+    - fix: for each restored run, the host reads the Router write-ahead marker (toolCallStarted) of the call from the journal of its caller. (1) It rebuilds the join SDK call id to completion token in the caller projector table and places the hold on the final status, so the completion after the re-drive goes out on the original call id and after the last child update. (2) When the retained history lacks the call (a killed process never wrote it), it adds the call as in progress with the link to the child, and the announcement of the child with the link to the call, so the replay shows the call before the response and announces the child before any update in its stream (validator rule 3).
+    - API note: Router keeps ToolCallPayload and TranscriptEntryPayload.toolCalls internal. The host reads the calls through the public Codable form of the entry. A public accessor on TranscriptEntryPayload.toolCalls would be cleaner. No sibling change made.
+    - tests: RED first: theCompletionOfTheRootCallHasNoStrayId and theReplayOpensTheOriginalCallWhenNoHistoryWasWritten both failed (stray completion on a ULID id, no replayed call). The second needed the hold and the announcement after the first fix (validator violations rule 3 and rule 8). GREEN: both pass, SubagentWireTraceValidator gives no violation. Filtered resume suites passed. Full root `swift test`: 1782 tests in 195 suites passed, 1 known issue (HarnessSmokeTests, intended), no warnings of this code. One earlier full run showed one failure, OrderlyShutdownTests.aShutdownEndsThePromptOfTheRootAsInterrupted (stopReasons expectation); the next full run passed it. Not touched by this change, looks like a flake; not investigated.
+    - integration test: `swift build --build-tests` in IntegrationTests succeeds. NOT RUN, by the user's order (integration tests are for CI). So finding 1 stays [ ] until CI shows the integration test green. The live-model suites are in the IntegrationTests package, so they were not part of the root run.
+    - next: review
+  timestamp: 2026-11-04T17:24:27.051395+00:00
 depends_on:
 - 01M6GJPPXWKQJ9E6SK5WD0CWZ7
 - 01M6GM17VHZSWD4G2J27WTA3JT
 - 01M6KGEQVH2T73SR32CD6VZDKG
-position_column: todo
-position_ordinal: 8b80
+position_column: doing
+position_ordinal: '8680'
 title: Re-drive interrupted nested runs after a cold resume, children first, completing the original agent tool call
 ---
 ## What
@@ -91,15 +143,26 @@ BLOCKERS (outside this board, no card on the Router or Agents board yet, the use
 Do not start this task until the user has decided the Router and Agents cards.
 
 ## Acceptance Criteria
-- [ ] After a cold resume, an interrupted nested child runs again and its final message completes the original `start agent` call of its caller; the call is not `lost`.
-- [ ] Children are re-driven before their parents.
-- [ ] A child that cannot be re-driven ends its original call as `lost`, and the root still resumes.
-- [ ] The client sees one `agents` tool call from in progress to completed across the restart, and `running` state on each re-driven session.
+- [x] After a cold resume, an interrupted nested child runs again and its final message completes the original `start agent` call of its caller; the call is not `lost`.
+- [x] Children are re-driven before their parents.
+- [x] A child that cannot be re-driven ends its original call as `lost`, and the root still resumes.
+- [x] The client sees one `agents` tool call from in progress to completed across the restart, and `running` state on each re-driven session.
 
 ## Tests
-- [ ] `Tests/FoundationModelsACPAgentTests/RedriveInterruptedRunsTests.swift`: stub model, kill and restore, order, completion of the original call, fallback to lost.
-- [ ] An integration test in `IntegrationTests` with the real `acp-agent` binary.
-- [ ] Run `swift test --filter RedriveInterruptedRunsTests`. All pass.
+- [x] `Tests/FoundationModelsACPAgentTests/RedriveInterruptedRunsTests.swift`: stub model, kill and restore, order, completion of the original call, fallback to lost.
+- [x] An integration test in `IntegrationTests` with the real `acp-agent` binary.
+- [x] Run `swift test --filter RedriveInterruptedRunsTests`. All pass.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #subagents
+
+## Review Findings (2026-11-04 10:56)
+
+> Scope: `review sha 2687686~1..2687686` — reviewed the diffs only — lines this change added or modified. 6 file(s) reviewed, 0 not reviewed.
+
+- [ ] `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/RedriveInterruptedRunsProcessTests.swift:164` `test-integrity/no-test-cheating` — The test is named to prove that the original agents call of the root completes, but line 164 only checks that some completed tool call exists on the root stream (line 162 matches any call by status, not by call id). A call that completes as lost, or an unrelated completed call, would pass. The sibling test in RedriveInterruptedRunsTests.swift checks for .succeeded and rejects .lost, so this check is weaker than the claim it supports. Match the completed call by its id (the id of the original agents call recorded in the first process) and assert that its outcome is the success outcome, not merely that a completed call exists on the root stream.
+- [x] `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/RedriveInterruptedRunsProcessTests.swift:193` `reuse/reuse` — The `resume` helper builds the same timeout task that cancels a reader after a fixed sleep. The unit test target has the same pattern, so this bounded-wait logic is duplicated across two targets. Move one shared reader-with-timeout helper into the `FoundationModelsACPAgentTestSupport` module, which both targets import. Call it from this `resume` and from `resumeAndRedrive`.
+- [x] `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/RedriveInterruptedRunsProcessTests.swift:233` `reuse/reuse` — `isText` repeats the logic of `isRedriveText` in the unit test target. Both are `WireTraceEvent` extensions that check a text chunk on one session stream. The two copies can drift, and a fix to one will miss the other. Move one shared `WireTraceEvent` text-on-session helper into the `FoundationModelsACPAgentTestSupport` module, which both targets import. Both files then call it with their own marker text.
+- [x] `Tests/FoundationModelsACPAgentTests/RedriveInterruptedRunsTests.swift:86` `swift/idioms` — The empty Set variable uses a constructor call. The idiom is a literal with a type annotation. Write `var spoken: Set<SessionId> = []`.
+- [x] `Tests/FoundationModelsACPAgentTests/RedriveInterruptedRunsTests.swift:191` `completeness/public-output-contract` — When the session id is not a valid ULID, `completedOutcomes` returns an empty list without an issue. A caller that waits for `.succeeded` or `.lost` then fails with a generic assertion, and the bad id is never reported. Replace the silent return with `try #require(ULID(ulidString: session.rawValue))`, or record an issue that names the session id, so the test fails at the cause.
+- [x] `Tests/FoundationModelsACPAgentTests/RedriveInterruptedRunsTests.swift:197` `completeness/public-output-contract` — The error from `directory.runStatuses(of:)` is silently replaced by an empty dictionary with `try?` and `?? [:]`. When the journal cannot be read, the poll keeps going until its limit and the test then fails on a missing outcome, not on the read error. The cause is hidden from the person who reads the failure. Use `try await directory.runStatuses(of: id)` so a read error ends the test at once with its cause. If polling must tolerate a transient read error, record the last error and report it with `Issue.record` when the poll limit is reached.

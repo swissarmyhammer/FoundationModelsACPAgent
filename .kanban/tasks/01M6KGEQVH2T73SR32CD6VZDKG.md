@@ -40,8 +40,15 @@ comments:
     - tests: filtered ResumeChildSyncTests + OrderlyShutdownTests 31 tests passed; full swift test 1772 tests in 194 suites passed, 1 known issue (HarnessSmokeTests, intentional), no other issue or warning.
     - next: review
   timestamp: 2026-11-04T16:06:59.170891+00:00
-position_column: review
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m6kn5p6435vsx9av8y6p0fv6
+  text: |-
+    ### review — clean
+    - evidence: review sha d2843f0~1..622d75c — 0 findings, 0 confirmed, 2 refuted, 7 attempted, 0 failed, 0 skipped. The prior finding (ResumeChildSyncTests.swift:557) is checked.
+    - next: none. Task moved to done.
+  timestamp: 2026-11-04T16:09:46.948019+00:00
+position_column: done
+position_ordinal: ffffac80
 title: Orderly shutdown pauses the open tool calls and does not cancel them
 ---
 ## What

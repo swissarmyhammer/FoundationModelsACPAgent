@@ -238,7 +238,9 @@ extension RoutedACPAgent {
     // restores under it, the caller before the child, and takes the same key.
     await restoreNestedSessions(of: params.sessionId, composition: composition)
 
-    try await replayHistory(history, from: replayCursor, sessionId: params.sessionId)
+    // The restore of the nested sessions can add the open calls of the root to its history.
+    try await replayHistory(
+      sessions[params.sessionId]?.history ?? history, from: replayCursor, sessionId: params.sessionId)
     await syncCurrentState(of: params.sessionId, replayed: replayCursor != nil)
 
     let response = ResumeSessionResponse(

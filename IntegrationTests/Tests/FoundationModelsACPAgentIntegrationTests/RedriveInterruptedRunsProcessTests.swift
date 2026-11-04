@@ -94,6 +94,9 @@ struct RedriveInterruptedRunsProcessTests {
 
     /// The child session.
     let child: SessionId
+
+    /// The id of the `agents` call that the root started in the first process.
+    let call: ToolCallId
   }
 
   /// Runs the first process: the root starts the child, the child plays its first text, and then
@@ -125,11 +128,18 @@ struct RedriveInterruptedRunsProcessTests {
         AgentClientHarness.makePromptRequest(sessionId: root, text: rootPrompt))
     }
     var child: SessionId?
+    var call: ToolCallId?
     for await sequenced in events {
-      if case .update(let stream, let update) = WireTraceEvent(sequenced), stream != root,
-        update.text.contains(childStartedText)
-      {
+      guard case .update(let stream, let update) = WireTraceEvent(sequenced) else {
+        continue
+      }
+      if stream != root, update.agentMessageText.contains(childStartedText) {
         child = stream
+      }
+      if stream == root, case .toolCallUpdate(let started) = update, call == nil {
+        call = started.toolCallId
+      }
+      if child != nil, call != nil {
         break
       }
     }
@@ -138,8 +148,8 @@ struct RedriveInterruptedRunsProcessTests {
     _ = try await agent.killAndWait()
     prompt.cancel()
     await connection.close()
-    let found = try #require(child)
-    return Recording(root: root, child: found)
+    return Recording(
+      root: root, child: try #require(child), call: try #require(call))
   }
 
   // MARK: - The contract
@@ -156,10 +166,14 @@ struct RedriveInterruptedRunsProcessTests {
     let trace = try await Self.resume(recording, workspace: workspace, configHome: configHome)
 
     let responseIndex = trace.firstIndex(where: \.isResumeResponse)
-    let redriveIndex = trace.firstIndex { $0.isText(Self.redriveText, on: recording.child) }
+    let redriveIndex = trace.firstIndex {
+      $0.isAgentText(containing: Self.redriveText, on: recording.child)
+    }
     let response = try #require(responseIndex)
     let redrive = try #require(redriveIndex)
-    let completion = trace.firstIndex { $0.isCompletedCall(on: recording.root) }
+    let completion = trace.firstIndex {
+      $0.isCompletedCall(recording.call, on: recording.root)
+    }
     #expect(redrive > response)
     #expect(completion != nil)
   }
@@ -185,33 +199,18 @@ struct RedriveInterruptedRunsProcessTests {
     _ = try await model.initialize(AgentClientHarness.makeInitializeRequest())
     let subscription = connection.subscribeToAllSessions()
     let first = WireTraceEvent.resumeRequest(id: .number(1), sessionId: recording.root)
-    let reader = Task {
-      await subscription.readResumeTrace(startingWith: [first]) { event in
-        event.isCompletedCall(on: recording.root)
-      }
+    let request = ResumeSessionRequest(
+      cwd: AbsolutePath(rawValue: workspace.path), sessionId: recording.root)
+    let trace = try await subscription.readResumeTrace(
+      startingWith: [first],
+      settledBy: { event in event.isCompletedCall(recording.call, on: recording.root) },
+      timeout: .seconds(redriveWaitSeconds)
+    ) {
+      _ = try await connection.resumeSession(request)
     }
-    let timeout = Task {
-      try? await Task.sleep(for: .seconds(redriveWaitSeconds))
-      reader.cancel()
-    }
-    _ = try await connection.resumeSession(
-      ResumeSessionRequest(
-        cwd: AbsolutePath(rawValue: workspace.path), sessionId: recording.root))
-    let trace = await reader.value
-    timeout.cancel()
     await connection.close()
     _ = try await agent.closeStandardInputAndWait()
     return trace
-  }
-}
-
-extension SessionUpdate {
-  /// The text of an `agent_message_chunk`, or an empty text for any other update.
-  fileprivate var text: String {
-    if case .agentMessageChunk(let chunk) = self, case .text(let content) = chunk.content {
-      return content.text
-    }
-    return ""
   }
 }
 
@@ -224,27 +223,16 @@ extension WireTraceEvent {
     return false
   }
 
-  /// Whether this event is an `agent_message_chunk` with `text` on the stream of `session`.
+  /// Whether this event is a `tool_call_update` of the call `id` with the status `completed` on
+  /// the stream of `session`. A call that ended as `lost` has another status.
   ///
   /// - Parameters:
-  ///   - text: The text.
+  ///   - id: The id of the call.
   ///   - session: The session.
-  /// - Returns: `true` for a chunk that holds the text on that stream.
-  fileprivate func isText(_ text: String, on session: SessionId) -> Bool {
-    if case .update(let stream, let update) = self {
-      return stream == session && update.text.contains(text)
-    }
-    return false
-  }
-
-  /// Whether this event is a `tool_call_update` with the status `completed` on the stream of
-  /// `session`.
-  ///
-  /// - Parameter session: The session.
-  /// - Returns: `true` for a completed tool call on that stream.
-  fileprivate func isCompletedCall(on session: SessionId) -> Bool {
+  /// - Returns: `true` for the completed call on that stream.
+  fileprivate func isCompletedCall(_ id: ToolCallId, on session: SessionId) -> Bool {
     if case .update(let stream, .toolCallUpdate(let call)) = self {
-      return stream == session && call.status == .value(.completed)
+      return stream == session && call.toolCallId == id && call.status == .value(.completed)
     }
     return false
   }
