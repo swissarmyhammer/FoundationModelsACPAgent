@@ -27,11 +27,37 @@ comments:
     - evidence: 15 files. Sources: Agent/ACPEventTranslator.swift, Agent/ElicitationRelay.swift, Agent/PromptExecution.swift, Agent/SessionBuild.swift, Agent/SessionProjector.swift, Agent/SessionResume.swift, Agent/SessionResumeNested.swift, Telemetry/ACPAgentTelemetry.swift, Telemetry/RequestTracing.swift. Tests: ChildSessionUsageTelemetryHooksTests.swift (new, 23 tests), ResumeNestedSessionsTests.swift (access change). All 8 acceptance and test items are checked. `swift test --filter ChildSessionUsageTelemetryHooksTests`: 23 passed. Filtered run of 15 related suites: 221 passed.
     - next: /review
   timestamp: 2026-11-04T02:16:59.122622+00:00
+- actor: claude-code
+  id: 01m6j5wn5s4m26czcq0nnxhmn7
+  text: |-
+    ### review — findings
+    - scope: review sha HEAD~1..HEAD
+    - evidence: 1 finding, 1 confirmed, 5 refuted. Tests/FoundationModelsACPAgentTests/ChildSessionUsageTelemetryHooksTests.swift:302
+    - finding: The helper announcedChild(in:on:) copies an existing helper with the same name and signature. Delete the copy and call the existing helper. Widen the access of the existing helper, or move it to the Support folder.
+    - next: Fix the finding. Task stays in review.
+  timestamp: 2026-11-04T02:23:27.929868+00:00
+- actor: claude-code
+  id: 01m6j5wyr0qc80af9d7crae8f2
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 15 files, 8 of 8 items checked
+    - test: red — root 1557 tests, only the known blocker ShellSessionOwnerTests (card ^wd0cwz7) failed; IntegrationTests deterministic 38 passed
+    - commit: 9c3f8ad
+    - review: findings — Tests/FoundationModelsACPAgentTests/ChildSessionUsageTelemetryHooksTests.swift:302
+    - next: implement works the 1 open finding
+  timestamp: 2026-11-04T02:23:37.728813+00:00
+- actor: claude-code
+  id: 01m6j5yq7zgspk1qfqzr3ftg8n
+  text: |-
+    ### implement — changed
+    - evidence: 4 files changed, 1 added. Finding checked: ChildSessionUsageTelemetryHooksTests.swift:302 (copy of announcedChild). The shared helper AnnouncedChild.first is now in Tests/FoundationModelsACPAgentTests/Support/AnnouncedChild.swift. ResumeNestedSessionsTests and the new suite both call it. Same cause removed from the whole file: the copies of isFinal and agentsCall in the new suite are deleted; it calls ChildSessionProjectionTests.isFinal and agentsCall (agentsCall widened from private). Filtered tests: 43 tests in 3 suites passed.
+    - next: review
+  timestamp: 2026-11-04T02:24:35.583408+00:00
 depends_on:
 - 01M6GH2K0VV6RWV5R6SN3HB9SV
 - 01M6GH30709S58BK3AQ1VMBAM7
-position_column: doing
-position_ordinal: '8380'
+position_column: review
+position_ordinal: '80'
 title: 'Child sessions in usage, telemetry, hooks and the snapshot timeline: same rules as any session'
 ---
 ## What
@@ -60,3 +86,12 @@ Depends on: the shared session build (task 1) and the announce task.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #subagents
+
+## Review Findings (2026-11-03 20:19)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 11 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTests/ChildSessionUsageTelemetryHooksTests.swift:302` `reuse/reuse` — The new `announcedChild(in:on:)` helper repeats the body of an existing helper with the same name and signature. Two copies of one test helper will drift apart when the announcement shape changes. Delete the copy in ChildSessionUsageTelemetryHooksTests.swift and call the existing helper. Its `private` modifier must be widened (for example to `static`, or moved to a shared test support file such as the `Support/` folder) so both suites can use it.

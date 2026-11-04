@@ -216,10 +216,10 @@ import Tracing
       try await prompt.value
       let root = root
       _ = try await fixture.collector.wait(for: "the final status of the agents call") { updates in
-        guard let call = ChildSessionUsageTelemetryHooksTests.agentsCall(in: updates, of: root)
+        guard let call = ChildSessionProjectionTests.agentsCall(in: updates, of: root)
         else { return false }
         return updates.contains {
-          $0.sessionId == root && ChildSessionUsageTelemetryHooksTests.isFinal($0.update, of: call)
+          $0.sessionId == root && ChildSessionProjectionTests.isFinal($0.update, of: call)
         }
       }
     }
@@ -255,57 +255,8 @@ import Tracing
       ScriptedPromptFixture.agentText(in: updates.filter { $0.sessionId != root })
         .contains(startedText)
     }
-    let child = try #require(announcedChild(in: updates, on: root))
+    let child = try #require(AnnouncedChild.first(in: updates, on: root))
     return LiveChild(fixture: fixture, child: child, hold: hold, prompt: prompt, recorder: recorder)
-  }
-
-  /// Whether an update gives a final status to a call.
-  ///
-  /// - Parameters:
-  ///   - update: The update.
-  ///   - call: The call.
-  /// - Returns: `true` for a `completed`, `failed` or `cancelled` status of that call.
-  static func isFinal(_ update: SessionUpdate, of call: ToolCallId) -> Bool {
-    guard case .toolCallUpdate(let update) = update, update.toolCallId == call,
-      case .value(let status) = update.status
-    else {
-      return false
-    }
-    return status == .completed || status == .failed || status == .cancelled
-  }
-
-  /// The id of the `agents` call of a session, as the first update that names the tool.
-  ///
-  /// - Parameters:
-  ///   - updates: The notifications.
-  ///   - session: The session of the call.
-  /// - Returns: The id, or `nil`.
-  static func agentsCall(in updates: [UpdateSessionNotification], of session: SessionId)
-    -> ToolCallId?
-  {
-    for notification in updates where notification.sessionId == session {
-      if case .toolCallUpdate(let call) = notification.update,
-        call.name == .value(AgentsToolTests.agentsToolName)
-      {
-        return call.toolCallId
-      }
-    }
-    return nil
-  }
-
-  /// The id of the first child that an announcement on `parent` names.
-  ///
-  /// - Parameters:
-  ///   - updates: The notifications.
-  ///   - parent: The session that carries the announcement.
-  /// - Returns: The child, or `nil`.
-  private static func announcedChild(
-    in updates: [UpdateSessionNotification], on parent: SessionId
-  ) -> SessionId? {
-    for notification in updates where notification.sessionId == parent {
-      if case .subagentUpdate(let update) = notification.update { return update.sessionId }
-    }
-    return nil
   }
 
   // MARK: - Hooks

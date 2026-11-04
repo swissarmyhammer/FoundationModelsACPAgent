@@ -70,21 +70,6 @@ import Testing
 
   // MARK: - Fixtures
 
-  /// The id of the first session that an announcement on `parent` names.
-  ///
-  /// - Parameters:
-  ///   - updates: The notifications.
-  ///   - parent: The session that carries the announcement.
-  /// - Returns: The announced child, or `nil`.
-  private static func announcedChild(
-    in updates: [UpdateSessionNotification], on parent: SessionId
-  ) -> SessionId? {
-    for notification in updates where notification.sessionId == parent {
-      if case .subagentUpdate(let update) = notification.update { return update.sessionId }
-    }
-    return nil
-  }
-
   /// Records a chain of three sessions and quits the first agent while the child and the
   /// grandchild work. The model of the grandchild holds, and the quit suspends the sessions, so
   /// the recording has no ended marker for a session of the chain.
@@ -121,8 +106,8 @@ import Testing
       ScriptedPromptFixture.agentText(in: updates.filter { $0.sessionId != root })
         .contains(leafStartedText)
     }
-    let child = try #require(announcedChild(in: updates, on: root))
-    let leaf = try #require(announcedChild(in: updates, on: child))
+    let child = try #require(AnnouncedChild.first(in: updates, on: root))
+    let leaf = try #require(AnnouncedChild.first(in: updates, on: child))
     await quit(fixture)
     _ = try? await prompt.value
     return Recording(cwd: cwd, root: root, child: child, leaf: leaf)

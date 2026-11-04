@@ -184,7 +184,7 @@ import Testing
   ///   - updates: The notifications.
   ///   - session: The session of the call.
   /// - Returns: The id, or `nil`.
-  private static func agentsCall(in updates: [UpdateSessionNotification], of session: SessionId)
+  static func agentsCall(in updates: [UpdateSessionNotification], of session: SessionId)
     -> ToolCallId?
   {
     for notification in updates where notification.sessionId == session {
