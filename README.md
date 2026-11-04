@@ -328,6 +328,26 @@ there is no permission prompt, and the agent never sends
 `session/request_permission`.
 The sandbox bounds writing and deleting only. Reads are free and the network is open, so exfiltration is not bounded.
 
+## Shutdown and restart
+
+The agent leaves the working agent runs restorable when the process ends in an orderly way. The
+order at a shutdown (the end of the input, `SIGTERM`, or the end of `acp-agent run`) is:
+
+1. `RouterSessionDirectory.suspendLiveSessions()`. After this, the journal of each session
+   refuses every terminal event, so a run that works stays an orphan in the journal of its
+   caller.
+2. The prompts of each session are cancelled, and `AgentRunner.stop()` stops the agent runs. A
+   stop marks no run as ended and posts no result.
+3. Each session closes, the history is written, and the MCP servers stop.
+
+The shutdown never calls `cancelRuns(caller:)`. It would mark each run as ended, and nothing
+would be restored.
+
+A user `session/close` is not a shutdown. It cancels the work with `cancelRuns(caller:)`, and
+each run of the session is marked as ended with the reason cancelled. A connection that closes
+while the process lives is not a shutdown either: the sessions stay active, and nothing is
+suspended.
+
 ## Settings folders
 
 Each settings stack comes from one list of folders (`SettingsFolders`), at two

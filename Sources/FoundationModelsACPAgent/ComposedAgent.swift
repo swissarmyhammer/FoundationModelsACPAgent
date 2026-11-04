@@ -271,6 +271,13 @@ public struct ComposedAgent: Sendable {
     await agent.closeOpenSessions()
   }
 
+  /// The orderly shutdown of the host at the end of the process
+  /// (``RoutedACPAgent/shutdown()``): the live sessions are suspended first, and the working
+  /// agent runs stay restorable.
+  public func shutdown() async {
+    await agent.shutdown()
+  }
+
   /// Makes the router of one model path.
   ///
   /// Both paths take the recordings directory, because that directory is

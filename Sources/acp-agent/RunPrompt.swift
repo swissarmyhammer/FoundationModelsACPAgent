@@ -197,7 +197,7 @@ enum RunPrompt {
     // the process must not exit before that close wrote the history and
     // stopped the MCP servers.
     await composed.waitForConnectionTeardown()
-    await composed.closeOpenSessions()
+    await composed.shutdown()
     return try outcome.get()
   }
 

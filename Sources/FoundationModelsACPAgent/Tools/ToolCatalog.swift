@@ -202,8 +202,19 @@ public struct SessionSurface: Sendable {
   /// the root session. The announcer of the runs stops first, so no
   /// announcement leaves for a session that is closing. A second call does
   /// nothing more.
-  public func stopAgentRuns() async {
+  ///
+  /// A user close of a session cancels the runs of that session first, with
+  /// `AgentRunner.cancelRuns(caller:)`: each run marks its session as ended with the reason
+  /// cancelled. A shutdown of the process gives no caller. Then only `stop()` runs: it marks no
+  /// run as ended and posts no result, so a restart restores the run. The shutdown never calls
+  /// `cancelRuns`.
+  ///
+  /// - Parameter callers: The sessions whose runs a user ends. The default is none.
+  public func stopAgentRuns(cancellingCallers callers: [ULID] = []) async {
     await agents?.announcer.stop()
+    for caller in callers {
+      await agents?.runner.cancelRuns(caller: caller)
+    }
     await agents?.runner.stop()
   }
 

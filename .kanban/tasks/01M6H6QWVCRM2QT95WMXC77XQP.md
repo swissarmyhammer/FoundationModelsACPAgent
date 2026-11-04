@@ -41,8 +41,16 @@ comments:
     - evidence: Finding 1 (ScriptedStubProcessTests.swift:68): the copy no longer exists; both suites call TierThreeFixture.writeStubScript. Findings 3 and 4 (AgentComposition.swift:118): stubScript() and stubChunkGate() no longer read the environment; both read the model choice (an enum), so no shared env helper is needed and no copy of the body remains. Finding 2 (ScriptedSessionBackend.swift:189): still held. Added ScriptedSessionBackend.makeSibling(of:tools:instructions:seededEntries:observer:); the private makeSibling(seededEntries:) and ScriptedLLMContainer.makeBackend both call it. Files: Sources/FoundationModelsACPAgent/Configuration/ScriptedSessionBackend.swift, Sources/FoundationModelsACPAgent/Configuration/ScriptedPlaybook.swift. Tests: swift test --filter ScriptedStubModelTests 26 pass; IntegrationTests --filter ScriptedStub 2 pass. All 4 boxes set.
     - next: /review
   timestamp: 2026-11-04T02:47:11.783906+00:00
-position_column: doing
-position_ordinal: '8380'
+- actor: claude-code
+  id: 01m6j7acx5agt7vf9m49y2cr5p
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD. 0 findings (0 confirmed, 0 refuted). Two .kanban files were excluded by .reviewignore.
+    - prior items: all 4 are checked. I checked the 3 items that the implementer called obsolete against the current code. (1) The duplicate writeScript helper in the integration tests is gone. One shared helper, writeStubScript in TierThreeFixture.swift, now exists. (2) and (3) stubScript() in Sources/acp-agent/AgentComposition.swift no longer reads the environment. It reads the script from modelChoice, so it does not repeat stubChunkGate(). The sibling backend item is fixed by ScriptedSessionBackend.makeSibling(of:tools:instructions:seededEntries:observer:), which both call sites use.
+    - next: task moves to done.
+  timestamp: 2026-11-04T02:48:26.789623+00:00
+position_column: done
+position_ordinal: ffffa080
 title: 'Scripted stub model for the spawned acp-agent: ACP_AGENT_STUB_SCRIPT'
 ---
 ## What

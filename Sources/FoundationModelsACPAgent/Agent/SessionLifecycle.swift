@@ -139,7 +139,10 @@ extension RoutedACPAgent {
   /// teardown.
   ///
   /// The close of the sessions is the job of the host at its end
-  /// (``closeOpenSessions()``), not of a connection close.
+  /// (``closeOpenSessions()``, ``shutdown()``), not of a connection close.
+  /// A connection loss while the process lives is not a shutdown of the
+  /// sessions: they stay active and nothing is suspended, because ACP lets
+  /// the agent go on with the work or cancel it.
   ///
   /// - Parameters:
   ///   - id: The id of the closed connection.
@@ -179,6 +182,32 @@ extension RoutedACPAgent {
   /// session back.
   public func closeOpenSessions() async {
     await closeSessions { _ in true }
+    await settingsStore.stopWatching()
+  }
+
+  /// The orderly shutdown of the process: suspends every live Router session, then closes
+  /// each open session, with the history written and the MCP servers stopped.
+  ///
+  /// The order matters. The suspend comes first: after it the journal of a session refuses
+  /// every terminal event, so a run that works at this moment stays an orphan in the journal
+  /// of its caller, and the next start can restore it. Then each session closes, and the
+  /// agent runs of its surface are stopped (`AgentRunner.stop()`), never cancelled
+  /// (`cancelRuns`): a stop marks no run as ended and posts no result. A user `session/close`
+  /// is not a shutdown, and it keeps cancelling the runs and marking them as ended
+  /// (``closeSession(_:)``).
+  ///
+  /// A connection that closes while the process lives is not a shutdown: the sessions stay
+  /// active (``tearDownConnection(_:after:)``), and nothing is suspended.
+  ///
+  /// The call is for `acp-agent acp` and `acp-agent run` when the process ends: on the end of
+  /// the input, on `SIGTERM`, and after a prompt of the command line. With no live session it
+  /// closes nothing and returns.
+  public func shutdown() async {
+    sessionDirectory.suspendLiveSessions()
+    for (sessionId, entry) in sessions where !entry.isClosed {
+      await tearDownSession(sessionId, entry: entry, isShutdown: true)
+    }
+    await hooks.dispatcher.drain()
     await settingsStore.stopWatching()
   }
 
@@ -243,7 +272,11 @@ extension RoutedACPAgent {
   /// - Parameters:
   ///   - sessionId: The session to tear down.
   ///   - entry: The session's table entry, captured before the teardown.
-  func tearDownSession(_ sessionId: SessionId, entry: ActiveSession) async {
+  ///   - isShutdown: `true` for the shutdown of the process (``shutdown()``): the agent runs
+  ///     are stopped and not cancelled, so they stay restorable.
+  func tearDownSession(
+    _ sessionId: SessionId, entry: ActiveSession, isShutdown: Bool = false
+  ) async {
     guard !entry.isClosed else {
       return
     }
@@ -267,7 +300,10 @@ extension RoutedACPAgent {
     // A nested session borrows the surface, so only its owner stops the
     // runs of the surface.
     if entry.ownsSurface {
-      await entry.surface.stopAgentRuns()
+      // A user close ends the runs of the session: each is marked as ended (cancelled). A
+      // shutdown of the process ends nothing for good: the runs stay restorable.
+      let callers = isShutdown ? [] : [entry.session.id]
+      await entry.surface.stopAgentRuns(cancellingCallers: callers)
     }
     // The run of each nested session closed its Router session when the
     // runs stopped, so each nested session retires with its own nested

@@ -91,7 +91,7 @@ extension AcpAgentCommand {
         closing: {
           await connection.close()
           await composed.waitForConnectionTeardown()
-          await composed.closeOpenSessions()
+          await composed.shutdown()
         },
         watchedBy: TerminationHandler.onSIGTERM)
     }
