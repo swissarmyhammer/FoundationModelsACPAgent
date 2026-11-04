@@ -31,8 +31,8 @@ extension RoutedACPAgent {
   /// the runner holds the start of each run, and a later task starts them.
   ///
   /// The root restores first, with the hook key of its project, so each child finds its root open
-  /// and takes the same key. Each restored session records that key for the `snapshots` tool
-  /// before its first submission (``SnapshotSessionKeys``).
+  /// and takes the same key. The registration of each restored session records that key for the
+  /// `snapshots` tool (``registerNestedSession(_:parent:events:)``).
   ///
   /// A child that does not restore leaves the resume of the root as it is. The report keeps the
   /// failure on the entry of the root for the announcement of the child.
@@ -40,10 +40,7 @@ extension RoutedACPAgent {
   /// - Parameters:
   ///   - sessionId: The ACP session id of the resumed root.
   ///   - composition: The composition of the resumed root.
-  ///   - hookLineage: The hook lineage of the resumed root.
-  func restoreNestedSessions(
-    of sessionId: SessionId, composition: SessionComposition, hookLineage: HookLineage
-  ) async {
+  func restoreNestedSessions(of sessionId: SessionId, composition: SessionComposition) async {
     guard let agents = composition.surface.agents, let rootId = ULID(ulidString: sessionId.rawValue)
     else {
       return
@@ -51,7 +48,7 @@ extension RoutedACPAgent {
     let report = await agents.runner.restoreInterrupted(
       of: rootId, caller: nil, directory: sessionDirectory)
     for run in report.restored {
-      await registerRestoredRun(run, hookSessionKey: hookLineage.sessionKey)
+      await registerRestoredRun(run)
     }
     logNestedRestore(report, of: sessionId)
     sessions[sessionId]?.nestedRestore = report
@@ -59,10 +56,8 @@ extension RoutedACPAgent {
 
   /// Registers the restored session of one run as a session nested in its caller.
   ///
-  /// - Parameters:
-  ///   - run: The restored run, not started.
-  ///   - hookSessionKey: The hook key of the project of the root.
-  private func registerRestoredRun(_ run: AgentRun, hookSessionKey: String) async {
+  /// - Parameter run: The restored run, not started.
+  private func registerRestoredRun(_ run: AgentRun) async {
     let sessionId = SessionId(rawValue: run.id.description)
     guard let caller = run.caller, let session = sessionDirectory.session(id: run.id) else {
       ACPAgentTelemetry.logger(.sessionResume).error(
@@ -70,13 +65,13 @@ extension RoutedACPAgent {
         metadata: ACPAgentTelemetry.sessionMetadata(sessionId))
       return
     }
-    SnapshotSessionKeys.shared.record(hookSessionKey, for: sessionId)
+    let parent = SessionId(rawValue: caller.description)
     do {
-      try await registerNestedSession(session, parent: SessionId(rawValue: caller.description))
+      try await registerNestedSession(session, parent: parent)
     } catch {
       ACPAgentTelemetry.logger(.sessionResume).error(
         "The session of a restored run did not register. The run has no session of its own.",
-        metadata: ACPAgentTelemetry.sessionMetadata(sessionId))
+        metadata: ACPAgentTelemetry.sessionMetadata(sessionId, parent: parent))
     }
   }
 

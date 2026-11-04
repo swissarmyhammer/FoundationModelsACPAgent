@@ -235,8 +235,7 @@ extension RoutedACPAgent {
 
     // The root is in the table with its project hook key. So each recorded nested session
     // restores under it, the caller before the child, and takes the same key.
-    await restoreNestedSessions(
-      of: params.sessionId, composition: composition, hookLineage: hookLineage)
+    await restoreNestedSessions(of: params.sessionId, composition: composition)
 
     try await replayHistory(history, from: replayCursor, sessionId: params.sessionId)
     await syncCurrentState(of: params.sessionId)

@@ -126,16 +126,17 @@ extension RoutedACPAgent {
   /// - Parameters:
   ///   - session: The Router session.
   ///   - sessionId: The ACP session id of `session`.
+  ///   - parent: The session that `session` is nested in.
   ///   - build: The parts that the entry takes from the caller.
   /// - Returns: The gate of the announcer, or a gate that discards every update.
   private func nestedAnnouncementGate(
-    for session: any RoutedSession, sessionId: SessionId, build: SessionBuild
+    for session: any RoutedSession, sessionId: SessionId, parent: SessionId, build: SessionBuild
   ) -> SessionAnnouncementGate {
     guard let announcer = build.surface.agents?.announcer else {
       assertionFailure("a nested session has no announcer")
       ACPAgentTelemetry.logger(.sessionLifecycle).error(
         "A nested session has no announcer; the gate discards every update of the session.",
-        metadata: ACPAgentTelemetry.sessionMetadata(sessionId))
+        metadata: ACPAgentTelemetry.sessionMetadata(sessionId, parent: parent))
       return .discarded(owner: "\(session.id)")
     }
     return announcer.gate(for: session.id)
@@ -184,10 +185,13 @@ extension RoutedACPAgent {
     // before the first suspension. So an announcement that goes out at any
     // time before, during or after this registration opens this gate.
     // A root session is known from its response, so its gate is open.
-    let announcement =
-      parent == nil
-      ? SessionAnnouncementGate(isOpen: true)
-      : nestedAnnouncementGate(for: session, sessionId: sessionId, build: build)
+    let announcement: SessionAnnouncementGate
+    if let parent {
+      announcement = nestedAnnouncementGate(
+        for: session, sessionId: sessionId, parent: parent, build: build)
+    } else {
+      announcement = SessionAnnouncementGate(isOpen: true)
+    }
     let send = historySink(for: sessionId, gate: announcement)
     let stateLedger = SessionStateLedger(
       send: send, announce: unrecordedSink(for: sessionId, gate: announcement))
@@ -195,12 +199,14 @@ extension RoutedACPAgent {
     let table = connections
     let projector = SessionProjector(
       sessionId: sessionId,
+      parentSessionId: parent,
       modelName: ConfigOptions.handle(for: build.selectedSlot, of: residentProfile).chosen
         .stringValue,
       send: send,
       shellSnapshot: { commandID in shellOutput?.snapshot(for: commandID) },
       relay: ElicitationRelay(
-        sessionId: sessionId, stateLedger: stateLedger, announcement: announcement,
+        sessionId: sessionId, parentSessionId: parent, stateLedger: stateLedger,
+        announcement: announcement,
         claims: elicitationClaims,
         outboundPath: { table.path(forSession: sessionId) }),
       runCallJoins: build.runCallJoins,
@@ -292,11 +298,34 @@ extension RoutedACPAgent {
       throw RequestError.unknownSession(id: parent)
     }
     let sessionId = SessionId(rawValue: session.id.description)
-    try await registerSession(
-      session, sessionId: sessionId, parent: parent,
-      build: SessionBuild(borrowingFrom: parentEntry),
-      events: events)
+    // The key goes in before the registration, so the `snapshots` tool of the child reads it
+    // before the first submission of the child.
+    SnapshotSessionKeys.shared.record(
+      snapshotKey(ofNestedIn: parent, entry: parentEntry), for: sessionId)
+    do {
+      try await registerSession(
+        session, sessionId: sessionId, parent: parent,
+        build: SessionBuild(borrowingFrom: parentEntry),
+        events: events)
+    } catch {
+      SnapshotSessionKeys.shared.forget(sessionId)
+      throw error
+    }
     return sessionId
+  }
+
+  /// The snapshot key of a session nested in `parent`: the key of its parent, so a child shares
+  /// the one timeline of its folder with its root. The Router gives the hooks of the child the
+  /// same key. A parent with no recorded key gives the key of its working directory, which is
+  /// the key that the hooks of a root session have.
+  ///
+  /// - Parameters:
+  ///   - parent: The parent session.
+  ///   - entry: The entry of the parent in the table.
+  /// - Returns: The snapshot key of the child.
+  private func snapshotKey(ofNestedIn parent: SessionId, entry: ActiveSession) -> String {
+    SnapshotSessionKeys.shared.sessionKey(of: parent.rawValue)
+      ?? AgentHome.projectKey(of: entry.workingDirectory)
   }
 
   /// Retires a nested session. It tears the session down with the sessions
@@ -312,6 +341,9 @@ extension RoutedACPAgent {
       return
     }
     await tearDownSession(sessionId, entry: entry)
+    // The snapshot timeline belongs to the folder, and the child leaves it as it was. Only the
+    // key of the child session goes.
+    SnapshotSessionKeys.shared.forget(sessionId)
     sessionTree.remove(sessionId)
     sessions[parent]?.children.removeAll { $0 == sessionId }
     sessions.removeValue(forKey: sessionId)

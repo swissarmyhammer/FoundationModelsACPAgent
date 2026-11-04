@@ -188,6 +188,10 @@ struct PromptExecution: Sendable {
   /// The id of the session this prompt runs in.
   let sessionId: SessionId
 
+  /// The id of the parent of that session, or `nil` for a root session. A
+  /// log record of a prompt in a sub-agent session names it.
+  var parentSessionId: SessionId?
+
   /// The prompt's content blocks. A plain prompt folds them into the
   /// model prompt; the `user_message` echo carries them verbatim.
   let promptBlocks: [ContentBlock]
@@ -287,7 +291,8 @@ struct PromptExecution: Sendable {
     } catch {
       ACPAgentTelemetry.logger(.promptExecution).error(
         "The title of the session could not be set.",
-        metadata: ACPAgentTelemetry.errorMetadata(error, sessionId: sessionId))
+        metadata: ACPAgentTelemetry.errorMetadata(
+          error, sessionId: sessionId, parent: parentSessionId))
     }
     await send(
       .sessionInfoUpdate(
@@ -432,9 +437,13 @@ struct PromptExecution: Sendable {
   /// - Parameters:
   ///   - stall: The report the prompt stopped on.
   ///   - sessionId: The ACP session of the prompt.
+  ///   - parent: The parent of that session, or `nil` for a root session.
   ///   - modelName: The model reference of the prompt.
-  static func report(_ stall: GenerationStall, sessionId: SessionId, modelName: String) {
-    var metadata = ACPAgentTelemetry.modelMetadata(sessionId: sessionId, modelRef: modelName)
+  static func report(
+    _ stall: GenerationStall, sessionId: SessionId, parent: SessionId? = nil, modelName: String
+  ) {
+    var metadata = ACPAgentTelemetry.modelMetadata(
+      sessionId: sessionId, parent: parent, modelRef: modelName)
     metadata[ACPAgentTelemetry.LogMetadataKey.routerReport] = "\(stall.description)"
     metadata[ACPAgentTelemetry.LogMetadataKey.stopReason] = "\(Self.stalledStopReasonValue)"
     ACPAgentTelemetry.logger(.promptExecution).error(
@@ -457,14 +466,17 @@ struct PromptExecution: Sendable {
   ///   - changedFileCount: The number of files that the files verbs of the
   ///     prompt changed.
   ///   - sessionId: The ACP session of the prompt.
+  ///   - parent: The parent of that session, or `nil` for a root session.
   ///   - modelName: The model reference of the prompt.
   static func report(
     cut: PromptStop, metadata cutMetadata: Logger.Metadata, changedFileCount: Int,
-    sessionId: SessionId,
+    sessionId: SessionId, parent: SessionId? = nil,
     modelName: String
   ) {
-    var metadata = ACPAgentTelemetry.modelMetadata(sessionId: sessionId, modelRef: modelName)
-      .merging(cutMetadata) { current, _ in current }
+    var metadata = ACPAgentTelemetry.modelMetadata(
+      sessionId: sessionId, parent: parent, modelRef: modelName
+    )
+    .merging(cutMetadata) { current, _ in current }
     metadata[ACPAgentTelemetry.LogMetadataKey.stopReason] = "\(Self.stopReason(for: cut).wireValue)"
     ACPAgentTelemetry.logger(.promptExecution).error(
       Self.cutMessage(for: cut, changedFileCount: changedFileCount), metadata: metadata)
@@ -515,9 +527,12 @@ struct PromptExecution: Sendable {
   /// - Parameters:
   ///   - error: The error of the failed answer of the prompt.
   ///   - sessionId: The ACP session of the prompt.
+  ///   - parent: The parent of that session, or `nil` for a root session.
   ///   - modelName: The model reference of the prompt.
-  static func report(failure error: any Error, sessionId: SessionId, modelName: String) {
-    var metadata = ACPAgentTelemetry.errorMetadata(error, sessionId: sessionId)
+  static func report(
+    failure error: any Error, sessionId: SessionId, parent: SessionId? = nil, modelName: String
+  ) {
+    var metadata = ACPAgentTelemetry.errorMetadata(error, sessionId: sessionId, parent: parent)
     metadata[ACPAgentTelemetry.LogMetadataKey.modelRef] = "\(modelName)"
     ACPAgentTelemetry.logger(.promptExecution).error("The prompt failed.", metadata: metadata)
   }
@@ -717,8 +732,8 @@ extension RoutedACPAgent {
     let measurement = PromptMeasurement()
     let span = RequestTracing.startRequestSpan(
       ACPAgentTelemetry.SpanName.prompt, method: ACPMethod.sessionPrompt,
-      sessionId: params.sessionId, meta: params.meta,
-      logger: ACPAgentTelemetry.logger(.promptExecution))
+      sessionId: params.sessionId, parentSessionId: sessionTree.parent(of: params.sessionId),
+      meta: params.meta, logger: ACPAgentTelemetry.logger(.promptExecution))
     do {
       let (response, owner, connection) = try await InstrumentationContext.withValue(span.context) {
         try await acceptPrompt(params, from: caller)
@@ -877,6 +892,7 @@ extension RoutedACPAgent {
     let projector = entry.projector
     let execution = PromptExecution(
       sessionId: sessionId,
+      parentSessionId: sessionTree.parent(of: sessionId),
       promptBlocks: params.prompt,
       promptState: owner,
       send: send,
@@ -913,6 +929,7 @@ extension RoutedACPAgent {
     await RequestTracing.withRequestSpan(
       ACPAgentTelemetry.SpanName.cancel, method: ACPMethod.sessionCancel,
       sessionId: params.sessionId,
+      parentSessionId: sessionTree.parent(of: params.sessionId),
       meta: params.meta
     ) { _ in
       await cancelRunningPrompt(params)
@@ -933,7 +950,8 @@ extension RoutedACPAgent {
     guard let entry = sessions[params.sessionId], !entry.isClosed else {
       ACPAgentTelemetry.logger(.promptExecution).notice(
         "A session/cancel found no open session. The agent ignores it.",
-        metadata: ACPAgentTelemetry.sessionMetadata(params.sessionId))
+        metadata: ACPAgentTelemetry.sessionMetadata(
+          params.sessionId, parent: sessionTree.parent(of: params.sessionId)))
       return
     }
     for owner in entry.openPrompts {
@@ -949,7 +967,8 @@ extension RoutedACPAgent {
     if !entry.openPrompts.isEmpty {
       entry.projector.cancelSent(signal)
     }
-    var metadata = ACPAgentTelemetry.sessionMetadata(params.sessionId)
+    var metadata = ACPAgentTelemetry.sessionMetadata(
+      params.sessionId, parent: entry.parentSessionId)
     metadata[ACPAgentTelemetry.LogMetadataKey.cancelSignalId] = "\(signal)"
     ACPAgentTelemetry.logger(.promptExecution).info(
       "The session cancelled its work.", metadata: metadata)

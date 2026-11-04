@@ -38,6 +38,8 @@ enum RequestTracing {
   ///   - spanName: The name of the span.
   ///   - method: The ACP method of the request.
   ///   - sessionId: The ACP session id that the request names, or `nil`.
+  ///   - parentSessionId: The ACP session id of the parent of that session when it is a
+  ///     sub-agent session, or `nil`.
   ///   - meta: The `_meta` of the request, which can hold the trace context
   ///     of the client.
   ///   - body: The work of the request. It gets the open span, and it runs
@@ -49,12 +51,15 @@ enum RequestTracing {
     _ spanName: String,
     method: String,
     sessionId: SessionId?,
+    parentSessionId: SessionId? = nil,
     meta: JSONValue?,
     _ body: nonisolated(nonsending) (any Span) async throws -> Output
   ) async rethrows -> Output {
     try await AgentTracing.withSpan(spanName, context: parentContext(meta: meta), ofKind: .server) {
       span in
-      span.updateAttributes { describeRequest(&$0, method: method, sessionId: sessionId) }
+      span.updateAttributes {
+        describeRequest(&$0, method: method, sessionId: sessionId, parent: parentSessionId)
+      }
       return try await body(span)
     }
   }
@@ -73,6 +78,8 @@ enum RequestTracing {
   ///   - spanName: The name of the span.
   ///   - method: The ACP method of the request.
   ///   - sessionId: The ACP session id that the request names, or `nil`.
+  ///   - parentSessionId: The ACP session id of the parent of that session when it is a
+  ///     sub-agent session, or `nil`.
   ///   - meta: The `_meta` of the request, which can hold the trace context
   ///     of the client.
   ///   - logger: The logger of the "enter" record.
@@ -85,6 +92,7 @@ enum RequestTracing {
     _ spanName: String,
     method: String,
     sessionId: SessionId?,
+    parentSessionId: SessionId? = nil,
     meta: JSONValue?,
     logger: Logger,
     _ body: nonisolated(nonsending) (any Span) async throws -> Output
@@ -95,8 +103,11 @@ enum RequestTracing {
         ofKind: .server,
         tracer: ACPAgentTelemetry.tracer(explicit: nil),
         logger: logger,
-        attributes: { describeRequest(&$0, method: method, sessionId: sessionId) },
-        metadata: requestMetadata(method: method, sessionId: sessionId),
+        attributes: {
+          describeRequest(&$0, method: method, sessionId: sessionId, parent: parentSessionId)
+        },
+        metadata: requestMetadata(
+          method: method, sessionId: sessionId, parent: parentSessionId),
         body
       )
     }
@@ -116,18 +127,23 @@ enum RequestTracing {
   ///   - spanName: The name of the span.
   ///   - method: The ACP method of the request.
   ///   - sessionId: The ACP session id that the request names.
+  ///   - parentSessionId: The ACP session id of the parent of that session when it is a
+  ///     sub-agent session, or `nil`.
   ///   - meta: The `_meta` of the request, which can hold the trace context
   ///     of the client.
   ///   - logger: The logger of the "enter" record.
   /// - Returns: The open span. Its parent is the remote span that the
   ///   `_meta` names, or else the current `InstrumentationContext`.
   static func startRequestSpan(
-    _ spanName: String, method: String, sessionId: SessionId, meta: JSONValue?, logger: Logger
+    _ spanName: String, method: String, sessionId: SessionId, parentSessionId: SessionId? = nil,
+    meta: JSONValue?, logger: Logger
   ) -> any Span {
     let tracer = ACPAgentTelemetry.tracer(explicit: nil)
     let span = tracer.startSpan(spanName, context: parentContext(meta: meta), ofKind: .server)
-    span.updateAttributes { describeRequest(&$0, method: method, sessionId: sessionId) }
-    var metadata = requestMetadata(method: method, sessionId: sessionId)
+    span.updateAttributes {
+      describeRequest(&$0, method: method, sessionId: sessionId, parent: parentSessionId)
+    }
+    var metadata = requestMetadata(method: method, sessionId: sessionId, parent: parentSessionId)
     if let identity = SpanIdentity(context: span.context, tracer: tracer) {
       metadata[ACPAgentTelemetry.LogMetadataKey.traceId] = "\(identity.traceID)"
       metadata[ACPAgentTelemetry.LogMetadataKey.spanId] = "\(identity.spanID)"
@@ -170,33 +186,43 @@ enum RequestTracing {
     span.end()
   }
 
-  /// Writes the attributes that name one request: its ACP method, and its
-  /// session id when it names one.
+  /// Writes the attributes that name one request: its ACP method, its
+  /// session id when it names one, and the parent session id when that
+  /// session is a sub-agent session.
   ///
   /// - Parameters:
   ///   - attributes: The attributes of the span of the request.
   ///   - method: The ACP method of the request.
   ///   - sessionId: The ACP session id that the request names, or `nil`.
+  ///   - parent: The ACP session id of the parent of that session, or `nil`.
   private static func describeRequest(
-    _ attributes: inout SpanAttributes, method: String, sessionId: SessionId?
+    _ attributes: inout SpanAttributes, method: String, sessionId: SessionId?,
+    parent: SessionId?
   ) {
     attributes[ACPAgentTelemetry.AttributeKey.acpMethod] = method
     if let sessionId {
       attributes[ACPAgentTelemetry.AttributeKey.sessionId] = sessionId.rawValue
     }
+    if let parent {
+      attributes[ACPAgentTelemetry.AttributeKey.parentSessionId] = parent.rawValue
+    }
   }
 
-  /// The metadata of the "enter" record of one request: its ACP method, and
-  /// its session id when it names one.
+  /// The metadata of the "enter" record of one request: its ACP method, its
+  /// session id when it names one, and the parent session id of a sub-agent
+  /// session.
   ///
   /// - Parameters:
   ///   - method: The ACP method of the request.
   ///   - sessionId: The ACP session id that the request names, or `nil`.
+  ///   - parent: The ACP session id of the parent of that session, or `nil`.
   /// - Returns: The ``ACPAgentTelemetry/LogMetadataKey/acpMethod`` value, and
-  ///   the ``ACPAgentTelemetry/LogMetadataKey/sessionId`` value when there is
-  ///   a session id.
-  private static func requestMetadata(method: String, sessionId: SessionId?) -> Logger.Metadata {
-    var metadata = sessionId.map(ACPAgentTelemetry.sessionMetadata) ?? [:]
+  ///   the ``ACPAgentTelemetry/sessionMetadata(_:parent:)`` values when there
+  ///   is a session id.
+  private static func requestMetadata(method: String, sessionId: SessionId?, parent: SessionId?)
+    -> Logger.Metadata
+  {
+    var metadata = sessionId.map { ACPAgentTelemetry.sessionMetadata($0, parent: parent) } ?? [:]
     metadata[ACPAgentTelemetry.LogMetadataKey.acpMethod] = "\(method)"
     return metadata
   }

@@ -87,6 +87,10 @@ struct ACPEventTranslator {
   /// The id of the session this translator reports for, in the logs.
   let sessionId: SessionId
 
+  /// The id of the parent of the session, or `nil` for a root session. A
+  /// log record of a sub-agent session names it.
+  let parentSessionId: SessionId?
+
   /// The sink every update of this translator goes to. The
   /// ``SessionProjector`` sets the record of the tool calls of an open
   /// prompt in front of the history sink.
@@ -206,7 +210,7 @@ struct ACPEventTranslator {
   ///   completion token.
   /// - Returns: The metadata.
   private func runMetadata(_ runId: String) -> Logger.Metadata {
-    var metadata = ACPAgentTelemetry.sessionMetadata(sessionId)
+    var metadata = ACPAgentTelemetry.sessionMetadata(sessionId, parent: parentSessionId)
     metadata[ACPAgentTelemetry.LogMetadataKey.toolCallId] = "\(runId)"
     return metadata
   }
@@ -218,7 +222,7 @@ struct ACPEventTranslator {
   /// - Parameter event: The event.
   /// - Returns: The metadata.
   private func eventMetadata(_ event: SessionEvent) -> Logger.Metadata {
-    var metadata = ACPAgentTelemetry.sessionMetadata(sessionId)
+    var metadata = ACPAgentTelemetry.sessionMetadata(sessionId, parent: parentSessionId)
     metadata[ACPAgentTelemetry.LogMetadataKey.eventKind] =
       "\(ACPAgentTelemetry.caseName(of: event))"
     return metadata
@@ -303,14 +307,16 @@ struct ACPEventTranslator {
     case .compactionFailed(let failure):
       await compactionReporter.reportFailure(failure)
     case .discoveryPrimingFailed(let failure):
-      var metadata = ACPAgentTelemetry.errorMetadata(failure, sessionId: sessionId)
+      var metadata = ACPAgentTelemetry.errorMetadata(
+        failure, sessionId: sessionId, parent: parentSessionId)
       metadata[ACPAgentTelemetry.LogMetadataKey.errorCase] =
         "\(ACPAgentTelemetry.caseName(of: failure))"
       ACPAgentTelemetry.logger(.promptExecution).error(
         "The discovery priming failed. The answer generates with no seed.", metadata: metadata)
     case .generationStalled(let stall):
       // A report, not a bound: the generation continues.
-      var metadata = ACPAgentTelemetry.modelMetadata(sessionId: sessionId, modelRef: modelName)
+      var metadata = ACPAgentTelemetry.modelMetadata(
+        sessionId: sessionId, parent: parentSessionId, modelRef: modelName)
       metadata[ACPAgentTelemetry.LogMetadataKey.routerReport] = "\(stall.description)"
       ACPAgentTelemetry.logger(.promptExecution).notice(
         "A generation made no progress for one stall interval.", metadata: metadata)
@@ -480,7 +486,8 @@ struct ACPEventTranslator {
   ///     settings only, never content.
   ///   - message: The message of the record, which names the kind of stop.
   private func reportRouterStop(_ stop: some CustomStringConvertible, message: Logger.Message) {
-    var metadata = ACPAgentTelemetry.modelMetadata(sessionId: sessionId, modelRef: modelName)
+    var metadata = ACPAgentTelemetry.modelMetadata(
+      sessionId: sessionId, parent: parentSessionId, modelRef: modelName)
     metadata[ACPAgentTelemetry.LogMetadataKey.routerReport] = "\(stop.description)"
     ACPAgentTelemetry.logger(.promptExecution).notice(message, metadata: metadata)
   }
@@ -591,7 +598,7 @@ struct ACPEventTranslator {
     case .toolCalls:
       break
     @unknown default:
-      var metadata = ACPAgentTelemetry.sessionMetadata(sessionId)
+      var metadata = ACPAgentTelemetry.sessionMetadata(sessionId, parent: parentSessionId)
       metadata[ACPAgentTelemetry.LogMetadataKey.entryId] = "\(recordedEntryId)"
       ACPAgentTelemetry.logger(.promptExecution).debug(
         "The translator sends nothing for a recorded entry of an unmapped kind.", metadata: metadata

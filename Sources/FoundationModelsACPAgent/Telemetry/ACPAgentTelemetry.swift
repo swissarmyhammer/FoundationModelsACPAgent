@@ -88,6 +88,10 @@ enum ACPAgentTelemetry {
     /// The ACP session id that the work runs on.
     static let sessionId = "session.id"
 
+    /// The ACP session id of the parent of the session that the work runs
+    /// on. Only a sub-agent session has a parent. Router uses the same key.
+    static let parentSessionId = "session.parent_id"
+
     /// The ACP stop reason that ended a prompt.
     static let promptStopReason = "prompt.stop_reason"
 
@@ -176,6 +180,10 @@ enum ACPAgentTelemetry {
   enum LogMetadataKey {
     /// The ACP session id.
     static let sessionId = AttributeKey.sessionId
+
+    /// The ACP session id of the parent of the session. Only a record about
+    /// a sub-agent session holds it.
+    static let parentSessionId = AttributeKey.parentSessionId
 
     /// The ACP method of the request.
     static let acpMethod = AttributeKey.acpMethod
@@ -423,38 +431,61 @@ enum ACPAgentTelemetry {
     return metadata
   }
 
-  /// The metadata of a record about one session: its session id.
-  ///
-  /// - Parameter sessionId: The ACP session id.
-  /// - Returns: The ``LogMetadataKey/sessionId`` value.
-  static func sessionMetadata(_ sessionId: SessionId) -> Logger.Metadata {
-    [LogMetadataKey.sessionId: "\(sessionId.rawValue)"]
-  }
-
-  /// The metadata of a record about the model work of one session: the
-  /// session id and the model reference.
+  /// The metadata of a record about one session: its session id and, for a
+  /// sub-agent session, the session id of its parent.
   ///
   /// - Parameters:
   ///   - sessionId: The ACP session id.
+  ///   - parent: The ACP session id of the parent, or `nil` for a root
+  ///     session.
+  /// - Returns: The ``LogMetadataKey/sessionId`` value, and the
+  ///   ``LogMetadataKey/parentSessionId`` value when `parent` is not `nil`.
+  static func sessionMetadata(_ sessionId: SessionId, parent: SessionId? = nil)
+    -> Logger.Metadata
+  {
+    var metadata: Logger.Metadata = [LogMetadataKey.sessionId: "\(sessionId.rawValue)"]
+    if let parent {
+      metadata[LogMetadataKey.parentSessionId] = "\(parent.rawValue)"
+    }
+    return metadata
+  }
+
+  /// The metadata of a record about the model work of one session: the
+  /// session id, the parent session id of a sub-agent session, and the model
+  /// reference.
+  ///
+  /// - Parameters:
+  ///   - sessionId: The ACP session id.
+  ///   - parent: The ACP session id of the parent, or `nil` for a root
+  ///     session.
   ///   - modelRef: The model reference that the session generates with.
-  /// - Returns: The ``LogMetadataKey/sessionId`` and
-  ///   ``LogMetadataKey/modelRef`` values.
-  static func modelMetadata(sessionId: SessionId, modelRef: String) -> Logger.Metadata {
-    var metadata = sessionMetadata(sessionId)
+  /// - Returns: The ``sessionMetadata(_:parent:)`` values and the
+  ///   ``LogMetadataKey/modelRef`` value.
+  static func modelMetadata(sessionId: SessionId, parent: SessionId? = nil, modelRef: String)
+    -> Logger.Metadata
+  {
+    var metadata = sessionMetadata(sessionId, parent: parent)
     metadata[LogMetadataKey.modelRef] = "\(modelRef)"
     return metadata
   }
 
-  /// The metadata of an error in one session: the session id and the type
-  /// name of the error, never its message.
+  /// The metadata of an error in one session: the session id, the parent
+  /// session id of a sub-agent session, and the type name of the error,
+  /// never its message.
   ///
   /// - Parameters:
   ///   - error: The error.
   ///   - sessionId: The ACP session id.
-  /// - Returns: The ``LogMetadataKey/sessionId`` and
-  ///   ``LogMetadataKey/errorType`` values.
-  static func errorMetadata(_ error: any Error, sessionId: SessionId) -> Logger.Metadata {
-    sessionMetadata(sessionId).merging(errorMetadata(error)) { current, _ in current }
+  ///   - parent: The ACP session id of the parent, or `nil` for a root
+  ///     session.
+  /// - Returns: The ``sessionMetadata(_:parent:)`` values and the
+  ///   ``LogMetadataKey/errorType`` value.
+  static func errorMetadata(_ error: any Error, sessionId: SessionId, parent: SessionId? = nil)
+    -> Logger.Metadata
+  {
+    sessionMetadata(sessionId, parent: parent).merging(errorMetadata(error)) { current, _ in
+      current
+    }
   }
 
   /// The metadata of an error that no session owns: the type name of the

@@ -92,6 +92,10 @@ actor ElicitationRelay {
   /// log lines.
   private let sessionId: SessionId
 
+  /// The id of the parent of the session, or `nil` for a root session. A
+  /// log record of a sub-agent session names it.
+  private let parentSessionId: SessionId?
+
   /// Gives the outbound path of the session as it is now: the connection
   /// that a create goes through, and its client capabilities, or `nil`
   /// when the session has none.
@@ -224,6 +228,7 @@ actor ElicitationRelay {
   ///
   /// - Parameters:
   ///   - sessionId: The session this relay serves.
+  ///   - parentSessionId: The parent of the session, or `nil` for a root session.
   ///   - stateLedger: The state ledger that learns when a question waits
   ///     for the user, or `nil` for none.
   ///   - announcement: The gate that tells if the client knows the session, or `nil` when it
@@ -233,11 +238,13 @@ actor ElicitationRelay {
   ///   - outboundPath: Gives the outbound path of the session as it is
   ///     when a question comes, or `nil` when the session has none.
   init(
-    sessionId: SessionId, stateLedger: SessionStateLedger? = nil,
+    sessionId: SessionId, parentSessionId: SessionId? = nil,
+    stateLedger: SessionStateLedger? = nil,
     announcement: SessionAnnouncementGate? = nil, claims: ElicitationClaims? = nil,
     outboundPath: @escaping @Sendable () -> ClientPath?
   ) {
     self.sessionId = sessionId
+    self.parentSessionId = parentSessionId
     self.stateLedger = stateLedger
     self.announcement = announcement
     self.claims = claims
@@ -269,7 +276,7 @@ actor ElicitationRelay {
     // is a doc comment upstream, not a type guarantee; read it
     // defensively, the way the settlement projection does.
     guard let request = event.elicitation else {
-      var metadata = ACPAgentTelemetry.sessionMetadata(sessionId)
+      var metadata = ACPAgentTelemetry.sessionMetadata(sessionId, parent: parentSessionId)
       metadata[ACPAgentTelemetry.LogMetadataKey.toolCallId] = "\(event.correlationID)"
       ACPAgentTelemetry.logger(.elicitationRelay).warning(
         "An elicitation event has no request. The relay ignores the event.",
@@ -780,7 +787,7 @@ actor ElicitationRelay {
   /// - Returns: The ``ACPAgentTelemetry/LogMetadataKey/sessionId`` and
   ///   ``ACPAgentTelemetry/LogMetadataKey/elicitationId`` values.
   private func elicitationMetadata(_ elicitationId: String) -> Logger.Metadata {
-    var metadata = ACPAgentTelemetry.sessionMetadata(sessionId)
+    var metadata = ACPAgentTelemetry.sessionMetadata(sessionId, parent: parentSessionId)
     metadata[ACPAgentTelemetry.LogMetadataKey.elicitationId] = "\(elicitationId)"
     return metadata
   }

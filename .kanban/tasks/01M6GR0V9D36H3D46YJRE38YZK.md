@@ -1,9 +1,37 @@
 ---
+comments:
+- actor: claude-code
+  id: 01m6j5gjwabyh0tdrsmg3xdxy4
+  text: |-
+    ### Design check: what held before, what was missing
+
+    HELD BEFORE this task:
+    - Gauge of active sessions: `recordActiveSessions` counts only non-closed sessions with no parent. Children are not in the number, so roots and children never mix. Decision: keep one gauge for roots. The root count is the count that a client opened. A child starts and ends by its own run, and a mixed number would change with each run. A test pins this.
+    - Hooks of a child: Router gives a sub-agent the origin `.subagent`, the key of its parent, and the parent id and root id. Tests pin it for a fresh child. After a cold resume, the restored child has the key of the folder and the root as parent (also pinned).
+    - Parent usage holds no child tokens: each session has its own projector and its own prompt tally. A test pins this.
+    - `session/delete` of the root: `tearDownSession` retires the children first, so they leave the table before the timeline check. Only the timeline of the folder key is removed, and only when no other session uses it. No sweep was added (memory rule kept).
+
+    MISSING, now fixed:
+    1. USAGE. A child run has no prompt, so its tokens went to a scratch tally and no `usage_update` was sent for a child. Now `ProjectionState.runTally` counts the events that belong to no open prompt, and the end of the run (`SessionProjector.end(with:)`) sends one `usage_update` before the `idle`. It has the context of the last submission of this session only, and no cost (the cost stays `unchanged`: unknown, not zero).
+    2. TELEMETRY. The ACP layer had no parent id. Added `session.parent_id` (attribute key and log metadata key, the same name as Router). `ACPAgentTelemetry.sessionMetadata`, `modelMetadata` and `errorMetadata` take `parent:`. `RequestTracing` span entry points take `parentSessionId`; `session/prompt` and `session/cancel` pass the parent from `sessionTree`. `ACPEventTranslator`, `ElicitationRelay`, `PromptExecution` and `SessionProjector` carry the parent id for their log records. Metrics have no session id dimension (the existing rule), so metrics are unchanged.
+    3. SNAPSHOT KEY. A fresh child had no entry in `SnapshotSessionKeys` (only a restored child had one), so the `snapshots` tool of a fresh child found no key. `registerNestedSession` now records the key of the parent (or the folder key) for the child, before the registration, and `retireSession` forgets the key of the child. The record in `registerRestoredRun` was removed: one place records the key for every nested session. `restoreNestedSessions` lost its `hookLineage` parameter.
+
+    Test-only change: `ResumeNestedSessionsTests` made `Recording`, `recordInterruptedChain` and `resumeRoot` internal, so the new suite reuses the cold-resume fixture.
+
+    Tests: `ChildSessionUsageTelemetryHooksTests` (23 tests). RED first: 5 usage tests and the live-child key test failed; the telemetry tests did not compile. GREEN after the change. Filtered run of 15 related suites (221 tests) passes.
+  timestamp: 2026-11-04T02:16:52.362718+00:00
+- actor: claude-code
+  id: 01m6j5gsfjmq25bazc83scb0qd
+  text: |-
+    ### implement — changed
+    - evidence: 15 files. Sources: Agent/ACPEventTranslator.swift, Agent/ElicitationRelay.swift, Agent/PromptExecution.swift, Agent/SessionBuild.swift, Agent/SessionProjector.swift, Agent/SessionResume.swift, Agent/SessionResumeNested.swift, Telemetry/ACPAgentTelemetry.swift, Telemetry/RequestTracing.swift. Tests: ChildSessionUsageTelemetryHooksTests.swift (new, 23 tests), ResumeNestedSessionsTests.swift (access change). All 8 acceptance and test items are checked. `swift test --filter ChildSessionUsageTelemetryHooksTests`: 23 passed. Filtered run of 15 related suites: 221 passed.
+    - next: /review
+  timestamp: 2026-11-04T02:16:59.122622+00:00
 depends_on:
 - 01M6GH2K0VV6RWV5R6SN3HB9SV
 - 01M6GH30709S58BK3AQ1VMBAM7
-position_column: todo
-position_ordinal: '9080'
+position_column: doing
+position_ordinal: '8380'
 title: 'Child sessions in usage, telemetry, hooks and the snapshot timeline: same rules as any session'
 ---
 ## What
@@ -19,16 +47,16 @@ Check and fix, in this order (design first; write what is already right and what
 Depends on: the shared session build (task 1) and the announce task.
 
 ## Acceptance Criteria
-- [ ] A child sends `usage_update` under its own session id and never includes cost; the parent usage does not include the child tokens.
-- [ ] Telemetry of a child carries its session id and its parent session id.
-- [ ] The gauge of active sessions does not mix roots and children in one number (or a task comment says why it does).
-- [ ] A child fires the hooks of any session, with the lineage key of its root, also after a cold resume.
-- [ ] The snapshot timeline of a child is that of its folder, and `session/delete` of the root removes only what it should.
-- [ ] A task comment lists which of these already held.
+- [x] A child sends `usage_update` under its own session id and never includes cost; the parent usage does not include the child tokens.
+- [x] Telemetry of a child carries its session id and its parent session id.
+- [x] The gauge of active sessions does not mix roots and children in one number (or a task comment says why it does).
+- [x] A child fires the hooks of any session, with the lineage key of its root, also after a cold resume.
+- [x] The snapshot timeline of a child is that of its folder, and `session/delete` of the root removes only what it should.
+- [x] A task comment lists which of these already held.
 
 ## Tests
-- [ ] `Tests/FoundationModelsACPAgentTests/ChildSessionUsageTelemetryHooksTests.swift`: usage per session and no cost, telemetry attributes, gauge, hook lineage, timeline.
-- [ ] Run `swift test --filter ChildSessionUsageTelemetryHooksTests`. All pass.
+- [x] `Tests/FoundationModelsACPAgentTests/ChildSessionUsageTelemetryHooksTests.swift`: usage per session and no cost, telemetry attributes, gauge, hook lineage, timeline.
+- [x] Run `swift test --filter ChildSessionUsageTelemetryHooksTests`. All pass.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #subagents

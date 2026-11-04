@@ -124,6 +124,7 @@ actor SessionProjector {
   ///
   /// - Parameters:
   ///   - sessionId: The id of the ACP session.
+  ///   - parentSessionId: The id of the parent of the session, or `nil` for a root session.
   ///   - modelName: The model reference of the session, for the logs.
   ///   - send: The history sink of the session.
   ///   - shellSnapshot: The reader of the stored output of a settled run.
@@ -133,6 +134,7 @@ actor SessionProjector {
   ///     work events of each Router session, or `nil` for none.
   init(
     sessionId: SessionId,
+    parentSessionId: SessionId? = nil,
     modelName: String,
     send: @escaping SessionUpdateSink,
     shellSnapshot: @escaping ShellSnapshotProvider = { _ in nil },
@@ -151,7 +153,8 @@ actor SessionProjector {
     consumer = Task {
       var state = ProjectionState(
         translator: ACPEventTranslator(
-          sessionId: sessionId, send: send, modelName: modelName, shellSnapshot: shellSnapshot,
+          sessionId: sessionId, parentSessionId: parentSessionId, send: send, modelName: modelName,
+          shellSnapshot: shellSnapshot,
           runCallJoins: runCallJoins),
         send: send,
         holds: runCallJoins.holds,
@@ -289,7 +292,8 @@ actor SessionProjector {
 
   /// Ends the session of a run.
   /// It waits until each source sent its last output.
-  /// Then it reports the end of the run with `idle`.
+  /// Then it reports the usage of the run, and the end of the run with `idle`.
+  /// The usage is that of this session only, with no cost.
   /// The `idle` goes out after each update that the session sent.
   /// It carries the stop reason of the run.
   /// The caller finishes the outputs of each source first.
@@ -392,6 +396,13 @@ private struct ProjectionState {
   /// most one prompt.
   var open: [OpenPrompt] = []
 
+  /// The counts of the events that belong to no open prompt: the run of a
+  /// sub-agent session. The end of the run reports them in its one
+  /// `usage_update` (``SessionProjector/end(with:)``). The counts are those
+  /// of this session only. A parent never adds the counts of its child, and
+  /// a child never adds the counts of its parent.
+  var runTally = PromptTally()
+
   /// The `cancelAll()` signals of `session/cancel` whose `signalDone` did
   /// not come yet.
   var pendingCancels: Set<SignalID> = []
@@ -446,7 +457,7 @@ private struct ProjectionState {
       await send(update)
       sent?.resume()
     case .runEnded(let idle, let handled):
-      await stateLedger?.promptEnded(idle, started: false)
+      await endRun(with: idle)
       handled.resume()
     case .releaseHold(let token, let handled):
       for update in holds.release(token) {
@@ -470,7 +481,7 @@ private struct ProjectionState {
     if let index, case .submissionStarted = event {
       await open[index].prompt.owner.promptDidStart()
     }
-    translator.tally = index.map { open[$0].tally } ?? PromptTally()
+    translator.tally = index.map { open[$0].tally } ?? runTally
     let recorders = index.map { [open[$0].toolCalls] } ?? open.map(\.toolCalls)
     translator.send = recorders.reduce(send) { sink, toolCalls in toolCalls.recording(into: sink) }
     translator.relayElicitation = relayHandler(for: source.session)
@@ -493,19 +504,39 @@ private struct ProjectionState {
         PromptExecution.endsPrompt(stall, sawOutput: current.tally.sawOutput)
       {
         PromptExecution.report(
-          stall, sessionId: translator.sessionId, modelName: current.prompt.modelName)
+          stall, sessionId: translator.sessionId, parent: translator.parentSessionId,
+          modelName: current.prompt.modelName)
         await endPrompt(current.prompt.mailId, stop: .stalled(stall))
         return
       }
+    } else {
+      runTally = translator.tally
     }
     for prompt in open.map(\.prompt) {
-      if let stop = await Self.stop(of: event, ending: prompt, sessionId: translator.sessionId) {
+      if let stop = await Self.stop(
+        of: event, ending: prompt, sessionId: translator.sessionId,
+        parent: translator.parentSessionId)
+      {
         await endPrompt(prompt.mailId, stop: stop)
       }
     }
     if case .signalDone(let signal) = event {
       await signalDone(signal)
     }
+  }
+
+  /// Ends the run of the session: the one `usage_update` of the run, then the end of the work
+  /// state. The `usage_update` has the context of the last submission of the run and no cost.
+  /// The cost of a child is unknown, not zero, and a client must not add the cost of a parent
+  /// and of its children. The counts start again for a next run.
+  ///
+  /// - Parameter idle: The `idle` that tells how the run ended.
+  private mutating func endRun(with idle: IdleStateUpdate) async {
+    if let usage = runTally.usageUpdate {
+      await send(.usageUpdate(usage))
+    }
+    runTally = PromptTally()
+    await stateLedger?.promptEnded(idle, started: false)
   }
 
   /// Ends each prompt that a `session/cancel` reached when the `signalDone`
@@ -566,9 +597,11 @@ private struct ProjectionState {
   ///   - event: The event.
   ///   - prompt: The open prompt.
   ///   - sessionId: The id of the ACP session, for the log of a failure.
+  ///   - parent: The id of the parent of the session, or `nil` for a root session.
   /// - Returns: The stop, or `nil`.
   private static func stop(
-    of event: SessionEvent, ending prompt: SessionProjector.Prompt, sessionId: SessionId
+    of event: SessionEvent, ending prompt: SessionProjector.Prompt, sessionId: SessionId,
+    parent: SessionId?
   ) async -> PromptStop? {
     let mailId = prompt.mailId
     switch event {
@@ -585,7 +618,7 @@ private struct ProjectionState {
         let stop = PromptExecution.classify(error)
         if case .failed = stop {
           PromptExecution.report(
-            failure: error, sessionId: sessionId, modelName: prompt.modelName)
+            failure: error, sessionId: sessionId, parent: parent, modelName: prompt.modelName)
         }
         return stop
       }
@@ -645,7 +678,8 @@ private struct ProjectionState {
       PromptExecution.report(
         cut: cut, metadata: ending.tally.cutMetadata,
         changedFileCount: ending.tally.changedFileCount,
-        sessionId: translator.sessionId, modelName: ending.prompt.modelName)
+        sessionId: translator.sessionId, parent: translator.parentSessionId,
+        modelName: ending.prompt.modelName)
     }
     if let status = PromptExecution.closingStatus(for: stop) {
       for toolCallId in await ending.toolCalls.unfinishedToolCallIds() {

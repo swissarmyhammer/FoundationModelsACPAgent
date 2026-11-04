@@ -40,7 +40,7 @@ import Testing
   private static let keptTool = "searchTools"
 
   /// The chain that the first agent recorded.
-  private struct Recording {
+  struct Recording {
     /// The working directory of the chain.
     let cwd: URL
 
@@ -91,7 +91,7 @@ import Testing
   ///
   /// - Returns: The chain.
   /// - Throws: Whatever the fixture or a wait throws.
-  private static func recordInterruptedChain() async throws -> Recording {
+  static func recordInterruptedChain() async throws -> Recording {
     let cwd = makeResolvedDirectory(label: "\(label)-repo")
     try AgentsToolTests.writeAgent(
       named: childAgent, in: cwd, tools: AgentsToolTests.agentsToolName)
@@ -157,7 +157,7 @@ import Testing
   ///   - recording: The chain that the first agent recorded.
   ///   - fixture: The second agent.
   /// - Throws: Whatever the request throws.
-  private static func resumeRoot(
+  static func resumeRoot(
     of recording: Recording, on fixture: ScriptedPromptFixture
   ) async throws {
     _ = try await fixture.harness.connection.resumeSession(
