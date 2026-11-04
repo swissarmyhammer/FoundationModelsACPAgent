@@ -39,6 +39,7 @@ extension RoutedACPAgent {
     guard let entry = sessions[params.sessionId] else {
       throw RequestError.unknownSession(id: params.sessionId)
     }
+    try requirePermitted(ACPMethod.sessionClose, on: params.sessionId)
     await tearDownSession(params.sessionId, entry: entry)
     return CloseSessionResponse()
   }
@@ -79,6 +80,7 @@ extension RoutedACPAgent {
     _ params: DeleteSessionRequest, from caller: ConnectionId
   ) async throws -> DeleteSessionResponse {
     try requireInitialized(before: ACPMethod.sessionDelete, from: caller)
+    try requirePermitted(ACPMethod.sessionDelete, on: params.sessionId)
     guard let rootId = ULID(ulidString: params.sessionId.rawValue) else {
       // A non-ULID id names no session this agent ever minted; a real
       // delete of nothing is silent success.

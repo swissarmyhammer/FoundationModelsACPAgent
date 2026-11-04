@@ -134,6 +134,11 @@ struct ActiveSession: Sendable {
   /// opens the gate (``SessionAnnouncementGate``).
   let announcement: SessionAnnouncementGate
 
+  /// The methods that the client can use on this session. A root session
+  /// permits all of them. A nested session permits what it advertises
+  /// (``SessionCapabilitySet``).
+  let capabilities: SessionCapabilitySet
+
   /// Whether this session owns its mounted surface: only a session with no
   /// parent does.
   /// The close of a nested session never stops the agent runs of the surface.

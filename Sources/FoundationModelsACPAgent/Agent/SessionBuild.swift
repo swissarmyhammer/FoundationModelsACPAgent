@@ -50,6 +50,9 @@ struct SessionBuild {
   /// The join table of the projector of the session.
   let runCallJoins: RunCallJoinTable
 
+  /// The methods that the client can use on the session.
+  let capabilities: SessionCapabilitySet
+
   /// The build of a root session. Its parts come from the composition, the
   /// placement and the command registry that the mount made.
   ///
@@ -84,6 +87,7 @@ struct SessionBuild {
     self.titleRecorded = titleRecorded
     self.history = history
     runCallJoins = composition.surface.runCallJoins
+    capabilities = .all
   }
 
   /// The build of a nested session. It borrows the parts of the mounted
@@ -113,6 +117,7 @@ struct SessionBuild {
     titleRecorded = true
     history = SessionMergeEngine()
     runCallJoins = RunCallJoinTable(holds: parent.surface.runCallJoins.holds)
+    capabilities = SessionCapabilitySet(advertised: SubagentAnnouncer.childCapabilities)
   }
 }
 
@@ -241,6 +246,7 @@ extension RoutedACPAgent {
       projector: projector,
       parentSessionId: parent,
       announcement: announcement,
+      capabilities: build.capabilities,
       isReplayOnly: build.isReplayOnly,
       titleRecorded: build.titleRecorded,
       retainedHistory: RetainedHistory(build.history))

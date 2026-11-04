@@ -200,6 +200,7 @@ extension RoutedACPAgent {
     guard let entry = sessions[params.sessionId] else {
       throw RequestError.unknownSession(id: params.sessionId)
     }
+    try requirePermitted(ACPMethod.sessionSetConfigOption, on: params.sessionId)
     if entry.isClosed {
       throw RequestError.closedSession(id: params.sessionId)
     }

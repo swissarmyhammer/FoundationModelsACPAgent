@@ -79,11 +79,18 @@ comments:
     - Tests: swift test --filter "ChildSessionProjectionTests|ScriptedElicitStepTests" — 20 tests in 2 suites passed. swift format run.
     - next: /review
   timestamp: 2026-11-04T02:27:21.610305+00:00
+- actor: claude-code
+  id: 01m6j65xkcn511vbyywxje63b5
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD. 0 findings, 0 confirmed, 0 refuted. 2 files reviewed. All prior findings are checked.
+    - next: Task moved to done.
+  timestamp: 2026-11-04T02:28:31.468712+00:00
 depends_on:
 - 01M6GH2K0VV6RWV5R6SN3HB9SV
 - 01M6GH30709S58BK3AQ1VMBAM7
-position_column: review
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffff9e80
 title: 'Child sessions in usage, telemetry, hooks and the snapshot timeline: same rules as any session'
 ---
 ## What

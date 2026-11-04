@@ -649,10 +649,15 @@ extension RequestError {
   ///   - reason: Why the session cannot take the call, or `nil` for a
   ///     refusal with no `reason` member.
   /// - Returns: The typed invalid-params error.
-  private static func invalidParamsRefusal(id: SessionId, reason: String?) -> RequestError {
+  private static func invalidParamsRefusal(
+    id: SessionId, reason: String?, method: String? = nil
+  ) -> RequestError {
     var data: [String: FoundationModelsACP.JSONValue] = ["sessionId": .string(id.rawValue)]
     if let reason {
       data["reason"] = .string(reason)
+    }
+    if let method {
+      data["method"] = .string(method)
     }
     return RequestError(
       code: .invalidParams,
@@ -677,6 +682,18 @@ extension RequestError {
   /// - Returns: The typed invalid-params error.
   static func closedSession(id: SessionId) -> RequestError {
     invalidParamsRefusal(id: id, reason: closedSessionReason)
+  }
+
+  /// The refusal of a method that the capabilities of the session do not
+  /// permit. Invalid params, with the id, the method and the reason in `data`.
+  ///
+  /// - Parameters:
+  ///   - method: The wire name of the refused method.
+  ///   - id: The id of the session that does not permit the method.
+  /// - Returns: The typed invalid-params error.
+  static func methodNotPermitted(_ method: String, on id: SessionId) -> RequestError {
+    invalidParamsRefusal(
+      id: id, reason: "the session \(id.rawValue) does not permit \(method)", method: method)
   }
 
   /// The missing-working-directory refusal: a prompt on a replay-only
@@ -801,6 +818,7 @@ extension RoutedACPAgent {
     guard let entry = sessions[params.sessionId] else {
       throw RequestError.unknownSession(id: params.sessionId)
     }
+    try requirePermitted(ACPMethod.sessionPrompt, on: params.sessionId)
     guard entry.availability != .closed else {
       throw RequestError.closedSession(id: params.sessionId)
     }
@@ -947,9 +965,11 @@ extension RoutedACPAgent {
   ///
   /// - Parameter params: The cancellation notification.
   private func cancelRunningPrompt(_ params: CancelSessionNotification) async {
-    guard let entry = sessions[params.sessionId], !entry.isClosed else {
+    guard let entry = sessions[params.sessionId], !entry.isClosed,
+      entry.capabilities.permits(ACPMethod.sessionCancel)
+    else {
       ACPAgentTelemetry.logger(.promptExecution).notice(
-        "A session/cancel found no open session. The agent ignores it.",
+        "A session/cancel found no open session that permits it. The agent ignores it.",
         metadata: ACPAgentTelemetry.sessionMetadata(
           params.sessionId, parent: sessionTree.parent(of: params.sessionId)))
       return

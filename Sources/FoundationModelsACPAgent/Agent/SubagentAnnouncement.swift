@@ -42,6 +42,14 @@ extension SubagentUpdate {
   }
 }
 
+extension SubagentAnnouncer {
+  /// What the client can do with a child session: the capabilities that each
+  /// `subagent_update` advertises. Today a child permits only `cancel`.
+  /// The session entry of the child takes its ``SessionCapabilitySet`` from
+  /// this value, so the announcement and the gate cannot differ.
+  static let childCapabilities = SubagentSessionCapabilities(cancel: SessionCancelCapabilities())
+}
+
 extension RoutedACPAgent {
   /// Makes the outlet of the announcer of a root session. The announcements
   /// go through this agent. The outlet keeps the agent weakly, so the
@@ -316,7 +324,7 @@ extension RoutedACPAgent {
   ) -> SubagentUpdate {
     SubagentUpdate(
       sessionId: SessionId(rawValue: report.runID.description),
-      capabilities: .value(SubagentSessionCapabilities(cancel: SessionCancelCapabilities())),
+      capabilities: .value(SubagentAnnouncer.childCapabilities),
       description: report.description.map { .value($0) } ?? .unchanged,
       state: .value(report.state),
       title: .value(report.title),

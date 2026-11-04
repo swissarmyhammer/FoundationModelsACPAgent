@@ -155,6 +155,7 @@ extension RoutedACPAgent {
     _ params: ResumeSessionRequest, from caller: ConnectionId
   ) async throws -> ResumeSessionResponse {
     try requireInitialized(before: ACPMethod.sessionResume, from: caller)
+    try requirePermitted(ACPMethod.sessionResume, on: params.sessionId)
     let userPresence = userPresence(of: caller)
     let workingDirectory = try SessionSetup.validatedWorkingDirectory(
       path: params.cwd.rawValue, field: .cwd)
