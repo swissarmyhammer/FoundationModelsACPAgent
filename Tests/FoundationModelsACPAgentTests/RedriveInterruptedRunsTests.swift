@@ -45,12 +45,7 @@ import Testing
 
     /// The position of the response.
     var responsePosition: Int {
-      trace.firstIndex { event in
-        if case .resumeResponse = event {
-          return true
-        }
-        return false
-      } ?? trace.count
+      trace.firstIndex(where: \.isResumeResponse) ?? trace.count
     }
 
     /// The position of the first re-drive text on the stream of `session`, or `nil`.
@@ -106,6 +101,20 @@ import Testing
         }
       }
       return stray
+    }
+
+    /// The position of the first `completed` update of any call on the stream of `session`, or
+    /// `nil` when no call completed.
+    ///
+    /// - Parameter session: The session.
+    /// - Returns: The position in the trace.
+    func firstCompletion(on session: SessionId) -> Int? {
+      trace.firstIndex { event in
+        guard case .update(session, .toolCallUpdate(let call)) = event else {
+          return false
+        }
+        return call.status == .value(.completed)
+      }
     }
 
     /// The position of the first in-progress or paused update of any call on the stream of
@@ -382,6 +391,7 @@ import Testing
       try await ResumeNestedSessionsTests.recordShutDownChain(), untilRootCallCompletes: true,
       replaying: true)
 
+    _ = try #require(wire.firstCompletion(on: wire.recording.root))
     #expect(wire.strayCompletions(on: wire.recording.root).isEmpty)
     await wire.fixture.close()
   }
@@ -397,6 +407,7 @@ import Testing
     let opened = try #require(wire.firstOpenCall(on: wire.recording.root))
 
     #expect(opened < wire.responsePosition)
+    _ = try #require(wire.firstCompletion(on: wire.recording.root))
     #expect(wire.strayCompletions(on: wire.recording.root).isEmpty)
     #expect(SubagentWireTraceValidator().validate(wire.trace) == [])
     await wire.fixture.close()

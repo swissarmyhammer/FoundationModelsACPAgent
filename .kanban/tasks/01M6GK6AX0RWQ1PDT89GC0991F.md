@@ -116,12 +116,31 @@ comments:
     - integration test: `swift build --build-tests` in IntegrationTests succeeds. NOT RUN, by the user's order (integration tests are for CI). So finding 1 stays [ ] until CI shows the integration test green. The live-model suites are in the IntegrationTests package, so they were not part of the root run.
     - next: review
   timestamp: 2026-11-04T17:24:27.051395+00:00
+- actor: claude-code
+  id: 01m6kt0cmrnsn6czqbtakgyx82
+  text: |-
+    ### review — findings
+    - evidence: review sha 2687686~1..86a8726; 3 findings, 3 confirmed. Finding 1 of the 10:56 review (RedriveInterruptedRunsProcessTests.swift:164) judged by reading: the test records the id of the original call and matches by id and by status completed (isCompletedCall); lost reports another status (ACPEventTranslator.swift:52), so the check is strong. Box checked. Integration test not run (CI only).
+    - open: SessionResumeOpenCalls.swift:115 (swift/preconditions); RedriveInterruptedRunsTests.swift:48 (reuse/reuse); RedriveInterruptedRunsTests.swift:385 (test-integrity/no-test-cheating)
+    - next: fix the 3 open findings.
+  timestamp: 2026-11-04T17:34:16.216846+00:00
+- actor: claude-code
+  id: 01m6kt7r4bcf2gkfpcwvj2e1b3
+  text: |-
+    ### implement — changed
+    - evidence: working tree on main, not committed. Files: Sources/FoundationModelsACPAgent/Agent/SessionResumeOpenCalls.swift, Tests/FoundationModelsACPAgentTestSupport/WireTraceReading.swift, Tests/FoundationModelsACPAgentTests/RedriveInterruptedRunsTests.swift, IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/RedriveInterruptedRunsProcessTests.swift.
+    - finding 1: no assertionFailure, no empty default. The meta link now comes from a helper `link(toChild:)` with do/catch, logger.error naming the run, and the field stays omitted (.unchanged) on failure. Same pattern as the existing announcement code. Same cause removed: the `try?` on the rawInput decode is now `rawInput(of:child:)` with the same log.
+    - finding 2: `isResumeResponse` is now a public extension property in WireTraceReading.swift; used by responsePosition, readResumeTrace and the process tests (the private copy is deleted).
+    - finding 3: theCompletionOfTheRootCallHasNoStrayId and theReplayOpensTheOriginalCallWhenNoHistoryWasWritten now `#require` a first completed call (new Wire.firstCompletion(on:)) before the stray check.
+    - tests: `swift build --build-tests` ok; `swift test --filter` Redrive, ResumeChildSync, ResumeNested: 42 tests passed. IntegrationTests `swift build --build-tests` ok, not run (CI only).
+    - next: review
+  timestamp: 2026-11-04T17:38:17.355235+00:00
 depends_on:
 - 01M6GJPPXWKQJ9E6SK5WD0CWZ7
 - 01M6GM17VHZSWD4G2J27WTA3JT
 - 01M6KGEQVH2T73SR32CD6VZDKG
 position_column: doing
-position_ordinal: '8680'
+position_ordinal: '8880'
 title: Re-drive interrupted nested runs after a cold resume, children first, completing the original agent tool call
 ---
 ## What
@@ -160,9 +179,21 @@ Do not start this task until the user has decided the Router and Agents cards.
 
 > Scope: `review sha 2687686~1..2687686` — reviewed the diffs only — lines this change added or modified. 6 file(s) reviewed, 0 not reviewed.
 
-- [ ] `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/RedriveInterruptedRunsProcessTests.swift:164` `test-integrity/no-test-cheating` — The test is named to prove that the original agents call of the root completes, but line 164 only checks that some completed tool call exists on the root stream (line 162 matches any call by status, not by call id). A call that completes as lost, or an unrelated completed call, would pass. The sibling test in RedriveInterruptedRunsTests.swift checks for .succeeded and rejects .lost, so this check is weaker than the claim it supports. Match the completed call by its id (the id of the original agents call recorded in the first process) and assert that its outcome is the success outcome, not merely that a completed call exists on the root stream.
+- [x] `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/RedriveInterruptedRunsProcessTests.swift:164` `test-integrity/no-test-cheating` — The test is named to prove that the original agents call of the root completes, but line 164 only checks that some completed tool call exists on the root stream (line 162 matches any call by status, not by call id). A call that completes as lost, or an unrelated completed call, would pass. The sibling test in RedriveInterruptedRunsTests.swift checks for .succeeded and rejects .lost, so this check is weaker than the claim it supports. Match the completed call by its id (the id of the original agents call recorded in the first process) and assert that its outcome is the success outcome, not merely that a completed call exists on the root stream.
 - [x] `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/RedriveInterruptedRunsProcessTests.swift:193` `reuse/reuse` — The `resume` helper builds the same timeout task that cancels a reader after a fixed sleep. The unit test target has the same pattern, so this bounded-wait logic is duplicated across two targets. Move one shared reader-with-timeout helper into the `FoundationModelsACPAgentTestSupport` module, which both targets import. Call it from this `resume` and from `resumeAndRedrive`.
 - [x] `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/RedriveInterruptedRunsProcessTests.swift:233` `reuse/reuse` — `isText` repeats the logic of `isRedriveText` in the unit test target. Both are `WireTraceEvent` extensions that check a text chunk on one session stream. The two copies can drift, and a fix to one will miss the other. Move one shared `WireTraceEvent` text-on-session helper into the `FoundationModelsACPAgentTestSupport` module, which both targets import. Both files then call it with their own marker text.
 - [x] `Tests/FoundationModelsACPAgentTests/RedriveInterruptedRunsTests.swift:86` `swift/idioms` — The empty Set variable uses a constructor call. The idiom is a literal with a type annotation. Write `var spoken: Set<SessionId> = []`.
 - [x] `Tests/FoundationModelsACPAgentTests/RedriveInterruptedRunsTests.swift:191` `completeness/public-output-contract` — When the session id is not a valid ULID, `completedOutcomes` returns an empty list without an issue. A caller that waits for `.succeeded` or `.lost` then fails with a generic assertion, and the bad id is never reported. Replace the silent return with `try #require(ULID(ulidString: session.rawValue))`, or record an issue that names the session id, so the test fails at the cause.
 - [x] `Tests/FoundationModelsACPAgentTests/RedriveInterruptedRunsTests.swift:197` `completeness/public-output-contract` — The error from `directory.runStatuses(of:)` is silently replaced by an empty dictionary with `try?` and `?? [:]`. When the journal cannot be read, the poll keeps going until its limit and the test then fails on a missing outcome, not on the read error. The cause is hidden from the person who reads the failure. Use `try await directory.runStatuses(of: id)` so a read error ends the test at once with its cause. If polling must tolerate a transient read error, record the last error and report it with `Issue.record` when the poll limit is reached.
+
+
+## Review Findings (2026-11-04 11:24)
+
+> Scope: `review sha 2687686~1..86a8726` — reviewed the diffs only — lines this change added or modified. 10 file(s) reviewed, 14 not reviewed.
+
+> 14 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 14 file(s)
+
+- [x] `Sources/FoundationModelsACPAgent/Agent/SessionResumeOpenCalls.swift:115` `swift/preconditions` — Silent default for an unexpected encoding failure. If `inject(into:)` fails, the meta is replaced by an empty object with no record, so the link of the call to its run is lost without any trace. Use `do`/`catch` around the `inject(into:)` call. In the catch, call `assertionFailure` and write a `logger.error` line that names the run, then keep the empty default.
+- [x] `Tests/FoundationModelsACPAgentTests/RedriveInterruptedRunsTests.swift:48` `reuse/reuse` — `Wire.responsePosition` re-implements the response check inline as a closure with `if case .resumeResponse`. The same check exists as `isResumeResponse` in the process test file, and `WireTraceReading.swift` already holds the shared trace helpers. The check now lives in three places. Move `isResumeResponse` into `Tests/FoundationModelsACPAgentTestSupport/WireTraceReading.swift` as a `public` extension property, then use it from `responsePosition` and from the process tests.
+- [x] `Tests/FoundationModelsACPAgentTests/RedriveInterruptedRunsTests.swift:385` `test-integrity/no-test-cheating` — The test name says the completion of the root call has no stray id, but the only assertion is that the stray list is empty. If the root call never completes, the read ends at the timeout, the stray list stays empty, and the test passes. The test does not prove that a completion arrived. This is a weak assertion that cannot fail when the behavior is missing. Add an assertion that a completed call exists on the root stream before checking for strays, for example `#expect(wire.trace.contains { $0.isCompletedCall(...) })`, or use `#require` on the first completion index. Keep the stray-id check after it.

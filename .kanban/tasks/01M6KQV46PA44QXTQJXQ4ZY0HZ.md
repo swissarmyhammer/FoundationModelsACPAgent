@@ -1,6 +1,21 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m6kstt9v384b5tjkabvg6w1r
+  text: |-
+    ### implement — changed
+    - evidence: commit 60d4232 on branch wt-quit (worktree FoundationModelsACPAgent-wt-quit), not pushed, not merged. 4 files: Sources/FoundationModelsACPAgent/RoutedACPAgent.swift (new shutdownAfterConnectionTeardown: shutdown first, then waitForConnectionTeardown), Sources/FoundationModelsACPAgent/ComposedAgent.swift (delegates to it), Tests/FoundationModelsACPAgentTests/ProcessQuitShutdownTests.swift (new), Tests/FoundationModelsACPAgentTests/OrderlyShutdownTests.swift (Working and startWorking no longer private). No change to SessionSetup, ConfigOptions, SessionResume*, or a sibling package.
+    - cause (found by reading, proved by test): the process path was connection.close(), then waitForConnectionTeardown(), then shutdown(). The ACP `closed` value (which the teardown task awaits) waits for the DEFERRED work of every handler. For session/prompt that work includes endTelemetryAfterPrompt, which waits for the end of the prompt. So the wait blocked until the prompt ended. The prompt with an agents call ends only after the inline settle grace (about 5 s, inlineSettleGrace): the call then completes (succeeded) and the child moves to the background. Only after that did shutdown() run, so it paused nothing and the journal already held completed for the call. A direct agent.shutdown() (the d6vzdkg tests) skipped the wait, which hid this. SIGTERM and stdin close take the same path. The pause code of ^d6vzdkg is correct; it ran too late.
+    - fix: shutdown() first (it closes every open session, also one a connection owns, pauses the open calls, ends the open prompts as interrupted, stops the runs), then waitForConnectionTeardown(), which then returns because the prompt ended. session/close and session/delete are untouched and still cancel.
+    - TDD: RED = aQuitWithAnOpenPromptLeavesTheRunOrphanedInTheJournal, 2 cases (closed input, SIGTERM) failed: journal held completed(succeeded), not orphaned; the quit took about 7 s. GREEN: same tests pass in 0.9 s. Tests that passed at once and pin kept behaviour: paused agents call (history), no ended marker, and the no-open-prompt case (root idle after the grace, child in the background, quit: no ended marker). The old order already kept the history status paused by a different timing, only the journal showed the failure.
+    - tests run (unit only): `swift test --filter "ProcessQuitShutdownTests|OrderlyShutdownTests|ComposedAgentTests|HeadlessCLITests|ConnectionCloseTests|InterruptedToolCallsTests|ClosingOrderTests"` 30 tests in 7 suites passed. Full suite not run in this worktree by order of the run rules (touched suites once).
+    - NOT done: the integration tests with real binaries (3 quits). IntegrationTests does not build inside a worktree folder (its package names the parent by directory name), so I did not write code I cannot compile. CI must run them; the three acceptance boxes that need a real process and the integration test box stay open. The existing RedriveInterruptedRunsProcessTests uses SIGKILL because of this bug; once CI shows the fix, it may use stdin close and SIGTERM too.
+    - Agents package: no cancel by itself on a run-host stop found; `AgentRunner.stop()` is cancelForShutdown and leaves the session unended (log "left its suspended session unended"). No host API is missing.
+    - boxes: "session/close and session/delete still cancel" ticked (OrderlyShutdownTests aUserCloseCancelsTheAgentsCallOfTheRoot, aUserCloseMarksTheRunEndedAsCancelled pass). Others open.
+    - next: /review, then CI integration run.
+  timestamp: 2026-11-04T17:31:13.595436+00:00
 position_column: doing
 position_ordinal: '8780'
 title: 'Process quit (stdin close or SIGTERM) with an open root prompt cancels the prompt and the child: pause them instead'
@@ -21,7 +36,7 @@ Only a SIGKILL leaves an interrupted child that a cold resume can re-drive.
 - [ ] After a stdin close with an open root prompt, a cold resume restores the child and re-drives it (integration test with real binaries).
 - [ ] After a SIGTERM with an open root prompt, the same.
 - [ ] After a quit with no open root prompt, the child is not cancelled by the run grace, and a cold resume re-drives it.
-- [ ] `session/close` and `session/delete` still cancel.
+- [x] `session/close` and `session/delete` still cancel.
 
 ## Tests
 - [ ] Integration tests with real binaries for the three quits.

@@ -215,14 +215,6 @@ struct RedriveInterruptedRunsProcessTests {
 }
 
 extension WireTraceEvent {
-  /// Whether this event is the response of the resume request.
-  fileprivate var isResumeResponse: Bool {
-    if case .resumeResponse = self {
-      return true
-    }
-    return false
-  }
-
   /// Whether this event is a `tool_call_update` of the call `id` with the status `completed` on
   /// the stream of `session`. A call that ended as `lost` has another status.
   ///

@@ -106,15 +106,47 @@ extension RoutedACPAgent {
     update.name = .value(call.toolName)
     update.title = .value(call.toolName)
     update.status = .value(.inProgress)
-    if let input = try? JSONDecoder().decode(
-      FoundationModelsACP.JSONValue.self, from: Data(call.argumentsJSON.utf8))
-    {
-      update.rawInput = .value(input)
-    }
-    update.meta = .value(
-      (try? SAH.AgentRun(sessionId: SessionId(rawValue: run.id.description)).inject(into: nil))
-        ?? .object([:]))
+    update.rawInput = rawInput(of: call, child: child)
+    update.meta = link(toChild: child)
     recordInHistory(.toolCallUpdate(update), of: caller)
+  }
+
+  /// The raw input of a recorded call, as the wire form.
+  ///
+  /// - Parameters:
+  ///   - call: The recorded call.
+  ///   - child: The ACP id of the child that the call started. It names the run in the log.
+  /// - Returns: The input, or an omitted field when the arguments are not JSON. The failure is
+  ///   logged, with the run.
+  private func rawInput(of call: RecordedOpenCall, child: SessionId)
+    -> PatchField<FoundationModelsACP.JSONValue>
+  {
+    do {
+      return .value(
+        try JSONDecoder().decode(
+          FoundationModelsACP.JSONValue.self, from: Data(call.argumentsJSON.utf8)))
+    } catch {
+      ACPAgentTelemetry.logger(.sessionResume).error(
+        "The arguments of a restored call did not decode. The replayed call has no raw input.",
+        metadata: ACPAgentTelemetry.errorMetadata(error, sessionId: child))
+      return .unchanged
+    }
+  }
+
+  /// The `_meta` that links a call to its child.
+  ///
+  /// - Parameter child: The ACP id of the child.
+  /// - Returns: The `_meta`, or an omitted field when the link did not encode. The failure is
+  ///   logged, with the run.
+  private func link(toChild child: SessionId) -> PatchField<FoundationModelsACP.JSONValue> {
+    do {
+      return .value(try SAH.AgentRun(sessionId: child).inject(into: nil))
+    } catch {
+      ACPAgentTelemetry.logger(.sessionResume).error(
+        "The link of a restored call to its child did not encode. The replayed call has no link.",
+        metadata: ACPAgentTelemetry.errorMetadata(error, sessionId: child))
+      return .unchanged
+    }
   }
 
   /// Adds the announcement of a restored child to the history of its caller. It holds the title

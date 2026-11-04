@@ -23,7 +23,7 @@ extension SessionEventSubscription {
         continue
       }
       seen.append(event)
-      if case .resumeResponse = event {
+      if event.isResumeResponse {
         responded = true
       }
       if responded, settledBy?(event) ?? true {
@@ -114,5 +114,15 @@ extension SessionUpdate {
   /// - Returns: `true` for a `subagent_update` that names `child`.
   public func announces(_ child: SessionId) -> Bool {
     announcement?.sessionId == child
+  }
+}
+
+extension WireTraceEvent {
+  /// Whether this event is the response of the resume request.
+  public var isResumeResponse: Bool {
+    if case .resumeResponse = self {
+      return true
+    }
+    return false
   }
 }
