@@ -24,6 +24,36 @@ comments:
     - evidence: 11 files. New: Sources/FoundationModelsACPAgent/Agent/SessionCapabilitySet.swift, Tests/FoundationModelsACPAgentTests/SessionCapabilityTests.swift. Changed: ConfigOptions.swift, PromptExecution.swift, SessionBuild.swift, SessionLifecycle.swift, SessionResume.swift, SessionSetup.swift, SubagentAnnouncement.swift, Tests/.../Support/ScriptedPromptFixture.swift. All 7 checkboxes of the card checked. SessionCapabilityTests 15 passed.
     - next: /review
   timestamp: 2026-11-04T02:32:36.951109+00:00
+- actor: claude-code
+  id: 01m6j6nqdd9vxqzyweqnxgcw2j
+  text: |-
+    ### review — findings
+    - scope: review sha HEAD~1..HEAD. Counts: 2 findings, 2 confirmed, 0 refuted.
+
+    ## Review Findings (2026-11-03 20:34)
+
+    - [ ] `Tests/FoundationModelsACPAgentTests/SessionCapabilityTests.swift:189` `test-integrity/no-test-cheating` — The test aRefusedCloseLeavesTheChildOpen discards the result of Self.refusal. It never checks that the close was refused with the typed invalidParams error for session/close. The test passes when closeSession throws any error, including a transport failure, as long as the child is still idle. The test name claims a refusal, but the refusal is not proven. Capture the result and assert it with Self.isRefusal(error, of: ACPMethod.sessionClose, on: childId), as closeOnAChildIsRefused already does. Keep the availability check as a second assertion.
+    - [ ] `Tests/FoundationModelsACPAgentTests/SessionCapabilityTests.swift:216` `test-integrity/no-test-cheating` — The test aRefusedDeleteLeavesTheEntryOfTheChild discards the result of Self.refusal. It never checks that session/delete was refused with the typed error. The test passes when deleteSession throws any error, so the refusal is not proven. Capture the result and assert it with Self.isRefusal(error, of: ACPMethod.sessionDelete, on: childId). Keep the table-entry check as a second assertion.
+
+    - next: the implementer fixes both findings. The task stays in review. The description was not changed, as the caller asked (append only).
+  timestamp: 2026-11-04T02:37:09.421172+00:00
+- actor: claude-code
+  id: 01m6j6p17k5r9vnwj3krdxvpvs
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 10 files, 7 of 7 items checked
+    - test: red — root 1572 tests, only the known blocker ShellSessionOwnerTests (card ^wd0cwz7) failed; IntegrationTests deterministic 38 passed
+    - commit: d778a71
+    - review: findings — Tests/FoundationModelsACPAgentTests/SessionCapabilityTests.swift:189, Tests/FoundationModelsACPAgentTests/SessionCapabilityTests.swift:216
+    - next: implement works the 2 open findings (listed in the review comment)
+  timestamp: 2026-11-04T02:37:19.475896+00:00
+- actor: claude-code
+  id: 01m6j6qb22sp38x3akek9eb2z3
+  text: |-
+    ### implement — changed
+    - evidence: Tests/FoundationModelsACPAgentTests/SessionCapabilityTests.swift. Finding 1 (aRefusedCloseLeavesTheChildOpen) and finding 2 (aRefusedDeleteLeavesTheEntryOfTheChild) fixed: each test keeps the refusal result and asserts Self.isRefusal for sessionClose / sessionDelete, then keeps the second check. No other test in the file discards a refusal result. swift format run. `swift test --filter SessionCapabilityTests`: 15 tests passed.
+    - next: review
+  timestamp: 2026-11-04T02:38:02.306965+00:00
 depends_on:
 - 01M6GH2K0VV6RWV5R6SN3HB9SV
 position_column: doing
@@ -52,3 +82,8 @@ Needs the wire type for the child capabilities (FoundationModelsACP wire card `0
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-11-03)
+- [x] `Tests/FoundationModelsACPAgentTests/SessionCapabilityTests.swift` test `aRefusedCloseLeavesTheChildOpen`: the test now keeps the result of `Self.refusal` and asserts `Self.isRefusal(error, of: ACPMethod.sessionClose, on: childId)`. The availability check stays as the second assertion.
+- [x] `Tests/FoundationModelsACPAgentTests/SessionCapabilityTests.swift` test `aRefusedDeleteLeavesTheEntryOfTheChild`: the test now keeps the result of `Self.refusal` and asserts `Self.isRefusal(error, of: ACPMethod.sessionDelete, on: childId)`. The table-entry check stays as the second assertion.
+- [x] Cause removed from the whole file: no other test in the file discards the result of `Self.refusal`. All other refusal tests already capture it and assert it.

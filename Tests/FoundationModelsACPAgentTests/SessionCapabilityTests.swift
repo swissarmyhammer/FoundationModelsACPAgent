@@ -186,10 +186,11 @@ import Testing
   func aRefusedCloseLeavesTheChildOpen() async throws {
     let (fixture, childId) = try await Self.makeFixtureWithChild()
 
-    _ = await Self.refusal {
+    let error = await Self.refusal {
       _ = try await fixture.harness.connection.closeSession(CloseSessionRequest(sessionId: childId))
     }
 
+    #expect(Self.isRefusal(error, of: ACPMethod.sessionClose, on: childId))
     #expect(await fixture.harness.agent.sessions[childId]?.availability == .idle)
     await fixture.close()
   }
@@ -213,11 +214,12 @@ import Testing
   func aRefusedDeleteLeavesTheEntryOfTheChild() async throws {
     let (fixture, childId) = try await Self.makeFixtureWithChild()
 
-    _ = await Self.refusal {
+    let error = await Self.refusal {
       _ = try await fixture.harness.connection.deleteSession(
         DeleteSessionRequest(sessionId: childId))
     }
 
+    #expect(Self.isRefusal(error, of: ACPMethod.sessionDelete, on: childId))
     #expect(await fixture.harness.agent.sessions[childId] != nil)
     await fixture.close()
   }
