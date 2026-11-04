@@ -134,6 +134,24 @@ comments:
     - files: Tests/FoundationModelsACPAgentTests/ResumeChildSyncTests.swift, .kanban/tasks/01M6GM17VHZSWD4G2J27WTA3JT.md (box flipped)
     - next: /review. Task stays in doing.
   timestamp: 2026-11-04T15:27:07.054365+00:00
+- actor: claude-code
+  id: 01m6kjztr8s48twtdxd7kcwq01
+  text: |-
+    ### review — findings
+    - evidence: review sha 900e1e8~1..a87d72f; 1 finding (confirmed 1, refuted 2, failed 0): Sources/FoundationModelsACPAgent/Agent/SessionResumeChildSync.swift:162
+    - next: the implementer fixes the open item, then a new review runs.
+  timestamp: 2026-11-04T15:31:37.864584+00:00
+- actor: claude-code
+  id: 01m6kk6er97wjpa8j75e3kybb6
+  text: |-
+    ### implement — changed
+    - finding SessionResumeChildSync.swift:162 (completeness/public-output-contract): contract chosen = a `_meta` or `_meta.sah` that is not an object is replaced by a fresh object that holds the reason, so the reason always goes out. Other members of `_meta` are kept. The library `inject(into:)` returns such a value unchanged and so drops the reason; that is a known, stated difference. The doc comment of `written(into:)` now says so, and the RestoreFailureMetaTests suite doc states the choice and why (a non-object `_meta` carries nothing a client can read).
+    - same cause in the whole file: the helper `writableMembers(of:)` (returned nil for non-objects) is replaced by `members(of:)` (empty set for non-objects). `written(into:)` was the only written-style function.
+    - TDD: new tests failed first (6 cases returned the input unchanged), then passed. The parity test with `inject(into:)` now runs on 7 object/null/absent shapes (including `sah: null`). New tests: 6 non-object shapes (string, number, bool, array, `sah` string, `sah` array with another member) compare the exact written `_meta`, and the reason reads back with `extract` for each.
+    - evidence: filtered `swift test --filter "ResumeChildSyncTests|RestoreFailureMetaTests|SubagentSessionsReplayTests|ResumeNestedSessionsTests"`: 45 tests, 4 suites, pass. Full `swift test` (foreground): 1761 tests, 192 suites, pass, 1 known issue (HarnessSmokeTests, intentional). No other issue. Only build message: "missing creator for mutated node" for the mlx bundle (build system).
+    - files: Sources/FoundationModelsACPAgent/Agent/SessionResumeChildSync.swift, Tests/FoundationModelsACPAgentTests/RestoreFailureMetaTests.swift, .kanban/tasks/01M6GM17VHZSWD4G2J27WTA3JT.md (box flipped)
+    - next: /review. Task stays in doing.
+  timestamp: 2026-11-04T15:35:14.953354+00:00
 depends_on:
 - 01M6GM0N9BFK37GGBWPAG9VE1X
 - 01M6GH30709S58BK3AQ1VMBAM7
@@ -177,7 +195,7 @@ Do (in the resume path of `Sources/FoundationModelsACPAgent/Agent/SessionResume.
 > 10 file(s) not reviewed — excluded by an ignore rule:
 > - `.kanban/ (from .reviewignore)` — 10 file(s)
 
-- [x] `Sources/FoundationModelsACPAgent/Agent/SessionResumeChildSync.swift:112` `swift/preconditions` — The catch branch handles an unexpected encoding failure of `SAH.RestoreFailure`, and it only logs. It has no `assertionFailure`, so a debug build does not stop at the surprise and the author does not see it. Add `assertionFailure("The restore failure of a child did not encode: \(error)")` before the existing `logger.error` call in the catch block. Keep the log, so release builds still record it and the update goes out without a reason.
+- [x] `Sources/FoundationModelsACPAgent/Agent/SessionResumeChildSync.swift:112` `swift/preconditions` — The catch branch handles an unexpected encoding failure of `SAH.RestoreFailure`, and it only logs. It has no `assertionFailure`, so a debug build does not stop at the surprise and the author does not see it. Add `assertionFailure(\"The restore failure of a child did not encode: \\(error)\")` before the existing `logger.error` call in the catch block. Keep the log, so release builds still record it and the update goes out without a reason.
 - [x] `Sources/FoundationModelsACPAgent/Agent/SessionResumeChildSync.swift:156` `reuse/reuse` — The new `announced(_:)` repeats the subagent lookup that `currentUpdate(of:)` already writes inline. Both find the first `subagents` entry whose `sessionId` matches. Two copies of the same lookup can drift apart. Call `announced(_:)` from `currentUpdate(of:)` for the `.subagent` case, so the lookup exists in one place. Or move the lookup into `announced(_:)` and have `currentUpdate` use it.
 - [x] `Tests/FoundationModelsACPAgentTests/ResumeChildSyncTests.swift:106` `reuse/reuse` — The new `Wire.ownState(of:)` repeats the test that the new `isOwnState(of:)` already makes. Both match a `state_update` on the child's own stream. The `Wire` version also restricts the match to updates after the response. Reuse the predicate. For example, `ownState(of:)` can filter `afterResponse` with a shared `isOwnState`-style test on the `Sent` update and session. This keeps the 'own state' definition in one place.
 - [x] `Tests/FoundationModelsACPAgentTests/ResumeChildSyncTests.swift:130` `reuse/reuse` — The new static helper `isAnnouncement(of:)` and the new `SessionUpdate.announces(_:)` extension do the same check. Each returns true for a `subagentUpdate` whose `sessionId` is the given child. The test file now has two copies of one predicate. Make `isAnnouncement(of:)` build its closure from `update.announces(child)`, or remove one of the two and use the other everywhere.
@@ -215,3 +233,12 @@ True conflict between two rules. A person must correct a rule and restart the wo
 > - `.kanban/ (from .reviewignore)` — 20 file(s)
 
 - [x] `Tests/FoundationModelsACPAgentTests/ResumeChildSyncTests.swift:508` `test-integrity/no-test-cheating` — The test is named for the announced reason, but its only check on the reason is that it is not empty. Any non-empty string passes, so a wrong reason would not fail the test. Assert the exact reason the restore path produces for a missing child agent, such as the `SAH.RestoreFailure` value from `FailedChild`, or compare it to the reason recorded in the failed-child list. Keep the non-empty check only in addition to an exact check.
+
+## Review Findings (2026-11-04 09:27)
+
+> Scope: `review sha 900e1e8~1..a87d72f` — reviewed the diffs only — lines this change added or modified. 9 file(s) reviewed, 20 not reviewed.
+
+> 20 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 20 file(s)
+
+- [x] `Sources/FoundationModelsACPAgent/Agent/SessionResumeChildSync.swift:162` `completeness/public-output-contract` — The new `written(into:)` returns `meta ?? .null` when `_meta` or `_meta.sah` is not an object. The reason of a failed child is then dropped with no warning. The doc comment says the announcement of a failed child 'always carries its reason', so this contradicts the function's own contract. The failure is silent, not reported. Decide the contract for a non-object `_meta` or `_meta.sah`. Either replace it with a fresh object that holds the reason, or keep the value and log a warning that names the dropped reason. Update the doc comment to match. Add a test that reads the reason back for those shapes, or states that the reason is intentionally dropped.

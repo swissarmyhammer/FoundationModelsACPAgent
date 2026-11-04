@@ -145,22 +145,21 @@ extension SessionMergeEngine {
 }
 
 extension SAH.RestoreFailure {
-  /// Writes this object into `_meta.sah.restoreFailure` of a `_meta` value, the way
-  /// ``inject(into:)`` does, but without a throwing encoder step: the object is one string, so
-  /// the announcement of a failed child always carries its reason.
+  /// Writes this object into `_meta.sah.restoreFailure` of a `_meta` value, without a throwing
+  /// encoder step: the object is one string, so the announcement of a failed child always carries
+  /// its reason.
   ///
   /// The function keeps every other member of `_meta` and of `_meta.sah`, and replaces an earlier
-  /// `restoreFailure`. When `meta` or `_meta.sah` is a value that is not an object, the function
-  /// returns `meta` unchanged.
+  /// `restoreFailure`. It agrees with ``inject(into:)`` when `_meta` and `_meta.sah` are objects,
+  /// `null` or absent. It differs for a value that is not an object: ``inject(into:)`` returns it
+  /// unchanged and so drops the reason, but this function replaces `_meta` (or `_meta.sah`) with a
+  /// fresh object that holds the reason.
   ///
   /// - Parameter meta: The `_meta` value to write into, or `nil`.
-  /// - Returns: The `_meta` value to send.
+  /// - Returns: The `_meta` value to send. It always carries the reason.
   func written(into meta: FoundationModelsACP.JSONValue?) -> FoundationModelsACP.JSONValue {
-    guard var members = Self.writableMembers(of: meta),
-      var sahMembers = Self.writableMembers(of: members[SAH.metaKey])
-    else {
-      return meta ?? .null
-    }
+    var members = Self.members(of: meta)
+    var sahMembers = Self.members(of: members[SAH.metaKey])
     sahMembers[Self.metaKey] = .object(["reason": .string(reason)])
     members[SAH.metaKey] = .object(sahMembers)
     return .object(members)
@@ -169,16 +168,12 @@ extension SAH.RestoreFailure {
   /// The members that a write starts from.
   ///
   /// - Parameter value: The value to write into, or `nil`.
-  /// - Returns: The members of an object, an empty set for `nil` or JSON `null`, or `nil` for a
-  ///   different value, which a write must not replace.
-  private static func writableMembers(of value: FoundationModelsACP.JSONValue?) -> [String: FoundationModelsACP.JSONValue]? {
-    switch value {
-    case nil, .null?:
-      return [:]
-    case .object(let members)?:
+  /// - Returns: The members of an object, or an empty set for any other value, which the write
+  ///   replaces.
+  private static func members(of value: FoundationModelsACP.JSONValue?) -> [String: FoundationModelsACP.JSONValue] {
+    if case .object(let members)? = value {
       return members
-    case .bool?, .number?, .string?, .array?:
-      return nil
     }
+    return [:]
   }
 }
