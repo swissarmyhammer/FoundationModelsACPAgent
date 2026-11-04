@@ -143,10 +143,27 @@ comments:
     evidence: 2 files — Sources/FoundationModelsACPAgent/Agent/AgentRunLinks.swift, Tests/FoundationModelsACPAgentTests/TranscriptStoreTests.swift; 25 tests pass
     task: ^wd0cwz7
   timestamp: 2026-11-04T06:16:45.251234+00:00
+- actor: claude-code
+  id: 01m6jkcr8bdhkn40c7g3xq424w
+  text: |-
+    ### review — clean
+    - evidence: review sha 49df3ba~1..49df3ba. 0 findings (0 confirmed, 0 refuted). Both prior items are checked.
+    - known blocker, not a finding: ShellSessionOwnerTests.aCommandAfterAModelSlotSwitchRecordsTheACPSessionID fails because of Multitool 746da544.
+    - next: none. Task moved to done.
+  timestamp: 2026-11-04T06:19:26.859233+00:00
+- actor: claude-code
+  id: 01m6jkd1vjgpj2cptysp28k90q
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 2 files (AgentRunLinks.swift, TranscriptStoreTests.swift)
+    - test: red — 1632 tests, only the known blocker ShellSessionOwnerTests (Multitool 746da544)
+    - commit: 49df3ba
+    - review: clean — 0 findings, task done
+  timestamp: 2026-11-04T06:19:36.690340+00:00
 depends_on:
 - 01M6GH2K0VV6RWV5R6SN3HB9SV
-position_column: doing
-position_ordinal: '8480'
+position_column: done
+position_ordinal: ffffa480
 title: 'Cold resume: restore the recorded nested sub-agent sessions with their parent, idle, with tools from the CURRENT config'
 ---
 ## What

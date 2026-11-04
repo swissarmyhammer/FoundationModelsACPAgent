@@ -1,8 +1,21 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: 8f80
+comments:
+- actor: claude-code
+  id: 01m6jkszjhds7n7ns9c0rpyf3z
+  text: |-
+    ### implement — changed
+    - evidence: 4 new files in Recordings/interrupted-nested-child/: make.py, script.template.json, script.json (generated), README.md; plus workspace/ (the recording, made by the agent). No production code changed. No test run (no test added; the task makes a recording).
+    - recording root: /Users/wballard/github/swissarmyhammer/FoundationModelsACPAgent/Recordings/interrupted-nested-child/workspace/.acp-agent/transcripts
+    - tree: root 01M6JKRZ7HWFCD7GFPEETKGX83, child (agent parent) 01M6JKRZA4NJBNESVN3DV9T2KY, grandchild (agent leaf) 01M6JKRZN9H4V39ECSWBBPT5QJ. Child and grandchild have agentSpawn with parentSessionId, parentToolCallId, rootSessionId. grep endedAt finds 0 files. The grandchild has no final text (it waited on a gate).
+    - steps: swift build --product acp-agent-stub; python3 Recordings/interrupted-nested-child/make.py "$PWD/.build/debug/acp-agent-stub". The script writes the agent definitions, starts acp-agent-stub acp over ACP_AGENT_STUB_SCRIPT, sends initialize / session/new / session/prompt, waits until the grandchild transcript holds its prompt, then closes stdin (orderly shutdown).
+    - discoveries: the agents tool starts children in the background, so the root and the child end their prompts while the grandchild runs. A transcript line for a pass is written when the pass ends, so the script waits on the prompt entry of the grandchild, not on its text. ACP protocol v2 initialize needs keys info and capabilities.
+    - not done: the card asks to send the path and steps to session agentviewkit-20. This agent has no tool to message that session. The caller must send the README path.
+    - next: /review. The recording is not committed (Recordings/ is untracked).
+  timestamp: 2026-11-04T06:26:40.337962+00:00
+position_column: doing
+position_ordinal: '8480'
 title: Make a recording with an interrupted nested child for AgentViewKit (stub model, agentSpawn, no endedAt)
 ---
 AgentViewKit needs a recording to test the resume of a nested session tree. The recording must come from the agent, not from hand-written Router records.

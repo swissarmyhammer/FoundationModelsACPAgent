@@ -1,0 +1,14 @@
+{"sessions":[
+  {"match":{"promptContains":"GRANDCHILD-NESTED-MARKER"},
+   "passes":[[{"text":"GRANDCHILD-STARTED-TEXT"},{"gate":"/var/folders/3k/6b488x1j6rg1f6w8fnyfwm9w0000gn/T/tmp.1IaD9NanIA/gate-that-never-opens"},{"text":"GRANDCHILD-FINAL-TEXT"}]]},
+  {"match":{"promptContains":"CHILD-NESTED-MARKER"},
+   "passes":[[
+     {"toolCall":{"name":"agents","arguments":
+       {"op":"start agent","name":"leaf","prompt":"GRANDCHILD-NESTED-MARKER do the leaf task"}}},
+     {"text":"CHILD-FINAL-TEXT"}]]},
+  {"match":{"promptContains":"ROOT-NESTED-MARKER"},
+   "passes":[[
+     {"toolCall":{"name":"agents","arguments":
+       {"op":"start agent","name":"parent","prompt":"CHILD-NESTED-MARKER do the parent task"}}},
+     {"text":"ROOT-FINAL-TEXT"}]]}
+]}
