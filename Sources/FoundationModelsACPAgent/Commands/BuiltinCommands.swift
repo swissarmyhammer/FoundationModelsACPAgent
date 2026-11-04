@@ -118,12 +118,16 @@ final class BuiltinCommandContext: Sendable {
   /// restored session. Call it after ``bind(_:)``.
   ///
   /// - Parameter session: The restored root session.
-  func replaceSession(_ session: any RoutedSession) {
+  /// - Returns: `true` when the commands took the session. `false` when no
+  ///   session was bound, or the registry was released: the commands then keep
+  ///   the old session, and the caller reports it.
+  func replaceSession(_ session: any RoutedSession) -> Bool {
     bound.withLock { binding in
-      guard let current = binding, let registry = current.registry else { return }
+      guard let current = binding, let registry = current.registry else { return false }
       binding = Binding(
         session: session, sessionId: current.sessionId,
         transcriptDirectory: current.transcriptDirectory, registry: registry)
+      return true
     }
   }
 

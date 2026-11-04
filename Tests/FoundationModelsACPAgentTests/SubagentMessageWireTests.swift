@@ -106,11 +106,11 @@ import Testing
   func theMessageIsAnIncomingViewInTheCallerStream() async throws {
     let run = try await Self.runMessengerChild()
 
-    let incoming = run.messages(of: run.root).first { $0.firstText == Self.message }
-    let outgoing = run.messages(of: run.child).first { $0.firstText == Self.message }
+    let incoming = try #require(run.messages(of: run.root).first { $0.firstText == Self.message })
+    let outgoing = try #require(run.messages(of: run.child).first { $0.firstText == Self.message })
 
-    #expect(incoming?.senderSessionId == .value(run.child))
-    #expect(incoming?.senderMessageId == outgoing.map { .value($0.messageId) })
+    #expect(incoming.senderSessionId == .value(run.child))
+    #expect(incoming.senderMessageId == .value(outgoing.messageId))
   }
 
   @Test("the outgoing view names the incoming view after the caller received the message")
@@ -139,10 +139,11 @@ import Testing
   func theFinalMessageIsAnOutgoingViewInTheChildStream() async throws {
     let run = try await Self.runMessengerChild()
 
-    let final = run.messages(of: run.child).first { $0.firstText == Self.finalText }
-    let incoming = run.messages(of: run.root).first { $0.firstText?.contains(Self.finalText) == true }
+    let final = try #require(run.messages(of: run.child).first { $0.firstText == Self.finalText })
+    let incoming = try #require(
+      run.messages(of: run.root).first { $0.firstText?.contains(Self.finalText) == true })
 
-    #expect(final?.recipientMessageId == incoming.map { .value($0.messageId) })
+    #expect(final.recipientMessageId == .value(incoming.messageId))
   }
 
   @Test("the incoming view of the final message comes before the last update of the agents call")
@@ -247,11 +248,13 @@ import Testing
   func sendAgentIsAnIncomingViewInTheChildStream() async throws {
     let run = try await Self.runSendAgent()
 
-    let incoming = run.messages(of: run.child).first { $0.firstText == Self.rootMessage }
-    let outgoing = run.messages(of: run.root).first { $0.firstText == Self.rootMessage }
+    let incoming = try #require(
+      run.messages(of: run.child).first { $0.firstText == Self.rootMessage })
+    let outgoing = try #require(
+      run.messages(of: run.root).first { $0.firstText == Self.rootMessage })
 
-    #expect(incoming?.senderSessionId == .value(run.root))
-    #expect(incoming?.senderMessageId == outgoing.map { .value($0.messageId) })
+    #expect(incoming.senderSessionId == .value(run.root))
+    #expect(incoming.senderMessageId == .value(outgoing.messageId))
   }
 
   @Test("send agent links the outgoing view to the incoming view after the child took the mail")

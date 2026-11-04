@@ -269,7 +269,8 @@ import Testing
       pair.message(fromRun: "TOKEN", key: "mail-1", text: Self.text)
     }
 
-    #expect(first.callerInbox.messages.first?.messageId == second.callerInbox.messages.first?.messageId)
+    let firstId = try #require(first.callerInbox.messages.first?.messageId)
+    #expect(firstId == second.callerInbox.messages.first?.messageId)
   }
 
   @Test("a detached session gets no view")

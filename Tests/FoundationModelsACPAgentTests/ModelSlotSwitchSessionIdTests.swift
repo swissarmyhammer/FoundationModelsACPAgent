@@ -147,6 +147,24 @@ import Testing
     #expect(Self.isSameSession(bound, entry.session))
   }
 
+  /// A context that no session bound reports that it took no session.
+  @Test
+  func anUnboundCommandContextReportsThatItTookNoSession() async throws {
+    let fixture = try await Self.makeFixture(label: "ModelSlotSwitchSessionIdTests-unbound")
+    let session = try await Self.entry(of: fixture).session
+    let context = BuiltinCommandContext(
+      workingDirectory: fixture.cwd,
+      configuration: AgentConfiguration.withoutMarketplaces,
+      instructions: "", modelName: "", profileName: "",
+      dotfolderName: try DotfolderName(AgentClientHarness.dotfolderName),
+      userLayerRoot: fixture.cwd)
+
+    let took = context.replaceSession(session)
+
+    await fixture.close()
+    #expect(!took)
+  }
+
   // MARK: The recording
 
   /// After a switch, the recording root holds one folder for the session.

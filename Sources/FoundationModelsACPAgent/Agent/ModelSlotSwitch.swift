@@ -183,7 +183,11 @@ extension RoutedACPAgent {
     await entry.projector.replace(with: restored.session)
     sessions[sessionId]?.session = restored.session
     sessions[sessionId]?.selectedSlot = slot
-    entry.builtinContext?.replaceSession(restored.session)
+    if let context = entry.builtinContext, !context.replaceSession(restored.session) {
+      ACPAgentTelemetry.logger(.commands).warning(
+        "The builtin commands kept the old session after a model slot switch.",
+        metadata: ACPAgentTelemetry.sessionMetadata(sessionId))
+    }
     if restored.contextMismatches.contains(where: { $0.session == id && $0.resolved < $0.recorded })
     {
       _ = restored.session.compact()
