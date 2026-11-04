@@ -42,6 +42,10 @@ actor CodeContextLeases {
 
   /// The pieces that one manager gives each code context it opens.
   struct ManagerSettings: Sendable {
+    /// The resolved profile of the session. Its flash slot is the selection
+    /// model of each context, the same slot that serves `searchTools`.
+    let profile: LanguageModelProfile
+
     /// The embedder of each context, or `nil` when `semanticSearch` is
     /// off: the embedding slot of the resolved profile of the session.
     let embedder: RoutedEmbedder?
@@ -55,8 +59,22 @@ actor CodeContextLeases {
     /// The key of the manager these settings make.
     var key: ManagerKey {
       ManagerKey(
+        profile: ObjectIdentifier(profile),
         embedder: embedder.map(ObjectIdentifier.init), autoInstall: autoInstall,
         localRoot: home.local)
+    }
+
+    /// The selection factory of each context: the one factory that
+    /// ``ToolCatalog/makeSearchSelection(profile:)`` makes for `searchTools`,
+    /// thus one model serves `searchTools` and `search code`.
+    ///
+    /// The model holds no lock over a tool call. Router holds the model
+    /// lock over the call into the model only, and `search code` runs after
+    /// the model call of the calling session returned. The selection
+    /// session takes the lock in its turn, and the host adds no lock of its
+    /// own.
+    var selection: SelectionFactory {
+      ToolCatalog.makeSearchSelection(profile: profile)
     }
 
     /// The embedder that each context of the manager embeds with.
@@ -68,6 +86,10 @@ actor CodeContextLeases {
   /// The identity of one manager: two sessions share a manager when their
   /// settings give the same key.
   struct ManagerKey: Hashable, Sendable {
+    /// The identity of the profile, whose flash slot is the selection model
+    /// of each context. A manager has one selection model.
+    let profile: ObjectIdentifier
+
     /// The identity of the embedding handle, or `nil` for no embedder.
     let embedder: ObjectIdentifier?
 
@@ -77,24 +99,26 @@ actor CodeContextLeases {
     /// The local root of the home, which holds the index of each context.
     let localRoot: URL
 
-    /// Whether two keys name one manager: the same embedder, the same
-    /// language server install and the same local root.
+    /// Whether two keys name one manager: the same profile, the same
+    /// embedder, the same language server install and the same local root.
     ///
     /// - Parameters:
     ///   - lhs: One key.
     ///   - rhs: The other key.
     /// - Returns: Whether the keys name one manager.
     static func == (lhs: ManagerKey, rhs: ManagerKey) -> Bool {
-      lhs.embedder == rhs.embedder && lhs.autoInstall == rhs.autoInstall
+      lhs.profile == rhs.profile && lhs.embedder == rhs.embedder
+        && lhs.autoInstall == rhs.autoInstall
         && lhs.localRoot == rhs.localRoot
     }
 
-    /// Hashes the embedder and the local root. `LspAutoInstall` is
+    /// Hashes the profile, the embedder and the local root. `LspAutoInstall` is
     /// `Equatable` only, and equal keys always have equal embedders and
     /// equal local roots, so the hash stays consistent with `==`.
     ///
     /// - Parameter hasher: The hasher to feed.
     func hash(into hasher: inout Hasher) {
+      hasher.combine(profile)
       hasher.combine(embedder)
       hasher.combine(localRoot)
     }
@@ -226,6 +250,7 @@ actor CodeContextLeases {
     let context = try await CodeContext(
       rootDirectory: root,
       embedder: settings.pooledEmbedder,
+      selection: settings.selection,
       autoInstall: settings.autoInstall,
       indexDirectory: settings.home.codeContextIndexDirectory(of: root))
     do {
@@ -238,7 +263,7 @@ actor CodeContextLeases {
   }
 
   /// Makes the manager of `settings`: each context it opens gets the
-  /// embedder and the language server install of `settings`, and keeps
+  /// embedder, the selection model and the language server install of `settings`, and keeps
   /// its index in the local root of the home of `settings`.
   ///
   /// - Parameter settings: The settings of the manager.
@@ -249,6 +274,7 @@ actor CodeContextLeases {
     let home = settings.home
     return await CodeContextManager(
       embedder: settings.pooledEmbedder,
+      selection: settings.selection,
       autoInstall: settings.autoInstall,
       indexDirectory: { root in home.codeContextIndexDirectory(of: root) })
   }

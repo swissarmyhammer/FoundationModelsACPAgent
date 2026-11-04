@@ -32,8 +32,15 @@ comments:
     - files: Sources/FoundationModelsACPAgent/Configuration/ScriptedElicitation.swift, ScriptedPermission.swift, ScriptedSessionBackend.swift, Tests/FoundationModelsACPAgentTestSupport/RecordingClient.swift, Tests/FoundationModelsACPAgentTests/ScriptedPermissionStepTests.swift
     - next: /review.
   timestamp: 2026-11-04T19:30:25.949826+00:00
-position_column: review
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m6m0r1x7k590hf94kagantqa
+  text: |-
+    ### review — clean
+    - evidence: review sha 3fc632a~1..3fc632a — 0 findings, 7 attempted, 0 failed, 0 skipped rules. All 7 earlier findings are checked. README was checked by hand: no wrong statement. IntegrationTests not run (CI only).
+    - next: none. Task moved to done.
+  timestamp: 2026-11-04T19:32:03.111932+00:00
+position_column: done
+position_ordinal: ffffbb80
 title: 'Stub script step "permission": the run sends session/request_permission and waits for the outcome, also in a child run'
 ---
 ## What

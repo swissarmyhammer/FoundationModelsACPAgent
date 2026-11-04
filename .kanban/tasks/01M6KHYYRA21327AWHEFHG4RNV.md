@@ -14,10 +14,23 @@ comments:
     - The host passes the model. Multitool needs no change.
     - START this task only after the CodeContext session says that its change is pushed to main. Then run `swift package update` first.
   timestamp: 2026-11-04T18:43:21.014964+00:00
+- actor: claude-code
+  id: 01m6m2e4w9fk7vaww2gj2qy1xq
+  text: |-
+    ### implement — changed
+    - files: Sources/FoundationModelsACPAgent/Tools/CodeContextLease.swift (ManagerSettings gets `profile`; new `selection` property = ToolCatalog.makeSearchSelection(profile:); ManagerKey gets the profile identity because a manager has one selection model; both `CodeContext(...)` in makeUnsharedLease and `CodeContextManager(...)` in makeManager pass `selection:`), Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift (composeCodeContext passes `profile:`), Tests/FoundationModelsACPAgentTests/CodeContextSharingTests.swift (2 new selection tests, shared and unshared lease; 1 new key test; the existing key test uses the new init).
+    - RED: `swift build --build-tests` after `swift package update` (CodeContext 0bc7bdd): 2 errors "missing argument for parameter 'selection'" at the 2 call sites. GREEN: CodeContextSharingTests 11 tests pass; a scripted flash slot that fails with guardrailViolation makes `searchCode` throw that error on the shared and on the unshared lease.
+    - Build: `swift build --build-tests` OK. `swift build --build-tests --package-path IntegrationTests` OK after `swift package update --package-path IntegrationTests` (its pin was old; Package.resolved is not tracked). IntegrationTests NOT run.
+    - Touched suites once: SearchSelectionTests, RoutedSelectionModelTests, ToolCatalogTests, CodeContext*, HarnessSmokeTests, AcpCommandTests: 49 tests pass. The full suite was not run (not asked), so the last Tests box stays open.
+    - Lock rule: the host adds no lock. Router holds the model lock over the call into the model only; `search code` runs after the model call of the session returned. Documented on `ManagerSettings.selection`.
+    - No other caller of CodeContext(...)/CodeContextManager(...)/searchCode in Sources, Tests, IntegrationTests, examples.
+    - Note: `makeSearchSelection` runs once for each manager and once for each surface, so there are 2 `RoutedSelectionModel` values on the same flash slot of one profile (a struct over the profile; one slot, one model lock).
+    - next: /review
+  timestamp: 2026-11-04T20:01:35.625845+00:00
 depends_on:
 - 01M6GK6AX0RWQ1PDT89GC0991F
-position_column: todo
-position_ordinal: 8d80
+position_column: doing
+position_ordinal: '80'
 title: Pass a selection model to CodeContext (breaking API change from FoundationModelsCodeContext)
 ---
 ## What
@@ -41,13 +54,13 @@ This task starts when the CodeContext session sends the final signature after ta
 5. Do not change a sibling package from this task.
 
 ## Acceptance Criteria
-- [ ] Every `CodeContext(...)` in ACPAgent gets a selection model. The build passes with the new CodeContext.
-- [ ] One selection model serves `searchTools` and `search code`.
-- [ ] A selection error shows as the error of the `search code` call (a test).
-- [ ] The host does not hold the model lock over a tool call.
+- [x] Every `CodeContext(...)` in ACPAgent gets a selection model. The build passes with the new CodeContext.
+- [x] One selection model serves `searchTools` and `search code`.
+- [x] A selection error shows as the error of the `search code` call (a test).
+- [x] The host does not hold the model lock over a tool call.
 
 ## Tests
-- [ ] A test for the shared lease and for the unshared lease with the selection model.
+- [x] A test for the shared lease and for the unshared lease with the selection model.
 - [ ] Run `swift test` for the touched suites, then the full suite. All pass.
 
 ## Workflow

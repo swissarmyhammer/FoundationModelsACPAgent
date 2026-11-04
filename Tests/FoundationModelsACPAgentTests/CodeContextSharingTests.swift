@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModels
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsCodeContext
 import FoundationModelsRouter
@@ -228,14 +229,110 @@ import Testing
 
   /// A manager has one language server install, so two sessions whose
   /// install differs cannot share a manager: their keys differ.
-  @Test func settingsThatDifferOnlyInTheLanguageServerInstallGiveTwoManagerKeys() throws {
-    let home = try SettingsFoldersFixture.make(label: "CodeContextSharingTests-key").home
+  @Test func settingsThatDifferOnlyInTheLanguageServerInstallGiveTwoManagerKeys() async throws {
+    let agent = try await Self.makeAgent()
+    let home = agent.settingsFolders.home
     let installing = CodeContextLeases.ManagerSettings(
-      embedder: nil, autoInstall: LspAutoInstall(isEnabled: true), home: home)
+      profile: agent.profile, embedder: nil, autoInstall: LspAutoInstall(isEnabled: true),
+      home: home)
     let notInstalling = CodeContextLeases.ManagerSettings(
-      embedder: nil, autoInstall: LspAutoInstall(isEnabled: false), home: home)
+      profile: agent.profile, embedder: nil, autoInstall: LspAutoInstall(isEnabled: false),
+      home: home)
 
     #expect(installing.key != notInstalling.key)
+  }
+
+  /// A manager has one selection model, which runs on the flash slot of one
+  /// profile, so two sessions whose profiles differ cannot share a manager,
+  /// also when neither has an embedder.
+  @Test func settingsThatDifferOnlyInTheProfileGiveTwoManagerKeys() async throws {
+    let first = try await Self.makeAgent()
+    let second = try await Self.makeAgent()
+    let home = first.settingsFolders.home
+    let install = LspAutoInstall(isEnabled: false)
+    let firstSettings = CodeContextLeases.ManagerSettings(
+      profile: first.profile, embedder: nil, autoInstall: install, home: home)
+    let secondSettings = CodeContextLeases.ManagerSettings(
+      profile: second.profile, embedder: nil, autoInstall: install, home: home)
+
+    #expect(firstSettings.key != secondSettings.key)
+  }
+
+  // MARK: The selection model
+
+  /// Whether `error` is the guardrail error that the scripted flash slot
+  /// fails every prompt with.
+  ///
+  /// - Parameter error: The error of a call.
+  /// - Returns: Whether the error is the scripted selection failure.
+  private static func isSelectionFailure(_ error: any Error) -> Bool {
+    if case LanguageModelError.guardrailViolation = error {
+      return true
+    }
+    return false
+  }
+
+  /// Makes an agent whose flash slot fails every prompt, writes a source
+  /// file into a new working directory, and gives the pieces a selection
+  /// test needs.
+  ///
+  /// - Parameter name: The role of the working directory.
+  /// - Returns: The agent and the working directory, whose index has one
+  ///   chunk that a search finds.
+  /// - Throws: Whatever the profile resolve or the file write throws.
+  private static func makeFailingSelectionAgent(named name: String) async throws
+    -> (agent: Agent, workingDirectory: URL)
+  {
+    let agent = try await makeAgent(
+      loader: makeScriptedModelLoader(script: [.fail(.guardrailViolation)]),
+      semanticSearch: true)
+    let workingDirectory = makeWorkingDirectory(named: name)
+    try sourceText.write(
+      to: workingDirectory.appendingPathComponent(sourceFileName), atomically: true,
+      encoding: .utf8)
+    return (agent, workingDirectory)
+  }
+
+  /// Waits for the first index pass of the context of `surface`, and then
+  /// runs one `search code` on it.
+  ///
+  /// - Parameter surface: A session surface with the code context on.
+  /// - Throws: The error of the search call.
+  private static func searchCode(of surface: SessionSurface) async throws {
+    let context = try codeContext(of: surface)
+    await context.waitForFirstIndexPass()
+    _ = try await context.searchCode(query: "answer")
+  }
+
+  /// The shared lease gets the selection model of the profile, so an error
+  /// of the flash slot is the error of the `search code` call.
+  @Test(.timeLimit(.minutes(1)))
+  func aSelectionErrorIsTheErrorOfSearchCodeOnTheSharedLease() async throws {
+    let (agent, workingDirectory) = try await Self.makeFailingSelectionAgent(named: "select-shared")
+    let session = try await Self.openSession(of: agent, in: workingDirectory)
+
+    await #expect {
+      try await Self.searchCode(of: session)
+    } throws: { Self.isSelectionFailure($0) }
+    await session.shutdown()
+  }
+
+  /// The unshared lease gets the selection model of the profile too: the
+  /// session in the parent folder of an open context has a context of its
+  /// own.
+  @Test(.timeLimit(.minutes(1)))
+  func aSelectionErrorIsTheErrorOfSearchCodeOnTheUnsharedLease() async throws {
+    let (agent, parent) = try await Self.makeFailingSelectionAgent(named: "select-unshared")
+    let child = parent.appendingPathComponent("inner", isDirectory: true)
+    try FileManager.default.createDirectory(at: child, withIntermediateDirectories: true)
+    let childSession = try await Self.openSession(of: agent, in: child)
+    let parentSession = try await Self.openSession(of: agent, in: parent)
+
+    await #expect {
+      try await Self.searchCode(of: parentSession)
+    } throws: { Self.isSelectionFailure($0) }
+    await parentSession.shutdown()
+    await childSession.shutdown()
   }
 
   // MARK: The index folder

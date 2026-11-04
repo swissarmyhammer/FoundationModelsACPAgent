@@ -624,6 +624,7 @@ public enum ToolCatalog {
     let lease = try await CodeContextLeases.shared.acquire(
       root: context.workingDirectory,
       settings: CodeContextLeases.ManagerSettings(
+        profile: context.profile,
         embedder: options.semanticSearch ? context.profile.embedding : nil,
         autoInstall: makeLanguageServerInstall(options: options, home: home),
         home: home))
