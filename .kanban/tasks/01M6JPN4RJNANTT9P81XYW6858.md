@@ -30,8 +30,15 @@ comments:
     - evidence: `swift test --filter SubagentSessionsReplayTests` - 13 tests in 1 suite passed. Changed file: Tests/FoundationModelsACPAgentTests/SubagentSessionsReplayTests.swift
     - next: task stays in doing; ready for /review
   timestamp: 2026-11-04T08:15:43.000349+00:00
-position_column: review
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m6jt6saernv2z3bqefaschcv
+  text: |-
+    ### review — clean
+    - evidence: review sha ad7ad5d~1..ad7ad5d — 0 findings (attempted 7, failed 0, skipped 0). The earlier finding (reuse, SubagentSessionsReplayTests.swift:63) is checked. Known blocker, not a finding: ShellSessionOwnerTests.aCommandAfterAModelSlotSwitchRecordsTheACPSessionID.
+    - next: none. The task moved to done.
+  timestamp: 2026-11-04T08:18:31.374551+00:00
+position_column: done
+position_ordinal: ffffa880
 title: 'Shutdown cancels the agents call of the root before the child state is idle: replay test of the validator fails alone'
 ---
 ## What

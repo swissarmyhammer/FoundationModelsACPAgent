@@ -16,8 +16,30 @@ comments:
     - files: Sources/FoundationModelsACPAgent/Agent/SessionLifecycle.swift, Tests/FoundationModelsACPAgentTests/ClosingOrderTests.swift (new), Tests/FoundationModelsACPAgentTests/SessionCapabilityTests.swift. The uncommitted edits for ^awnkj0k and ^xyw6858 are untouched.
     - next: /review
   timestamp: 2026-11-04T08:09:31.869430+00:00
-position_column: doing
-position_ordinal: '8680'
+- actor: claude-code
+  id: 01m6jtanpdjs3ketgj14v789bk
+  text: |-
+    ### review — findings
+    - evidence: review sha 4e7ec52~1..4e7ec52 — 1 finding (1 confirmed, 2 refuted, 7 attempted, 0 failed, 0 skipped): Tests/FoundationModelsACPAgentTests/SubagentSessionsReplayTests.swift:63
+    - next: fix the finding, then run /review again
+  timestamp: 2026-11-04T08:20:38.733718+00:00
+- actor: claude-code
+  id: 01m6jtbj5x83hcg3r2ax4c2jrc
+  text: |-
+    ### implement — no-change
+    - finding SubagentSessionsReplayTests.swift:63 (reuse/reuse) was fixed by ad7ad5d (^xyw6858), after the reviewed commit 4e7ec52.
+    - evidence: in the current file, `announcement(of:)` and `announcements` both call one private helper, `ResumedWire.announcement(in:)`, which holds the only `.subagentUpdate` match. The cause is gone. No code changed. The box is flipped to [x].
+    - next: ready for /review.
+  timestamp: 2026-11-04T08:21:07.901753+00:00
+- actor: claude-code
+  id: 01m6jteysqw7c5cgrdwz3nxz4x
+  text: |-
+    ### review — clean
+    - evidence: review sha 4e7ec52~1..ad7ad5d — 0 findings, 1 refuted, 7 attempted, 0 failed; prior item (reuse at SubagentSessionsReplayTests.swift:63) checked
+    - next: none. Known blocker, not a finding: ShellSessionOwnerTests.aCommandAfterAModelSlotSwitchRecordsTheACPSessionID.
+  timestamp: 2026-11-04T08:22:59.127567+00:00
+position_column: done
+position_ordinal: ffffa980
 title: 'Flake under full suite: SubagentSessionsReplayTests.noEventOfAChildComesBeforeItsAnnouncement finds no update on the stream of the child'
 ---
 ## What
@@ -33,3 +55,12 @@ Possible cause (not checked): the retained history of the child is empty or not 
 - [ ] A test that fails for the cause, before the fix.
 
 Found while working on ^xyw6858. #subagents
+
+## Review Findings (2026-11-04 02:18)
+
+> Scope: `review sha 4e7ec52~1..4e7ec52` — reviewed the diffs only — lines this change added or modified. 6 file(s) reviewed, 10 not reviewed.
+
+> 10 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 10 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTests/SubagentSessionsReplayTests.swift:63` `reuse/reuse` — The new `ResumedWire.announcements` property repeats the filter-and-unwrap logic of the existing `ResumedWire.announcement(of:)` (unchanged, lines 53-60). Both scan `updates` for a `.subagentUpdate` case. The two helpers can diverge, and a fix to one does not reach the other. The existing helper should be built on the new property, or both should share one extraction. Extract the `subagentUpdate` unwrap into one helper on `ResumedWire`, for example `updates.compactMap { ... }`, and define `announcement(of:)` as the index of the matching element in `announcements` by reusing that helper. Keep the wire order unchanged.

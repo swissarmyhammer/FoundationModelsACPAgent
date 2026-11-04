@@ -27,8 +27,9 @@ import Testing
     /// The chain that the first agent recorded.
     let recording: ResumeNestedSessionsTests.Recording
 
-    /// What the agent sent for the request, in wire order. It is complete when the response
-    /// arrived.
+    /// What the agent sent for the request before the response, in wire order. The response is
+    /// the freshness boundary: the current snapshots of the sync come after it, and the other
+    /// suite (`ResumeChildSyncTests`) checks them.
     let updates: [UpdateSessionNotification]
 
     /// The wire as a trace for the validator: the request, the updates, the response.
@@ -94,21 +95,37 @@ import Testing
 
   // MARK: - Fixtures
 
-  /// Records the chain with an orderly shutdown, resumes its root in a second agent, and reads what the agent sent.
+  /// Records the chain with an orderly shutdown, resumes its root in a second agent, and reads what
+  /// the agent sent before the response.
   ///
   /// - Parameter replayFrom: The replay cursor of the request, or `nil` for none.
   /// - Returns: The wire of the resume.
   /// - Throws: Whatever the fixture or the request throws.
   private static func resume(replayFrom: ReplayFrom?) async throws -> ResumedWire {
-    let recording = try await ResumeNestedSessionsTests.recordShutDownChain()
+    let recording = try await ResumeNestedSessionsTests.recordInterruptedChain()
     let fixture = try await ScriptedPromptFixture.make(
       script: [.endPass], label: "\(label)-second", workingDirectory: recording.cwd)
-    let countBefore = await fixture.collector.updates.count
-    _ = try await fixture.harness.connection.resumeSession(
+    let connection = fixture.harness.connection
+    let subscription = connection.subscribeToAllSessions()
+    let reader = Task { () -> [UpdateSessionNotification] in
+      var beforeResponse: [UpdateSessionNotification] = []
+      for await sequenced in subscription.events {
+        switch WireTraceEvent(sequenced) {
+        case .update(let sessionId, let update):
+          beforeResponse.append(UpdateSessionNotification(sessionId: sessionId, update: update))
+        case .resumeResponse:
+          return beforeResponse
+        default:
+          continue
+        }
+      }
+      return beforeResponse
+    }
+    _ = try await connection.resumeSession(
       ResumeSessionRequest(
         cwd: AbsolutePath(rawValue: recording.cwd.path), sessionId: recording.root,
         replayFrom: replayFrom))
-    let updates = Array(await fixture.collector.updates.dropFirst(countBefore))
+    let updates = await reader.value
     return ResumedWire(fixture: fixture, recording: recording, updates: updates)
   }
 

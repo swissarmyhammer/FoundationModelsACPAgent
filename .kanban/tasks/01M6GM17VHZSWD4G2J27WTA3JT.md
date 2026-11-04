@@ -32,12 +32,53 @@ comments:
   id: 01m6h6km00q0wtj21jyppj8fqw
   text: 'SPEC REVIEW (independent, 2026-11-03): the resume has no work after the response today: no current subagent_update for any child. The only child updates a client gets are the replayed ones. This task supplies them: after the response send a current subagent_update (state and capabilities) for every live child, parent before child, before any re-drive. See the replay task for the rule that a replay carries no capabilities.'
   timestamp: 2026-11-03T17:16:45.952149+00:00
+- actor: claude-code
+  id: 01m6kbhakkxbw8g62zhgxcjgqp
+  text: |-
+    ### implement — stuck
+    BLOCKER (true conflict, rule 8 of the wire validator vs this task).
+
+    Group A (fixed): SubagentSessionsReplayTests `resume` helper now reads the wire with `subscribeToAllSessions()` and keeps only the updates BEFORE the resume response marker. All original assertions and preconditions stay. The post-response sync is checked by ResumeChildSyncTests, so no new assertion was added. `swift test --filter SubagentSessionsReplayTests`: 13 tests pass.
+
+    Group B (open): ResumeChildSyncTests `theWireOfTheResumeFollowsTheRulesOfTheValidator(replays: true)` and `theWireOfAResumeWithAFailedChildFollowsTheRulesOfTheValidator(replays: true)` fail. The cases with replays false pass.
+
+    The two rules:
+    1. Validator rule 8, .build/checkouts/FoundationModelsACP/Sources/FoundationModelsACP/Session/SubagentWireTraceValidator.swift: `finished` (set at applyToolCall, final status completed/failed/cancelled) is never reset at the response; applySubagent reports "a subagent_update of <child> after its final tool call" and applyUpdate reports "an update in <child> after its final tool call". The doc SubagentSessions.md says: "A client removes the child at that [final tool_call_update] update". The validator has no option for a resume trace.
+    2. This task, acceptance criterion 1 and Do step 1: after the response every child of the tree gets a current subagent_update and its own state_update. Validator rules 3 and 5 force the child to be announced before the response when its history is replayed.
+
+    The conflict: the recording of `recordInterruptedChain` holds a FINAL (cancelled) status for the root `agents` call, so the replay (history, not changed) sends that final status before the response. The restored child is a live session, and the task requires its current snapshot after the response. Rule 8 reports every such send: chain case positions 12-15; failed-child case position 3 (a failed child has no state by rule 10, so no idle state can precede the final status) and positions 10-11.
+
+    What I checked:
+    - The resume response does not reset rule 8; a resume request resets the whole run (`apply(.resumeRequest)`), so there is no valid split of the trace.
+    - Code cannot satisfy both without a decision: skipping the snapshot of a child whose `agents` call is final in the replayed history breaks acceptance criterion 1; changing the replayed status is falsifying history; feeding the validator only a part of the trace removes the check.
+    - Note for the decision: the user decision (2026-11-03) says only interrupted children (orphan runs, no final status) are restored, and finished children are not restored or announced. Under that rule a restored child has no final status in history. The current fixture (quit cancels the runs and records a final status) and the agentSpawn-based restore do not match that rule. The right fix may be the orphan-run restore card, or a corrected fixture that records no final status for an interrupted call, or a rule change in the validator. A person must choose.
+
+    The two tests are left as they are, nothing is skipped. Task stays in doing. Full `swift test`: 1704 tests, 3 unexpected issues: these 2 tests, and the known ShellSessionOwnerTests.aCommandAfterAModelSlotSwitchRecordsTheACPSessionID (peer commit not yet in tree); plus the intentional HarnessSmokeTests known issue. The last acceptance box ("Run swift test --filter ResumeChildSyncTests. All pass.") stays unticked.
+    - evidence: files changed this pass: Tests/FoundationModelsACPAgentTests/SubagentSessionsReplayTests.swift
+    - next: a person decides the conflict.
+  timestamp: 2026-11-04T13:21:22.547928+00:00
+- actor: claude-code
+  id: 01m6kfv420nkctdrgn2fk2ks2z
+  text: 'DECISION NOTE (2026-11-04), option (a), from the user via the coordinator: the validator rule 8 stays as it is. A child whose linked `agents` call has a FINAL status in the replayed history is not restored as a live child. It gets no post-response subagent_update and no state_update. Its history only replays before the response. A child whose call has NO final status is interrupted. It is restored, and it gets its current subagent_update and state_update after the response. Acceptance criterion 1 now says "each restored (interrupted) child".'
+  timestamp: 2026-11-04T14:36:37.824207+00:00
+- actor: claude-code
+  id: 01m6kfxss3j6v4hqv6ksxrae48
+  text: |-
+    ### implement — changed
+    - evidence: full `swift test`: 1756 tests, 191 suites, pass, 1 known issue (HarnessSmokeTests, intentional). ShellSessionOwnerTests passes. Filtered: ResumeChildSyncTests, ResumeNestedSessionsTests, SubagentSessionsReplayTests, ChildSessionUsageTelemetryHooksTests all pass. Last box ticked.
+    - files: Sources/FoundationModelsACPAgent/Agent/SessionResumeChildSync.swift (rule 1: `SessionMergeEngine.endsCall(of:)`; the sync skips a child whose linked `agents` call has a final status, and its descendants), Tests/FoundationModelsACPAgentTests/ResumeChildSyncTests.swift, Tests/FoundationModelsACPAgentTests/ResumeNestedSessionsTests.swift, Tests/FoundationModelsACPAgentTests/SubagentSessionsReplayTests.swift, plus the earlier SessionResume.swift and SessionHistory.swift changes.
+    - TDD: 3 new tests failed first (2 for rule 1, 1 for the open call), then passed.
+    - FINDING (directive 3 premise is false): an orderly `agent.shutdown()` DOES cancel the root `agents` call. Cause: `tearDownSession` (SessionLifecycle.swift) cancels every open prompt first (`entry.session.cancelAll()` and `waitForPromptEnd()`), also when `isShutdown` is true. Only the agent runs are stopped and not cancelled. The root prompt is open while the child works, so the translator records a `cancelled` final status for the `agents` call in the root history, and the history file is written with it. I saw it in the collector: the cancelled `tool_call_update` appears during `shutdown()`. The commit message of 7444132 says the shutdown does not cancel the root prompt: that is true for the runs, not for the open prompt. Effect with rule 1: after a real shutdown with an open root prompt, the call of each child is final, so no child is restored as live. The interrupted-child restore works only after a hard kill. A person must decide if the shutdown must keep the open prompt call open (change in SessionLifecycle, outside this task).
+    - Deviation from directive 3: I could not write a test that proves the `agents` call stays open under the real shutdown, because it does not. Instead: (a) `recordShutDownChain` (real shutdown) is the fixture of the two rule-1 tests, so they show the real path gives no snapshot; (b) `recordInterruptedChain` is now a hard-kill fixture: it writes the history of each session as the end of a prompt writes it (`writeHistory(of:)`), suspends the sessions, never closes the first agent, and does not wait for the prompt; (c) the test `aHardKillKeepsTheAgentsCallOpenAndTheResumeWireIsValid` proves the replayed `agents` calls have no final status and the wire passes SubagentWireTraceValidator (with replay). The history flush mid-prompt is a test construct; production writes the file only at prompt end and at close.
+    - Earlier tests changed: SubagentSessionsReplayTests now uses `recordShutDownChain` (it had it in HEAD as the only user; the name stays, the helper is back after I removed a duplicate). ResumeNestedSessionsTests: `childAgent` visibility only, and `recordChain` got the parameter `endsPrompt`. No assertion weakened, no test skipped. The validator tests (ChildSessionProjectionTests) are unchanged and pass.
+    - next: review.
+  timestamp: 2026-11-04T14:38:05.603483+00:00
 depends_on:
 - 01M6GM0N9BFK37GGBWPAG9VE1X
 - 01M6GH30709S58BK3AQ1VMBAM7
 - 01M6GH3ZHE52GHWAZ53AWNKJ0K
-position_column: todo
-position_ordinal: '8e80'
+position_column: doing
+position_ordinal: '8480'
 title: Resume announces the children and sends their current snapshots after the response, with or without replayFrom
 ---
 ## What
@@ -56,14 +97,14 @@ Do (in the resume path of `Sources/FoundationModelsACPAgent/Agent/SessionResume.
 5. Do not change FoundationModelsACP or the client from this task.
 
 ## Acceptance Criteria
-- [ ] With a replay: no child current snapshot before the response; every child has a current snapshot after it; each parent is announced before its child.
-- [ ] Without a replay: children are announced and snapshotted, parent first.
-- [ ] A live running child (hot resume) shows `running` in its snapshot, not `idle`.
-- [ ] A snapshot of a child precedes any later `running` update of the same child.
+- [x] With a replay: no child current snapshot before the response; every restored (interrupted) child has a current snapshot after it; each parent is announced before its child.
+- [x] Without a replay: children are announced and snapshotted, parent first.
+- [x] A live running child (hot resume) shows `running` in its snapshot, not `idle`.
+- [x] A snapshot of a child precedes any later `running` update of the same child.
 
 ## Tests
-- [ ] `Tests/FoundationModelsACPAgentTests/ResumeChildSyncTests.swift`: order with and without a cursor, a chain of three sessions, hot and cold, snapshot before re-drive.
-- [ ] Run `swift test --filter ResumeChildSyncTests`. All pass.
+- [x] `Tests/FoundationModelsACPAgentTests/ResumeChildSyncTests.swift`: order with and without a cursor, a chain of three sessions, hot and cold, snapshot before re-drive.
+- [x] Run `swift test --filter ResumeChildSyncTests`. All pass.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #subagents

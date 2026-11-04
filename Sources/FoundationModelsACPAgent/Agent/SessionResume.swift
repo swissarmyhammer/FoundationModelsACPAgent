@@ -249,6 +249,10 @@ extension RoutedACPAgent {
     // that records the commands and the options of the response, so the
     // state part of a later replay holds them.
     sessions[params.sessionId]?.retainedHistory.seed(from: response)
+    // The current snapshots of the children follow the response, with or without a replay.
+    if let connection = connections.path(forSession: params.sessionId)?.connection {
+      scheduleChildSync(of: params.sessionId, through: connection)
+    }
     return response
   }
 

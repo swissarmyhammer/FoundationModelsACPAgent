@@ -16,7 +16,7 @@ import Testing
   private static let label = "ResumeNestedSessionsTests"
 
   /// The agent that the root session starts.
-  private static let childAgent = "worker"
+  static let childAgent = "worker"
 
   /// The agent that the child starts.
   private static let leafAgent = "leaf"
@@ -70,19 +70,30 @@ import Testing
 
   // MARK: - Fixtures
 
-  /// Records a chain of three sessions and quits the first agent while the child and the
-  /// grandchild work. The model of the grandchild holds, and the quit suspends the sessions, so
-  /// the recording has no ended marker for a session of the chain.
+  /// Records a chain of three sessions and kills the first agent while the child and the
+  /// grandchild work. The history of each session is on disk as the end of a prompt writes it,
+  /// with every `agents` call open. A hard kill ends the process at once: it ends no prompt and
+  /// marks no call as final. The sessions are suspended, so the journal refuses a terminal event
+  /// and the runs stay orphans. The first agent is never closed, so nothing writes after the kill.
   ///
   /// - Returns: The chain.
   /// - Throws: Whatever the fixture or a wait throws.
   static func recordInterruptedChain() async throws -> Recording {
-    try await recordChain(stopping: quit)
+    try await recordChain(endsPrompt: false) { fixture in
+      let agent = fixture.harness.agent
+      for sessionId in await agent.sessions.keys {
+        await agent.writeHistory(of: sessionId)
+      }
+      for entry in await agent.sessions.values {
+        entry.session.suspend()
+      }
+    }
   }
 
-  /// Records the chain as ``recordInterruptedChain()`` does, and ends the first agent with the
-  /// orderly shutdown of the process (``RoutedACPAgent/shutdown()``). The shutdown stops the
-  /// runs and cancels none, so the history of the chain is the one that a restart finds.
+  /// Records the chain, and ends the first agent with the orderly shutdown of the process
+  /// (``RoutedACPAgent/shutdown()``). The shutdown cancels the open prompt of the root, so the
+  /// history of the root holds a final status for the `agents` call of the child, and the journal
+  /// of the run stays an orphan. The history of the chain is written, so a replay finds it.
   ///
   /// - Returns: The chain.
   /// - Throws: Whatever the fixture or a wait throws.
@@ -96,11 +107,14 @@ import Testing
   /// Records the chain of three sessions, and ends the first agent while the child and the
   /// grandchild work.
   ///
-  /// - Parameter stopping: Ends the first agent.
+  /// - Parameters:
+  ///   - endsPrompt: Whether the prompt of the root ends with the stop. A killed process never
+  ///     ends it, so the call does not wait for it.
+  ///   - stopping: Ends the first agent.
   /// - Returns: The chain.
   /// - Throws: Whatever the fixture or a wait throws.
   private static func recordChain(
-    stopping: (ScriptedPromptFixture) async -> Void
+    endsPrompt: Bool = true, stopping: (ScriptedPromptFixture) async -> Void
   ) async throws -> Recording {
     let cwd = makeResolvedDirectory(label: "\(label)-repo")
     try AgentsToolTests.writeAgent(
@@ -134,7 +148,9 @@ import Testing
     let child = try #require(AnnouncedChild.first(in: updates, on: root))
     let leaf = try #require(AnnouncedChild.first(in: updates, on: child))
     await stopping(fixture)
-    _ = try? await prompt.value
+    if endsPrompt {
+      _ = try? await prompt.value
+    }
     return Recording(cwd: cwd, root: root, child: child, leaf: leaf)
   }
 

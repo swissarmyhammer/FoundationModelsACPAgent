@@ -101,6 +101,23 @@ comments:
     - Run `swift package update` first, because the package resolves Agents from main.
     - Order: finish ^awnkj0k first, then this task.
   timestamp: 2026-11-04T06:55:54.701160+00:00
+- actor: claude-code
+  id: 01m6kckbtn90ehz74qraa70dnz
+  text: |-
+    ### implement — changed (branch wt-msg, worktree FoundationModelsACPAgent-wt-msg)
+    - The agent sends `session_message` for the messages between a caller and a child. New: SubagentMessageProjector (two views for each message, ids derive from one key, once per key), SentMessageRecord, ACPEventTranslator+Messages. The surface shares one projector through RunCallJoinTable.messages.
+    - Text: the receiver session does not give it (mailDelivered has only the id). The text comes from the arguments of the sender tool call (`message`). The SDK toolCall event can come before or after the report; both orders work. The sent-message record is not tool call content any more.
+    - send agent: OUT in the caller stream when the record and the text are known. IN in the child stream at the child `mailDelivered`, never before. The link patch (`recipientMessageId`) follows the IN.
+    - send caller (call route, live runs): `runMessage` of the caller is both steps. send caller over the mail route (restored run): same as send agent, in the other direction.
+    - Final message: OUT in the child stream at the end of the run (before the child last state), with the reply of the run; the IN in the caller stream at `runSettled`, before the settlement and the final status of the agents call, with the report text the caller model gets. The OUT names the IN at once, because the caller can journal the end after the child retired. A failed or cancelled run has an IN only.
+    - GAPS: (1) a run that settles inside the settle period has no `runSettled` event (Router withdraws it), so no final-message view for it. (2) A restored run final message comes as plain mail (no attachment), so no view. (3) Two parallel agents calls of one round can swap texts when Router joins the SDK id wrongly (known Router limit). (4) A run that was never announced has no bind, so its run-route views are lost.
+    - Tests: SubagentMessageProjectorTests, SubagentMessageTranslationTests, SubagentMessageWireTests (real send agent with the new ScriptedPassStep.toolCallFromFile). Full swift test: 1736 tests, 190 suites, 0 failures, 1 known issue (HarnessSmokeTests). Review has not run (worktree).
+
+    step: implement
+    outcome: changed
+    evidence: 7 new files, 8 changed files (see the commit on wt-msg)
+    task: ^nwsamy7
+  timestamp: 2026-11-04T13:39:57.909140+00:00
 depends_on:
 - 01M6GH30709S58BK3AQ1VMBAM7
 position_column: doing

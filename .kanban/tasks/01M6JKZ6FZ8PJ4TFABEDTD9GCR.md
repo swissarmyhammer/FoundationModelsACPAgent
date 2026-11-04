@@ -6,8 +6,8 @@ comments:
   id: 01m6jqb1ep5hvfb9jetpt0wayw
   text: 'Implemented on branch wt-slot (one commit, not pushed). A slot switch now suspends, closes, and restores with switchingModel: true under the same id. Open gaps: (1) a running child run is still cancelled by the switch, as before; only a recorded child stays in the tree. A live child needs claimingRuns and re-drive (SessionResumeNested). (2) No Router fork API is reachable, so a fork has no test. (3) Restore keeps the recorded budget limit, so a smaller context needs compact() once but the limit stays unscaled. The review tool has not run.'
   timestamp: 2026-11-04T07:28:25.046593+00:00
-position_column: todo
-position_ordinal: 8f80
+position_column: done
+position_ordinal: ffffaa80
 title: 'A model slot switch keeps the session id: suspend, then restore on the new slot'
 ---
 ## What
