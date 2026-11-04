@@ -79,10 +79,16 @@ import Testing
 
   /// Starts an agent whose root session has a child run in operation.
   ///
-  /// - Parameter name: The label of the test, for the folders.
+  /// - Parameters:
+  ///   - name: The label of the test, for the folders.
+  ///   - runClock: The run clock of the agent. The default never moves, so the `agents` call of
+  ///     the root waits for the child and the prompt stays open. A test of a prompt that ends
+  ///     while the child works on gives the real clock, and the settle period ends the call.
   /// - Returns: The working root session.
   /// - Throws: Whatever the fixture or a wait throws.
-  static func startWorking(named name: String) async throws -> Working {
+  static func startWorking(
+    named name: String, runClock: any RunClock = ManualRunClock()
+  ) async throws -> Working {
     let cwd = makeResolvedDirectory(label: "\(label)-\(name)-repo")
     try AgentsToolTests.writeAgent(named: childAgent, in: cwd)
     let hold = ScriptedHold()
@@ -95,8 +101,13 @@ import Testing
         play: [AgentsToolTests.startAgentCall(agent: childAgent, prompt: childPrompt), .endPass]),
       .endPass,
     ]
+    // The `start agent` call of the root waits for the child inside the settle period of the
+    // surface. When that period ends first, the call gives its pending envelope, the root
+    // answers, and its prompt ends as `end_turn` before the shutdown starts. On the real clock a
+    // machine with a high load can end the period first. The clock below never moves, so the
+    // call waits for the child and the prompt stays open until the shutdown.
     let fixture = try await ScriptedPromptFixture.make(
-      script: script, label: "\(label)-\(name)", workingDirectory: cwd)
+      script: script, label: "\(label)-\(name)", workingDirectory: cwd, runClock: runClock)
     let root = fixture.sessionId
     let promptTask = Task {
       _ = try await fixture.harness.connection.prompt(
@@ -107,6 +118,8 @@ import Testing
         .contains(childStartedText)
     }
     let entry = try #require(await fixture.harness.agent.sessions[root])
+    let isOpen = await entry.stateLedger.hasOpenPrompt
+    try #require(isOpen, "the prompt of the root must be open before the shutdown")
     return Working(
       fixture: fixture, hold: hold, rootID: entry.session.id, promptTask: promptTask)
   }

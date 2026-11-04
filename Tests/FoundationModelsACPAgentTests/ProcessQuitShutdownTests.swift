@@ -105,7 +105,8 @@ import Testing
   /// the background, as ended: the run grace does not cancel it.
   @Test(arguments: Quit.allCases)
   func aQuitWithNoOpenPromptSetsNoEndedMarkerOnTheBackgroundRun(quit: Quit) async throws {
-    let working = try await OrderlyShutdownTests.startWorking(named: "noPrompt-\(quit)")
+    let working = try await OrderlyShutdownTests.startWorking(
+      named: "noPrompt-\(quit)", runClock: ContinuousRunClock())
     try await Self.waitForTheRootToBeIdle(working)
 
     await Self.perform(quit, on: working)
