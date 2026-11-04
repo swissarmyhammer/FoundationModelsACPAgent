@@ -25,8 +25,23 @@ comments:
     - not touched: SessionSetup.swift, ConfigOptions.swift, sibling packages, validators. Boxes ticked, description text unchanged.
     - next: /review. Task stays in doing.
   timestamp: 2026-11-04T16:00:56.750780+00:00
-position_column: doing
-position_ordinal: '8480'
+- actor: claude-code
+  id: 01m6kmw9fg27d3a0p4503ha92c
+  text: |-
+    ### review — findings
+    - evidence: review sha d2843f0~1..d2843f0; 1 finding, 1 confirmed, 4 refuted: Tests/FoundationModelsACPAgentTests/ResumeChildSyncTests.swift:557
+    - next: Move the duplicate agents-call filter into one shared helper, then run the review again.
+  timestamp: 2026-11-04T16:04:39.024876+00:00
+- actor: claude-code
+  id: 01m6kn0jb2vjxgh1xxarg1w6ms
+  text: |-
+    ### implement — changed
+    - evidence: 3 files — Tests/FoundationModelsACPAgentTests/AgentsToolTests.swift (new helper agentsCalls(in: [SessionUpdate]) -> [ToolCallUpdate]), OrderlyShutdownTests.swift (agentsCallStatuses uses the helper), ResumeChildSyncTests.swift (both inline filters, the new test and the hard-kill test, use the helper). No production change. Other copies of the filter (ChildSessionProjectionTests, SubagentSessionsReplayTests) are outside commit d2843f0 and were not touched.
+    - tests: filtered ResumeChildSyncTests + OrderlyShutdownTests 31 tests passed; full swift test 1772 tests in 194 suites passed, 1 known issue (HarnessSmokeTests, intentional), no other issue or warning.
+    - next: review
+  timestamp: 2026-11-04T16:06:59.170891+00:00
+position_column: review
+position_ordinal: '80'
 title: Orderly shutdown pauses the open tool calls and does not cancel them
 ---
 ## What
@@ -61,3 +76,12 @@ Change `tearDownSession` for the `isShutdown` path only:
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #subagents
+
+## Review Findings (2026-11-04 10:01)
+
+> Scope: `review sha d2843f0~1..d2843f0` — reviewed the diffs only — lines this change added or modified. 9 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTests/ResumeChildSyncTests.swift:557` `reuse/reuse` — The new test reads the `agents` tool-call updates with an inline compactMap that matches `.toolCallUpdate` whose `name` equals `AgentsToolTests.agentsToolName`. The same filter is written again in `OrderlyShutdownTests.agentsCallStatuses()` in this change. The two copies differ only in their input (wire updates here, history updates there), so they can drift apart. Move the filter into one helper that takes any `[SessionUpdate]` and returns the `ToolCallUpdate` values for the `agents` tool, for example in `AgentsToolTests`. Call it from both `agentsCallStatuses` and `aShutdownLeavesEachAgentsCallPausedInTheReplay`.

@@ -554,14 +554,7 @@ import Testing
   func aShutdownLeavesEachAgentsCallPausedInTheReplay() async throws {
     let wire = try await Self.resumeShutDownChain()
 
-    let calls = wire.beforeResponse.compactMap { sent -> ToolCallUpdate? in
-      if case .toolCallUpdate(let call) = sent.update,
-        call.name == .value(AgentsToolTests.agentsToolName)
-      {
-        return call
-      }
-      return nil
-    }
+    let calls = AgentsToolTests.agentsCalls(in: wire.beforeResponse.map(\.update))
 
     #expect(calls.map(\.status) == [.value(.paused), .value(.paused)])
     await wire.fixture.close()
@@ -695,14 +688,7 @@ import Testing
     let leaf = recording.leaf
     let wire = try await Self.resume(recording, replays: true) { $0.isOwnState(of: leaf) }
 
-    let calls = wire.beforeResponse.compactMap { sent -> ToolCallUpdate? in
-      if case .toolCallUpdate(let call) = sent.update,
-        call.name == .value(AgentsToolTests.agentsToolName)
-      {
-        return call
-      }
-      return nil
-    }
+    let calls = AgentsToolTests.agentsCalls(in: wire.beforeResponse.map(\.update))
     try #require(!calls.isEmpty)
     try #require(wire.snapshot(of: recording.leaf) != nil)
 

@@ -33,6 +33,19 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   /// The name of the `agents` tool.
   static let agentsToolName = "agents"
 
+  /// The tool call updates of the `agents` tool among some session updates.
+  ///
+  /// - Parameter updates: The session updates, from the wire or from a history.
+  /// - Returns: The tool call updates that name the `agents` tool, in the order of the input.
+  static func agentsCalls(in updates: [SessionUpdate]) -> [ToolCallUpdate] {
+    updates.compactMap { update in
+      if case .toolCallUpdate(let call) = update, call.name == .value(agentsToolName) {
+        return call
+      }
+      return nil
+    }
+  }
+
   /// The name of the `skills` tool.
   static let skillsToolName = "skills"
 

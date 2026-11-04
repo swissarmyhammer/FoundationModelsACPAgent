@@ -59,11 +59,8 @@ import Testing
     ///
     /// - Returns: The merged status of each call. A call with no status is not in the list.
     func agentsCallStatuses() async throws -> [FoundationModelsACP.ToolCallStatus] {
-      try await rootHistory.transcriptUpdates.compactMap { update in
-        guard case .toolCallUpdate(let call) = update,
-          call.name == .value(AgentsToolTests.agentsToolName),
-          case .value(let status) = call.status
-        else {
+      try AgentsToolTests.agentsCalls(in: await rootHistory.transcriptUpdates).compactMap { call in
+        guard case .value(let status) = call.status else {
           return nil
         }
         return status
