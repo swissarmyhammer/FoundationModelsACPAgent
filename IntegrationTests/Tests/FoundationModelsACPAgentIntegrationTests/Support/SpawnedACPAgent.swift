@@ -1,12 +1,12 @@
 // `SpawnedACPAgent` — one built `acp-agent acp` that this process spawned,
-// with an environment of its own, and ended by a stdin close or a signal.
+// with an environment of its own, and ended by a stdin close.
 //
 // `AgentProcess` of the client package cannot take an environment, and it
 // collects the exit status of the child itself, so a test cannot read the
 // exit code. `SubprocessTransport` of the wire package takes an environment
 // and gives the status, but it cannot close stdin without `SIGTERM`. An exit
-// path proof needs all three: its own environment, the choice of the end
-// (the end of stdin, or `SIGTERM`), and the exit code.
+// path proof needs all three: its own environment, the end of stdin, and the
+// exit code.
 //
 // Every agent has a limit (`ChildDeadline`). An agent that is still running at
 // its limit is killed, and the failure of the test holds its stderr.
@@ -174,18 +174,6 @@ struct SpawnedACPAgent {
   func closeStandardInputAndWait() async throws -> SpawnedAgentExit {
     try await end {
       try transport.input.close()
-    }
-  }
-
-  /// Kills the agent with `SIGKILL` and waits until it ends and closes its pipes. The agent gets no
-  /// time to stop its work, to write a history file or to close a session, as when the machine
-  /// loses power.
-  ///
-  /// - Returns: How the agent ended.
-  /// - Throws: The wait error.
-  func killAndWait() async throws -> SpawnedAgentExit {
-    try await end {
-      Darwin.kill(process.processIdentifier, SIGKILL)
     }
   }
 

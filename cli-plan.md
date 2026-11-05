@@ -391,7 +391,7 @@ connection. Three frontends in this package do this:
 |---|---|---|
 | `acp-agent run` | `InMemoryTransport.pair()`, in one process | the composed agent (§4) |
 | `acp-print` | `AgentProcess`, ndJSON on the pipes of a child | a spawned `acp-agent acp` |
-| `ClientInteropTests` | `InMemoryTransport.pair()`, in the test process | the public `ComposedAgent` of the library |
+| `ClientLibraryInteropTests` | `InMemoryTransport.pair()`, in the test process | the public `ComposedAgent` of the library |
 
 So the interop proof of the client role runs in process, with no spawned
 client. `acp-print` stays the example that drives the agent across a
@@ -581,7 +581,7 @@ a test.
 | Integration | With stderr a pipe, a default run writes nothing to it. `--verbose` writes the events, and `--quiet` writes nothing in a terminal. | Root unit target: `EventLineWriterTests` |
 | Integration | A scripted `ResolutionProgress` drives the bar, and the bar never touches stdout. | Root unit target: `ProgressReporterTests` |
 | Tier 3 | `acp-print` spawns `acp-agent acp`. Unchanged. | `IntegrationTests` package: `ClientServerTests` |
-| Tier 3 | The client library drives the composed agent in process, over `InMemoryTransport.pair()`, to `end_turn`, and gets the answer of `acp-agent run` (§6). | `IntegrationTests` package: `ClientInteropTests` |
+| Unit | The client library drives the composed agent in process, over `InMemoryTransport.pair()`, to `end_turn`, and gets the answer of `acp-agent run` (§6). | Root unit target: `ClientLibraryInteropTests` |
 | Tier 3 | `acp-agent --out-of-process` starts its own `acp` mode and gives the same answer. | `IntegrationTests` package: `OutOfProcessTests` |
 | Tier 3 | An interrupt of `--out-of-process` gives exit 4, and leaves no agent process. | `IntegrationTests` package: `OutOfProcessTests` |
 | Tier 4 | `doctor` on a clean machine reports the models as not downloaded, and gives the size. | None. No suite does this test. `ProfileDoctorTests` in the root unit target examines the same report against a fixture, but not on a clean machine. |

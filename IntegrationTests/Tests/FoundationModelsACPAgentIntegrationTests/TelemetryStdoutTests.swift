@@ -1,6 +1,4 @@
 import Foundation
-import FoundationModelsACP
-import FoundationModelsACPAgent
 import FoundationModelsACPAgentTestSupport
 import Testing
 
@@ -15,6 +13,9 @@ import Testing
 //
 // Only a spawned process can prove this. The unit target links the
 // `acp-agent` target, and no test in that process may bootstrap logging.
+// The suite is also the one proof of the clean end of the shipped binary: the
+// end of stdin ends the agent with the exit code 0. The behavior of the wire
+// is proven in process, in the unit target.
 //
 // It carries no gate. The package boundary is the selection: the root
 // `swift test` never sees this target, and
@@ -51,14 +52,12 @@ struct TelemetryStdoutTests {
     }
   }
 
-  /// Checks the contract of one drive: a good `initialize`, a prompt that
-  /// ends, only JSON-RPC frames on stdout, and a clean exit.
+  /// Checks the contract of one drive: a prompt that ends, only JSON-RPC
+  /// frames on stdout, and a clean exit.
   ///
   /// - Parameter drive: The drive to check.
   /// - Throws: The frame check error.
   private static func assertCleanDrive(_ drive: SpawnedAgentPromptDrive) throws {
-    #expect(drive.initialized.info.name == RoutedACPAgent.implementation.name)
-    #expect(drive.initialized.protocolVersion == RoutedACPAgent.latestProtocolVersion)
     #expect(drive.stopReason != nil, "the prompt never reached an idle state update")
     #expect(drive.exit.didExit, "a signal ended the agent; stderr: \(drive.exit.standardError)")
     #expect(

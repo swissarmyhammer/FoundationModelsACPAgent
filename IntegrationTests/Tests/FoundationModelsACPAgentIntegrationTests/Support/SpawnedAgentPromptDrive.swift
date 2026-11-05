@@ -1,9 +1,9 @@
 // `SpawnedAgentPromptDrive` — one prompt over a spawned `acp-agent acp`
 // with an environment of its own, and then one chosen end of the agent.
 //
-// The telemetry suites each spawn the agent over the stub model, run
-// `initialize`, `session/new` and one prompt, and then end the agent on a
-// path they choose. The scripted elicitation suite does the same and answers
+// The telemetry suite and the suite of the limit of a child spawn the agent
+// over the stub model, run `initialize`, `session/new` and one prompt, and
+// then end the agent on a path they choose. The suite of the limit answers
 // the question of the agent while the prompt runs. This type holds that
 // drive, so the suites do not keep copies of it.
 
@@ -14,9 +14,6 @@ import FoundationModelsACPClient
 
 /// What one prompt over a spawned `acp-agent-stub acp` gave back.
 struct SpawnedAgentPromptDrive {
-  /// The response to `initialize`.
-  let initialized: InitializeResponse
-
   /// What the update stream of the session held to the idle of the prompt.
   let read: PromptUpdateRead
 
@@ -110,7 +107,7 @@ struct SpawnedAgentPromptDrive {
     let model = await ConnectionModel()
     let connection = await model.connect(over: tap)
 
-    let initialized = try await model.initialize(AgentClientHarness.makeInitializeRequest())
+    _ = try await model.initialize(AgentClientHarness.makeInitializeRequest())
     let session = try await model.newSession(
       NewSessionRequest(cwd: AbsolutePath(rawValue: workspace.path)))
     let sessionId = session.sessionId
@@ -133,7 +130,7 @@ struct SpawnedAgentPromptDrive {
     let exit = try await ending(agent)
     await connection.close()
     return SpawnedAgentPromptDrive(
-      initialized: initialized, read: read, question: question,
+      read: read, question: question,
       standardOutput: tap.recordedBytes, exit: exit)
   }
 

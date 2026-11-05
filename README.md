@@ -387,8 +387,8 @@ link and a set of permitted methods. No code path is special for a child.
   out.
 - A client that reads all sessions in one stream (`subscribeToAllSessions()` of the client
   connection) sees the wire order. `SubagentWireTraceValidator` of FoundationModelsACP checks a
-  recorded trace against the rules. The suites `SubagentSessionsTests` (real processes) and
-  `SubagentSessionsReplayTests` (in process) use it.
+  recorded trace against the rules. The suites `ChildSessionProjectionTests` and
+  `SubagentSessionsReplayTests` (both in process) use it.
 
 ### What a client can do with a session
 
@@ -512,8 +512,8 @@ each session says and calls:
 To start a nested agent, a pass calls the `agents` tool:
 `{"toolCall":{"name":"agents","arguments":{"op":"start agent","name":"<agent>","prompt":"<text>"}}}`.
 The project folder must hold `.agents/agents/<agent>/AGENT.md`. An agent that starts agents of its
-own needs the line `tools: agents` in its front matter. `SubagentSessionsTests` in
-`IntegrationTests` plays a chain of three sessions this way.
+own needs the line `tools: agents` in its front matter. `ChildSessionProjectionTests`
+plays a chain of three sessions this way.
 
 ## Settings folders
 

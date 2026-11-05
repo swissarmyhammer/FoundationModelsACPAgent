@@ -45,10 +45,9 @@ private let mainBranch = "main"
 /// The ACP wire. The suites here assert on wire types.
 private let wireDependencyName = "FoundationModelsACP"
 
-/// The Client role: the driver of every test level above
-/// the unit level. The client package is a library only, and it ships no
-/// binary, so `ClientInteropTests` drives the agent with this library in
-/// process.
+/// The Client role: the driver of the tests. The client package is a library
+/// only, and it ships no binary, so the tests drive the agent with this
+/// library, over the pipes of a spawned agent or in process.
 private let clientDependencyName = "FoundationModelsACPClient"
 
 /// The runtime. The skill trigger suite and the tool calling

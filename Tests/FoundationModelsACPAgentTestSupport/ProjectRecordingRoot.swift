@@ -11,10 +11,6 @@ import FoundationModelsACPAgent
 /// `TranscriptLocation.project.recordingRoot(...)`, and this is the one
 /// door onto it.
 ///
-/// The function is in the shared support product because two targets
-/// need it: the unit suites of the root package, and the tier-3 suites
-/// of the `IntegrationTests` package.
-///
 /// - Parameters:
 ///   - workspace: The session working directory.
 ///   - name: The dotfolder name the project layer roots under.

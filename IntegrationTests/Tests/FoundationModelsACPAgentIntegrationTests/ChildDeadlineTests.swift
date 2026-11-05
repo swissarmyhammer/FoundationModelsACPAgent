@@ -113,7 +113,7 @@ struct ChildDeadlineTests {
   /// and not with the closed connection that the kill causes.
   @Test func aPromptThatNeverEndsFailsAtTheLimitWithTheDeadlineFailure() async throws {
     let label = "\(Self.label)-hold"
-    let gate = NestedAgentFixture.gateFile(label: label)
+    let gate = TierThreeFixture.neverOpenedGateFile(label: label)
 
     let failure = await #expect(throws: ChildDeadlineExceeded.self) {
       try await Self.driveWaitingForAQuestion(

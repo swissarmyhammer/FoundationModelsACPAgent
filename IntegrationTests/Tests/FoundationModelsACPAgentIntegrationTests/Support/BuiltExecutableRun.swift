@@ -3,9 +3,8 @@
 // `ClientServerTests` runs `acp-print` through it and `CLIProcessTests`
 // runs `acp-agent`, so the two suites cannot drift apart. The pipe draining
 // and the exit wait are those of `CapturedProcessRun`. `runAgent` is the one
-// driver of `acp-agent` in a fresh workspace, which `CLIProcessTests`,
-// `ClientInteropTests`, `OutOfProcessTests` and
-// `SkillsMarketplaceProcessTests` share.
+// driver of `acp-agent` in a fresh workspace, which `CLIProcessTests` and
+// `OutOfProcessTests` share.
 
 import Foundation
 import FoundationModelsACPAgentTestSupport

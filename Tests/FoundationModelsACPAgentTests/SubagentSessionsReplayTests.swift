@@ -87,11 +87,17 @@ import Testing
   /// Records the chain with an orderly shutdown, resumes its root in a second agent, and reads what
   /// the agent sent before the response.
   ///
-  /// - Parameter replayFrom: The replay cursor of the request, or `nil` for none.
+  /// - Parameters:
+  ///   - replayFrom: The replay cursor of the request, or `nil` for none.
+  ///   - record: Records the chain with the first agent. The default is the hard kill.
   /// - Returns: The wire of the resume.
   /// - Throws: Whatever the fixture or the request throws.
-  private static func resume(replayFrom: ReplayFrom?) async throws -> ResumedWire {
-    let recording = try await ResumeNestedSessionsTests.recordInterruptedChain()
+  private static func resume(
+    replayFrom: ReplayFrom?,
+    recordedBy record: () async throws -> ResumeNestedSessionsTests.Recording =
+      ResumeNestedSessionsTests.recordInterruptedChain
+  ) async throws -> ResumedWire {
+    let recording = try await record()
     let fixture = try await ScriptedPromptFixture.make(
       script: [.endPass], label: "\(label)-second", workingDirectory: recording.cwd)
     let connection = fixture.harness.connection
@@ -206,6 +212,26 @@ import Testing
     let texts = wire.updates(of: wire.recording.leaf).map { Self.json(of: $0.update) }
 
     #expect(texts.contains { $0.contains(Self.leafText) })
+    await wire.fixture.close()
+  }
+
+  /// The history of the grandchild goes out under its own session id when the first agent ended
+  /// with the orderly shutdown of the process, and not with a hard kill. The replay sends the text
+  /// as a whole `agent_message`, never as an `agent_message_chunk`: a chunk is a live update.
+  @Test
+  func theHistoryOfTheGrandchildIsReplayedAfterAnOrderlyShutdown() async throws {
+    let wire = try await Self.resume(
+      replayFrom: .start(ReplayFromStart()),
+      recordedBy: ResumeNestedSessionsTests.recordShutDownChain)
+
+    let leafMessages = wire.updates(of: wire.recording.leaf).filter { notification in
+      if case .agentMessage = notification.update { return true }
+      return false
+    }
+
+    #expect(leafMessages.contains { Self.json(of: $0.update).contains(Self.leafText) })
+    #expect(
+      !wire.trace.contains { $0.isAgentText(containing: Self.leafText, on: wire.recording.leaf) })
     await wire.fixture.close()
   }
 

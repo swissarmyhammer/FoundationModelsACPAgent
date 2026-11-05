@@ -510,6 +510,35 @@ import Testing
     await wire.fixture.close()
   }
 
+  /// The sessions of a chain of three go idle from the leaf up: the leaf first, then the child that
+  /// started it, then the root that started the child.
+  @Test
+  func aChainGoesIdleFromTheLeafUpToTheRoot() async throws {
+    let wire = try await Self.run(
+      childPlay: [
+        AgentsToolTests.startAgentCall(agent: Self.leafAgent, prompt: Self.leafPrompt),
+        .textDelta(Self.childText), .endPass,
+      ], childTools: AgentsToolTests.agentsToolName)
+    let root = wire.root
+    let leaf = try #require(AnnouncedChild.first(in: wire.updates, on: wire.child))
+    let updates = try await wire.fixture.collector.wait(
+      for: "the idle of the root, the child and the leaf"
+    ) { updates in
+      [leaf, wire.child, root].allSatisfy { session in
+        updates.contains { $0.sessionId == session && isIdleState($0.update) }
+      }
+    }
+
+    let leafIdle = try #require(updates.firstIndex { $0.sessionId == leaf && isIdleState($0.update) })
+    let childIdle = try #require(
+      updates.firstIndex { $0.sessionId == wire.child && isIdleState($0.update) })
+    let rootIdle = try #require(updates.firstIndex { $0.sessionId == root && isIdleState($0.update) })
+
+    #expect(leafIdle < childIdle)
+    #expect(childIdle < rootIdle)
+    await wire.fixture.close()
+  }
+
   /// A leaf that is slow keeps its call inline: the settle period of the runs does not pass
   /// by itself, because the test owns the clock of the runs. So the final message of the leaf
   /// never comes to the child as mail, and the scripted model of the child never answers a

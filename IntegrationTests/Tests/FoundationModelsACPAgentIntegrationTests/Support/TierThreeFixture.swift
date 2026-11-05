@@ -59,7 +59,7 @@ enum TierThreeFixture {
   /// this package must be offline and repeatable, thus each child reads
   /// this layer (see ``makeOfflineDefaultsEnvironment()``). The defaults
   /// layer is the lowest layer, so the user layer or the project layer of
-  /// a test still sets each other value. `SkillsMarketplaceProcessTests`
+  /// a test still sets each other value. `SkillsMarketplaceNetworkTests`
   /// proves the shipped list on purpose.
   static let offlineDefaultsYAML = "tools:\n  skills:\n    marketplaces: []\n"
 
@@ -113,6 +113,15 @@ enum TierThreeFixture {
   static func stubScriptEnvironment(file: URL) throws -> [String: String] {
     try makeOfflineDefaultsEnvironment()
       .merging([stubScriptVariable: file.path]) { _, script in script }
+  }
+
+  /// The path of a gate file that never exists, so a script step that waits for it holds until
+  /// the limit of the child ends the run.
+  ///
+  /// - Parameter label: The directory label of the gate.
+  /// - Returns: The path of the gate file.
+  static func neverOpenedGateFile(label: String) -> URL {
+    makeResolvedDirectory(label: "\(label)-gate").appendingPathComponent("never")
   }
 
   /// Makes the named pipe of a chunk gate in a fresh directory, and the

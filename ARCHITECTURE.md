@@ -47,7 +47,8 @@ The dependency direction is one way. The agent depends on the Agents package for
 Router for the sessions, and on the ACP wire package for the types and the trace validator. None
 of these packages depends on the agent.
 
-Tests prove this at two levels. The in-process suites (for example `SubagentCancelTests`,
-`SubagentSessionsReplayTests` and `HotResumeTests`) use the scripted model. The integration suites
-`SubagentSessionsTests` and `RedriveInterruptedRunsProcessTests` (in `IntegrationTests`) spawn
-`acp-agent-stub` over the stub script (`ScriptedStubScript`).
+Tests prove this in process. The suites (for example `SubagentCancelTests`,
+`SubagentSessionsReplayTests`, `ChildSessionProjectionTests`, `RedriveInterruptedRunsTests` and
+`HotResumeTests`) use the scripted model, and they run the agent in the test process. A test spawns
+a child process only when the subject is a process: a signal, an exit code, the stdio framing of
+the shipped binary, the arguments of the command line, or the shell tool.
