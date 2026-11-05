@@ -4,6 +4,7 @@ import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsAgents
 import FoundationModelsExtras
+import FoundationModelsMultitool
 import FoundationModelsRouter
 import InMemoryTracing
 import TelemetryTestSupport
@@ -344,6 +345,33 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
       embedder: embedder, fallback: searchTools)
 
     #expect(tool.name == Self.runCodeName)
+  }
+
+  /// The tool catalog of the runs builds no pair of session tools at the
+  /// mount. Each pair builds the search index of the registry, and that
+  /// build is the largest cost of a new session. The pair that the session
+  /// mounted already proves that the build succeeds, so the catalog reads
+  /// the names and the fallback from that pair. A selection factory is
+  /// called once for each pair, thus the count shows the pairs.
+  @Test func theRunToolsBuildNoPairOfSessionToolsAtTheMount() async throws {
+    let context = try await Self.makeContext(label: "run-tools-pairs")
+    let built = try await SurfaceCatalog.makeRegistry(context: context)
+    let base = SurfaceCatalog.makeSearchSelection(profile: context.profile)
+    let embedder = ProfileEmbedding(embedder: context.profile.embedding)
+    let pairs = CallCounter()
+    let counting: SearchToolsTool.SelectionFactory = { ids in
+      pairs.record()
+      return try base(ids)
+    }
+    let mounted = try built.registry.makeSessionToolsAndStaging(
+      selection: counting, embedder: embedder
+    ).tools
+
+    let runTools = AgentsComposition.makeRunTools(
+      registry: built.registry, selection: counting, embedder: embedder, mounted: mounted)
+
+    #expect(pairs.count == 1)
+    #expect(runTools.names == [Self.runCodeName, Self.searchToolsName])
   }
 
   // MARK: - The settle period

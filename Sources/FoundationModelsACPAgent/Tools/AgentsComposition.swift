@@ -199,9 +199,12 @@ enum AgentsComposition {
   /// each run gets its own `searchTools` and `runCode`. The call gives the
   /// tool of the name. A `searchTools` and a `runCode` of one run come from
   /// two pairs. Both read the same registry. A registry holder keeps no state
-  /// of a search. So the two answer as one pair does. The probe pair below
-  /// proves that the call succeeds for this registry. A later call over the
-  /// same registry and the same selection gives the same result. A later call
+  /// of a search. So the two answer as one pair does. The pair that the
+  /// session mounted proves that the call succeeds for this registry, and it
+  /// gives the names and the fallback tools. The call makes no pair of its
+  /// own, because each pair builds the search index of the registry, and that
+  /// is the largest cost of a new session. A later call over the same
+  /// registry and the same selection gives the same result. A later call
   /// that fails is a defect, and
   /// ``freshSessionTool(named:registry:selection:embedder:fallback:)``
   /// records it.
@@ -210,16 +213,17 @@ enum AgentsComposition {
   ///   - registry: The built Multitool registry of the root session.
   ///   - selection: The selection tier of `searchTools`.
   ///   - embedder: The embedder that `searchTools` and `runCode` rank with.
+  ///   - mounted: The pair of session tools that the session mounted from
+  ///     `registry` with the same `selection` and `embedder`.
   /// - Returns: The tool catalog of the runs.
-  /// - Throws: Whatever `MultiTool.Registry.makeSessionTools(selection:embedder:)`
-  ///   throws for the probe pair.
   static func makeRunTools(
     registry: MultiTool.Registry,
     selection: @escaping SearchToolsTool.SelectionFactory,
-    embedder: any PooledEmbedding
-  ) throws -> FoundationModelsAgents::ToolCatalog {
+    embedder: any PooledEmbedding,
+    mounted: [any Tool]
+  ) -> FoundationModelsAgents::ToolCatalog {
     var tools = FoundationModelsAgents::ToolCatalog()
-    for probe in try registry.makeSessionTools(selection: selection, embedder: embedder) {
+    for probe in mounted {
       let name = probe.name
       tools.register(name) {
         freshSessionTool(
@@ -233,18 +237,18 @@ enum AgentsComposition {
   /// Makes a new pair of session tools over `registry`, and gives the tool
   /// of the name `name` from that pair.
   ///
-  /// The probe pair of ``makeRunTools(registry:selection:embedder:)`` proves
+  /// The mounted pair of ``makeRunTools(registry:selection:embedder:mounted:)`` proves
   /// that the call succeeds for this registry and gives a tool of this name.
   /// Thus a failure here is unexpected. A debug build stops at the assertion.
   /// A release build logs the failure and gives `fallback`, the tool of the
-  /// probe pair. The tool catalog of a run takes a factory that cannot throw.
+  /// mounted pair. The tool catalog of a run takes a factory that cannot throw.
   ///
   /// - Parameters:
   ///   - name: The name of the session tool, `searchTools` or `runCode`.
   ///   - registry: The built Multitool registry of the root session.
   ///   - selection: The selection tier of `searchTools`.
   ///   - embedder: The embedder that `searchTools` and `runCode` rank with.
-  ///   - fallback: The tool of the same name from the probe pair.
+  ///   - fallback: The tool of the same name from the mounted pair.
   /// - Returns: The new tool, or `fallback` after a logged failure.
   static func freshSessionTool(
     named name: String,

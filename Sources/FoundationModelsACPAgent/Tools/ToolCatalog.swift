@@ -366,7 +366,8 @@ public enum ToolCatalog {
     let agents = try await AgentsComposition.compose(
       context: context, skills: skillsSource,
       runTools: AgentsComposition.makeRunTools(
-        registry: built.registry, selection: selection, embedder: embedder),
+        registry: built.registry, selection: selection, embedder: embedder,
+        mounted: mounted.tools),
       runCallJoins: runCallJoins)
     let tools = mounted.tools + makeStandaloneTools(agents: agents)
     await MCPComposition.startSurfaceRefresher(
