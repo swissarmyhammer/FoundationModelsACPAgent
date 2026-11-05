@@ -6,9 +6,9 @@
 // the child has begun to answer, so the signal lands inside a live prompt
 // and not before it; and it must send more than one signal, and say how
 // many of them reached a child that was still there. Each wait is an
-// event (the first stdout byte, the exit of the child), with no clock: a
-// child that ignores the interrupt holds the test, and a sample of the
-// test process shows where it waits.
+// event (the first stdout byte, the exit of the child). The limit of the child
+// (`ChildDeadline`) is the backstop: a child that ignores the interrupt, or
+// that never writes, is killed at the limit, and the failure holds its stderr.
 
 import Darwin
 import Foundation
@@ -40,30 +40,6 @@ struct SignalledExecutableRun {
   /// signal is gone before the next one is due, and this runner never
   /// signals a pid it no longer owns.
   let signalsSent: Int
-
-  /// The captured output of a running child. A wait for the first stdout
-  /// byte is an event: each append checks it again.
-  private final class Store: Sendable {
-    /// The stdout bytes so far, with their waits.
-    let output = WatchedValue(Data())
-
-    /// The stderr bytes so far.
-    let error = WatchedValue(Data())
-
-    /// Appends stdout bytes.
-    ///
-    /// - Parameter chunk: The bytes read.
-    func appendOutput(_ chunk: Data) {
-      output.update { $0.append(chunk) }
-    }
-
-    /// Appends stderr bytes.
-    ///
-    /// - Parameter chunk: The bytes read.
-    func appendError(_ chunk: Data) {
-      error.update { $0.append(chunk) }
-    }
-  }
 
   /// Runs the built executable `executableName`, waits for its first
   /// stdout byte, sends `signalCount` signals back to back, and waits for
@@ -98,8 +74,10 @@ struct SignalledExecutableRun {
   ///     go. A run with signals sends them while the prompt is held, so
   ///     each signal lands before the chunks end, and it lets the chunks
   ///     go only after the child ended.
+  ///   - limit: The longest time the child may run.
   /// - Returns: The finished run.
-  /// - Throws: The locator or spawn error, or what `atFirstOutput` throws.
+  /// - Throws: The locator or spawn error, what `atFirstOutput` throws, or
+  ///   ``ChildDeadlineExceeded`` when the child passed `limit`.
   static func run(
     executableNamed executableName: String,
     arguments: [String],
@@ -110,7 +88,8 @@ struct SignalledExecutableRun {
     atFirstOutput: @Sendable (pid_t) async throws -> Void = { _ in },
     signalNumber: Int32 = SIGINT,
     signalCount: Int,
-    chunkGate: URL? = nil
+    chunkGate: URL? = nil,
+    limit: Duration = ChildDeadline.standardLimit
   ) async throws -> SignalledExecutableRun {
     let child = try PipedChildProcess(
       executableNamed: executableName,
@@ -119,26 +98,65 @@ struct SignalledExecutableRun {
       inheritedEnvironment: inheritedEnvironment,
       environment: PipedChildProcess.environment(configHome: configHome, adding: environment))
     let process = child.process
-    let standardOutputPipe = child.standardOutput
-    let standardErrorPipe = child.standardError
-
-    let store = Store()
     let exit = ProcessExitEvent(watching: process)
     try process.run()
     // Read both pipes as the child writes, so the first-output wait
     // gets each byte and a full pipe buffer never blocks the child.
-    let draining = Task.detached {
-      async let output: Void = drain(standardOutputPipe) { store.appendOutput($0) }
-      async let error: Void = drain(standardErrorPipe) { store.appendError($0) }
-      _ = await (output, error)
+    let outputCapture = PipeCapture(child.standardOutput)
+    let errorCapture = PipeCapture(child.standardError)
+    let deadline = ChildDeadline(process: process, limit: limit) {
+      outputCapture.stop()
+      errorCapture.stop()
     }
+    do {
+      let run = try await signal(
+        process, exit: exit, output: outputCapture, error: errorCapture,
+        atFirstOutput: atFirstOutput, signalNumber: signalNumber, signalCount: signalCount,
+        chunkGate: chunkGate)
+      deadline.disarm()
+      if deadline.hasExceeded {
+        throw deadline.failure(
+          standardOutput: outputCapture.text, standardError: errorCapture.text)
+      }
+      return run
+    } catch {
+      deadline.abandon()
+      outputCapture.stop()
+      errorCapture.stop()
+      throw error
+    }
+  }
 
+  /// The steps of ``run(executableNamed:arguments:workspace:configHome:inheritedEnvironment:environment:atFirstOutput:signalNumber:signalCount:chunkGate:limit:)``
+  /// after the start of the child.
+  ///
+  /// - Parameters:
+  ///   - process: The running child.
+  ///   - exit: The exit event of the child.
+  ///   - output: The reads of the stdout of the child.
+  ///   - error: The reads of the stderr of the child.
+  ///   - atFirstOutput: What to do once the child wrote its first byte.
+  ///   - signalNumber: The signal to send.
+  ///   - signalCount: How many signals to send.
+  ///   - chunkGate: The chunk gate of the stub model, or `nil`.
+  /// - Returns: The finished run.
+  /// - Throws: What `atFirstOutput` throws, or the cancel error.
+  private static func signal(
+    _ process: Process,
+    exit: ProcessExitEvent,
+    output: PipeCapture,
+    error: PipeCapture,
+    atFirstOutput: @Sendable (pid_t) async throws -> Void,
+    signalNumber: Int32,
+    signalCount: Int,
+    chunkGate: URL?
+  ) async throws -> SignalledExecutableRun {
     var gate: StubChunkGateWriter?
     if let chunkGate {
       gate = try await StubChunkGateWriter.open(at: chunkGate)
       try gate?.releaseOneChunk()
     }
-    _ = try await store.output.wait(for: "the first stdout byte of the child") { !$0.isEmpty }
+    try await waitForFirstOutput(of: output, orExitOf: exit)
     // The child has answered and has not been signalled, so this is the
     // one moment a caller can read what a live run carries. The gate
     // holds the prompt open here.
@@ -165,30 +183,37 @@ struct SignalledExecutableRun {
       try gate?.releaseAllChunks()
     }
 
-    await draining.value
+    await output.untilEnd()
+    await error.untilEnd()
+    try Task.checkCancellation()
     return SignalledExecutableRun(
       exitCode: process.terminationStatus,
       didExit: process.terminationReason == .exit,
       exitWait: exitWait,
-      standardOutput: String(decoding: store.output.value, as: UTF8.self),
-      standardError: String(decoding: store.error.value, as: UTF8.self),
+      standardOutput: output.text,
+      standardError: error.text,
       signalsSent: signalsSent)
   }
 
-  /// Reads `pipe` until it reaches its end, handing each chunk over. Each
-  /// read blocks in the kernel until bytes or the end come.
+  /// Waits for the first stdout byte of the child. A child that ends with no
+  /// output ends the wait too, because no byte will come.
   ///
   /// - Parameters:
-  ///   - pipe: The pipe to read.
-  ///   - receive: What each chunk goes to.
-  private static func drain(_ pipe: Pipe, receive: @Sendable (Data) -> Void) async {
-    let handle = pipe.fileHandleForReading
-    while true {
-      let chunk = handle.availableData
-      if chunk.isEmpty {
-        return
+  ///   - output: The reads of the stdout of the child.
+  ///   - exit: The exit event of the child.
+  /// - Throws: ``ConditionWaitCancelled`` when the test is cancelled first.
+  private static func waitForFirstOutput(
+    of output: PipeCapture, orExitOf exit: ProcessExitEvent
+  ) async throws {
+    try await withThrowingTaskGroup(of: Void.self) { group in
+      group.addTask {
+        _ = try await output.record.wait(for: "the first stdout byte of the child") {
+          !$0.isEmpty
+        }
       }
-      receive(chunk)
+      group.addTask { try await exit.wait() }
+      try await group.next()
+      group.cancelAll()
     }
   }
 }

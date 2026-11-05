@@ -86,7 +86,7 @@ struct ScriptedElicitProcessTests {
       environment: try TierThreeFixture.stubScriptEnvironment(file: file),
       promptText: rootPrompt,
       answeringQuestionWith: { session in
-        let pending = await PendingQuestionWait.first(in: session)
+        let pending = try await PendingQuestionWait.first(in: session)
         await MainActor.run {
           switch resolution {
           case .accept(let text):

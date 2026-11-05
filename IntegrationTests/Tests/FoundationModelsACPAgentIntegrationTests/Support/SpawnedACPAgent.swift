@@ -7,12 +7,14 @@
 // and gives the status, but it cannot close stdin without `SIGTERM`. An exit
 // path proof needs all three: its own environment, the choice of the end
 // (the end of stdin, or `SIGTERM`), and the exit code.
+//
+// Every agent has a limit (`ChildDeadline`). An agent that is still running at
+// its limit is killed, and the failure of the test holds its stderr.
 
 import Darwin
 import Foundation
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
-import Synchronization
 
 /// An ACP transport over the stdin and stdout pipes of a spawned agent.
 struct SpawnedAgentTransport: ACPTransport {
@@ -28,60 +30,6 @@ struct SpawnedAgentTransport: ACPTransport {
   /// - Throws: The write error, for example after the agent ended.
   func write(_ data: Data) async throws {
     try input.write(contentsOf: data)
-  }
-}
-
-/// The reads of one pipe of a spawned agent.
-///
-/// A `FileHandle` readability handler reads on a Dispatch queue. A blocking
-/// read on a task would hold a thread of the cooperative pool for the life of
-/// the agent, and the suites of this package run at the same time: enough
-/// held threads stop every task of the test process.
-private enum PipeReader {
-  /// Starts the reads of `pipe`.
-  ///
-  /// - Parameters:
-  ///   - pipe: The pipe to read.
-  ///   - receive: What each chunk goes to.
-  ///   - atEnd: What runs when the pipe reaches its end.
-  /// - Returns: A stream that finishes when the pipe reaches its end. One
-  ///   task at a time may wait on it.
-  static func start(
-    _ pipe: Pipe,
-    receive: @escaping @Sendable (Data) -> Void,
-    atEnd: @escaping @Sendable () -> Void = {}
-  ) -> AsyncStream<Never> {
-    let (end, finish) = AsyncStream<Never>.makeStream()
-    pipe.fileHandleForReading.readabilityHandler = { handle in
-      let chunk = handle.availableData
-      guard !chunk.isEmpty else {
-        handle.readabilityHandler = nil
-        atEnd()
-        finish.finish()
-        return
-      }
-      receive(chunk)
-    }
-    return end
-  }
-}
-
-/// The stderr bytes of a spawned agent, shared with the handler that reads
-/// them.
-private final class StandardErrorRecord: Sendable {
-  /// The bytes so far.
-  private let bytes = Mutex(Data())
-
-  /// Appends one chunk.
-  ///
-  /// - Parameter chunk: The bytes read.
-  func append(_ chunk: Data) {
-    bytes.withLock { $0.append(chunk) }
-  }
-
-  /// The bytes so far, as text.
-  var text: String {
-    String(decoding: bytes.withLock { $0 }, as: UTF8.self)
   }
 }
 
@@ -101,6 +49,21 @@ struct SpawnedAgentExit {
   let standardError: String
 }
 
+/// An error of a run of a spawned agent, with what the agent wrote to its
+/// stderr. A test that fails shows the reason the agent gave.
+struct SpawnedAgentFailure: Error, CustomStringConvertible {
+  /// The error of the run.
+  let underlying: any Error
+
+  /// The stderr text of the agent.
+  let standardError: String
+
+  /// The error, and the stderr of the agent.
+  var description: String {
+    "\(underlying)\nstderr of the agent:\n\(standardError)"
+  }
+}
+
 /// One spawned `acp-agent acp`.
 struct SpawnedACPAgent {
   /// The transport to give to the ACP client.
@@ -112,30 +75,34 @@ struct SpawnedACPAgent {
   /// The exit event of the child, made before it ran.
   private let exit: ProcessExitEvent
 
-  /// The stderr bytes of the child.
-  private let standardError: StandardErrorRecord
+  /// The limit of the child.
+  private let deadline: ChildDeadline
 
-  /// One stream for each output pipe of the child, stdout and stderr. Each
-  /// stream finishes when its pipe reaches its end.
-  private let pipeEnds: [AsyncStream<Never>]
+  /// The reads of the stdout of the child. The transport gets the bytes.
+  private let standardOutput: PipeCapture
+
+  /// The reads of the stderr of the child.
+  private let standardError: PipeCapture
 
   /// Wraps a running child.
   ///
   /// - Parameters:
   ///   - process: The running child.
   ///   - exit: The exit event of the child, made before it ran.
+  ///   - deadline: The limit of the child.
   ///   - transport: The transport over its pipes.
-  ///   - standardError: The record of its stderr.
-  ///   - pipeEnds: The end streams of its stdout and stderr.
+  ///   - standardOutput: The reads of its stdout.
+  ///   - standardError: The reads of its stderr.
   private init(
-    process: Process, exit: ProcessExitEvent, transport: SpawnedAgentTransport,
-    standardError: StandardErrorRecord, pipeEnds: [AsyncStream<Never>]
+    process: Process, exit: ProcessExitEvent, deadline: ChildDeadline,
+    transport: SpawnedAgentTransport, standardOutput: PipeCapture, standardError: PipeCapture
   ) {
     self.process = process
     self.exit = exit
+    self.deadline = deadline
     self.transport = transport
+    self.standardOutput = standardOutput
     self.standardError = standardError
-    self.pipeEnds = pipeEnds
   }
 
   /// Spawns the built `acp-agent-stub acp`: the agent over the stub model.
@@ -146,9 +113,13 @@ struct SpawnedACPAgent {
   /// - Parameters:
   ///   - workspace: The working directory of the child.
   ///   - environment: The extra environment pairs.
+  ///   - limit: The longest time the agent may run. At the limit the agent is
+  ///     killed.
   /// - Returns: The running agent.
   /// - Throws: The locator or spawn error.
-  static func start(workspace: URL, environment: [String: String]) throws -> SpawnedACPAgent {
+  static func start(
+    workspace: URL, environment: [String: String], limit: Duration = ChildDeadline.standardLimit
+  ) throws -> SpawnedACPAgent {
     // The setup marks the stdin pipe close-on-exec too: a copy of its
     // write end in another child would keep the stdin of this agent open
     // after the close, and the agent would never read its end of file.
@@ -177,18 +148,22 @@ struct SpawnedACPAgent {
     try process.run()
 
     let (bytes, continuation) = AsyncThrowingStream<Data, any Error>.makeStream()
-    let record = StandardErrorRecord()
     // The byte stream of the transport ends with stdout, so the client
     // sees the end of the wire.
-    let outputEnd = PipeReader.start(
-      outputPipe, receive: { continuation.yield($0) }, atEnd: { continuation.finish() })
-    let errorEnd = PipeReader.start(errorPipe, receive: { record.append($0) })
+    let outputCapture = PipeCapture(
+      outputPipe, forwarding: { continuation.yield($0) }, atEnd: { continuation.finish() })
+    let errorCapture = PipeCapture(errorPipe)
+    let deadline = ChildDeadline(process: process, limit: limit) {
+      outputCapture.stop()
+      errorCapture.stop()
+    }
     return SpawnedACPAgent(
       process: process,
       exit: exit,
+      deadline: deadline,
       transport: SpawnedAgentTransport(bytes: bytes, input: inputPipe.fileHandleForWriting),
-      standardError: record,
-      pipeEnds: [outputEnd, errorEnd])
+      standardOutput: outputCapture,
+      standardError: errorCapture)
   }
 
   /// Closes the stdin of the agent, which is the end of the ACP wire, and
@@ -214,26 +189,67 @@ struct SpawnedACPAgent {
     }
   }
 
+  /// Gives up on the agent: kills it if it still runs, and ends the reads of
+  /// its pipes. A test calls it when a request failed, so a failed test leaves
+  /// no agent behind.
+  func abandon() {
+    deadline.abandon()
+    standardOutput.stop()
+    standardError.stop()
+  }
+
+  /// The failure to report for `error`, which ended a run of this agent.
+  ///
+  /// The kill of the deadline closes the wire, and each request in flight then
+  /// fails with a closed connection. That error does not say what happened.
+  /// So the report is the deadline failure when the deadline killed the agent,
+  /// and else the error with the stderr of the agent.
+  ///
+  /// - Parameter error: The error the run ended with.
+  /// - Returns: The failure to throw.
+  func report(_ error: any Error) -> any Error {
+    if error is ChildDeadlineExceeded || error is CancellationError {
+      return error
+    }
+    if deadline.hasExceeded {
+      return deadline.failure(
+        standardOutput: standardOutput.text, standardError: standardError.text)
+    }
+    return SpawnedAgentFailure(underlying: error, standardError: standardError.text)
+  }
+
   /// Asks the agent to end, and waits until it ends and closes its pipes.
   ///
-  /// The wait for the end is the exit event of the child, with no clock.
+  /// The wait for the end is the exit event of the child. The limit of the
+  /// agent is the backstop of a child that ignores the request.
   ///
   /// - Parameter request: The end request.
   /// - Returns: How the agent ended.
-  /// - Throws: The error of `request`.
+  /// - Throws: The error of `request`, ``ChildDeadlineExceeded`` when the
+  ///   limit killed the agent, or ``ConditionWaitCancelled`` when the test is
+  ///   cancelled first.
   private func end(request: () throws -> Void) async throws -> SpawnedAgentExit {
     let clock = ContinuousClock()
     let start = clock.now
     try request()
-    try await exit.wait()
-    let elapsed = clock.now - start
-    for end in pipeEnds {
-      for await _ in end {}
+    do {
+      try await exit.wait()
+      await standardOutput.untilEnd()
+      await standardError.untilEnd()
+      try Task.checkCancellation()
+    } catch {
+      abandon()
+      throw error
+    }
+    deadline.disarm()
+    if deadline.hasExceeded {
+      throw deadline.failure(
+        standardOutput: standardOutput.text, standardError: standardError.text)
     }
     return SpawnedAgentExit(
       status: process.terminationStatus,
       didExit: process.terminationReason == .exit,
-      elapsed: elapsed,
+      elapsed: clock.now - start,
       standardError: standardError.text)
   }
 }

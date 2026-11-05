@@ -3,8 +3,9 @@
 // `BuiltExecutableRun` runs a built executable, `ProcessCensus` runs
 // `pgrep(1)` and `TemporaryKeychain` runs `security(1)`. Each one starts the
 // child, reads its output to the end, waits for the exit and reads the status.
-// This type holds those steps, so the close-on-exec marks, the read that
-// stands before the wait, and the exit wait stand in one place.
+// This type holds those steps, so the close-on-exec marks, the reads
+// (`PipeCapture`), the exit wait, and the limit of the child
+// (`ChildDeadline`) stand in one place.
 //
 // `SignalledExecutableRun` and `SpawnedACPAgent` read the output as it comes,
 // and signal the child or write to it while it runs, so they do not run
@@ -66,11 +67,14 @@ struct CapturedProcessRun {
   ///   - path: The absolute path of the tool.
   ///   - arguments: The command-line arguments of the tool.
   ///   - errorOutput: Where the tool's stderr goes.
+  ///   - limit: The longest time the tool may run.
   /// - Returns: The finished run.
-  /// - Throws: The spawn or read error, or ``ConditionWaitCancelled`` when
-  ///   the test is cancelled before the tool exits.
+  /// - Throws: The spawn error, ``ChildDeadlineExceeded`` when the tool
+  ///   passed `limit`, or ``ConditionWaitCancelled`` when the test is
+  ///   cancelled before the tool exits.
   static func run(
-    toolAt path: String, arguments: [String], errorOutput: ErrorOutput
+    toolAt path: String, arguments: [String], errorOutput: ErrorOutput,
+    limit: Duration = ChildDeadline.standardLimit
   ) async throws -> CapturedProcessRun {
     let tool = Process()
     tool.executableURL = URL(fileURLWithPath: path)
@@ -78,7 +82,7 @@ struct CapturedProcessRun {
     let output = Pipe()
     tool.standardOutput = output
     let error = connect(errorOutput, of: tool, besideOutput: output)
-    return try await run(tool, standardOutput: output, standardError: error)
+    return try await run(tool, standardOutput: output, standardError: error, limit: limit)
   }
 
   /// Sends the stderr of `tool` where `errorOutput` says.
@@ -110,8 +114,11 @@ struct CapturedProcessRun {
   ///
   /// Each pipe gets `FD_CLOEXEC` before the start (see
   /// `Pipe.markCloseOnExec()`), so no other child of this process holds a
-  /// copy of it. The reads stand before the wait: a full pipe buffer would
-  /// block the child.
+  /// copy of it. The reads run beside the wait on a Dispatch queue (see
+  /// ``PipeCapture``): a full pipe buffer never blocks the child, and no
+  /// thread of the cooperative pool waits for a pipe. The run ends at once when
+  /// the test is cancelled, and it kills the child at `limit` (see
+  /// ``ChildDeadline``).
   ///
   /// - Parameters:
   ///   - process: The child, set up and not yet started, with
@@ -119,32 +126,45 @@ struct CapturedProcessRun {
   ///   - standardOutput: The stdout pipe of the child.
   ///   - standardError: The stderr pipe of the child, or `nil` when the
   ///     child has no stderr pipe of its own.
+  ///   - limit: The longest time the child may run.
   /// - Returns: The finished run.
-  /// - Throws: The spawn or read error, or ``ConditionWaitCancelled`` when
-  ///   the test is cancelled before the child exits.
+  /// - Throws: The spawn error, ``ChildDeadlineExceeded`` when the child
+  ///   passed `limit`, or ``ConditionWaitCancelled`` when the test is
+  ///   cancelled before the child exits.
   static func run(
-    _ process: Process, standardOutput: Pipe, standardError: Pipe?
+    _ process: Process, standardOutput: Pipe, standardError: Pipe?,
+    limit: Duration = ChildDeadline.standardLimit
   ) async throws -> CapturedProcessRun {
     for pipe in [standardOutput, standardError].compactMap({ $0 }) {
       pipe.markCloseOnExec()
     }
     let exit = ProcessExitEvent(watching: process)
     try process.run()
-    async let output = readToEnd(standardOutput)
-    async let error = readToEnd(standardError)
-    try await exit.wait()
+    let outputCapture = PipeCapture(standardOutput)
+    let errorCapture = standardError.map { PipeCapture($0) }
+    let deadline = ChildDeadline(process: process, limit: limit) {
+      outputCapture.stop()
+      errorCapture?.stop()
+    }
+    do {
+      try await exit.wait()
+      await outputCapture.untilEnd()
+      await errorCapture?.untilEnd()
+      try Task.checkCancellation()
+    } catch {
+      deadline.abandon()
+      outputCapture.stop()
+      errorCapture?.stop()
+      throw error
+    }
+    deadline.disarm()
+    if deadline.hasExceeded {
+      throw deadline.failure(
+        standardOutput: outputCapture.text, standardError: errorCapture?.text ?? "")
+    }
     return CapturedProcessRun(
       exitCode: process.terminationStatus,
-      standardOutput: try await output,
-      standardError: try await error)
-  }
-
-  /// Reads `pipe` until it reaches its end.
-  ///
-  /// - Parameter pipe: The pipe to read, or `nil` for none.
-  /// - Returns: The bytes read, and none for no pipe.
-  /// - Throws: The read error.
-  private static func readToEnd(_ pipe: Pipe?) throws -> Data {
-    try pipe?.fileHandleForReading.readToEnd() ?? Data()
+      standardOutput: outputCapture.data,
+      standardError: errorCapture?.data ?? Data())
   }
 }

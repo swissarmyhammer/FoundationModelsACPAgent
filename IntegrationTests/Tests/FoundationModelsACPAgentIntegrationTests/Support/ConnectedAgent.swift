@@ -22,12 +22,18 @@ struct ConnectedAgent {
   ///   - workspace: The project folder, and the working directory of the agent.
   ///   - environment: The environment pairs of the agent (``NestedAgentFixture/environment(script:configHome:label:)``).
   /// - Returns: The running agent with its connection.
-  /// - Throws: The spawn or `initialize` error.
+  /// - Throws: The spawn error, or the `initialize` error with the stderr of the agent. A failed
+  ///   `initialize` kills the agent.
   static func start(workspace: URL, environment: [String: String]) async throws -> ConnectedAgent {
     let agent = try SpawnedACPAgent.start(workspace: workspace, environment: environment)
     let model = await ConnectionModel()
     let connection = await model.connect(over: agent.transport)
-    _ = try await model.initialize(AgentClientHarness.makeInitializeRequest())
+    do {
+      _ = try await model.initialize(AgentClientHarness.makeInitializeRequest())
+    } catch {
+      agent.abandon()
+      throw agent.report(error)
+    }
     return ConnectedAgent(agent: agent, model: model, connection: connection)
   }
 }
