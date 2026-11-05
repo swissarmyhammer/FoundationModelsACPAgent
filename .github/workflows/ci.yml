@@ -49,10 +49,14 @@ concurrency:
 
 jobs:
   ci:
-    uses: swissarmyhammer/workflows/.github/workflows/swift-ci.yaml@main
+    uses: swissarmyhammer/workflows/.github/workflows/swift-ci.yaml@persistent-build
     with:
       # Build and run the nested integration package. This input alone starts
       # the integration job.
       integration-package-path: IntegrationTests
       # One spawned binary at a time — see the header.
       integration-no-parallel: true
+      # Keep the build on the runner between runs, so a push builds only what
+      # changed. The branch of the shared workflow is under test; after the
+      # merge, `uses:` goes back to `@main`.
+      persistent-build: true
