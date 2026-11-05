@@ -17,8 +17,15 @@ comments:
     - evidence: Sources/FoundationModelsACPAgent/Agent/SettlementWatch.swift (new), SessionProjector.swift, AgentRunLinks.swift, Tests/FoundationModelsACPAgentTests/SettlementWatchTests.swift (new), ResumeChildSyncTests.swift
     - next: /review. Note: the flake cannot be proven fixed by a run; the barrier is pinned by the unit tests.
   timestamp: 2026-11-04T20:14:15.474061+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m6m3902gra1ex2f69xjmtfyy
+  text: |-
+    ### review — clean
+    - evidence: review sha 8071dc5~1..8071dc5; counts findings 0, confirmed 0, refuted 1, attempted 7, failed 0, skipped 0 (4 skipped files are .kanban files, ignored by .reviewignore).
+    - next: none. The task moved to done.
+  timestamp: 2026-11-04T20:16:15.440901+00:00
+position_column: done
+position_ordinal: ffffbd80
 title: 'Flake: ResumeChildSyncTests failed-child resume wire (replays false) sees an extra update before session_info_update'
 ---
 ## What
