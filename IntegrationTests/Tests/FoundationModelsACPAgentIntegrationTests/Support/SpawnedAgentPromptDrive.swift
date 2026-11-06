@@ -103,6 +103,11 @@ struct SpawnedAgentPromptDrive {
       (@Sendable (SessionModel) async throws -> CreateElicitationRequest)?,
     ending: (SpawnedACPAgent) async throws -> SpawnedAgentExit
   ) async throws -> SpawnedAgentPromptDrive {
+    // This copy of the handshake does not use `ComposedClientWire`: the
+    // agent is a child process behind a tapped pipe transport, with no
+    // `ComposedAgent` in this process to serve or to wait for, and the
+    // session comes from the `SessionModel` of the model, which the
+    // elicitation hook reads.
     let tap = InboundTapTransport(wrapping: agent.transport)
     let model = await ConnectionModel()
     let connection = await model.connect(over: tap)

@@ -258,7 +258,7 @@ struct StdioContractTests {
     _ = try await connection.prompt(
       AgentClientHarness.makePromptRequest(
         sessionId: session.sessionId, text: Self.promptText))
-    let stopReason = await StdoutFrameChecks.waitForIdle(on: updates)
+    let stopReason = await PromptUpdateRead.collect(from: updates).stopReason
     #expect(stopReason != nil, "the prompt never reached an idle state update")
 
     // The child ran, proven on the file system: the probe's `tee`

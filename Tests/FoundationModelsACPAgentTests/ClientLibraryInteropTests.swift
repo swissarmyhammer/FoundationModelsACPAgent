@@ -25,94 +25,46 @@ import Testing
 
   // MARK: - The drivers
 
-  /// What one library prompt gave back.
-  private struct LibraryAnswer {
-    /// The text of each agent message chunk, joined in arrival order.
-    var text = ""
-
-    /// The stop reason of the first idle update, or `nil` when the update stream ended before the
-    /// prompt went idle.
-    var stopReason: StopReason?
-  }
-
   /// Runs one prompt with the client library against the composed agent, over
-  /// `InMemoryTransport.pair()`, and then closes the wire and waits for the teardown of the agent.
-  ///
-  /// A teardown that does not end holds the test, and the time limit of the suite ends it.
+  /// `InMemoryTransport.pair()`, and then closes the wire and waits for the teardown of the agent
+  /// (``ComposedClientWire/withSession(of:in:_:)``).
   ///
   /// - Returns: The answer text and the stop reason.
   /// - Throws: Whatever the composition, the handshake, the session call or the prompt throws.
-  private static func runClientLibrary() async throws -> LibraryAnswer {
+  private static func runClientLibrary() async throws -> PromptUpdateRead {
     let workspace = makeResolvedDirectory(label: "\(label)-repo")
     let composed = try await composeStubAgent(
       name: AgentComposition.dotfolderName, label: label, workspace: workspace)
     #expect(composed.modelSource == .stub)
-    let (clientEnd, agentEnd) = InMemoryTransport.pair()
-    let agentConnection = await composed.serve(over: agentEnd)
-    let model = await ConnectionModel()
-    let connection = await model.connect(over: clientEnd)
-    // Swift has no asynchronous `defer`, and the wire must come down on the failing path as well,
-    // so the outcome is held here and given back after the teardown.
-    let outcome: Result<LibraryAnswer, any Error>
-    do {
-      outcome = .success(try await prompt(over: connection, in: workspace))
-    } catch {
-      outcome = .failure(error)
+    return try await ComposedClientWire.withSession(of: composed, in: workspace) {
+      connection, sessionId in
+      try await prompt(over: connection, in: sessionId)
     }
-    await connection.close()
-    await agentConnection.close()
-    clientEnd.close()
-    agentEnd.close()
-    await composed.waitForConnectionTeardown()
-    await composed.closeOpenSessions()
-    return try outcome.get()
   }
 
-  /// Sends `initialize`, `session/new` and one prompt over `connection`, and reads the answer off
-  /// the update stream of the session.
+  /// Sends one prompt in the open session, and reads the answer off the update stream of the
+  /// session.
   ///
   /// - Parameters:
   ///   - connection: The client end of the wire.
-  ///   - workspace: The working directory of the session.
+  ///   - sessionId: The open session.
   /// - Returns: The answer text and the stop reason.
-  /// - Throws: Whatever the handshake, the session call or the prompt throws.
+  /// - Throws: Whatever the prompt throws.
   private static func prompt(
-    over connection: ClientSideConnection, in workspace: URL
-  ) async throws -> LibraryAnswer {
-    _ = try await connection.initialize(AgentClientHarness.makeInitializeRequest())
-    let session = try await connection.newSession(
-      NewSessionRequest(cwd: AbsolutePath(rawValue: workspace.path)))
+    over connection: ClientSideConnection, in sessionId: SessionId
+  ) async throws -> PromptUpdateRead {
     // Subscribe before the prompt, so the stream holds each update of the prompt in order.
-    let updates = connection.subscribe(to: session.sessionId).updates
-    let collector = Task { await collectAnswer(from: updates) }
+    let updates = connection.subscribe(to: sessionId).updates
+    let collector = Task { await PromptUpdateRead.collect(from: updates) }
     do {
       _ = try await connection.prompt(
-        AgentClientHarness.makePromptRequest(sessionId: session.sessionId, text: promptText))
+        AgentClientHarness.makePromptRequest(sessionId: sessionId, text: promptText))
     } catch {
       collector.cancel()
       _ = await collector.value
       throw error
     }
     return await collector.value
-  }
-
-  /// Consumes the update stream of a session: joins the text of each agent message chunk, and stops
-  /// at the first idle state update.
-  ///
-  /// - Parameter stream: The update stream, subscribed before the prompt.
-  /// - Returns: The joined text and the stop reason of the idle update.
-  private static func collectAnswer(
-    from stream: AsyncStream<SessionStreamEvent>
-  ) async -> LibraryAnswer {
-    var answer = LibraryAnswer()
-    for await case .update(let update) in stream {
-      if case .stateUpdate(.idle(let idle)) = update {
-        answer.stopReason = idle.stopReason
-        return answer
-      }
-      answer.text += update.agentMessageText
-    }
-    return answer
   }
 
   /// Runs the `run` subcommand for the same prompt, in process over the stub model, which is the

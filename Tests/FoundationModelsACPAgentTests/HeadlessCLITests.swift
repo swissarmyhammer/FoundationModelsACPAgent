@@ -43,6 +43,8 @@ struct HeadlessCLITests {
       bound.update { $0 = routed }
       return routed
     }
+    // This case does not use `ComposedClientWire`: it binds the agent by hand to keep
+    // the connection of the bind, and it opens no session.
     let routed = try #require(bound.value)
     let model = await ConnectionModel()
     let connection = await model.connect(over: clientEnd)

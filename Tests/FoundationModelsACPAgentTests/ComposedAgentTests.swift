@@ -66,48 +66,11 @@ struct ComposedAgentTests {
     served agentConnection: AgentSideConnection,
     by composed: ComposedAgent
   ) async throws -> InitializeResponse {
-    try await exchange(over: clientEnd, closing: agentEnd, served: agentConnection, by: composed) {
+    try await ComposedClientWire.exchange(
+      over: clientEnd, closing: agentEnd, served: agentConnection, by: composed
+    ) {
       try await $0.initialize(AgentClientHarness.makeInitializeRequest())
     }
-  }
-
-  /// Runs `requests` from a client on `clientEnd`, then closes the wire and
-  /// waits for the teardown of the agent.
-  ///
-  /// - Parameters:
-  ///   - clientEnd: The client end of the wire.
-  ///   - agentEnd: The agent end of the wire.
-  ///   - agentConnection: The connection that serves the agent on
-  ///     `agentEnd`.
-  ///   - composed: The composition that `agentConnection` serves.
-  ///   - requests: The requests that the client sends over its connection.
-  /// - Returns: The value that `requests` gives.
-  /// - Throws: Whatever `requests` throws.
-  private static func exchange<Value: Sendable>(
-    over clientEnd: InMemoryTransport,
-    closing agentEnd: InMemoryTransport,
-    served agentConnection: AgentSideConnection,
-    by composed: ComposedAgent,
-    _ requests: (ClientSideConnection) async throws -> Value
-  ) async throws -> Value {
-    let model = await ConnectionModel()
-    let connection = await model.connect(over: clientEnd)
-    // Swift has no asynchronous `defer`, and the wire must come down on
-    // the failing path as well, so the outcome is held here and given
-    // back after the teardown.
-    let outcome: Result<Value, any Error>
-    do {
-      outcome = .success(try await requests(connection))
-    } catch {
-      outcome = .failure(error)
-    }
-    await connection.close()
-    await agentConnection.close()
-    clientEnd.close()
-    agentEnd.close()
-    await composed.waitForConnectionTeardown()
-    await composed.closeOpenSessions()
-    return try outcome.get()
   }
 
   /// Sends `initialize`, `session/new` in `workspace` and one prompt from a
@@ -123,25 +86,15 @@ struct ComposedAgentTests {
   private static func runOneTurn(of composed: ComposedAgent, in workspace: URL) async throws
     -> SessionId
   {
-    let (clientEnd, agentEnd) = InMemoryTransport.pair()
-    let agentConnection = await composed.serve(over: agentEnd)
-    return try await exchange(
-      over: clientEnd, closing: agentEnd, served: agentConnection, by: composed
-    ) {
-      connection in
-      _ = try await connection.initialize(AgentClientHarness.makeInitializeRequest())
-      let session = try await connection.newSession(
-        NewSessionRequest(cwd: AbsolutePath(rawValue: workspace.path)))
+    try await ComposedClientWire.withSession(of: composed, in: workspace) { connection, sessionId in
       // Subscribe before the prompt, so the stream holds the idle
       // update of the prompt. The wire stays open until that update
       // came, thus no update of the turn fails to go out.
-      let updates = connection.subscribe(to: session.sessionId).updates
+      let updates = connection.subscribe(to: sessionId).updates
       _ = try await connection.prompt(
-        AgentClientHarness.makePromptRequest(sessionId: session.sessionId, text: promptText))
-      for await case .update(.stateUpdate(.idle)) in updates {
-        break
-      }
-      return session.sessionId
+        AgentClientHarness.makePromptRequest(sessionId: sessionId, text: promptText))
+      _ = await PromptUpdateRead.collect(from: updates)
+      return sessionId
     }
   }
 

@@ -4,15 +4,14 @@
 // `StdioContractTests` and `TelemetryStdoutTests` both spawn the agent in
 // `acp` mode and hold its stdout to the ACP stdio framing rule: stdout
 // carries only UTF-8 JSON-RPC messages, `\n` divides them, and no message
-// holds a newline. This one home keeps the rule and the idle wait in one
-// place, so the two suites cannot drift apart.
+// holds a newline. This one home keeps the rule in one place, so the two
+// suites cannot drift apart.
 
 import Foundation
 import FoundationModelsACP
 import Testing
 
-/// The checks on the stdout bytes of a spawned `acp-agent acp`, and the wait
-/// for the end of a prompt.
+/// The checks on the stdout bytes of a spawned `acp-agent acp`.
 enum StdoutFrameChecks {
   /// The newline byte that divides ndJSON frames.
   static let newlineByte = UInt8(ascii: "\n")
@@ -48,21 +47,5 @@ enum StdoutFrameChecks {
         message["jsonrpc"] as? String == jsonRPCVersion,
         "a stdout frame is not a JSON-RPC message: \(message)")
     }
-  }
-
-  /// Consumes `stream` until the first idle state update, then returns
-  /// its stop reason. The request markers of the stream do not end the
-  /// wait.
-  ///
-  /// - Parameter stream: The update stream of the session. Subscribe to
-  ///   it before the prompt.
-  /// - Returns: The stop reason, or `nil` when the stream ended with no
-  ///   idle update. That is, the connection stopped before the prompt
-  ///   ended.
-  static func waitForIdle(on stream: AsyncStream<SessionStreamEvent>) async -> StopReason? {
-    for await case .update(.stateUpdate(.idle(let idle))) in stream {
-      return idle.stopReason
-    }
-    return nil
   }
 }

@@ -33,8 +33,13 @@ struct SkillsMarketplaceNetworkTests {
   // MARK: - The drive
 
   /// Composes the stub agent over the shipped configuration, with no offline
-  /// defaults layer, and opens one session over an in-memory wire. The
-  /// session start fetches the marketplaces. Then the wire comes down.
+  /// defaults layer, and opens one session over an in-memory wire
+  /// (``ComposedClientWire/withSession(of:in:_:)``). The session start
+  /// fetches the marketplaces. Then the wire comes down.
+  ///
+  /// The composition stays here and does not use ``composeStubAgent(name:label:workspace:home:secretStore:userDeviceTokens:environment:)``:
+  /// that function always writes the offline defaults layer, and this suite
+  /// must read the shipped list without it.
   ///
   /// - Parameter home: The home of the agent. Its user layer holds
   ///   ``userConfigYAML``, and its cache folder receives the fetch.
@@ -48,29 +53,7 @@ struct SkillsMarketplaceNetworkTests {
       home: home,
       environment: [TierThreeFixture.defaultsDirectoryVariable: TierThreeFixture.noDefaultsLayerValue],
       modelSource: .stub)
-    let (clientEnd, agentEnd) = InMemoryTransport.pair()
-    let agentConnection = await composed.serve(over: agentEnd)
-    let model = await ConnectionModel()
-    let connection = await model.connect(over: clientEnd)
-    // Swift has no asynchronous `defer`, and the wire must come down on
-    // the failing path as well, so the outcome is held here and given
-    // back after the teardown.
-    let outcome: Result<Void, any Error>
-    do {
-      _ = try await connection.initialize(AgentClientHarness.makeInitializeRequest())
-      _ = try await connection.newSession(
-        NewSessionRequest(cwd: AbsolutePath(rawValue: workspace.path)))
-      outcome = .success(())
-    } catch {
-      outcome = .failure(error)
-    }
-    await connection.close()
-    await agentConnection.close()
-    clientEnd.close()
-    agentEnd.close()
-    await composed.waitForConnectionTeardown()
-    await composed.closeOpenSessions()
-    try outcome.get()
+    try await ComposedClientWire.withSession(of: composed, in: workspace) { _, _ in }
   }
 
   // MARK: - The contract
