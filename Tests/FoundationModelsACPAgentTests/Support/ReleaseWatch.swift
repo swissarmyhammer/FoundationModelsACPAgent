@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsACPAgentTestSupport
+import FoundationModelsAgents
 import FoundationModelsExtras
 
 // MARK: - The waits for the release of an actor
@@ -75,5 +76,43 @@ enum RouterSessionReleaseWatch {
   ///   first.
   static func waitForRelease(of lifetimes: BackendLifetimes) async throws {
     try await lifetimes.wait(for: "each scripted backend is released") { $0 == 0 }
+  }
+}
+
+/// A weak reference to the runner of an `agents` mount, and the wait for its release.
+///
+/// The runner holds its search over the agents, and the task of that search holds the embedder of
+/// the profile. A reference cycle that keeps the runner thus keeps each model of the profile in the
+/// model pool. The runner is a class with no hook for a sentinel, so the wait polls with a limit.
+final class WeakRunnerWatch: @unchecked Sendable {
+  /// The longest wait for the release.
+  private static let limit: Duration = .seconds(10)
+
+  /// How long the wait sleeps between two looks.
+  private static let step: Duration = .milliseconds(50)
+
+  /// The runner, while something holds it.
+  private weak var runner: AgentRunner?
+
+  /// Watches `runner`.
+  ///
+  /// - Parameter runner: The runner to watch, or `nil` for a mount with none.
+  init(watching runner: AgentRunner?) {
+    self.runner = runner
+  }
+
+  /// Whether the runner still lives.
+  var isHeld: Bool { runner != nil }
+
+  /// Waits until the runner is released, or until the limit passes.
+  ///
+  /// - Returns: `true` when the runner was released.
+  /// - Throws: `CancellationError` when the test is cancelled first.
+  func waitForRelease() async throws -> Bool {
+    let deadline = ContinuousClock.now.advanced(by: Self.limit)
+    while isHeld, ContinuousClock.now < deadline {
+      try await Task.sleep(for: Self.step)
+    }
+    return !isHeld
   }
 }

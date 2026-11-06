@@ -28,14 +28,31 @@ enum ProcessModelPool {
   /// no poll. It is the wait of the Router helper
   /// `ModelPool.awaitNoResidentModel()`, which no product exports.
   ///
+  /// - Parameter limit: The longest wait. At the limit the wait gives the
+  ///   held models back, so the test fails with a reason.
   /// - Returns: The models the pool still holds: empty when the pool
-  ///   evicted each model, and the held models when the calling task was
-  ///   cancelled first.
-  static func residentModelsAfterRelease() async -> [ModelPoolKey] {
-    for await footprint in ModelPool.shared.footprints where footprint.resident.isEmpty {
-      return []
+  ///   evicted each model, and the held models when the limit passed or the
+  ///   calling task was cancelled first.
+  static func residentModelsAfterRelease(
+    limit: Duration = .seconds(60)
+  ) async -> [ModelPoolKey] {
+    // The wait has an end: a reference to the agent that stays would hold a
+    // model for ever, and a test that waits for ever hides its cause.
+    await withTaskGroup(of: Bool.self) { group in
+      group.addTask {
+        for await footprint in ModelPool.shared.footprints where footprint.resident.isEmpty {
+          return true
+        }
+        return false
+      }
+      group.addTask {
+        try? await Task.sleep(for: limit)
+        return false
+      }
+      let released = await group.next() ?? false
+      group.cancelAll()
+      return released ? [] : Array(ModelPool.shared.footprint.resident.keys)
     }
-    return Array(ModelPool.shared.footprint.resident.keys)
   }
 
   /// One line for a failed check: the models the pool still holds.

@@ -374,6 +374,32 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     #expect(runTools.names == [Self.runCodeName, Self.searchToolsName])
   }
 
+  // MARK: - The release of the mount
+
+  /// Builds the surface of a session, shuts it down, and watches its runner.
+  ///
+  /// - Parameter label: The directory label of the calling test.
+  /// - Returns: The watch of the runner.
+  /// - Throws: Whatever the surface construction throws.
+  private static func shutDownRunner(label: String) async throws -> WeakRunnerWatch {
+    let context = try await makeContext(label: label)
+    let surface = try await SurfaceCatalog.sessionSurface(context: context)
+    let watch = WeakRunnerWatch(watching: surface.agents?.runner)
+    await surface.shutdown()
+    return watch
+  }
+
+  /// The runner of a session goes away when the surface of the session is
+  /// shut down and dropped. A reference cycle from the join table to the
+  /// runner keeps the runner, and the runner keeps its search over the
+  /// agents, whose task holds the embedder. The model pool then keeps each
+  /// model for ever, and the next live-model test cannot resolve.
+  @Test func theRunnerOfASessionGoesAwayWithItsSurface() async throws {
+    let watch = try await Self.shutDownRunner(label: "runner-release")
+
+    #expect(try await watch.waitForRelease(), "something still holds the runner of the session")
+  }
+
   // MARK: - The settle period
 
   /// The agent environment and the root session take the settle period of

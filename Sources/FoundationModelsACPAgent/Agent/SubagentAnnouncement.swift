@@ -86,8 +86,11 @@ extension RoutedACPAgent {
       settle: { [weak self] report in
         await self?.settleSubagent(report, root: root, holds: holds)
       },
-      parentReport: { runID in
-        await runner.run(id: runID).map(SubagentReport.init(run:))
+      // The runner holds the announcer through its run observer, so the outlet keeps the runner
+      // weakly. A strong hold would make a reference cycle that keeps the runner, its search over
+      // the agents, and the models of the profile in the model pool.
+      parentReport: { [weak runner] runID in
+        await runner?.run(id: runID).map(SubagentReport.init(run:))
       })
   }
 

@@ -121,7 +121,12 @@ enum AgentsComposition {
     of runCallJoins: RunCallJoinTable, tool: AgentsTool, runner: AgentRunner,
     announcer: SubagentAnnouncer
   ) {
-    runCallJoins.holds.bind(toolName: tool.name) { token in
+    // The closure holds the runner and the announcer weakly. The runner holds the join table
+    // through its tool factories and its run observer, and the join table holds this closure. A
+    // strong hold would make a reference cycle: the runner would never go away, and its search over
+    // the agents would keep the embedder and the models of the profile in the model pool.
+    runCallJoins.holds.bind(toolName: tool.name) { [weak runner, weak announcer] token in
+      guard let runner, let announcer else { return }
       let wanted = token.uppercased()
       if let run = await runner.runs.first(where: { $0.completionToken?.uppercased() == wanted }) {
         announcer.observe(run)

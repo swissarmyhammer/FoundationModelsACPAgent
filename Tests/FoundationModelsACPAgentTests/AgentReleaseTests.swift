@@ -137,4 +137,24 @@ import Testing
     #expect(lifetimes.madeCount > 0)
     try await RouterSessionReleaseWatch.waitForRelease(of: lifetimes)
   }
+
+  @Test("A closed session releases the runner of its agents mount")
+  func aClosedSessionReleasesTheRunnerOfItsAgentsMount() async throws {
+    let lifetimes = BackendLifetimes()
+    let watch: WeakRunnerWatch
+    do {
+      let watched = try await Self.makeWatchedAgent(lifetimes: lifetimes, suffix: "runner")
+      let harness = await AgentClientHarness.makeRecording(agent: watched.agent)
+      _ = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())
+      let workspace = makeResolvedDirectory(label: "\(Self.label)-runner-workspace")
+      let session = try await harness.connection.newSession(
+        NewSessionRequest(cwd: AbsolutePath(rawValue: workspace.path)))
+      let runner = await watched.agent.sessions[session.sessionId]?.surface.agents?.runner
+      watch = WeakRunnerWatch(watching: try #require(runner))
+      _ = try await harness.connection.closeSession(
+        CloseSessionRequest(sessionId: session.sessionId))
+      await harness.close()
+    }
+    #expect(try await watch.waitForRelease(), "something still holds the runner of the session")
+  }
 }
