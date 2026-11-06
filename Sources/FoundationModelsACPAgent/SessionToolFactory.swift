@@ -73,11 +73,10 @@ enum SessionTagStore {
         .trimmingCharacters(in: .whitespacesAndNewlines)
       return recorded.isEmpty ? fromId : recorded
     } catch {
-      // An unreadable file gives the session another actor, so the defect is logged.
+      // An unreadable file is an I/O fault, not a programmer error. It gives the session another actor, so it is logged.
       ACPAgentTelemetry.logger(.session).warning(
         "The tag of the session could not be read. The tag from its id is used.",
         metadata: ACPAgentTelemetry.sessionMetadata(sessionId))
-      assertionFailure("the session tag file is unreadable: \(error)")
       return fromId
     }
   }

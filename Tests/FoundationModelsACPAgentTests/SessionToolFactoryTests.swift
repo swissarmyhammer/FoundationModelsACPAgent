@@ -152,6 +152,23 @@ import Testing
         == String(unrecorded.rawValue.prefix(SessionToolContext.sessionTagLength)))
   }
 
+  /// A tag file that cannot be read is an I/O fault, not a programmer error:
+  /// the store logs it and gives the tag from the id, and does not crash.
+  @Test
+  func anUnreadableTagFileGivesTheTagFromTheId() throws {
+    let root = makeResolvedDirectory(label: "SessionToolFactoryTests-tag-unreadable")
+    let session = SessionId(rawValue: "01M6RW6ZN35W68ZBBMDQSCMJYS")
+    // A folder in the place of the file makes the read fail.
+    try FileManager.default.createDirectory(
+      at: root.appendingPathComponent(session.rawValue, isDirectory: true)
+        .appendingPathComponent(SessionTagStore.fileName, isDirectory: true),
+      withIntermediateDirectories: true)
+
+    #expect(
+      SessionTagStore.tag(of: session, in: root)
+        == String(session.rawValue.prefix(SessionToolContext.sessionTagLength)))
+  }
+
   /// Makes a stub agent with the executable factory of the `kanban` tool,
   /// or with none.
   fileprivate static func makeAgent(label: String) async throws -> RoutedACPAgent {
