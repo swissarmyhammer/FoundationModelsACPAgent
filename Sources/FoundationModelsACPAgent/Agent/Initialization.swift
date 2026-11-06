@@ -1,4 +1,5 @@
 import FoundationModelsACP
+import FoundationModelsExtras
 import FoundationModelsRouter
 import Logging
 
@@ -173,6 +174,9 @@ extension RoutedACPAgent {
     let protocolVersion = Self.negotiateProtocolVersion(requested: params.protocolVersion)
     connections.recordClientCapabilities(
       NegotiatedClientCapabilities(reading: params.capabilities), of: caller)
+    // The credential of the connection decides who the person is; the claim
+    // of the client is only an input of that rule.
+    connections.recordActorClaim(GraphQLActor.fromMeta(params.meta), of: caller)
     ACPAgentTelemetry.logger(.initialization).info(
       "A client initialized the agent.",
       metadata: [

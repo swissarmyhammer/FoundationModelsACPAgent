@@ -83,11 +83,14 @@ import Testing
     let deviceViewer = GraphQLViewer(
       clientId: fixture.device.routedConnection.id.rawValue, trust: .userDevice,
       ownedSessions: [fixture.deviceSession.rawValue], clientOwnedSessions: bothSessions,
-      startedSessions: [fixture.deviceSession.rawValue])
+      startedSessions: [fixture.deviceSession.rawValue], actor: LocalUser.current.actor)
     let externalViewer = GraphQLViewer(
       clientId: fixture.external.routedConnection.id.rawValue, trust: .external,
       ownedSessions: [fixture.externalSession.rawValue], clientOwnedSessions: bothSessions,
-      startedSessions: [fixture.externalSession.rawValue])
+      startedSessions: [fixture.externalSession.rawValue],
+      actor: GraphQLActor(
+        id: "external/\(fixture.external.routedConnection.id.rawValue)",
+        name: "External client \(fixture.external.routedConnection.id.rawValue)"))
     #expect(fixture.log.viewers.value == [deviceViewer, externalViewer])
     #expect(deviceResult == ProbeEndpoint.answer)
     #expect(externalResult == ProbeEndpoint.answer)
@@ -120,6 +123,45 @@ import Testing
     _ = try await Self.execute(on: other, endpoint: Self.serverProbeName, sessionId: nil)
 
     #expect(log.viewers.value.map { $0?.trust } == [.userDevice, .external])
+  }
+
+  /// A `userDevice` client claims an identity in the `_meta` of
+  /// `initialize`, and an `external` client claims the same one. The
+  /// resolver of a tunnel call gets the claim for the first and a server
+  /// made `external/<id>` actor for the second.
+  @Test
+  func aTunnelCallReachesTheEndpointWithTheActorOfItsConnection() async throws {
+    let agent = try await makeStubAgent(
+      name: AgentClientHarness.dotfolderName,
+      cacheDirectory: makeResolvedDirectory(label: "GraphQLTunnelTests-actor-cache"),
+      userDeviceTokens: Set([TestBearerToken.userDevice]))
+    let log = ProbeLog()
+    await agent.registerHostTools([ProbeTool(log: log, holdsStreams: false)])
+    let claimed = GraphQLActor(id: "icloud/ABC", name: "Pat Person", aliases: ["local/pat"])
+    let plain = AgentClientHarness.makeInitializeRequest()
+    let claiming = InitializeRequest(
+      info: plain.info, protocolVersion: plain.protocolVersion, capabilities: plain.capabilities,
+      meta: .object([
+        GraphQLActor.initializeMetaKey: try claimed.metaValue(as: JSONValue.self)
+      ]))
+    let device = await AgentClientHarness.makeRecording(
+      agent: agent, connectionInfo: .makeHTTP(bearerToken: TestBearerToken.userDevice))
+    let other = await AgentClientHarness.makeRecording(
+      agent: agent, connectionInfo: .makeHTTP(bearerToken: TestBearerToken.other))
+    for harness in [device, other] {
+      _ = try await harness.connection.initialize(claiming)
+      _ = try await harness.connection.newSession(
+        AgentClientHarness.makeNewSessionRequest(
+          cwd: makeResolvedDirectory(label: "GraphQLTunnelTests-actor")))
+    }
+
+    _ = try await Self.execute(on: device, endpoint: Self.serverProbeName, sessionId: nil)
+    _ = try await Self.execute(on: other, endpoint: Self.serverProbeName, sessionId: nil)
+
+    let otherId = other.routedConnection.id.rawValue
+    #expect(
+      log.viewers.value.map { $0?.actor }
+        == [claimed, GraphQLActor(id: "external/\(otherId)", name: "External client \(otherId)")])
   }
 
   /// A call that names an endpoint that the agent does not have gives a

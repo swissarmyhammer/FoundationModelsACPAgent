@@ -1,3 +1,4 @@
+import Foundation
 import FoundationModelsACP
 import FoundationModelsExtras
 import FoundationModelsRouter
@@ -101,6 +102,35 @@ struct ConnectionRow: Sendable {
   /// The client capabilities that the `initialize` of this connection
   /// read, or `nil` before its first `initialize`.
   var clientCapabilities: NegotiatedClientCapabilities?
+
+  /// The person that the connection acts as, or `nil` before its first
+  /// `initialize` (``ConnectionTable/recordActorClaim(_:of:)``).
+  var actor: GraphQLActor?
+}
+
+/// The local user of the agent process: the person of a `userDevice`
+/// connection that claims no identity.
+///
+/// The in-process UI and stdio are the same OS user as the agent, so this
+/// person is correct for them, and an old client that sends no claim keeps
+/// working. The value is injected so that a test does not depend on the
+/// machine.
+struct LocalUser: Sendable, Equatable {
+  /// The account name, as `NSUserName()` gives it.
+  let userName: String
+
+  /// The full name, as `NSFullUserName()` gives it.
+  let fullName: String
+
+  /// The user of this process.
+  static var current: LocalUser {
+    LocalUser(userName: NSUserName(), fullName: NSFullUserName())
+  }
+
+  /// The actor of the user: the id is `local/<userName>`.
+  var actor: GraphQLActor {
+    GraphQLActor(id: "local/\(userName)", name: fullName)
+  }
 }
 
 /// The outbound path of a session: the connection that its requests and
@@ -148,6 +178,9 @@ final class ConnectionTable: Sendable {
   /// The table, under its lock.
   private let state: Mutex<State>
 
+  /// The person of a `userDevice` connection with no valid claim.
+  private let localUser: LocalUser
+
   /// The parent links of the sessions. A nested session has no owner
   /// record: it has the owner of its parent, so a take of the parent, and
   /// the close of the connection of the parent, reach it with no further
@@ -158,8 +191,11 @@ final class ConnectionTable: Sendable {
   /// direct caller is in process, thus `userDevice`.
   ///
   /// - Parameter tree: The parent links that the owner lookup reads.
-  init(tree: SessionTree = SessionTree()) {
+  /// - Parameter localUser: The person of a `userDevice` connection that
+  ///   claims no identity.
+  init(tree: SessionTree = SessionTree(), localUser: LocalUser = .current) {
     self.tree = tree
+    self.localUser = localUser
     let direct = ConnectionRow(trust: .userDevice, connection: nil)
     state = Mutex(State(rows: [.direct: direct]))
   }
@@ -167,10 +203,11 @@ final class ConnectionTable: Sendable {
   /// Adds the row of a new connection.
   ///
   /// - Parameters:
-  ///   - connection: The outbound path of the connection.
+  ///   - connection: The outbound path of the connection, or `nil` for a
+  ///     row that has none (a test of the table).
   ///   - id: The id of the connection.
   ///   - trust: The trust of the connection.
-  func add(_ connection: AgentSideConnection, id: ConnectionId, trust: ConnectionTrust) {
+  func add(_ connection: AgentSideConnection?, id: ConnectionId, trust: ConnectionTrust) {
     let row = ConnectionRow(trust: trust, connection: connection)
     state.withLock { $0.rows[id] = row }
   }
@@ -195,6 +232,35 @@ final class ConnectionTable: Sendable {
   ///   - id: The id of the connection.
   func recordClientCapabilities(_ capabilities: NegotiatedClientCapabilities, of id: ConnectionId) {
     state.withLock { $0.rows[id]?.clientCapabilities = capabilities }
+  }
+
+  /// Records the person that a connection acts as, from the claim of its
+  /// `initialize`. The credential decides, never the client:
+  ///
+  /// - `userDevice` with a claim: the claimed actor.
+  /// - `userDevice` with no claim, or a claim that did not decode: the
+  ///   local user of the agent process.
+  /// - `external`: always `external/<id>`, whatever the claim says.
+  /// - ``ConnectionId/direct`` and a connection with no row: no actor.
+  ///
+  /// A later `initialize` of the same connection replaces the actor: the
+  /// last claim wins.
+  ///
+  /// - Parameters:
+  ///   - claim: The actor of the `_meta` of `initialize`, or `nil`.
+  ///   - id: The id of the connection.
+  func recordActorClaim(_ claim: GraphQLActor?, of id: ConnectionId) {
+    guard id != .direct else { return }
+    state.withLock { state in
+      guard let trust = state.rows[id]?.trust else { return }
+      switch trust {
+      case .userDevice:
+        state.rows[id]?.actor = claim ?? localUser.actor
+      case .external:
+        state.rows[id]?.actor = GraphQLActor(
+          id: "external/\(id.rawValue)", name: "External client \(id.rawValue)")
+      }
+    }
   }
 
   /// The client capabilities of a connection.
@@ -309,7 +375,8 @@ final class ConnectionTable: Sendable {
         trust: state.rows[id]?.trust ?? .external,
         ownedSessions: Self.sessions(in: state.owners, of: id),
         clientOwnedSessions: Set(state.owners.keys.map(\.rawValue)),
-        startedSessions: Self.sessions(in: state.starters, of: id))
+        startedSessions: Self.sessions(in: state.starters, of: id),
+        actor: state.rows[id]?.actor)
     }
   }
 
