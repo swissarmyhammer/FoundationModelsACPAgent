@@ -574,6 +574,11 @@ struct SessionComposition {
   /// records the session to `<transcriptRoot>/<sessionId>/`.
   let transcriptRoot: URL
 
+  /// The tag that the session tool factories got. `session/new` records it
+  /// with the session (``SessionTagStore``). Empty for a replay-only
+  /// composition, which runs no factory.
+  let sessionTag: String
+
   /// Whether the composition is the one of a replay-only resume: no
   /// instructions, no tool surface, and no command source. The mount
   /// then writes no project file and no directory list, and announces no
@@ -718,6 +723,7 @@ extension RoutedACPAgent {
       transcriptReader: transcriptReader)
     let sessionId = SessionId(rawValue: session.id.description)
     SnapshotSessionKeys.shared.record(hookLineage.sessionKey, for: sessionId)
+    recordSessionTag(of: composition, for: sessionId)
 
     // The connection of the request owns the new session and is its starter (D120 c).
     // This happens before the mount sends anything for the session.
@@ -1026,7 +1032,8 @@ extension RoutedACPAgent {
     workingDirectory: URL,
     additionalRoots: [URL],
     clientMCPServers: [FoundationModelsACP.MCPServer],
-    userPresence: UserPresence
+    userPresence: UserPresence,
+    resuming resumedSessionId: SessionId? = nil
   ) async throws -> SessionComposition {
     knownRecordingRoots.add(context.transcriptRoot)
     let catalogContext = catalogContext(
@@ -1043,9 +1050,11 @@ extension RoutedACPAgent {
       stack: context.loader.stack, workingDirectory: workingDirectory
     ).assemble(skills: skills.registry)
 
+    let sessionTag =
+      resumedSessionId.map { SessionTagStore.tag(of: $0, in: context.transcriptRoot) }
+      ?? SessionToolContext.makeSessionTag()
     let factoryContext = SessionToolContext(
-      workingDirectory: workingDirectory, agentName: name.rawValue,
-      sessionTag: SessionToolContext.makeSessionTag())
+      workingDirectory: workingDirectory, agentName: name.rawValue, sessionTag: sessionTag)
     var factoryTools: [any FoundationModels.Tool] = []
     for factory in sessionToolFactories {
       factoryTools.append(contentsOf: try await factory(factoryContext))
@@ -1060,7 +1069,25 @@ extension RoutedACPAgent {
       commandProviders: makeCommandProviders(surface: surface, skills: skills.registry),
       userLayerRoot: context.userLayerRoot,
       transcriptRoot: context.transcriptRoot,
+      sessionTag: sessionTag,
       isReplayOnly: false)
+  }
+
+  /// Records the tag of a new session with its recording, so a resume gets
+  /// the same tag. A failure is logged and does not fail the session.
+  ///
+  /// - Parameters:
+  ///   - composition: The composition of the new session.
+  ///   - sessionId: The id of the new session.
+  private func recordSessionTag(of composition: SessionComposition, for sessionId: SessionId) {
+    do {
+      try SessionTagStore.record(
+        composition.sessionTag, for: sessionId, in: composition.transcriptRoot)
+    } catch {
+      ACPAgentTelemetry.logger(.session).warning(
+        "The tag of the new session was not recorded. A resume uses the tag from its id.",
+        metadata: ACPAgentTelemetry.sessionMetadata(sessionId))
+    }
   }
 
   /// Assembles the registry's later sources in precedence order.

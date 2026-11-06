@@ -116,6 +116,42 @@ import Testing
     #expect(undone.first?.actor == firstActor)
   }
 
+  /// A closed session lets the view of the board go. The factory holds
+  /// nothing: only the tool of the session holds the graph (the cycles of
+  /// `e9dfc6a` kept an object of a closed session alive).
+  @Test
+  func aClosedSessionReleasesItsKanbanGraph() async throws {
+    let watch: WeakReferenceWatch<KanbanGraph>
+    do {
+      let fixture = try await KanbanFixture.make(label: "kanban-release", sessions: 1)
+      let tools = await fixture.agent.sessions[fixture.sessions[0]]?.surface.tools ?? []
+      let graph = try #require(
+        tools.compactMap { $0 as? any GraphQLEndpointTool }.flatMap(\.graphQLEndpoints)
+          .compactMap { $0 as? KanbanGraph }.first)
+      watch = WeakReferenceWatch(watching: graph)
+      _ = try await fixture.device.connection.closeSession(
+        CloseSessionRequest(sessionId: fixture.sessions[0]))
+      await fixture.device.close()
+    }
+    #expect(try await watch.waitForRelease(), "something still holds the graph of the session")
+  }
+
+  /// The tag of a session is recorded with it, and read back: the recorded
+  /// tag first, and the start of the id for a session with no record.
+  @Test
+  func theTagOfASessionIsRecordedAndReadBack() throws {
+    let root = makeResolvedDirectory(label: "SessionToolFactoryTests-tag-store")
+    let recorded = SessionId(rawValue: "01M6RW6ZN35W68ZBBMDQSCMJYS")
+    let unrecorded = SessionId(rawValue: "01M6RW73DVDTTTJTNC5VF5GZDG")
+
+    try SessionTagStore.record("ABCD1234", for: recorded, in: root)
+
+    #expect(SessionTagStore.tag(of: recorded, in: root) == "ABCD1234")
+    #expect(
+      SessionTagStore.tag(of: unrecorded, in: root)
+        == String(unrecorded.rawValue.prefix(SessionToolContext.sessionTagLength)))
+  }
+
   /// Makes a stub agent with the executable factory of the `kanban` tool,
   /// or with none.
   fileprivate static func makeAgent(label: String) async throws -> RoutedACPAgent {

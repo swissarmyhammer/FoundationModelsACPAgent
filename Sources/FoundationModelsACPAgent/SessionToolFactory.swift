@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModels
+import FoundationModelsACP
 
 /// What a ``SessionToolFactory`` knows of the session that it makes tools for.
 public struct SessionToolContext: Sendable {
@@ -40,6 +41,66 @@ public struct SessionToolContext: Sendable {
   /// - Returns: The tag.
   static func makeSessionTag() -> String {
     String(UUID().uuidString.prefix(sessionTagLength))
+  }
+}
+
+/// The tag of a session, kept with its recording so that a resume gets the same
+/// tag, and so the same actor, as the session had before.
+///
+/// The session id does not exist when the tools are composed: Router makes it
+/// with the session, and the tools go into that call. A new session therefore
+/// gets a random tag, and `session/new` records it after the session exists.
+/// A resume reads it back. A session recorded before this store existed gets
+/// the first characters of its id, which are stable too.
+enum SessionTagStore {
+  /// The name of the file in the recording folder of the session.
+  static let fileName = "session-tag"
+
+  /// The tag of a resumed session.
+  ///
+  /// - Parameters:
+  ///   - sessionId: The id of the session.
+  ///   - transcriptRoot: The recording root.
+  /// - Returns: The recorded tag, or the first characters of the id when
+  ///   nothing is recorded.
+  static func tag(of sessionId: SessionId, in transcriptRoot: URL) -> String {
+    let fromId = String(sessionId.rawValue.prefix(SessionToolContext.sessionTagLength))
+    let file = file(of: sessionId, in: transcriptRoot)
+    // A missing file is expected: the session was recorded before this store existed.
+    guard FileManager.default.fileExists(atPath: file.path) else { return fromId }
+    do {
+      let recorded = try String(contentsOf: file, encoding: .utf8)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      return recorded.isEmpty ? fromId : recorded
+    } catch {
+      // An unreadable file gives the session another actor, so the defect is logged.
+      ACPAgentTelemetry.logger(.session).warning(
+        "The tag of the session could not be read. The tag from its id is used.",
+        metadata: ACPAgentTelemetry.sessionMetadata(sessionId))
+      assertionFailure("the session tag file is unreadable: \(error)")
+      return fromId
+    }
+  }
+
+  /// Records the tag of a new session.
+  ///
+  /// - Parameters:
+  ///   - tag: The tag.
+  ///   - sessionId: The id of the session.
+  ///   - transcriptRoot: The recording root.
+  /// - Throws: The file system error. The caller logs it: a session with no
+  ///   recorded tag still works, and a resume then uses the tag from its id.
+  static func record(_ tag: String, for sessionId: SessionId, in transcriptRoot: URL) throws {
+    let file = file(of: sessionId, in: transcriptRoot)
+    try FileManager.default.createDirectory(
+      at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try tag.write(to: file, atomically: true, encoding: .utf8)
+  }
+
+  /// The file of one session.
+  private static func file(of sessionId: SessionId, in transcriptRoot: URL) -> URL {
+    transcriptRoot.appendingPathComponent(sessionId.rawValue, isDirectory: true)
+      .appendingPathComponent(fileName)
   }
 }
 

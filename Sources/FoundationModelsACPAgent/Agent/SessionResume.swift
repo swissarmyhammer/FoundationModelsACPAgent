@@ -403,7 +403,8 @@ extension RoutedACPAgent {
       workingDirectory: workingDirectory,
       additionalRoots: additionalRoots,
       clientMCPServers: params.mcpServers ?? [],
-      userPresence: userPresence)
+      userPresence: userPresence,
+      resuming: params.sessionId)
   }
 
   /// Restores the recorded root session with the freshly assembled
@@ -640,6 +641,7 @@ extension SessionComposition {
       commandProviders: [],
       userLayerRoot: context.userLayerRoot,
       transcriptRoot: context.transcriptRoot,
+      sessionTag: "",
       isReplayOnly: true)
   }
 }

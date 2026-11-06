@@ -79,43 +79,50 @@ enum RouterSessionReleaseWatch {
   }
 }
 
-/// A weak reference to the runner of an `agents` mount, and the wait for its release.
+/// The limits of ``WeakReferenceWatch``. A generic type cannot hold static stored properties.
+private enum WeakWatchLimits {
+  /// The longest wait for the release, in seconds.
+  static let limitSeconds = 10
+
+  /// How long the wait sleeps between two looks, in milliseconds.
+  static let stepMilliseconds = 50
+}
+
+/// A weak reference to an object, and the wait for its release.
 ///
-/// The runner holds its search over the agents, and the task of that search holds the embedder of
-/// the profile. A reference cycle that keeps the runner thus keeps each model of the profile in the
-/// model pool. The runner is a class with no hook for a sentinel, so the wait polls with a limit.
+/// The runner of an `agents` mount holds its search over the agents, and the task of that search
+/// holds the embedder of the profile. A reference cycle that keeps the runner thus keeps each model
+/// of the profile in the model pool. The runner and the kanban graph are objects with no hook for a
+/// sentinel, so the wait polls with a limit.
 // The only stored property is a weak reference that init sets one time. A load of a weak reference
 // is atomic, so the type is safe to share between tasks.
 // swiftlint:disable:next no_unchecked_sendable
-final class WeakRunnerWatch: @unchecked Sendable {
-  /// The longest wait for the release, in seconds.
-  private static let limitSeconds = 10
+final class WeakReferenceWatch<Object: AnyObject>: @unchecked Sendable {
+  /// The watched object, while something holds it.
+  private weak var object: Object?
 
-  /// How long the wait sleeps between two looks, in milliseconds.
-  private static let stepMilliseconds = 50
-
-  /// The runner, while something holds it.
-  private weak var runner: AgentRunner?
-
-  /// Watches `runner`.
+  /// Watches `object`.
   ///
-  /// - Parameter runner: The runner to watch.
-  init(watching runner: AgentRunner) {
-    self.runner = runner
+  /// - Parameter object: The object to watch.
+  init(watching object: Object) {
+    self.object = object
   }
 
-  /// Whether the runner still lives.
-  var isHeld: Bool { runner != nil }
+  /// Whether the object still lives.
+  var isHeld: Bool { object != nil }
 
-  /// Waits until the runner is released, or until the limit passes.
+  /// Waits until the object is released, or until the limit passes.
   ///
-  /// - Returns: `true` when the runner was released.
+  /// - Returns: `true` when the object was released.
   /// - Throws: `CancellationError` when the test is cancelled first.
   func waitForRelease() async throws -> Bool {
-    let deadline = ContinuousClock.now.advanced(by: .seconds(Self.limitSeconds))
+    let deadline = ContinuousClock.now.advanced(by: .seconds(WeakWatchLimits.limitSeconds))
     while isHeld, ContinuousClock.now < deadline {
-      try await Task.sleep(for: .milliseconds(Self.stepMilliseconds))
+      try await Task.sleep(for: .milliseconds(WeakWatchLimits.stepMilliseconds))
     }
     return !isHeld
   }
 }
+
+/// The watch of the runner of an agents mount.
+typealias WeakRunnerWatch = WeakReferenceWatch<AgentRunner>
