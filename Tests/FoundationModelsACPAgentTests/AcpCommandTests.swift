@@ -85,6 +85,37 @@ import Testing
     #expect(afterEnd == nil)
   }
 
+  /// The turns the test gives an open gate to forward the chunk early.
+  private static let turnsBeforeRelease = 200
+
+  /// A held transport forwards a chunk that came before the release
+  /// only after the release. The read loop of a connection starts in the
+  /// initializer, and the agent role is set after it, so a frame that is
+  /// already in the pipe must wait for the gate (`methodNotFound` for
+  /// `initialize` in CI, 2026-11-06).
+  @Test
+  func aHeldTransportForwardsNothingBeforeTheRelease() async throws {
+    let (peer, agentEnd) = InMemoryTransport.pair()
+    let transport = InboundEndTransport(wrapping: agentEnd, holdingInbound: true)
+    let order = ReleaseOrder()
+    // The reader records whether the release ran when the chunk came.
+    let reader = Task { () -> (chunk: Data?, releasedAtReceipt: Bool) in
+      var inbound = transport.bytes.makeAsyncIterator()
+      let chunk = try await inbound.next()
+      return (chunk, await order.isReleased)
+    }
+
+    try await peer.write(Data(Self.probeFrame.utf8))
+    // Give an open gate many turns to forward the chunk early.
+    for _ in 0..<Self.turnsBeforeRelease { await Task.yield() }
+    await order.markReleased()
+    transport.releaseInbound()
+    let received = try await reader.value
+
+    #expect(received.chunk.map { String(decoding: $0, as: UTF8.self) } == Self.probeFrame)
+    #expect(received.releasedAtReceipt, "the chunk came before the release")
+  }
+
   // MARK: - The two loads (cli-plan.md §5.10)
 
   /// Two sessions against one composed agent resolve two project
@@ -206,4 +237,12 @@ import Testing
       "no transcript stands at \(file.path)")
     #expect(!(try RecordedTranscriptFile.lines(under: root, sessionId: outcome.sessionId)).isEmpty)
   }
+}
+
+/// Whether the release ran: the test sets it before the release, and
+/// reads it after the receipt of a chunk.
+private actor ReleaseOrder {
+  private(set) var isReleased = false
+
+  func markReleased() { isReleased = true }
 }

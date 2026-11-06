@@ -72,10 +72,13 @@ extension AcpAgentCommand {
       // The wrapper is what makes the stdin end observable; see
       // `InboundEndTransport`. Underneath it stands the same
       // `StdioTransport` `.stdio` vends, so the wire is unchanged.
-      let transport = InboundEndTransport(wrapping: StdioTransport())
+      // The gate stays shut until the agent role is set: a client that
+      // wrote `initialize` during the load must not get `methodNotFound`.
+      let transport = InboundEndTransport(wrapping: StdioTransport(), holdingInbound: true)
       // `.standardError` keeps every log line off the wire. The ACP
       // framing rule is that the agent writes only ACP frames to stdout.
       let connection = await composed.serve(over: transport, logger: .standardError)
+      transport.releaseInbound()
       // The client owns the lifecycle: it closes
       // stdin, and there is no teardown handshake to wait for. So
       // the process stands here for as long as the client speaks,
