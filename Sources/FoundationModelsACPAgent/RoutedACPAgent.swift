@@ -249,6 +249,23 @@ public actor RoutedACPAgent: Agent {
     hostTools.append(contentsOf: tools)
   }
 
+  /// The factories that ``registerSessionToolFactories(_:)`` registered. The
+  /// composition of each later session runs them, in order, and mounts their
+  /// tools after ``hostTools``.
+  var sessionToolFactories: [SessionToolFactory] = []
+
+  /// Registers factories of session tools for the sessions that this agent
+  /// opens or resumes after this call. A factory runs once for each
+  /// composition of a session, with the context of that session, so a tool
+  /// can be bound to the folder of its session. The composition of the
+  /// agent (``ComposedAgent/compose(name:workingDirectory:home:environment:modelSource:stubChunkGate:stubScript:transcriptLocation:secretStore:userDeviceTokens:huggingFaceTokenProvider:sessionToolFactories:reporting:)``)
+  /// calls it for its host.
+  ///
+  /// - Parameter factories: The factories to append, in order.
+  func registerSessionToolFactories(_ factories: [SessionToolFactory]) {
+    sessionToolFactories.append(contentsOf: factories)
+  }
+
   /// The hook objects of this agent: the dispatcher that the router of
   /// ``residentProfile`` sends the hook events of each session to, and the
   /// snapshot store of the `snapshots` capability of each session.

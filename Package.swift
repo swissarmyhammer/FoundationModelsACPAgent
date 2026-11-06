@@ -89,6 +89,12 @@ private let agentsDependencyName = "FoundationModelsAgents"
 /// as the `tools.code_context` group.
 private let codeContextDependencyName = "FoundationModelsCodeContext"
 
+/// The kanban package: the board of a session folder as a GraphQL endpoint
+/// (`KanbanGraph`) and as a tool (`KanbanTool`). Only the `acp-agent`
+/// executable composition links it, so the library stays free of it: the
+/// library gives a seam (`SessionToolFactory`), and the executable fills it.
+private let kanbanDependencyName = "FoundationModelsKanban"
+
 /// The ranker package: the selection tier and the text-embedding protocol
 /// under `searchTools` and the code context. The tool catalog builds the
 /// `searchTools` selection tier itself — a `SelectionConfig` over guided
@@ -413,6 +419,7 @@ let package = Package(
     ],
     dependencies: familyDependencyNames.map(makeFamilyPackage(name:)) + [
         makeFamilyPackage(name: clientDependencyName),
+        makeFamilyPackage(name: kanbanDependencyName),
         // The sdk fork, by the same URL Multitool declares — see
         // `mcpSDKPackage`.
         .package(url: "https://github.com/swissarmyhammer/\(mcpSDKPackage).git", branch: mainBranch),
@@ -468,6 +475,7 @@ let package = Package(
                 makeFamilyProduct(name: routerDependencyName),
                 makeFamilyProduct(name: extrasDependencyName),
                 makeFamilyProduct(name: clientDependencyName),
+                makeFamilyProduct(name: kanbanDependencyName),
                 argumentParserProduct,
                 nooraProduct,
             ] + telemetryAPIProducts,
@@ -547,6 +555,7 @@ let package = Package(
                 .target(name: testSupportTargetName),
                 .target(name: agentExecutableName),
                 makeFamilyProduct(name: clientDependencyName),
+                makeFamilyProduct(name: kanbanDependencyName),
                 argumentParserProduct,
                 telemetryTestSupportProduct,
                 routerTestSupportProduct,

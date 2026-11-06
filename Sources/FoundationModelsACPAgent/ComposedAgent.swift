@@ -10,7 +10,7 @@ import HuggingFace
 ///
 /// The work has two steps, and only the first one is slow or can fail:
 ///
-/// 1. ``compose(name:workingDirectory:home:environment:modelSource:stubChunkGate:stubScript:transcriptLocation:secretStore:userDeviceTokens:huggingFaceTokenProvider:reporting:)``
+/// 1. ``compose(name:workingDirectory:home:environment:modelSource:stubChunkGate:stubScript:transcriptLocation:secretStore:userDeviceTokens:huggingFaceTokenProvider:sessionToolFactories:reporting:)``
 ///    loads the configuration, builds the router and resolves the profile.
 ///    It is `async` and `throws`. A host calls it one time, before it opens
 ///    a connection.
@@ -167,6 +167,10 @@ public struct ComposedAgent: Sendable {
   ///     observes the same object while this call runs: the whole
   ///     resolution stands inside the agent's construction, so nothing
   ///     can be observed after this returns.
+  ///   - sessionToolFactories: Factories of tools for each session. The
+  ///     composition of each session runs them with the context of the
+  ///     session (``SessionToolContext``), and mounts the tools after the
+  ///     tools of the catalog. The default is none.
   /// - Returns: The composed agent, the model path it was built over, and
   ///   the configuration the load resolved.
   /// - Throws: The configuration load errors, the creation error of a
@@ -185,6 +189,7 @@ public struct ComposedAgent: Sendable {
     secretStore: (any SecretStore)? = nil,
     userDeviceTokens: Set<String> = [],
     huggingFaceTokenProvider: TokenProvider = .environment,
+    sessionToolFactories: [SessionToolFactory] = [],
     reporting progress: ResolutionProgress? = nil
   ) async throws -> ComposedAgent {
     let configuration = try ConfigurationLoader(
@@ -211,6 +216,7 @@ public struct ComposedAgent: Sendable {
       transcriptLocation: transcriptLocation,
       secretStore: secretStore,
       userDeviceTokens: userDeviceTokens)
+    await agent.registerSessionToolFactories(sessionToolFactories)
     return ComposedAgent(
       agent: agent, modelSource: modelSource, configuration: configuration)
   }

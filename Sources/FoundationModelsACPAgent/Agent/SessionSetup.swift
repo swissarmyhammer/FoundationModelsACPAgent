@@ -1043,8 +1043,15 @@ extension RoutedACPAgent {
       stack: context.loader.stack, workingDirectory: workingDirectory
     ).assemble(skills: skills.registry)
 
+    let factoryContext = SessionToolContext(
+      workingDirectory: workingDirectory, agentName: name.rawValue,
+      sessionTag: SessionToolContext.makeSessionTag())
+    var factoryTools: [any FoundationModels.Tool] = []
+    for factory in sessionToolFactories {
+      factoryTools.append(contentsOf: try await factory(factoryContext))
+    }
     let surface = try await ToolCatalog.sessionSurface(context: catalogContext, skills: skills)
-      .appending(hostTools: hostTools)
+      .appending(hostTools: hostTools + factoryTools)
 
     return SessionComposition(
       configuration: context.loaded.configuration,

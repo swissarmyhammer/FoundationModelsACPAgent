@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsACPAgent
+import FoundationModelsKanban
 import FoundationModelsRouter
 
 /// The CLI choices every subcommand shares (cli-plan.md §5.10): the
@@ -127,7 +128,7 @@ enum AgentComposition {
   }
 
   /// Composes the agent of the CLI through the public library helper
-  /// `ComposedAgent.compose(name:workingDirectory:home:environment:modelSource:stubChunkGate:stubScript:transcriptLocation:secretStore:userDeviceTokens:huggingFaceTokenProvider:reporting:)`.
+  /// `ComposedAgent.compose(name:workingDirectory:home:environment:modelSource:stubChunkGate:stubScript:transcriptLocation:secretStore:userDeviceTokens:huggingFaceTokenProvider:sessionToolFactories:reporting:)`.
   /// The CLI gives no `transcriptLocation`: its config files decide.
   ///
   /// The CLI adds its own choices only: ``dotfolderName``, the home that
@@ -177,7 +178,23 @@ enum AgentComposition {
       modelSource: modelSource(),
       stubChunkGate: stubChunkGate(),
       stubScript: stubScript(),
+      sessionToolFactories: [kanbanToolFactory],
       reporting: progress)
+  }
+
+  /// The factory of the `kanban` tool of each session. It asks the shared
+  /// ``KanbanHost`` for a view of the board of the folder of the session. The
+  /// host keeps one engine for each folder, and the view lives as long as the
+  /// tool holds it, so the release of the session releases the view. The
+  /// model writes through this view with the actor of the session. A tunnel
+  /// call of a person reaches the same graph, and the graph records the actor
+  /// of its viewer. The actor name has the tag of the session, so the
+  /// `undoChange` of one session does not reverse the change of another
+  /// session in the same folder.
+  static let kanbanToolFactory: SessionToolFactory = { context in
+    let graph = try await KanbanHost.shared.session(
+      workingDirectory: context.workingDirectory, actor: context.actorName)
+    return [KanbanTool(graph: graph)]
   }
 
   /// Makes the loader of `workingDirectory`'s stack under
