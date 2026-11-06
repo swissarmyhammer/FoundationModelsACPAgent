@@ -84,20 +84,23 @@ enum RouterSessionReleaseWatch {
 /// The runner holds its search over the agents, and the task of that search holds the embedder of
 /// the profile. A reference cycle that keeps the runner thus keeps each model of the profile in the
 /// model pool. The runner is a class with no hook for a sentinel, so the wait polls with a limit.
+// The only stored property is a weak reference that init sets one time. A load of a weak reference
+// is atomic, so the type is safe to share between tasks.
+// swiftlint:disable:next no_unchecked_sendable
 final class WeakRunnerWatch: @unchecked Sendable {
-  /// The longest wait for the release.
-  private static let limit: Duration = .seconds(10)
+  /// The longest wait for the release, in seconds.
+  private static let limitSeconds = 10
 
-  /// How long the wait sleeps between two looks.
-  private static let step: Duration = .milliseconds(50)
+  /// How long the wait sleeps between two looks, in milliseconds.
+  private static let stepMilliseconds = 50
 
   /// The runner, while something holds it.
   private weak var runner: AgentRunner?
 
   /// Watches `runner`.
   ///
-  /// - Parameter runner: The runner to watch, or `nil` for a mount with none.
-  init(watching runner: AgentRunner?) {
+  /// - Parameter runner: The runner to watch.
+  init(watching runner: AgentRunner) {
     self.runner = runner
   }
 
@@ -109,9 +112,9 @@ final class WeakRunnerWatch: @unchecked Sendable {
   /// - Returns: `true` when the runner was released.
   /// - Throws: `CancellationError` when the test is cancelled first.
   func waitForRelease() async throws -> Bool {
-    let deadline = ContinuousClock.now.advanced(by: Self.limit)
+    let deadline = ContinuousClock.now.advanced(by: .seconds(Self.limitSeconds))
     while isHeld, ContinuousClock.now < deadline {
-      try await Task.sleep(for: Self.step)
+      try await Task.sleep(for: .milliseconds(Self.stepMilliseconds))
     }
     return !isHeld
   }

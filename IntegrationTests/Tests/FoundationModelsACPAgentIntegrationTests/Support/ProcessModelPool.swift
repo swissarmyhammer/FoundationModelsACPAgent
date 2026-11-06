@@ -19,13 +19,16 @@ import FoundationModelsExtras
 /// reference to the agent goes, each hold goes, and the pool evicts the models
 /// in its admission queue.
 enum ProcessModelPool {
+  /// The longest wait for an empty pool, in seconds.
+  static let defaultLimitSeconds = 60
+
   /// Waits for the event that the pool of the process holds no model.
   ///
   /// The wait reads `ModelPool.footprints`: the current footprint first,
   /// then the footprint after each change. Each release of a hold and the
   /// end of each evict call publish a new footprint, so the wait ends after
-  /// the last hold is released and each eviction ended, with no clock and
-  /// no poll. It is the wait of the Router helper
+  /// the last hold is released and each eviction ended, with no poll. A
+  /// limit ends the wait for a hold that never goes. It is the wait of the Router helper
   /// `ModelPool.awaitNoResidentModel()`, which no product exports.
   ///
   /// - Parameter limit: The longest wait. At the limit the wait gives the
@@ -34,7 +37,7 @@ enum ProcessModelPool {
   ///   evicted each model, and the held models when the limit passed or the
   ///   calling task was cancelled first.
   static func residentModelsAfterRelease(
-    limit: Duration = .seconds(60)
+    limit: Duration = .seconds(defaultLimitSeconds)
   ) async -> [ModelPoolKey] {
     // The wait has an end: a reference to the agent that stays would hold a
     // model for ever, and a test that waits for ever hides its cause.

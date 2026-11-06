@@ -384,7 +384,8 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   private static func shutDownRunner(label: String) async throws -> WeakRunnerWatch {
     let context = try await makeContext(label: label)
     let surface = try await SurfaceCatalog.sessionSurface(context: context)
-    let watch = WeakRunnerWatch(watching: surface.agents?.runner)
+    let watch = WeakRunnerWatch(
+      watching: try #require(surface.agents?.runner, "the surface has no agents mount"))
     await surface.shutdown()
     return watch
   }
