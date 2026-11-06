@@ -38,33 +38,9 @@ import Testing
     #expect(composed.modelSource == .stub)
     return try await ComposedClientWire.withSession(of: composed, in: workspace) {
       connection, sessionId in
-      try await prompt(over: connection, in: sessionId)
+      try await PromptUpdateRead.onePrompt(
+        over: connection, in: sessionId, text: promptText)
     }
-  }
-
-  /// Sends one prompt in the open session, and reads the answer off the update stream of the
-  /// session.
-  ///
-  /// - Parameters:
-  ///   - connection: The client end of the wire.
-  ///   - sessionId: The open session.
-  /// - Returns: The answer text and the stop reason.
-  /// - Throws: Whatever the prompt throws.
-  private static func prompt(
-    over connection: ClientSideConnection, in sessionId: SessionId
-  ) async throws -> PromptUpdateRead {
-    // Subscribe before the prompt, so the stream holds each update of the prompt in order.
-    let updates = connection.subscribe(to: sessionId).updates
-    let collector = Task { await PromptUpdateRead.collect(from: updates) }
-    do {
-      _ = try await connection.prompt(
-        AgentClientHarness.makePromptRequest(sessionId: sessionId, text: promptText))
-    } catch {
-      collector.cancel()
-      _ = await collector.value
-      throw error
-    }
-    return await collector.value
   }
 
   /// Runs the `run` subcommand for the same prompt, in process over the stub model, which is the

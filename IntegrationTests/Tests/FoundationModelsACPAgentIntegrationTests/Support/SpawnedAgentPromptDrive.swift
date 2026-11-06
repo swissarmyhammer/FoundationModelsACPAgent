@@ -116,8 +116,11 @@ struct SpawnedAgentPromptDrive {
     let session = try await model.newSession(
       NewSessionRequest(cwd: AbsolutePath(rawValue: workspace.path)))
     let sessionId = session.sessionId
-    // Subscribe before the prompt, so the stream holds each update of
-    // the prompt in order.
+    // The steps differ from `PromptUpdateRead.onePrompt(over:in:text:)` on
+    // purpose: the prompt runs in its own task, because the elicitation hook
+    // runs beside it and must see the prompt in flight. The order is the same:
+    // subscribe before the prompt, so the stream holds each update of the
+    // prompt in order.
     let updates = connection.subscribe(to: sessionId).updates
     let reader = Task { await PromptUpdateRead.collect(from: updates) }
     let prompt = Task {

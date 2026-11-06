@@ -252,13 +252,9 @@ struct StdioContractTests {
     let session = try await connection.newSession(
       NewSessionRequest(cwd: AbsolutePath(rawValue: workspace.path)))
 
-    // Subscribe before the prompt, so the stream holds each update of
-    // the prompt in order.
-    let updates = connection.subscribe(to: session.sessionId).updates
-    _ = try await connection.prompt(
-      AgentClientHarness.makePromptRequest(
-        sessionId: session.sessionId, text: Self.promptText))
-    let stopReason = await PromptUpdateRead.collect(from: updates).stopReason
+    let stopReason = try await PromptUpdateRead.onePrompt(
+      over: connection, in: session.sessionId, text: Self.promptText
+    ).stopReason
     #expect(stopReason != nil, "the prompt never reached an idle state update")
 
     // The child ran, proven on the file system: the probe's `tee`

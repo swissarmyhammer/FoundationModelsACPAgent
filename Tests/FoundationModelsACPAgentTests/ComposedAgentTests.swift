@@ -87,13 +87,10 @@ struct ComposedAgentTests {
     -> SessionId
   {
     try await ComposedClientWire.withSession(of: composed, in: workspace) { connection, sessionId in
-      // Subscribe before the prompt, so the stream holds the idle
-      // update of the prompt. The wire stays open until that update
-      // came, thus no update of the turn fails to go out.
-      let updates = connection.subscribe(to: sessionId).updates
-      _ = try await connection.prompt(
-        AgentClientHarness.makePromptRequest(sessionId: sessionId, text: promptText))
-      _ = await PromptUpdateRead.collect(from: updates)
+      // The wire stays open until the idle update came, thus no update
+      // of the turn fails to go out.
+      _ = try await PromptUpdateRead.onePrompt(
+        over: connection, in: sessionId, text: promptText)
       return sessionId
     }
   }
