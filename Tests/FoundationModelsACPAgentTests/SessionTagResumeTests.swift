@@ -37,10 +37,8 @@ import Testing
 
     _ = try await harness.connection.resumeSession(resume.makeResumeRequest())
 
-    let tools = await harness.agent.sessions[sessionId]?.surface.tools ?? []
-    let endpoint = try #require(
-      tools.compactMap { $0 as? any GraphQLEndpointTool }.flatMap(\.graphQLEndpoints)
-        .first { $0.name == "kanban" })
+    let endpoints = await harness.agent.sessions[sessionId]?.surface.graphQLEndpoints ?? []
+    let endpoint = try #require(endpoints.first { $0.name == "kanban" })
     let undone = try await endpoint.execute(
       query: "mutation { undoChange(input: {}) { txn } }",
       variables: [:], operationName: nil, viewer: nil)

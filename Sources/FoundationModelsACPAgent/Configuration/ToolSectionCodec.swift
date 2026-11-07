@@ -602,6 +602,20 @@ public typealias GitToolOptions = SwitchOnlyToolOptions
 /// the model context. The section has no variable filter.
 public typealias EnvironmentToolOptions = SwitchOnlyToolOptions
 
+/// The `tools.kanban:` body: whether the kanban tool mounts.
+///
+/// ```yaml
+/// tools:
+///   kanban:
+///     enabled: true
+/// ```
+///
+/// The kanban tool reads and changes the task board of the session working
+/// directory. The host that has the tool mounts it as a verb group of the
+/// Multitool registry, with its own actor for each session. This section
+/// only switches it. A host that has no kanban tool ignores the section.
+public typealias KanbanToolOptions = SwitchOnlyToolOptions
+
 // MARK: - The mcp entry
 
 /// One config-derived MCP server entry: a name and
@@ -849,12 +863,16 @@ public struct ToolsConfiguration: Codable, Equatable, Sendable, KeyCheckedSectio
   /// `tools.environment` verbs `variables`, `os` and `now`.
   public var environment = ToolSection<EnvironmentToolOptions>.enabled(EnvironmentToolOptions())
 
+  /// The kanban entry: the task board tool of the host, when the host has
+  /// one (``KanbanToolOptions``).
+  public var kanban = ToolSection<KanbanToolOptions>.enabled(KanbanToolOptions())
+
   /// The mcp entry — the one list-bodied section.
   public var mcp = MCPToolSection.enabled(servers: [])
 
   /// The YAML spelling of each tool key.
   public enum CodingKeys: String, CodingKey, CaseIterable {
-    case files, shell, skills, codeContext, web, git, environment, mcp
+    case files, shell, skills, codeContext, web, git, environment, kanban, mcp
   }
 
   /// The key of the standalone `agents` tool under `tools:`. The tool is
@@ -895,6 +913,9 @@ public struct ToolsConfiguration: Codable, Equatable, Sendable, KeyCheckedSectio
       try container.decodeIfPresent(
         ToolSection<EnvironmentToolOptions>.self, forKey: .environment)
       ?? environment
+    kanban =
+      try container.decodeIfPresent(ToolSection<KanbanToolOptions>.self, forKey: .kanban)
+      ?? kanban
     mcp = try container.decodeIfPresent(MCPToolSection.self, forKey: .mcp) ?? mcp
   }
 }
@@ -915,6 +936,7 @@ extension ToolsConfiguration {
     CodingKeys.web.stringValue: WebToolOptions.knownKeys,
     CodingKeys.git.stringValue: GitToolOptions.knownKeys,
     CodingKeys.environment.stringValue: EnvironmentToolOptions.knownKeys,
+    CodingKeys.kanban.stringValue: KanbanToolOptions.knownKeys,
   ]
 
   /// The key checks of the `tools:` body, run by the

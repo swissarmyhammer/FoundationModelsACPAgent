@@ -77,6 +77,13 @@ public struct SessionSurface: Sendable {
   /// agent run, and the terminal stream of the session reads each entry.
   let runCallJoins: RunCallJoinTable
 
+  /// The GraphQL endpoints of the tools that the Multitool registry of the
+  /// session holds under a noun (``SessionOperationMount``). Such a tool is
+  /// no top-level tool, thus ``graphQLEndpoints`` adds these endpoints to
+  /// those of the top-level tools. The surface owns them, so they go with it
+  /// when the session closes.
+  let registryEndpoints: [any GraphQLEndpoint]
+
   /// Makes a session surface with no MCP server outcome and no `agents`
   /// tool.
   ///
@@ -126,6 +133,8 @@ public struct SessionSurface: Sendable {
   ///     the catalog did not compose.
   ///   - runCallJoins: The join table of the session, which the agent
   ///     environment of `agents` writes.
+  ///   - registryEndpoints: The endpoints of the tools of the registry that
+  ///     a noun holds. Empty by default.
   init(
     tools: [any FoundationModels.Tool],
     serverPool: MCPServerPool,
@@ -137,8 +146,10 @@ public struct SessionSurface: Sendable {
     mcpServers: [FoundationModelsMultitool.MCPServer] = [],
     inlineSettleGrace: TimeInterval,
     agents: AgentsMount?,
-    runCallJoins: RunCallJoinTable
+    runCallJoins: RunCallJoinTable,
+    registryEndpoints: [any GraphQLEndpoint] = []
   ) {
+    self.registryEndpoints = registryEndpoints
     self.tools = tools
     self.serverPool = serverPool
     self.filesReadVerb = filesReadVerb
@@ -171,7 +182,8 @@ public struct SessionSurface: Sendable {
       mcpServers: mcpServers,
       inlineSettleGrace: inlineSettleGrace,
       agents: agents,
-      runCallJoins: runCallJoins)
+      runCallJoins: runCallJoins,
+      registryEndpoints: registryEndpoints)
   }
 
   /// Makes a surface that mounts nothing: no tool, no MCP server, no
@@ -384,7 +396,8 @@ public enum ToolCatalog {
       mcpServers: built.mcpServers,
       inlineSettleGrace: context.inlineSettleGrace,
       agents: agents,
-      runCallJoins: runCallJoins)
+      runCallJoins: runCallJoins,
+      registryEndpoints: context.sessionOperationTools.flatMap { $0.tool.graphQLEndpoints })
   }
 
   /// The standalone tools that follow the Multitool session tools, in
@@ -556,6 +569,9 @@ public enum ToolCatalog {
     }
     if let settingsTool = settingsTool(in: context) {
       builder.withOperationTool(noun: SettingsGraph.endpointName, tool: settingsTool)
+    }
+    for mount in context.sessionOperationTools {
+      builder.withOperationTool(noun: mount.noun, tool: mount.tool)
     }
     let composed = try await MCPComposition.connectServers(
       section: context.configuration.tools.mcp,

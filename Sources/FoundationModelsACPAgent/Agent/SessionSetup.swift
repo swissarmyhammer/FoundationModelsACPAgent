@@ -980,13 +980,16 @@ extension RoutedACPAgent {
   ///     order.
   ///   - userPresence: The user presence of the session
   ///     (``userPresence(of:)`` of the connection that opens it).
+  ///   - sessionOperationTools: The tools of the session factories, which
+  ///     the registry mounts by noun. Empty by default.
   /// - Returns: The catalog context.
   func catalogContext(
     from context: LoadedSessionContext,
     workingDirectory: URL,
     additionalRoots: [URL],
     clientMCPServers: [FoundationModelsACP.MCPServer],
-    userPresence: UserPresence
+    userPresence: UserPresence,
+    sessionOperationTools: [SessionOperationMount] = []
   ) -> CatalogContext {
     CatalogContext(
       workingDirectory: workingDirectory,
@@ -1000,7 +1003,8 @@ extension RoutedACPAgent {
       userPresence: userPresence,
       snapshotStore: hooks.snapshotStore,
       settingsEndpoint: settingsEndpoint,
-      agentRunHost: makeAgentRunHost(recordingRoot: context.transcriptRoot))
+      agentRunHost: makeAgentRunHost(recordingRoot: context.transcriptRoot),
+      sessionOperationTools: sessionOperationTools)
   }
 
   /// Composes one session over an already-resolved configuration.
@@ -1036,9 +1040,20 @@ extension RoutedACPAgent {
     resuming resumedSessionId: SessionId? = nil
   ) async throws -> SessionComposition {
     knownRecordingRoots.add(context.transcriptRoot)
+    let sessionTag =
+      resumedSessionId.map { SessionTagStore.tag(of: $0, in: context.transcriptRoot) }
+      ?? SessionToolContext.makeSessionTag()
+    let factoryContext = SessionToolContext(
+      workingDirectory: workingDirectory, agentName: name.rawValue, sessionTag: sessionTag,
+      tools: context.loaded.configuration.tools)
+    var factoryMounts: [SessionOperationMount] = []
+    for factory in sessionToolFactories {
+      factoryMounts.append(contentsOf: try await factory(factoryContext))
+    }
     let catalogContext = catalogContext(
       from: context, workingDirectory: workingDirectory, additionalRoots: additionalRoots,
-      clientMCPServers: clientMCPServers, userPresence: userPresence)
+      clientMCPServers: clientMCPServers, userPresence: userPresence,
+      sessionOperationTools: factoryMounts)
 
     // One watched registry serves the preload assembly here.
     // It also serves the slash-command source below.
@@ -1050,17 +1065,8 @@ extension RoutedACPAgent {
       stack: context.loader.stack, workingDirectory: workingDirectory
     ).assemble(skills: skills.registry)
 
-    let sessionTag =
-      resumedSessionId.map { SessionTagStore.tag(of: $0, in: context.transcriptRoot) }
-      ?? SessionToolContext.makeSessionTag()
-    let factoryContext = SessionToolContext(
-      workingDirectory: workingDirectory, agentName: name.rawValue, sessionTag: sessionTag)
-    var factoryTools: [any FoundationModels.Tool] = []
-    for factory in sessionToolFactories {
-      factoryTools.append(contentsOf: try await factory(factoryContext))
-    }
     let surface = try await ToolCatalog.sessionSurface(context: catalogContext, skills: skills)
-      .appending(hostTools: hostTools + factoryTools)
+      .appending(hostTools: hostTools)
 
     return SessionComposition(
       configuration: context.loaded.configuration,

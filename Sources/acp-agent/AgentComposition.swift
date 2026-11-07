@@ -186,15 +186,21 @@ enum AgentComposition {
   /// ``KanbanHost`` for a view of the board of the folder of the session. The
   /// host keeps one engine for each folder, and the view lives as long as the
   /// tool holds it, so the release of the session releases the view. The
-  /// model writes through this view with the actor of the session. A tunnel
-  /// call of a person reaches the same graph, and the graph records the actor
-  /// of its viewer. The actor name has the tag of the session, so the
-  /// `undoChange` of one session does not reverse the change of another
-  /// session in the same folder.
+  /// Multitool registry of the session mounts the tool under the noun
+  /// `kanban`, and the model reaches it with `tools.kanban.runKanban`. The model
+  /// writes through this view with the actor of the session. A tunnel call of
+  /// a person reaches the same graph, and the graph records the actor of its
+  /// viewer. The actor name has the tag of the session, so the `undoChange`
+  /// of one session does not reverse the change of another session in the
+  /// same folder. The factory makes no tool when `tools.kanban` is off.
   static let kanbanToolFactory: SessionToolFactory = { context in
+    guard context.tools.kanban.mountedOptions != nil else { return [] }
     let graph = try await KanbanHost.shared.session(
       workingDirectory: context.workingDirectory, actor: context.actorName)
-    return [KanbanTool(graph: graph)]
+    return [
+      SessionOperationMount(
+        noun: KanbanOperationTool.noun, tool: KanbanOperationTool(KanbanTool(graph: graph)))
+    ]
   }
 
   /// Makes the loader of `workingDirectory`'s stack under

@@ -109,6 +109,11 @@ public struct CatalogContext: Sendable {
   /// (``AgentRunHost``), or `nil` for a catalog that has no agent.
   public let agentRunHost: AgentRunHost?
 
+  /// The tools that the host made for this session, which the Multitool
+  /// registry mounts each under its noun (``SessionOperationMount``), after
+  /// the `settings` tool. Empty for a catalog that has no such tool.
+  public let sessionOperationTools: [SessionOperationMount]
+
   /// Makes a catalog context.
   ///
   /// - Parameters:
@@ -134,6 +139,8 @@ public struct CatalogContext: Sendable {
   ///     `nil` (the default) for no `settings` tool (``settingsEndpoint``).
   ///   - agentRunHost: The links of the agent runs to the host, or `nil` (the default) for runs
   ///     that mark nothing and cannot restore (``agentRunHost``).
+  ///   - sessionOperationTools: The tools of the host for this session, by
+  ///     noun. Empty by default (``sessionOperationTools``).
   public init(
     workingDirectory: URL,
     additionalRoots: [URL] = [],
@@ -146,8 +153,10 @@ public struct CatalogContext: Sendable {
     userPresence: UserPresence = .interactive,
     snapshotStore: SnapshotStore? = nil,
     settingsEndpoint: SettingsGraph? = nil,
-    agentRunHost: AgentRunHost? = nil
+    agentRunHost: AgentRunHost? = nil,
+    sessionOperationTools: [SessionOperationMount] = []
   ) {
+    self.sessionOperationTools = sessionOperationTools
     self.agentRunHost = agentRunHost
     self.snapshotStore = snapshotStore
     self.settingsEndpoint = settingsEndpoint

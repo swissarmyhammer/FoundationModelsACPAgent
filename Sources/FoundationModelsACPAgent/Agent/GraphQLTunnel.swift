@@ -212,8 +212,10 @@ extension RoutedACPAgent {
 extension SessionSurface {
   /// The GraphQL endpoints of the top-level tools of the session, in tool
   /// order: each tool that is a `GraphQLEndpointTool` gives its endpoints
-  /// (EXTRAS-7, D76).
+  /// (EXTRAS-7, D76). The endpoints of the tools that the registry holds
+  /// under a noun follow (``registryEndpoints``).
   var graphQLEndpoints: [any GraphQLEndpoint] {
     tools.flatMap { tool in (tool as? any GraphQLEndpointTool)?.graphQLEndpoints ?? [] }
+      + registryEndpoints
   }
 }

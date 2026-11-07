@@ -13,13 +13,9 @@ import Testing
 /// The seam that gives the tools of each session (`SessionToolFactory`), and
 /// the `kanban` tool that the `acp-agent` executable mounts through it.
 @Suite(.closesHarnesses) struct SessionToolFactoryTests {
-  /// The name of the tool that the probe factories make.
-  private static let probeToolName = "factory_probe"
-
   /// A factory runs once for each session, with the working directory of the
   /// session, the name of the agent, and a tag that differs for each
-  /// session. Its tool is on the surface of the session, after the tools of
-  /// the catalog.
+  /// session.
   @Test
   func aFactoryRunsOnceForEachSessionWithItsContext() async throws {
     let agent = try await Self.makeAgent(label: "factory-context")
@@ -27,7 +23,7 @@ import Testing
     await agent.registerSessionToolFactories([
       { context in
         seen.update { $0.append(context) }
-        return [FactoryProbeTool()]
+        return []
       }
     ])
     let harness = await AgentClientHarness.makeRecording(agent: agent)
@@ -35,8 +31,8 @@ import Testing
     let first = makeResolvedDirectory(label: "factory-context-first")
     let second = makeResolvedDirectory(label: "factory-context-second")
 
-    let firstSession = try await harness.connection.newSession(
-      AgentClientHarness.makeNewSessionRequest(cwd: first)).sessionId
+    _ = try await harness.connection.newSession(
+      AgentClientHarness.makeNewSessionRequest(cwd: first))
     _ = try await harness.connection.newSession(
       AgentClientHarness.makeNewSessionRequest(cwd: second))
 
@@ -45,8 +41,6 @@ import Testing
     #expect(contexts.allSatisfy { $0.agentName == AgentClientHarness.dotfolderName })
     #expect(Set(contexts.map(\.sessionTag)).count == contexts.count)
     #expect(contexts.allSatisfy { $0.sessionTag.count == SessionToolContext.sessionTagLength })
-    let names = await agent.sessions[firstSession]?.surface.tools.map(\.name) ?? []
-    #expect(names.last == Self.probeToolName)
   }
 
   /// A factory that throws fails `session/new`.
@@ -61,6 +55,21 @@ import Testing
       _ = try await harness.connection.newSession(
         AgentClientHarness.makeNewSessionRequest(cwd: makeResolvedDirectory(label: "factory-throws")))
     }
+  }
+
+  /// The `tools.kanban` section turns the factory off: with the section
+  /// off, the factory makes no mount.
+  @Test(arguments: [false, true])
+  func theKanbanSectionSwitchesTheFactory(enabled: Bool) async throws {
+    var tools = ToolsConfiguration()
+    tools.kanban = .enabled(KanbanToolOptions(enabled: enabled))
+    let context = SessionToolContext(
+      workingDirectory: makeResolvedDirectory(label: "kanban-switch-\(enabled)"),
+      agentName: AgentClientHarness.dotfolderName, sessionTag: "switch01", tools: tools)
+
+    let mounts = try await AgentComposition.kanbanToolFactory(context)
+
+    #expect(mounts.map(\.noun) == (enabled ? [KanbanOperationTool.noun] : []))
   }
 
   /// A session of the executable composition has a `kanban` endpoint in the
@@ -124,10 +133,9 @@ import Testing
     let watch: WeakReferenceWatch<KanbanGraph>
     do {
       let fixture = try await KanbanFixture.make(label: "kanban-release", sessions: 1)
-      let tools = await fixture.agent.sessions[fixture.sessions[0]]?.surface.tools ?? []
-      let graph = try #require(
-        tools.compactMap { $0 as? any GraphQLEndpointTool }.flatMap(\.graphQLEndpoints)
-          .compactMap { $0 as? KanbanGraph }.first)
+      let endpoints =
+        await fixture.agent.sessions[fixture.sessions[0]]?.surface.graphQLEndpoints ?? []
+      let graph = try #require(endpoints.compactMap { $0 as? KanbanGraph }.first)
       watch = WeakReferenceWatch(watching: graph)
       _ = try await fixture.device.connection.closeSession(
         CloseSessionRequest(sessionId: fixture.sessions[0]))
@@ -180,17 +188,6 @@ import Testing
 
 /// A failure of a test factory.
 private struct FactoryFailure: Error {}
-
-/// A tool that a probe factory makes.
-private struct FactoryProbeTool: FoundationModels.Tool {
-  let name = "factory_probe"
-  let description = "A tool that a test factory makes."
-
-  @Generable
-  struct Arguments {}
-
-  func call(arguments _: Arguments) async throws -> String { "ok" }
-}
 
 /// One agent with the executable factory of the `kanban` tool, one
 /// `userDevice` connection that claimed a person, and some sessions in one
@@ -246,10 +243,8 @@ private struct KanbanFixture {
   /// Runs a document on the endpoint of a session with no viewer: the way
   /// of a tool call of the model.
   func modelExecute(_ query: String, in session: SessionId) async throws -> String {
-    let tools = await agent.sessions[session]?.surface.tools ?? []
-    let endpoint = try #require(
-      tools.compactMap { $0 as? any GraphQLEndpointTool }.flatMap(\.graphQLEndpoints)
-        .first { $0.name == "kanban" })
+    let endpoints = await agent.sessions[session]?.surface.graphQLEndpoints ?? []
+    let endpoint = try #require(endpoints.first { $0.name == "kanban" })
     return try await endpoint.execute(
       query: query, variables: [:], operationName: nil, viewer: nil)
   }

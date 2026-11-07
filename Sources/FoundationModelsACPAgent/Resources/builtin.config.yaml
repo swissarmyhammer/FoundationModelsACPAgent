@@ -91,6 +91,12 @@ tools:
     # When false, the environment tools are off.
     enabled: true
 
+  # The kanban tool: read and change the task board of the session working
+  # directory. Only a host that has the tool uses this section.
+  kanban:
+    # When false, the kanban tool is off.
+    enabled: true
+
   # The MCP servers. Each item has a "name" key and a "command" key or a
   # "url" key. An empty list connects only the servers of the client. A
   # value of "env" or "headers" keychain:<name> gets the value from the

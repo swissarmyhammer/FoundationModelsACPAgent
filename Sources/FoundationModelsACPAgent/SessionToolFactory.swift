@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModels
 import FoundationModelsACP
+import FoundationModelsExtras
 
 /// What a ``SessionToolFactory`` knows of the session that it makes tools for.
 public struct SessionToolContext: Sendable {
@@ -16,13 +17,24 @@ public struct SessionToolContext: Sendable {
   /// share an actor.
   public let sessionTag: String
 
+  /// The `tools:` section of the configuration of the session. A factory
+  /// makes no tool for a section that is off (for example
+  /// ``ToolsConfiguration/kanban``).
+  public let tools: ToolsConfiguration
+
   /// Makes a context.
   ///
   /// - Parameters:
   ///   - workingDirectory: The working directory of the session.
   ///   - agentName: The name of the agent.
   ///   - sessionTag: The tag of the session.
-  public init(workingDirectory: URL, agentName: String, sessionTag: String) {
+  ///   - tools: The `tools:` section of the configuration. Defaults to the
+  ///     default roster.
+  public init(
+    workingDirectory: URL, agentName: String, sessionTag: String,
+    tools: ToolsConfiguration = ToolsConfiguration()
+  ) {
+    self.tools = tools
     self.workingDirectory = workingDirectory
     self.agentName = agentName
     self.sessionTag = sessionTag
@@ -103,12 +115,36 @@ enum SessionTagStore {
   }
 }
 
+/// One tool of the host that the Multitool registry of a session mounts under
+/// a noun, with its GraphQL endpoint.
+///
+/// The model reaches the tool through `searchTools` and `runCode`, as
+/// `tools.<noun>.<verb>`, and not as a top-level tool. The endpoint of the tool is
+/// still open to the GraphQL tunnel of the session.
+public struct SessionOperationMount: Sendable {
+  /// The noun the verbs of the tool render under. It must be a legal
+  /// TypeScript identifier.
+  public let noun: String
+
+  /// The tool: it describes its operations and has GraphQL endpoints.
+  public let tool: any GraphQLEndpointTool & OperationDescribing
+
+  /// Makes a mount.
+  ///
+  /// - Parameters:
+  ///   - noun: The noun of the verbs.
+  ///   - tool: The tool.
+  public init(noun: String, tool: any GraphQLEndpointTool & OperationDescribing) {
+    self.noun = noun
+    self.tool = tool
+  }
+}
+
 /// Makes the tools of one session from its context. The composition of each
-/// session runs each registered factory, and the surface of the session
-/// mounts the tools that it returns after the tools of the catalog and the
-/// host tools.
+/// session runs each registered factory, and the Multitool registry of the
+/// session mounts each returned tool under its noun.
 ///
 /// A factory must not keep the tools, the agent or the session: the tool
 /// value holds what it needs, and the release of the session releases it.
 public typealias SessionToolFactory =
-  @Sendable (SessionToolContext) async throws -> [any FoundationModels.Tool]
+  @Sendable (SessionToolContext) async throws -> [SessionOperationMount]

@@ -5,9 +5,11 @@ import FoundationModelsCodeContext
 import FoundationModelsMultitool
 import FoundationModelsRouter
 import FoundationModelsSkills
+import FoundationModelsKanban
 import Testing
 
 @testable import FoundationModelsACPAgent
+@testable import acp_agent
 
 /// The composition matrix of `ToolCatalog`: the
 /// session tools a default context mounts, the enable and disable codec,
@@ -656,6 +658,35 @@ import Testing
     ).object("setting")
     #expect(stored["value"] as? Double == Self.sessionTrigger)
     #expect(stored["level"] as? String == SettingsGraphFixture.sessionLevel)
+  }
+
+  // MARK: The kanban mount
+
+  /// The path of the one verb of the kanban tool in the registry.
+  private static let kanbanVerbPath = "kanban.runKanban"
+
+  /// A kanban mount of a session goes into the registry under the noun
+  /// `kanban`. The tool is not a top-level tool, and its endpoint is still
+  /// on the surface, so the tunnel reaches it.
+  @Test func aKanbanMountIsInTheRegistryAndNotATopLevelTool() async throws {
+    let base = try await Self.makeContext()
+    let graph = try await KanbanHost.shared.session(
+      workingDirectory: base.workingDirectory, actor: "ToolCatalogTests kanban")
+    let context = CatalogContext(
+      workingDirectory: base.workingDirectory, configuration: base.configuration,
+      profile: base.profile, settingsFolders: base.settingsFolders,
+      sessionOperationTools: [
+        SessionOperationMount(
+          noun: KanbanOperationTool.noun, tool: KanbanOperationTool(KanbanTool(graph: graph)))
+      ])
+
+    let registry = try await ToolCatalog.makeRegistry(context: context).registry
+    let surface = try await ToolCatalog.sessionSurface(context: context)
+
+    let paths = registry.surface.entries.filter { $0.group == KanbanOperationTool.noun }.map(\.path)
+    #expect(paths == [Self.kanbanVerbPath])
+    #expect(surface.tools.map(\.name) == MountOrder.defaultToolNames)
+    #expect(surface.graphQLEndpoints.contains { $0.name == KanbanOperationTool.noun })
   }
 
   // MARK: The skills registry
