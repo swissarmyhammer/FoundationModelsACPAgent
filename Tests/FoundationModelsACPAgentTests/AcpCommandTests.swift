@@ -85,35 +85,63 @@ import Testing
     #expect(afterEnd == nil)
   }
 
-  /// The turns the test gives an open gate to forward the chunk early.
-  private static let turnsBeforeRelease = 200
-
-  /// A held transport forwards a chunk that came before the release
-  /// only after the release. The read loop of a connection starts in the
-  /// initializer, and the agent role is set after it, so a frame that is
-  /// already in the pipe must wait for the gate (`methodNotFound` for
-  /// `initialize` in CI, 2026-11-06).
+  /// A client that wrote `initialize` before the agent was ready gets the
+  /// answer to it, and no `methodNotFound`. The frame is in the pipe
+  /// before `serve` runs, the same as a client that starts to write while
+  /// the agent loads. The read loop of the connection holds it until the
+  /// agent role is set (FoundationModelsACP `b6b265c`), thus the wrapper
+  /// needs no gate of its own.
   @Test
-  func aHeldTransportForwardsNothingBeforeTheRelease() async throws {
+  func anInitializeThatCameBeforeTheAgentWasReadyIsServed() async throws {
+    let configHome = makeResolvedDirectory(label: "AcpCommandTests-early-config")
+    let workspace = makeResolvedDirectory(label: "AcpCommandTests-early-repo")
+    let composed = try await AgentComposition.compose(
+      workingDirectory: workspace,
+      environment: try ComposedPromptFixture.makeStubEnvironment(configHome: configHome))
     let (peer, agentEnd) = InMemoryTransport.pair()
-    let transport = InboundEndTransport(wrapping: agentEnd, holdingInbound: true)
-    let order = ReleaseOrder()
-    // The reader records whether the release ran when the chunk came.
-    let reader = Task { () -> (chunk: Data?, releasedAtReceipt: Bool) in
-      var inbound = transport.bytes.makeAsyncIterator()
-      let chunk = try await inbound.next()
-      return (chunk, await order.isReleased)
+    defer { peer.close() }
+    try await peer.write(try Self.initializeFrame())
+
+    let connection = await composed.serve(over: InboundEndTransport(wrapping: agentEnd))
+    defer { Task { await connection.close() } }
+
+    let answer = try await Self.firstFrame(of: peer)
+    #expect(answer["error"] == nil, "the early initialize got an error: \(answer)")
+    #expect(answer["id"] as? Int == Self.initializeId)
+    #expect(answer["result"] != nil)
+  }
+
+  /// The id of the early request.
+  private static let initializeId = 1
+
+  /// The `initialize` request as one framed line.
+  private static func initializeFrame() throws -> Data {
+    let params = try JSONSerialization.jsonObject(
+      with: JSONEncoder().encode(AgentClientHarness.makeInitializeRequest()))
+    let frame: [String: Any] = [
+      "jsonrpc": "2.0", "id": initializeId, "method": "initialize", "params": params,
+    ]
+    return try JSONSerialization.data(withJSONObject: frame) + Data("\n".utf8)
+  }
+
+  /// The first framed line that a transport receives, decoded.
+  private static func firstFrame(of peer: InMemoryTransport) async throws -> [String: Any] {
+    var received = Data()
+    for try await chunk in peer.bytes {
+      received.append(chunk)
+      if let end = received.firstIndex(of: UInt8(ascii: "\n")) {
+        let line = received[received.startIndex..<end]
+        return try #require(
+          try JSONSerialization.jsonObject(with: Data(line)) as? [String: Any])
+      }
     }
+    throw EarlyInitializeError.noFrame
+  }
 
-    try await peer.write(Data(Self.probeFrame.utf8))
-    // Give an open gate many turns to forward the chunk early.
-    for _ in 0..<Self.turnsBeforeRelease { await Task.yield() }
-    await order.markReleased()
-    transport.releaseInbound()
-    let received = try await reader.value
-
-    #expect(received.chunk.map { String(decoding: $0, as: UTF8.self) } == Self.probeFrame)
-    #expect(received.releasedAtReceipt, "the chunk came before the release")
+  /// The failure of ``firstFrame(of:)``.
+  private enum EarlyInitializeError: Error {
+    /// The transport ended before a frame came.
+    case noFrame
   }
 
   // MARK: - The two loads (cli-plan.md §5.10)
@@ -237,12 +265,4 @@ import Testing
       "no transcript stands at \(file.path)")
     #expect(!(try RecordedTranscriptFile.lines(under: root, sessionId: outcome.sessionId)).isEmpty)
   }
-}
-
-/// Whether the release ran: the test sets it before the release, and
-/// reads it after the receipt of a chunk.
-private actor ReleaseOrder {
-  private(set) var isReleased = false
-
-  func markReleased() { isReleased = true }
 }
