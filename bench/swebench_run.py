@@ -179,7 +179,7 @@ from rich.table import Table
 from swebench_acp import AgentServer, is_chunk
 from swebench_agent_config import give_agent_config
 from swebench_agent_runs import AGENT_RUNS_DIR, keep_agent_run_transcripts
-from swebench_clone import exclude_agent_folder
+from swebench_clone import clone_repository, exclude_agent_folder
 from swebench_common import console, log
 from swebench_env import environment_fields
 from swebench_history import upstream_reads
@@ -633,12 +633,7 @@ with outpath.open("w" if args.force else "a") as out, \
             #    one agent process reaches the environment of this instance.
             t_clone = time.monotonic()
             log("cloning", **about, repo=repo_name)
-            shutil.rmtree(repo, ignore_errors=True)
-            subprocess.run(
-                ["git", "clone", "--quiet",
-                 f"https://github.com/{repo_name}.git", str(repo)],
-                check=True, capture_output=True,
-            )
+            clone_repository(f"https://github.com/{repo_name}.git", repo)
             log("checkout", **about, commit=inst["base_commit"][:SHORT_COMMIT])
             subprocess.run(
                 ["git", "-C", str(repo), "checkout", "--quiet", "--force",

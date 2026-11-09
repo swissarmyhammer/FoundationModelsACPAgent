@@ -24,7 +24,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from swebench_clone import AGENT_FOLDER_PATTERN, exclude_agent_folder
+from swebench_clone import AGENT_FOLDER_PATTERN, clone_repository, exclude_agent_folder
 
 # The settings that each git command of a test needs to make a commit.
 GIT_IDENTITY = ["-c", "user.name=bench test", "-c", "user.email=bench@example.invalid"]
@@ -108,6 +108,65 @@ class TheDotfolderOfTheAgent(unittest.TestCase):
         exclude_agent_folder(self.repo)
         self.assertEqual(self.exclude.read_text().splitlines(),
                          ["# a line of the clone", "*.log", AGENT_FOLDER_PATTERN])
+
+
+class TheCloneOfAnInstance(unittest.TestCase):
+    """A clone that fails on a flaky network is tried again (2026-11-09: the
+    clone of django__django-13447 hung 13 minutes and failed with exit 128,
+    and the run lost the instance)."""
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+        self.dest = self.root / "repo"
+        self.calls = []
+        self.waits = []
+
+    def run_that_fails(self, failures):
+        """A runner whose first `failures` calls fail. Each call leaves a part
+        of a clone behind, as a failed `git clone` can."""
+        def run(command, **kwargs):
+            self.calls.append((command, kwargs))
+            self.assertFalse(self.dest.exists(), "each try starts with no folder")
+            self.dest.mkdir()
+            if len(self.calls) <= failures:
+                raise subprocess.CalledProcessError(128, command)
+            return subprocess.CompletedProcess(command, 0)
+        return run
+
+    def test_a_clone_that_fails_two_times_is_tried_again(self):
+        clone_repository("https://example.invalid/r.git", self.dest,
+                         run=self.run_that_fails(2), sleep=self.waits.append)
+
+        self.assertEqual(len(self.calls), 3)
+        self.assertEqual(len(self.waits), 2)
+        self.assertTrue(self.dest.exists())
+
+    def test_each_try_has_a_time_limit(self):
+        clone_repository("https://example.invalid/r.git", self.dest,
+                         run=self.run_that_fails(0), sleep=self.waits.append)
+
+        self.assertIn("timeout", self.calls[0][1])
+
+    def test_a_stalled_try_is_tried_again(self):
+        def run(command, **kwargs):
+            self.calls.append((command, kwargs))
+            self.dest.mkdir()
+            if len(self.calls) == 1:
+                raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+            return subprocess.CompletedProcess(command, 0)
+
+        clone_repository("https://example.invalid/r.git", self.dest,
+                         run=run, sleep=self.waits.append)
+
+        self.assertEqual(len(self.calls), 2)
+
+    def test_the_last_failure_is_raised(self):
+        with self.assertRaises(subprocess.CalledProcessError):
+            clone_repository("https://example.invalid/r.git", self.dest,
+                             run=self.run_that_fails(99), sleep=self.waits.append)
+
+        self.assertGreater(len(self.calls), 1)
+        self.assertEqual(len(self.waits), len(self.calls) - 1)
 
 
 if __name__ == "__main__":
