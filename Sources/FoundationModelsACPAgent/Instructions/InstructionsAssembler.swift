@@ -92,16 +92,24 @@ public struct InstructionsAssembler: Sendable {
   /// Call it again to pick up edits: it reads `registry` at call time, so
   /// a watching registry's rebuilt catalog shows in the next assembly.
   ///
-  /// - Parameter registry: The session's skills registry, or `nil` for
-  ///   none. A `nil` or empty registry adds nothing.
+  /// - Parameters:
+  ///   - registry: The session's skills registry, or `nil` for none. A
+  ///     `nil` or empty registry adds nothing.
+  ///   - defaultAgent: The rendered text of the `default` agent of the
+  ///     layers (its body, then the bodies of its `skills:` preload), or
+  ///     `nil` when no layer has one. It is the base prompt in place of
+  ///     the builtin. An `Instructions.md` of a layer still wins over it.
   /// - Returns: The assembled text and the warnings, also logged.
   /// - Throws: `TemplateEngineError` when a document does not render,
   ///   e.g. an untrusted file that uses a disallowed tag.
-  public func assemble(skills registry: SkillsRegistry? = nil) async throws -> AssembledInstructions
-  {
+  public func assemble(
+    skills registry: SkillsRegistry? = nil, defaultAgent: String? = nil
+  ) async throws -> AssembledInstructions {
     let renderer = Renderer(engine: TemplateEngine(partials: stack))
     var warnings: [InstructionsWarning] = []
-    var sections = [try basePrompt(renderer: renderer, warnings: &warnings)]
+    var sections = [
+      try basePrompt(renderer: renderer, defaultAgent: defaultAgent, warnings: &warnings)
+    ]
 
     // Already ONE rendered string, joined with blank lines — never
     // rendered again and never iterated.
@@ -128,15 +136,18 @@ public struct InstructionsAssembler: Sendable {
   // MARK: - The base prompt
 
   /// The rendered base prompt: the nearest `Instructions.md`, which
-  /// replaces the builtin wholesale, or the builtin floor when no layer
-  /// has the file.
+  /// replaces the builtin wholesale; else the text of the `default` agent;
+  /// else the builtin floor.
   private func basePrompt(
-    renderer: Renderer, warnings: inout [InstructionsWarning]
+    renderer: Renderer, defaultAgent: String?, warnings: inout [InstructionsWarning]
   ) throws -> String {
     if let replacement = try renderedStackFile(
       Self.instructionsFileName, renderer: renderer, warnings: &warnings)
     {
       return replacement
+    }
+    if let defaultAgent {
+      return defaultAgent.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     return try renderer.render(BuiltinInstructions.text, from: nil)
   }

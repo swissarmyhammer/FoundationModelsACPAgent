@@ -587,17 +587,25 @@ whether each one can be written.
 
 ## Instructions
 
-The system prompt is one markdown file, `Instructions.md`, resolved through the
-dotfolder stack. The nearest layer wins, and it replaces the whole file:
-compiled in, then the user level (`<synced>/Instructions.md` of a custom home,
-or `~/.config/<name>/Instructions.md` of the XDG home of the CLI), then
-`<project>/.<name>/Instructions.md`. Additive instructions go in `AGENTS.md`.
-`Instructions.md` replaces; `AGENTS.md` adds.
+The base system prompt of a session is the `default` agent: an `AGENT.md`
+named `default`, resolved like any other agent (`agents/default/AGENT.md` of
+the skills marketplace, then the user layer, then the project layer, where a
+root `AGENT.md` of the agents dotfolder also counts). Its body renders with
+the tool groups of the session (`{% if tools.kanban.enabled %}`), and the
+bodies of its `skills:` list follow it, for example the `do-task` skill. The
+`default` agent is never listed, found or started as an agent.
 
-The compiled-in floor is
+An `Instructions.md` replaces the base prompt wholesale, resolved through the
+dotfolder stack: the user level (`<synced>/Instructions.md` of a custom home,
+or `~/.config/<name>/Instructions.md` of the XDG home of the CLI), then
+`<project>/.<name>/Instructions.md`, where the nearest layer wins. Additive
+instructions go in `AGENTS.md`. `Instructions.md` replaces; `AGENTS.md` adds.
+
+With no `Instructions.md` and no `default` agent, the base prompt is the
+compiled-in floor,
 [`Sources/FoundationModelsACPAgent/Instructions/BuiltinInstructions.swift`](Sources/FoundationModelsACPAgent/Instructions/BuiltinInstructions.swift)
-— one copy of the text, never mirrored here. It is written for a small local
-model, and its doc comment states why each section reads the way it does.
+— one copy of the text, never mirrored here. It is a minimal fallback with no
+workflow, and its doc comment states why.
 
 ## Design decisions
 

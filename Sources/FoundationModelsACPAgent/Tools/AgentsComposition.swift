@@ -191,10 +191,12 @@ enum AgentsComposition {
   ) -> AgentRegistry {
     let stack = context.settingsFolders.stack(
       for: .agents, workingDirectory: context.workingDirectory)
+    let templateContext = ToolCatalog.skillsTemplateContext(context.configuration.tools)
     guard let marketplaces else {
-      return AgentRegistry(stack: stack)
+      return AgentRegistry(stack: stack, templateContext: templateContext)
     }
-    return AgentRegistry(marketplaces: marketplaces, stack: stack)
+    return AgentRegistry(
+      marketplaces: marketplaces, stack: stack, templateContext: templateContext)
   }
 
   /// Makes the tool catalog of the runs. It has one factory for each

@@ -45,6 +45,58 @@ import Testing
     return endpoints
   }
 
+  /// The instructions of one composed session.
+  ///
+  /// - Parameters:
+  ///   - label: The label of the temporary folders.
+  ///   - defaultAgent: The `AGENT.md` text of a project `default` agent, or
+  ///     `nil` for none.
+  /// - Returns: The assembled instructions of the session.
+  /// - Throws: Whatever the agent start, the settings load or the session
+  ///   composition throws.
+  private static func composedInstructions(label: String, defaultAgent: String?) async throws
+    -> String
+  {
+    let agent = try await AgentClientHarness.makeInitializedAgent(label: label)
+    let workingDirectory = makeResolvedDirectory(label: "\(label)-repo")
+    if let defaultAgent {
+      let folder = workingDirectory.appendingPathComponent(
+        ".agents/agents/default", isDirectory: true)
+      try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+      try defaultAgent.write(
+        to: folder.appendingPathComponent("AGENT.md"), atomically: true, encoding: .utf8)
+    }
+    let loaded = try await LoadedSessionContext.load(
+      workingDirectory: workingDirectory, from: agent.settingsStore)
+    let composition = try await agent.composeSession(
+      from: loaded, workingDirectory: workingDirectory, additionalRoots: [], clientMCPServers: [],
+      userPresence: .headless)
+    await composition.surface.shutdown()
+    return composition.instructions
+  }
+
+  /// The `default` agent of the layers is the base prompt of the root
+  /// session, rendered with the tool groups of the session, in place of the
+  /// builtin prompt.
+  @Test func theDefaultAgentIsTheBasePromptOfTheRootSession() async throws {
+    let instructions = try await Self.composedInstructions(
+      label: "ComposedSessionEndpointsTests-default",
+      defaultAgent:
+        "---\nname: default\ndescription: The root.\n---\n\nDEFAULT-AGENT-PROMPT"
+        + "{% if tools.files.enabled %} FILES-ON{% endif %}\n")
+
+    #expect(instructions.hasPrefix("DEFAULT-AGENT-PROMPT FILES-ON"), "\(instructions.prefix(120))")
+    #expect(!instructions.contains(BuiltinInstructions.text))
+  }
+
+  /// With no `default` agent in any layer, the base prompt is the builtin.
+  @Test func withNoDefaultAgentTheBasePromptIsTheBuiltin() async throws {
+    let instructions = try await Self.composedInstructions(
+      label: "ComposedSessionEndpointsTests-builtin", defaultAgent: nil)
+
+    #expect(instructions.hasPrefix(BuiltinInstructions.text))
+  }
+
   /// The top-level tools of a composed session give the `settings`
   /// endpoint, with its version and the server scope.
   @Test func aComposedSessionGivesTheSettingsEndpoint() async throws {

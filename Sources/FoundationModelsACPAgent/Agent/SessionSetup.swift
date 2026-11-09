@@ -1061,12 +1061,26 @@ extension RoutedACPAgent {
     // These are a standalone tool, not a Multitool capability.
     // `watch: true` is what makes its `commandUpdates` non-nil.
     let skills = await ToolCatalog.makeSkillsSource(context: catalogContext)
-    let instructions = try await InstructionsAssembler(
-      stack: context.loader.stack, workingDirectory: workingDirectory
-    ).assemble(skills: skills.registry)
-
     let surface = try await ToolCatalog.sessionSurface(context: catalogContext, skills: skills)
       .appending(hostTools: hostTools)
+
+    // The `default` agent of the layers is the base prompt of the root
+    // session: its body and its `skills:` preload, rendered with the tool
+    // groups of the session. Without one, the assembler uses the builtin.
+    let instructions: AssembledInstructions
+    do {
+      let defaultAgent = try await surface.agents?.runner.defaultAgentInstructions()
+      for diagnostic in defaultAgent?.diagnostics ?? [] {
+        ACPAgentTelemetry.logger(.session).warning(
+          "The default agent has a skill that it cannot preload: \(diagnostic)")
+      }
+      instructions = try await InstructionsAssembler(
+        stack: context.loader.stack, workingDirectory: workingDirectory
+      ).assemble(skills: skills.registry, defaultAgent: defaultAgent?.text)
+    } catch {
+      await surface.shutdown()
+      throw error
+    }
 
     return SessionComposition(
       configuration: context.loaded.configuration,
