@@ -89,7 +89,7 @@ Do these checks first. Stop and tell the user if one fails.
 
    ```bash
    nohup sh -c 'uv run bench/swebench_run.py bench/preds.NAME.jsonl --limit N \
-     --timeout 5400 --agent-config bench/NAME.config.yaml \
+     --timeout 9000 --agent-config bench/NAME.config.yaml \
      2>&1 | tee bench/run.NAME.log' > /dev/null 2>&1 &
    ```
 
@@ -153,7 +153,7 @@ one time after it ends. Use a self-paced loop (ScheduleWakeup or `/loop 10m`).
 ## D. Evaluate (the deep scan)
 
 ```bash
-python3 .claude/skills/swebench/scripts/scan.py --name NAME --live --timeout 5400
+python3 .claude/skills/swebench/scripts/scan.py --name NAME --live --timeout 9000
 ```
 
 Other forms: `--log`, `--preds`, `--runs`, `--config`, `--transcripts DIR ...`,
@@ -248,7 +248,7 @@ watch of step C ends. Do not add the score command to the Monitor command of
 step C: the score then stops when the Monitor stops. Then do the last deep scan:
 
 ```bash
-python3 .claude/skills/swebench/scripts/scan.py --name NAME --timeout 5400
+python3 .claude/skills/swebench/scripts/scan.py --name NAME --timeout 9000
 ```
 
 ## E. Report
