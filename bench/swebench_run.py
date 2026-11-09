@@ -221,11 +221,12 @@ MODEL_NAME = "acp-agent"
 # changes it, and the `too slow` line of the run summary says when it binds.
 DEFAULT_TIMEOUT_S = 3000
 # The directories that this script and the agent write in the repository:
-# the transcripts of the agent, and the Python environment of the instance.
-# `git diff <commit>` reports tracked files only, so these are already out of
-# the patch. These pathspecs are the second guard, for a run that COMMITS one
-# of them.
-AGENT_EXCLUDES = [".acp-agent", ".venv"]
+# the transcripts of the agent, the Python environment of the instance, and
+# the kanban board of the agent. `git diff <commit>` reports tracked files
+# only, so these are already out of the patch. These pathspecs are the second
+# guard, for a run that COMMITS one of them. The `kanban` skill says to commit
+# `.kanban/` with the code, so a run with kanban on does commit the board.
+AGENT_EXCLUDES = [".acp-agent", ".venv", ".kanban"]
 # Where the agent writes its session transcripts, below the repository. The
 # repository is removed when the instance ends, so the transcripts are copied
 # out first. They are the only record of what the model did in each round.
