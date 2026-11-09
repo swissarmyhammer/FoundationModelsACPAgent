@@ -53,6 +53,35 @@ extension RoutedACPAgent {
     await restoreOpenCalls(of: report)
     logNestedRestore(report, of: sessionId)
     sessions[sessionId]?.nestedRestore = report
+    await restoreScheduledAgents(of: rootId, runner: agents.runner, sessionId: sessionId)
+  }
+
+  /// Restores the saved scheduled agents of a resumed root and starts their
+  /// timers. A firing that was due while the process was down runs once.
+  ///
+  /// A restored firing holds no lease in the work registry of the root: the
+  /// root session gives no work site outside a tool call. A firing that runs
+  /// is still an agent run, with its own session and its own work.
+  ///
+  /// - Parameters:
+  ///   - rootId: The resumed root session.
+  ///   - runner: The runner of the agents of the root.
+  ///   - sessionId: The ACP session id of the root, for the log.
+  private func restoreScheduledAgents(of rootId: ULID, runner: AgentRunner, sessionId: SessionId)
+    async
+  {
+    do {
+      let restored = try await runner.restoreSchedules(of: rootId)
+      if !restored.isEmpty {
+        ACPAgentTelemetry.logger(.sessionResume).notice(
+          "The scheduled agents of the session are restored.",
+          metadata: ACPAgentTelemetry.sessionMetadata(sessionId))
+      }
+    } catch {
+      ACPAgentTelemetry.logger(.sessionResume).warning(
+        "The scheduled agents of the session could not be read. The session resumes without them.",
+        metadata: ACPAgentTelemetry.sessionMetadata(sessionId))
+    }
   }
 
   /// Registers the restored session of one run as a session nested in its caller. The retained

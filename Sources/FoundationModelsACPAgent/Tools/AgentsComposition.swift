@@ -102,6 +102,12 @@ enum AgentsComposition {
       callerMail: context.agentRunHost?.callerMail)
     let environment = context.agentRunHost?.linking(made) ?? made
     let runner = AgentRunner(registry: registry, environment: environment)
+    // The scheduled agents of each session are saved beside its recording,
+    // so a restart or a resume restores them. Runs that cannot restore (no
+    // host) keep their tasks in memory only.
+    if let recordingRoot = context.agentRunHost?.recordingRoot {
+      await runner.useScheduleStore(ScheduleFileStore(recordingRoot: recordingRoot))
+    }
     let tool = try await AgentsTool.make(context: AgentsToolContext(runner: runner))
     bindHolds(of: runCallJoins, tool: tool, runner: runner, announcer: announcer)
     return AgentsMount(tool: tool, runner: runner, environment: environment, announcer: announcer)
