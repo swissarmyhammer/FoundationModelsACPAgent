@@ -715,8 +715,11 @@ public enum ToolCatalog {
     let options = context.configuration.tools.skills
     let stack = context.settingsFolders.stack(
       for: .skills, workingDirectory: context.workingDirectory)
+    let templateContext = skillsTemplateContext(context.configuration.tools)
     guard !options.marketplaces.isEmpty else {
-      return SkillsSource(registry: SkillsRegistry(stack: stack, watch: true), marketplaces: nil)
+      return SkillsSource(
+        registry: SkillsRegistry(stack: stack, watch: true, templateContext: templateContext),
+        marketplaces: nil)
     }
     let store = MarketplaceStore(
       sources: options.marketplaces, layout: SkillMarketplaceLayout.skills,
@@ -724,7 +727,33 @@ public enum ToolCatalog {
       policy: MarketplacePolicy(), transport: LibGit2Transport(), environment: context.environment)
     await store.start()
     return SkillsSource(
-      registry: SkillsRegistry(marketplaces: store, stack: stack, watch: true), marketplaces: store)
+      registry: SkillsRegistry(
+        marketplaces: store, stack: stack, watch: true, templateContext: templateContext),
+      marketplaces: store)
+  }
+
+  /// The template values that each skill render of the session gets: for
+  /// each tool group of the configuration, `tools.<group>.enabled`.
+  ///
+  /// A skill thus gives the steps of a tool only when the session has that
+  /// tool, for example `{% if tools.kanban.enabled %}`, and the model does
+  /// not have to find out. The skills and agents tools are always on.
+  ///
+  /// - Parameter tools: The tool groups of the configuration.
+  /// - Returns: The values, under the key `tools`.
+  static func skillsTemplateContext(_ tools: ToolsConfiguration) -> [String: TemplateValue] {
+    func isOn<Options>(_ section: ToolSection<Options>) -> Bool {
+      if case .enabled = section { true } else { false }
+    }
+    let mcpIsOn = if case .enabled = tools.mcp { true } else { false }
+    let groups: [String: Bool] = [
+      "files": isOn(tools.files), "shell": isOn(tools.shell), "skills": true, "agents": true,
+      "codeContext": isOn(tools.codeContext), "web": isOn(tools.web), "git": isOn(tools.git),
+      "environment": isOn(tools.environment), "kanban": isOn(tools.kanban), "mcp": mcpIsOn,
+    ]
+    return [
+      "tools": .dictionary(groups.mapValues { .dictionary(["enabled": .bool($0)]) })
+    ]
   }
 
   /// Makes the selection tier of `searchTools`: for each catalog, a

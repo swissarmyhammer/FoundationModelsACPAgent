@@ -21,18 +21,6 @@ struct KanbanOperationTool: GraphQLEndpointTool, OperationDescribing {
   /// The key of the op string in a payload of ``perform(_:)``.
   private static let operationKey = "op"
 
-  /// The keys of a payload that the arguments read.
-  private enum ArgumentKey {
-    /// The key of the GraphQL document.
-    static let query = "query"
-
-    /// The key of the values of the variables.
-    static let variables = "variables"
-
-    /// The key of the name of the operation to run.
-    static let operationName = "operationName"
-  }
-
   /// The failures of ``perform(_:)``.
   enum PayloadError: Error, Equatable {
     /// The payload has no `op` string.
@@ -82,22 +70,7 @@ struct KanbanOperationTool: GraphQLEndpointTool, OperationDescribing {
       OperationDescriptor(
         verb: Self.runVerb, noun: Self.noun, opString: Self.runOperation,
         description: inner.description,
-        parameters: [
-          OperationParameterDescriptor(
-            name: ArgumentKey.query, type: .string, required: true,
-            description: "The GraphQL document: a query or a mutation.", aliases: [],
-            allowedValues: nil),
-          OperationParameterDescriptor(
-            name: ArgumentKey.variables, type: .string, required: false,
-            description:
-              "The values of the variables: a JSON object, or text that holds a JSON object.",
-            aliases: [], allowedValues: nil),
-          OperationParameterDescriptor(
-            name: ArgumentKey.operationName, type: .string, required: false,
-            description:
-              "The operation of the document to run, when the document has more than one.",
-            aliases: [], allowedValues: nil),
-        ])
+        parameters: GraphQLArguments.parameterDescriptors)
     ]
   }
 

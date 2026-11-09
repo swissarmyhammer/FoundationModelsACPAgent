@@ -2,6 +2,7 @@ import Foundation
 import FoundationModels
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsCodeContext
+import FoundationModelsExtras
 import FoundationModelsMultitool
 import FoundationModelsRouter
 import FoundationModelsSkills
@@ -687,6 +688,21 @@ import Testing
     #expect(paths == [Self.kanbanVerbPath])
     #expect(surface.tools.map(\.name) == MountOrder.defaultToolNames)
     #expect(surface.graphQLEndpoints.contains { $0.name == KanbanOperationTool.noun })
+  }
+
+  /// The kanban verb takes the parameters of the shared GraphQL arguments,
+  /// so `variables` is an object or JSON text, and a script can send
+  /// `variables: { body }` with no `JSON.stringify` (kanban24 14997).
+  @Test func theKanbanVerbTakesVariablesAsAnObject() async throws {
+    let base = try await Self.makeContext()
+    let graph = try await KanbanHost.shared.session(
+      workingDirectory: base.workingDirectory, actor: "ToolCatalogTests kanban variables")
+    let tool = KanbanOperationTool(KanbanTool(graph: graph))
+
+    let parameters = try #require(tool.operationDescriptors.first).parameters
+
+    #expect(parameters == GraphQLArguments.parameterDescriptors)
+    #expect(parameters.first { $0.name == "variables" }?.type == .object)
   }
 
   // MARK: The skills registry

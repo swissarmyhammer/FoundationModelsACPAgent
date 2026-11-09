@@ -372,6 +372,29 @@ struct SettingsFoldersTests {
     #expect(skill.description == Self.projectSkillDescription)
   }
 
+  /// A skill renders with the tool groups of the session config, so that a
+  /// skill gives its kanban steps only when the kanban tool is on.
+  @Test(arguments: [true, false])
+  func aSkillRendersWithTheToolGroupsOfTheSession(kanbanEnabled: Bool) async throws {
+    let fixture = Fixture(label: "skills-tools-\(kanbanEnabled)")
+    try writeSkillFixture(
+      id: Self.sharedSkillID,
+      markdown: Self.sharedSkillMarkdown(
+        description:
+          "{% if tools.kanban.enabled %}kanban{% else %}no kanban{% endif %}"
+          + "{% if tools.files.enabled %} files{% endif %}"),
+      under: fixture.projectLayer(of: ToolCatalog.skillsDotfolderName))
+    var configuration = AgentConfiguration.withoutMarketplaces
+    if !kanbanEnabled { configuration.tools.kanban = .disabled }
+    let context = try await Self.catalogContext(
+      of: fixture, hasRoot: false, configuration: configuration)
+
+    let skills = await ToolCatalog.makeSkillsSource(context: context).registry.metadata()
+
+    let skill = try #require(skills.first { $0.id == Self.sharedSkillID })
+    #expect(skill.description == (kanbanEnabled ? "kanban files" : "no kanban files"))
+  }
+
   /// Makes a catalog context over the folders of `fixture`, with no
   /// marketplace, so that it needs no network.
   ///
@@ -379,15 +402,18 @@ struct SettingsFoldersTests {
   ///   - fixture: The folders of the test.
   ///   - hasRoot: `true` gives the custom home whose synced root is the
   ///     root of the fixture; `false` gives the XDG home.
+  ///   - configuration: The configuration of the session. The default has
+  ///     no marketplace.
   /// - Returns: The context.
   /// - Throws: Whatever the stub profile resolve throws, or
   ///   `DotfolderNameError` when the dotfolder name is refused.
-  private static func catalogContext(of fixture: Fixture, hasRoot: Bool) async throws
-    -> CatalogContext
-  {
+  private static func catalogContext(
+    of fixture: Fixture, hasRoot: Bool,
+    configuration: AgentConfiguration = .withoutMarketplaces
+  ) async throws -> CatalogContext {
     CatalogContext(
       workingDirectory: fixture.workingDirectory,
-      configuration: AgentConfiguration.withoutMarketplaces,
+      configuration: configuration,
       profile: try await makeStubProfile(
         cacheDirectory: makeResolvedDirectory(label: "SettingsFoldersTests-cache")),
       settingsFolders: try fixture.settingsFolders(hasRoot: hasRoot),
