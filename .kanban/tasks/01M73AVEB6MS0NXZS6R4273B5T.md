@@ -76,8 +76,15 @@ comments:
     - note: the change of ConnectionTable is a refactor with the same behavior; the existing SessionResumeHoldTests and HotResumeTests cover `owner(of:)` and `route(forSession:)`, so no new test was added.
     - next: /review
   timestamp: 2026-11-10T18:57:30.382620+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m73d7ej59gdd6dvpgvde1vgs
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (1201c7f) — 0 findings, 0 confirmed, 1 refuted, 7 attempted, 0 failed. The two prior findings (ConnectionTable.swift duplication, HotResumeTests.swift concurrency) are checked and the fix commit has no new finding.
+    - next: none. The task moved to done.
+  timestamp: 2026-11-10T18:58:46.981195+00:00
+position_column: done
+position_ordinal: ffffcb80
 title: 'Hot resume: a live child update can reach the new connection before the replay announces the child'
 ---
 ## What
