@@ -2,6 +2,7 @@ import Foundation
 import FoundationModels
 import FoundationModelsExtras
 import FoundationModelsRouter
+import Synchronization
 
 // MARK: - A Router session double that counts its closes
 //
@@ -150,6 +151,26 @@ actor CloseCountingRoutedSession: RoutedSession {
 
   /// Whether the real session is suspended.
   nonisolated var isSuspended: Bool { wrapped.isSuspended }
+
+  /// Each lease of background work that went through
+  /// ``beginBackgroundWork(_:id:)``, in call order.
+  nonisolated var backgroundWork: [(kind: WorkKind, id: String)] {
+    begunWork.withLock { $0 }
+  }
+
+  /// The store of ``backgroundWork``.
+  private nonisolated let begunWork = Mutex<[(kind: WorkKind, id: String)]>([])
+
+  /// Records the lease, and then opens it in the real session.
+  ///
+  /// - Parameters:
+  ///   - kind: The kind of the work.
+  ///   - id: The id of the work.
+  /// - Returns: The lease of the real session.
+  nonisolated func beginBackgroundWork(_ kind: WorkKind, id: String) -> BackgroundWork {
+    begunWork.withLock { $0.append((kind: kind, id: id)) }
+    return wrapped.beginBackgroundWork(kind, id: id)
+  }
 
   /// Sends the cancel signal of the foreground work to the real session.
   ///

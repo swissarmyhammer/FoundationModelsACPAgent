@@ -53,25 +53,37 @@ extension RoutedACPAgent {
     await restoreOpenCalls(of: report)
     logNestedRestore(report, of: sessionId)
     sessions[sessionId]?.nestedRestore = report
-    await restoreScheduledAgents(of: rootId, runner: agents.runner, sessionId: sessionId)
+    await restoreScheduledAgents(
+      of: rootId, runner: agents.runner, workSite: sessions[sessionId].map {
+        Self.scheduledAgentWorkSite(of: $0.session)
+      }, sessionId: sessionId)
+  }
+
+  /// The work site of the restored scheduled agents of a root: each firing
+  /// opens a child-session lease in the work registry of the root session,
+  /// so the root shows work until the firing ends.
+  ///
+  /// - Parameter session: The Router session of the root.
+  /// - Returns: The work site.
+  static func scheduledAgentWorkSite(of session: any RoutedSession) -> AgentScheduleWorkSite {
+    { session.beginBackgroundWork(.childSession, id: $0) }
   }
 
   /// Restores the saved scheduled agents of a resumed root and starts their
   /// timers. A firing that was due while the process was down runs once.
   ///
-  /// A restored firing holds no lease in the work registry of the root: the
-  /// root session gives no work site outside a tool call. A firing that runs
-  /// is still an agent run, with its own session and its own work.
-  ///
   /// - Parameters:
   ///   - rootId: The resumed root session.
   ///   - runner: The runner of the agents of the root.
+  ///   - workSite: Opens the lease of each firing in the work registry of
+  ///     the root (``scheduledAgentWorkSite(of:)``), or `nil` when the root
+  ///     is not in the table.
   ///   - sessionId: The ACP session id of the root, for the log.
-  private func restoreScheduledAgents(of rootId: ULID, runner: AgentRunner, sessionId: SessionId)
-    async
-  {
+  private func restoreScheduledAgents(
+    of rootId: ULID, runner: AgentRunner, workSite: AgentScheduleWorkSite?, sessionId: SessionId
+  ) async {
     do {
-      let restored = try await runner.restoreSchedules(of: rootId)
+      let restored = try await runner.restoreSchedules(of: rootId, workSite: workSite)
       if !restored.isEmpty {
         ACPAgentTelemetry.logger(.sessionResume).notice(
           "The scheduled agents of the session are restored.",
