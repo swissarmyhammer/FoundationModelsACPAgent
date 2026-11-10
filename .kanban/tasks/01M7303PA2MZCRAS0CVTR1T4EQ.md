@@ -45,8 +45,46 @@ comments:
     - [ ] Do not change `resumeOnAChildIsRefused` or `SessionCapabilitySet`.
     - [ ] When done, send the test commit and d8fa169 to testudoapp-75 with the text for the ACPA-11 status. testudoapp-75 edits the TestudoApp docs.
   timestamp: 2026-11-10T16:22:09.344693+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m7356rj9n9x905r5hdbazw20
+  text: |-
+    Research for the new scope (decision (r)).
+
+    Finding: this agent cannot start a root session with `sessions start`. Thus no test can show the hot resume of such a root without a production code change.
+    - The `sessions` tool is `SessionsTool` in FoundationModelsMultitool. `MultiTool.Builder.withSessions(_:)` mounts it. No file in `Sources/` or `Tests/` of this repo calls `withSessions` or makes a `SessionsTool`. `ToolCatalog.swift` does not mount it.
+    - `sessions start` calls `RouterSessionDirectory.start(_:)`. That call needs a launcher from `RouterSessionDirectory.use(launcher:)`. With no launcher, it throws `SessionDirectoryError.noLauncher`. Nothing in this repo conforms to `SessionLauncher` or calls `use(launcher:)` (also recorded before on card 01M5KW1TKC9N9DGCZG5W53XMHK). `ComposedSessionLauncher` does not exist (card 01M5CZ2TQDJP9HRWJVY05SSZW4).
+    - Also, a root that a launcher makes outside ACP is not in `agent.sessions`. Thus `session/resume` would not see it as live. The hot path needs it in the table and with an owner connection.
+
+    Nearest existing coverage: `Tests/FoundationModelsACPAgentTests/HotResumeTests.swift`. Its root comes from `session/new` (ScriptedPromptFixture), not from `sessions start`. Its child comes from an `agents` run. These tests show the rules for that root: `aHotResumeDoesNotCancelTheOpenPrompt` (the open prompt ends with `endTurn`), `theReplayHoldsTheHistoryOfTheChildBeforeTheResponse`, `theReplayAnnouncesTheChildBeforeItsHistory`, `theNewConnectionOwnsTheRootAfterAHotResume`, `theOldConnectionGetsNoUpdateAfterAHotResume`.
+
+    No file was changed. `resumeOnAChildIsRefused` and `SessionCapabilitySet` are not changed.
+  timestamp: 2026-11-10T16:38:35.849025+00:00
+- actor: claude-code
+  id: 01m7356y0nn7bgy3g15zspnkxf
+  text: |-
+    ### implement — stuck
+    - blocker: the new scope requires a test of a root that `sessions start` makes. This agent does not mount the `sessions` tool and gives no `SessionLauncher` to `RouterSessionDirectory`. Thus `sessions start` throws `noLauncher`, and such a root cannot exist here. A test needs production code (mount `SessionsTool`, add a launcher that puts the root in `agent.sessions` with an owner). The scope says: no production code change. The implement step did not resolve this conflict itself.
+    - decision needed (a person must choose one):
+      (1) Accept the root of `session/new` as the root of the decision. Then the outcome is no-change, with the existing tests in `Tests/FoundationModelsACPAgentTests/HotResumeTests.swift`: `aHotResumeDoesNotCancelTheOpenPrompt`, `theReplayHoldsTheHistoryOfTheChildBeforeTheResponse`, `theNewConnectionOwnsTheRootAfterAHotResume`.
+      (2) Make a new card that mounts the `sessions` tool and adds a `SessionLauncher` in this agent. Then add the hot resume test of a `sessions start` root on that card.
+    - evidence: no files changed; no tests run (no code change). Checked with grep: no `withSessions`, `SessionsTool`, `SessionLauncher`, `use(launcher:)` or `launchRootSession` in `Sources/` or `Tests/`.
+    - next: a person records the decision on the card, then implement runs again.
+  timestamp: 2026-11-10T16:38:41.429050+00:00
+- actor: claude-code
+  id: 01m7357qpjrc6daq7xwn5pb1f7
+  text: |-
+    ### finish iteration 2 — stuck
+    - implement: stuck — no change. A root from `sessions start` cannot exist in this agent: no `withSessions`, no `SessionLauncher`. That is ACPA-9. The hot resume of a root from `session/new` is tested in HotResumeTests.swift (`aHotResumeDoesNotCancelTheOpenPrompt`, `theReplayHoldsTheHistoryOfTheChildBeforeTheResponse`, `theNewConnectionOwnsTheRootAfterAHotResume`).
+    - Decision asked of testudoapp-75 (2026-11-10): recommended, close as no-change with d8fa169 and those tests, and move the `sessions start` case to ACPA-9.
+  timestamp: 2026-11-10T16:39:07.730303+00:00
+- actor: claude-code
+  id: 01m73582v4ana8m5y0618xnt7p
+  text: |-
+    ### finish iteration 3 — no-change (closed)
+    Decision of testudoapp-75 (2026-11-10): close as no change. Evidence: FoundationModelsACPAgent d8fa169 (hot resume of a live root and its nested tree) and the tests in Tests/FoundationModelsACPAgentTests/HotResumeTests.swift: `aHotResumeDoesNotCancelTheOpenPrompt`, `theReplayHoldsTheHistoryOfTheChildBeforeTheResponse`, `theNewConnectionOwnsTheRootAfterAHotResume`. A nested session opens only through its root (`SessionCapabilityTests.resumeOnAChildIsRefused`). The `sessions start` root case moves to ACPA-9 (Step 6). No code changed, so there is no diff to review.
+  timestamp: 2026-11-10T16:39:19.140804+00:00
+position_column: done
+position_ordinal: ffffc780
 title: 'ACPA-11: Attach a live nested session on session/resume with no teardown'
 ---
 ## What
