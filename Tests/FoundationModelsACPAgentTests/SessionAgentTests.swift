@@ -102,31 +102,13 @@ import Testing
     return NewSessionRequest(cwd: AbsolutePath(rawValue: cwd.path), meta: meta)
   }
 
-  /// The `agent` select of a complete option state.
-  ///
-  /// - Parameter options: The announced complete state.
-  /// - Returns: The select payload.
-  /// - Throws: When the state has no `agent` select.
-  private static func agentSelect(in options: [SessionConfigOption]?) throws
-    -> SessionConfigSelect
-  {
-    let option = try #require(options?.first { $0.configId == ConfigOptions.agentOptionId })
-    guard case .select(let select) = option.type else {
-      Issue.record("expected a select option, got \(option.type)")
-      throw RequestError.invalidParams
-    }
-    return select
-  }
-
   /// The value ids of a select, in announcement order.
   ///
   /// - Parameter select: The select payload.
   /// - Returns: The value ids.
   /// - Throws: When the raw JSON does not decode as the flat list.
   private static func valueIDs(of select: SessionConfigSelect) throws -> [String] {
-    let data = try JSONEncoder().encode(select.options)
-    return try JSONDecoder().decode([SessionConfigSelectOption].self, from: data)
-      .map(\.value.rawValue)
+    try ConfigOptionSelect.decodedOptions(of: select).map(\.value.rawValue)
   }
 
   /// One session of a new stub agent.
@@ -162,7 +144,9 @@ import Testing
     let entry = try #require(await routed.sessions[response.sessionId])
     return OpenedSession(
       agent: routed, response: response, instructions: entry.instructions,
-      currentAgent: try agentSelect(in: response.configOptions).currentValue.rawValue)
+      currentAgent: try ConfigOptionSelect.select(
+        in: response.configOptions, configId: ConfigOptions.agentOptionId
+      ).currentValue.rawValue)
   }
 
   // MARK: - The agent option
@@ -196,7 +180,8 @@ import Testing
 
     let session = try await Self.openSession(in: cwd)
 
-    let select = try Self.agentSelect(in: session.response.configOptions)
+    let select = try ConfigOptionSelect.select(
+      in: session.response.configOptions, configId: ConfigOptions.agentOptionId)
     #expect(
       try Self.valueIDs(of: select) == [ConfigOptions.defaultAgentValue, Self.catalogAgentID])
   }

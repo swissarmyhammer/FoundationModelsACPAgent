@@ -82,27 +82,8 @@ import Testing
   {
     let options = try #require(options)
     #expect(options.map(\.configId) == [ConfigOptions.modelOptionId, ConfigOptions.agentOptionId])
-    let option = try #require(options.first)
-    #expect(option.configId == ConfigOptions.modelOptionId)
-    #expect(option.category == .model)
-    guard case .select(let select) = option.type else {
-      Issue.record("expected a select option, got \(option.type)")
-      throw RequestError.invalidParams
-    }
-    return select
-  }
-
-  /// The typed select values behind a select's raw `options` JSON, so
-  /// the assertion pins the wire shape to the generated decoder.
-  ///
-  /// - Parameter select: The select payload.
-  /// - Returns: The decoded values, in announcement order.
-  /// - Throws: When the raw JSON does not decode as the flat list.
-  private static func decodedSelectOptions(
-    of select: SessionConfigSelect
-  ) throws -> [SessionConfigSelectOption] {
-    let data = try JSONEncoder().encode(select.options)
-    return try JSONDecoder().decode([SessionConfigSelectOption].self, from: data)
+    #expect(options.first?.category == .model)
+    return try ConfigOptionSelect.select(in: options, configId: ConfigOptions.modelOptionId)
   }
 
   /// The `config_option_update` payloads of a collected sequence.
@@ -132,7 +113,7 @@ import Testing
     let select = try Self.modelSelect(in: fixture.newSessionConfigOptions)
     #expect(select.currentValue.rawValue == ModelSlot.standard.rawValue)
 
-    let values = try Self.decodedSelectOptions(of: select)
+    let values = try ConfigOptionSelect.decodedOptions(of: select)
     let profile = fixture.harness.agent.residentProfile
     #expect(
       values.map(\.name) == [
@@ -203,7 +184,9 @@ import Testing
       Self.makeSetRequest(sessionId: fixture.sessionId, value: Self.idValue(for: .flash)))
     let select = try Self.modelSelect(in: response.configOptions)
     #expect(select.currentValue.rawValue == ModelSlot.flash.rawValue)
-    #expect(try Self.decodedSelectOptions(of: select).count == ConfigOptions.selectableSlots.count)
+    #expect(
+      try ConfigOptionSelect.decodedOptions(of: select).count == ConfigOptions.selectableSlots.count
+    )
     #expect(await fixture.harness.agent.sessions[fixture.sessionId]?.selectedSlot == .flash)
 
     let bothPrompts = try await ScriptedPromptFixture.runPrompt(
@@ -350,7 +333,9 @@ import Testing
     #expect(pushed.count == 1)
     let select = try Self.modelSelect(in: try #require(pushed.first).configOptions)
     #expect(select.currentValue.rawValue == ModelSlot.standard.rawValue)
-    #expect(try Self.decodedSelectOptions(of: select).count == ConfigOptions.selectableSlots.count)
+    #expect(
+      try ConfigOptionSelect.decodedOptions(of: select).count == ConfigOptions.selectableSlots.count
+    )
 
     // The push reconciled the state, so a second prompt pushes nothing.
     try await ScriptedPromptFixture.runPrompt(on: fixture, text: "second", count: 2)
