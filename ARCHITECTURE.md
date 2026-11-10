@@ -41,8 +41,9 @@ lives. All of it is in `Sources/FoundationModelsACPAgent/Agent/`.
   response. `SessionResumeChildSync` sends the current snapshots of the children after the
   response. `SessionResumeRedrive` starts the restored runs after the snapshots.
 - **The hot resume.** `SessionResumeHot` lets a new connection take a live tree, with no
-  teardown. `SessionResumeHold` keeps the live updates of the tree from the take until after the
-  response and the snapshots of the children, in one queue for the whole tree.
+  teardown. `SessionResumeHold` keeps the live updates and the new questions of the tree from the
+  take until after the response and the snapshots of the children, in one queue for the whole
+  tree. `ElicitationRelay` reads the hold of its tree when a question starts.
 
 The dependency direction is one way. The agent depends on the Agents package for the runs, on the
 Router for the sessions, and on the ACP wire package for the types and the trace validator. None

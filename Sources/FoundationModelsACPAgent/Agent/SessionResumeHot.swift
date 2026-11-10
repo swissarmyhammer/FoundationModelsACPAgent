@@ -36,7 +36,9 @@ extension RoutedACPAgent {
   /// made in the same step of the actor as the take. So an update recorded before the take is in
   /// the replay and goes to the old connection, and an update recorded after the take goes live
   /// to the new connection after the response (``recordAndRoute(_:of:)``). Each live update
-  /// reaches the new connection one time.
+  /// reaches the new connection one time. A new question of the tree that starts from the take
+  /// on waits in the same hold, so its request also comes after the response, in order with the
+  /// kept updates (``ElicitationRelay``).
   ///
   /// - Parameters:
   ///   - params: The resume request.

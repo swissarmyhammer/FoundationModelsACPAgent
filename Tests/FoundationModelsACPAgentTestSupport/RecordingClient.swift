@@ -75,14 +75,34 @@ public actor ElicitationWireRecorder {
   /// The recorded completion notifications, in arrival order.
   public private(set) var completions: [CompleteElicitationNotification] = []
 
+  /// The recorded permission and create requests as trace events, each with the wire sequence
+  /// number of its arrival, so a test can put them in one trace with the events of a
+  /// subscription (``WireTraceEvent/merged(_:)``).
+  public var agentRequests: [SequencedTraceEvent] {
+    recordedAgentRequests.value
+  }
+
+  /// The recorded agent requests, in arrival order, with their waits.
+  private let recordedAgentRequests = WatchedValue<[SequencedTraceEvent]>([])
+
+  /// The wire method of a permission request.
+  public static let permissionMethod = "session/request_permission"
+
+  /// The wire method of a create request.
+  public static let createMethod = "elicitation/create"
+
   /// Creates a recorder that has recorded nothing.
   public init() {}
 
   /// Appends one create request.
   ///
-  /// - Parameter request: The request to record.
-  public func recordCreate(request: CreateElicitationRequest) {
+  /// - Parameters:
+  ///   - request: The request to record.
+  ///   - arrival: The wire sequence number of the arrival of the request, or `nil` when the
+  ///     connection gave none.
+  public func recordCreate(request: CreateElicitationRequest, arrival: UInt64? = nil) {
     Self.record(request, into: recordedCreates)
+    recordAgentRequest(Self.createMethod, for: request.mode.sessionId, arrival: arrival)
   }
 
   /// Waits until at least `count` create requests were recorded. Returns
@@ -100,9 +120,42 @@ public actor ElicitationWireRecorder {
 
   /// Appends one permission request.
   ///
-  /// - Parameter request: The request to record.
-  public func recordPermission(request: RequestPermissionRequest) {
+  /// - Parameters:
+  ///   - request: The request to record.
+  ///   - arrival: The wire sequence number of the arrival of the request, or `nil` when the
+  ///     connection gave none.
+  public func recordPermission(request: RequestPermissionRequest, arrival: UInt64? = nil) {
     Self.record(request, into: recordedPermissions)
+    recordAgentRequest(Self.permissionMethod, for: request.sessionId, arrival: arrival)
+  }
+
+  /// Appends one request as a trace event. A request with no arrival number goes after each
+  /// frame, and the session of a request with no session scope is not known, so it makes no
+  /// event.
+  ///
+  /// - Parameters:
+  ///   - method: The wire method of the request.
+  ///   - sessionId: The session that the request names, or `nil`.
+  ///   - arrival: The wire sequence number of the arrival of the request, or `nil`.
+  private func recordAgentRequest(_ method: String, for sessionId: SessionId?, arrival: UInt64?) {
+    guard let sessionId else {
+      return
+    }
+    let sequence = arrival ?? UInt64.max
+    let event = WireTraceEvent.agentRequest(
+      id: .number(Double(sequence)), method: method, sessionId: sessionId)
+    Self.record(SequencedTraceEvent(sequence: sequence, event: event), into: recordedAgentRequests)
+  }
+
+  /// Waits until at least `count` agent requests were recorded. Returns at once when they are
+  /// recorded now. The wait uses no clock and no poll: each record resumes it.
+  ///
+  /// - Parameter count: The number of agent requests to wait for.
+  /// - Returns: The recorded requests, in arrival order.
+  /// - Throws: ``ConditionWaitCancelled`` when the task of the wait is cancelled before the
+  ///   requests come.
+  public nonisolated func waitForAgentRequests(count: Int) async throws -> [SequencedTraceEvent] {
+    try await Self.waitForCount(count, in: recordedAgentRequests, label: "agent request(s)")
   }
 
   /// Waits until at least `count` permission requests were recorded.
@@ -297,19 +350,41 @@ final class RecordingClient: Client {
   func requestPermission(
     _ params: RequestPermissionRequest
   ) async throws -> RequestPermissionResponse {
-    await elicitations.recordPermission(request: params)
+    let arrival = ClientSideConnection.currentRequestArrival
+    await elicitations.recordPermission(request: params, arrival: arrival)
     return try await router.requestPermission(params)
   }
 
   func createElicitation(
     _ params: CreateElicitationRequest
   ) async throws -> CreateElicitationResponse {
-    await elicitations.recordCreate(request: params)
+    let arrival = ClientSideConnection.currentRequestArrival
+    await elicitations.recordCreate(request: params, arrival: arrival)
     return try await router.createElicitation(params)
   }
 
   func elicitationComplete(_ notification: CompleteElicitationNotification) async {
     await elicitations.recordCompletion(notification: notification)
     await router.elicitationComplete(notification)
+  }
+}
+
+extension CreateElicitationRequest.Payload {
+  /// The session that the scope of the mode names, or `nil` for a scope with no session and for
+  /// a mode that this revision does not know.
+  fileprivate var sessionId: SessionId? {
+    let scope: ElicitationFormMode.Scope
+    switch self {
+    case .form(let form):
+      scope = form.scope
+    case .url(let url):
+      scope = url.scope
+    case .unknown:
+      return nil
+    }
+    guard case .session(let session) = scope else {
+      return nil
+    }
+    return session.sessionId
   }
 }

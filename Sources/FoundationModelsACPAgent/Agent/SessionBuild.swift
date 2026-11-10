@@ -230,6 +230,7 @@ extension RoutedACPAgent {
         sessionId: sessionId, parentSessionId: parent, stateLedger: stateLedger,
         announcement: announcement,
         claims: elicitationClaims,
+        resumeHold: { table.route(forSession: sessionId)?.hold },
         outboundPath: { table.path(forSession: sessionId) }),
       runCallJoins: build.runCallJoins,
       stateLedger: stateLedger)

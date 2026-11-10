@@ -21,6 +21,10 @@ import Synchronization
 ///
 /// The sends of the resume itself (the replay, the current state and the snapshots) do not go
 /// through the hold.
+///
+/// A new question of a session of the tree also waits in the queue (``ElicitationRelay``). Its
+/// send asks the question on the connection of the session. So the request comes after the
+/// announcement of its session, after the response, and in order with the kept updates.
 final class SessionResumeHold: Sendable {
   /// One send that the hold keeps or runs: the post of one update.
   typealias Send = SessionAnnouncementGate.Send
@@ -66,19 +70,41 @@ final class SessionResumeHold: Sendable {
   ///
   /// - Parameter send: The post of one update.
   func submit(_ send: @escaping Send) async {
-    let runsNow = state.withLock { state -> Bool in
+    if admit(send) == .runsNow {
+      await send()
+    }
+  }
+
+  /// What the hold did with a send (``admit(_:)``).
+  enum Admission {
+    /// The hold keeps the send. The release runs it in order.
+    case kept
+
+    /// The hold is open. The caller runs the send now.
+    case runsNow
+
+    /// A later take or the close of the connection ended the hold. The hold dropped the send.
+    case dropped
+  }
+
+  /// Keeps a send while the hold is not open, in the same locked step as the check. The hold
+  /// does not run a send that it does not keep: the caller runs it when the hold is open. A
+  /// caller that must decide in one synchronous step, for example the relay of a question, uses
+  /// this in place of ``submit(_:)``.
+  ///
+  /// - Parameter send: The send.
+  /// - Returns: What the hold did with the send.
+  func admit(_ send: @escaping Send) -> Admission {
+    state.withLock { state -> Admission in
       switch state.phase {
       case .open:
-        return true
+        return .runsNow
       case .discarded:
-        return false
+        return .dropped
       case .holding, .flushing:
         state.pending.append(send)
-        return false
+        return .kept
       }
-    }
-    if runsNow {
-      await send()
     }
   }
 

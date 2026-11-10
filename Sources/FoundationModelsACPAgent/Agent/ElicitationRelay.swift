@@ -76,7 +76,9 @@ typealias ElicitationCompletionHandler = @Sendable (ElicitationCompletion) async
 /// The outbound path: each question goes to the connection of the session
 /// as it is when the question comes (ACPA-5). It uses the capabilities of
 /// that connection. A session with no connection with an outbound path gets
-/// `cancel` for its question, as when the connection is gone.
+/// `cancel` for its question, as when the connection is gone. While a hot
+/// resume holds the tree of the session, a new question waits in the hold of
+/// the resume, and goes out after the response (``SessionResumeHold``).
 ///
 /// The capability gate: the client said what it answers at
 /// `initialize`. An absent capability, or an absent mode object, means
@@ -104,6 +106,10 @@ actor ElicitationRelay {
   /// that a create goes through, and its client capabilities, or `nil`
   /// when the session has none.
   private let outboundPath: @Sendable () -> ClientPath?
+
+  /// Gives the hold of a hot resume of the tree of the session as it is now, or `nil` when no
+  /// hot resume holds the tree (``SessionResumeHold``).
+  private let resumeHold: @Sendable () -> SessionResumeHold?
 
   /// A weak reference to the connection that received the create of a URL
   /// flow.
@@ -202,6 +208,11 @@ actor ElicitationRelay {
   /// and that wait to be asked again (``reaskWithdrawnQuestions()``).
   private var withdrawnQuestions: Set<String> = []
 
+  /// The number of questions that wait to be asked again on the connection of the session.
+  var withdrawnQuestionCount: Int {
+    withdrawnQuestions.count
+  }
+
   /// The cancellation boxes of the wire requests in flight, keyed by the
   /// elicitation id. ``end(_:)`` and ``drainOpenRoundTrips()`` set the
   /// reason on the box before they cancel the task, so the
@@ -273,14 +284,18 @@ actor ElicitationRelay {
   ///     knows the session from the start.
   ///   - claims: The record that stops the relayed copy of a child question from reaching the
   ///     client, or `nil` to send each copy.
+  ///   - resumeHold: Gives the hold of a hot resume of the tree of the session as it is when a
+  ///     question starts, or `nil` when no hot resume holds the tree.
   ///   - outboundPath: Gives the outbound path of the session as it is
   ///     when a question comes, or `nil` when the session has none.
   init(
     sessionId: SessionId, parentSessionId: SessionId? = nil,
     stateLedger: SessionStateLedger? = nil,
     announcement: SessionAnnouncementGate? = nil, claims: ElicitationClaims? = nil,
+    resumeHold: @escaping @Sendable () -> SessionResumeHold? = { nil },
     outboundPath: @escaping @Sendable () -> ClientPath?
   ) {
+    self.resumeHold = resumeHold
     self.sessionId = sessionId
     self.parentSessionId = parentSessionId
     self.stateLedger = stateLedger
@@ -667,7 +682,49 @@ actor ElicitationRelay {
         return
       }
       pendingAnswers[elicitationId] = continuation
+      askOrHold(wireRequest, elicitationId: elicitationId, mode: mode, over: connection)
+    }
+  }
+
+  /// Starts the wire request of a new question, or keeps the question while a hot resume holds
+  /// the live sends of the tree (``SessionResumeHold``).
+  ///
+  /// The client of the new connection does not know a child before the replay announces it, and
+  /// no request may come before the response. So a question that starts while the hold holds is
+  /// a withdrawn question, and the hold gets one send that asks it on the connection of the
+  /// session as it is then. The hold runs that send after the response and the snapshots of the
+  /// children, in order with the kept updates. When a later take or the close of the connection
+  /// ends the hold, the question stays withdrawn, and the next hot resume asks it
+  /// (``reaskWithdrawnQuestions()``). The check of the hold and the start of the request are one
+  /// step of the actor, so a take cannot come between them: a take before the step gives the
+  /// hold, and a take after it withdraws the request (``withdrawOpenQuestions()``).
+  ///
+  /// - Parameters:
+  ///   - wireRequest: The mapped request.
+  ///   - elicitationId: The pending elicitation's id.
+  ///   - mode: The mode of the request.
+  ///   - connection: The connection the create goes through when no hold holds, or `nil` when
+  ///     the session has no outbound path.
+  private func askOrHold(
+    _ wireRequest: WireCall, elicitationId: String, mode: ElicitationMode,
+    over connection: AgentSideConnection?
+  ) {
+    guard let hold = resumeHold() else {
       startWireRequest(wireRequest, elicitationId: elicitationId, mode: mode, over: connection)
+      return
+    }
+    openWireRequests[elicitationId] = OpenWireRequest(request: wireRequest, mode: mode)
+    withdrawnQuestions.insert(elicitationId)
+    let admission = hold.admit { [weak self] in
+      await self?.reaskWithdrawnQuestion(elicitationId)
+    }
+    switch admission {
+    case .runsNow:
+      reaskWithdrawnQuestion(elicitationId)
+    case .kept, .dropped:
+      ACPAgentTelemetry.logger(.elicitationRelay).debug(
+        "A hot resume holds the tree. The relay asks the question after the resume.",
+        metadata: elicitationMetadata(elicitationId))
     }
   }
 
@@ -762,23 +819,32 @@ actor ElicitationRelay {
   /// question ends with `decline`, as for a question that comes new. A session with no connection
   /// ends the question with `cancel`.
   func reaskWithdrawnQuestions() {
-    let withdrawn = withdrawnQuestions
-    withdrawnQuestions = []
-    for elicitationId in withdrawn {
-      guard pendingAnswers[elicitationId] != nil, let open = openWireRequests[elicitationId] else {
-        continue
-      }
-      let path = outboundPath()
-      if let path, !Self.supports(open.mode, by: path.capabilities) {
-        deliver(Self.declineResponse(for: .unsupportedMode), toPending: elicitationId)
-        continue
-      }
-      if open.mode == .url {
-        flowConnections[elicitationId] = FlowConnection(connection: path?.connection)
-      }
-      startWireRequest(
-        open.request, elicitationId: elicitationId, mode: open.mode, over: path?.connection)
+    for elicitationId in withdrawnQuestions {
+      reaskWithdrawnQuestion(elicitationId)
     }
+  }
+
+  /// Asks one withdrawn question again, as ``reaskWithdrawnQuestions()`` says. The question
+  /// leaves the withdrawn set first, so a second call for it asks nothing. A question that ended
+  /// meanwhile asks nothing.
+  ///
+  /// - Parameter elicitationId: The id of the question.
+  private func reaskWithdrawnQuestion(_ elicitationId: String) {
+    guard withdrawnQuestions.remove(elicitationId) != nil,
+      pendingAnswers[elicitationId] != nil, let open = openWireRequests[elicitationId]
+    else {
+      return
+    }
+    let path = outboundPath()
+    if let path, !Self.supports(open.mode, by: path.capabilities) {
+      deliver(Self.declineResponse(for: .unsupportedMode), toPending: elicitationId)
+      return
+    }
+    if open.mode == .url {
+      flowConnections[elicitationId] = FlowConnection(connection: path?.connection)
+    }
+    startWireRequest(
+      open.request, elicitationId: elicitationId, mode: open.mode, over: path?.connection)
   }
 
   /// Resumes the round trip waiting on `elicitationId` with `answer`. A
