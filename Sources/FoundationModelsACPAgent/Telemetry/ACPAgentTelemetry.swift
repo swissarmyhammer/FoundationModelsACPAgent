@@ -214,6 +214,10 @@ enum ACPAgentTelemetry {
     /// The name of a tool. Extras uses the same key.
     static let toolName = "tool.name"
 
+    /// The id of an agent of the agent catalog, or of the `AGENT.md` of a
+    /// working directory.
+    static let agentID = "agent.id"
+
     /// The id of a recorded transcript entry.
     static let entryId = "transcript.entry_id"
 

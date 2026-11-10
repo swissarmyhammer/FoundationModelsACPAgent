@@ -35,6 +35,9 @@ struct SessionBuild {
   /// The config-option state that the client saw last.
   let announcedConfigOptions: [SessionConfigOption]
 
+  /// The agent select of the session, or `nil` for none.
+  let agentOption: ConfigOptions.AgentOption?
+
   /// The user presence of the session.
   let userPresence: UserPresence
 
@@ -82,6 +85,7 @@ struct SessionBuild {
     self.commands = commands
     self.selectedSlot = selectedSlot
     self.announcedConfigOptions = announcedConfigOptions
+    agentOption = composition.agent?.option
     userPresence = placement.userPresence
     isReplayOnly = composition.isReplayOnly
     self.titleRecorded = titleRecorded
@@ -115,6 +119,7 @@ struct SessionBuild {
     commands = parent.commands
     selectedSlot = parent.selectedSlot
     announcedConfigOptions = parent.announcedConfigOptions
+    agentOption = parent.agentOption
     userPresence = parent.userPresence
     isReplayOnly = parent.isReplayOnly
     // The Router owns the record of a sub-agent session, so the first
@@ -253,6 +258,7 @@ extension RoutedACPAgent {
       commands: build.commands,
       selectedSlot: build.selectedSlot,
       announcedConfigOptions: build.announcedConfigOptions,
+      agentOption: build.agentOption,
       userPresence: build.userPresence,
       stateLedger: stateLedger,
       projector: projector,

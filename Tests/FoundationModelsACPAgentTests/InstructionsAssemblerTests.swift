@@ -156,7 +156,7 @@ import Testing
     let fixture = Fixture()
     fixture.write("USER-AGENTS-TEXT", to: "AGENTS.md", under: fixture.userDirectory)
 
-    let assembled = try await fixture.assembler().assemble(defaultAgent: "DEFAULT-AGENT-TEXT")
+    let assembled = try await fixture.assembler().assemble(agent: "DEFAULT-AGENT-TEXT")
 
     #expect(assembled.text.hasPrefix("DEFAULT-AGENT-TEXT"))
     #expect(!assembled.text.contains(Self.builtinMarker))
@@ -172,7 +172,7 @@ import Testing
     fixture.write(
       "PROJECT-PROMPT-TEXT", to: "Instructions.md", under: fixture.projectDirectory)
 
-    let assembled = try await fixture.assembler().assemble(defaultAgent: "DEFAULT-AGENT-TEXT")
+    let assembled = try await fixture.assembler().assemble(agent: "DEFAULT-AGENT-TEXT")
 
     #expect(assembled.text.contains("PROJECT-PROMPT-TEXT"))
     #expect(!assembled.text.contains("DEFAULT-AGENT-TEXT"))
@@ -337,6 +337,34 @@ import Testing
     for document in documents {
       #expect(text.contains(document.url.path))
     }
+  }
+
+  // MARK: - The AGENT.md of the working directory
+
+  /// When the client selected the session agent, the `AGENT.md` of the
+  /// working directory is project instructions, with the `AGENTS.md` beside
+  /// it.
+  @Test func theAgentMdOfTheWorkingDirectoryJoinsTheAgentsMdBesideIt() async throws {
+    let fixture = Fixture()
+    fixture.write("CWD-AGENTS-TEXT", to: "AGENTS.md", under: fixture.workingDirectory)
+    fixture.write("CWD-AGENT-TEXT", to: "AGENT.md", under: fixture.workingDirectory)
+
+    let assembled = try await fixture.assembler().assemble(
+      agent: "SESSION-AGENT-TEXT", workingDirectoryAgent: .projectInstructions)
+
+    #expect(assembled.text.contains("CWD-AGENT-TEXT"))
+  }
+
+  /// The `AGENT.md` of the working directory that is the session agent is
+  /// not repeated as project instructions.
+  @Test func theSessionAgentDocumentIsNotProjectInstructions() async throws {
+    let fixture = Fixture()
+    fixture.write("CWD-AGENT-TEXT", to: "AGENT.md", under: fixture.workingDirectory)
+
+    let assembled = try await fixture.assembler().assemble(
+      agent: "SESSION-AGENT-TEXT", workingDirectoryAgent: .sessionAgent)
+
+    #expect(!assembled.text.contains("CWD-AGENT-TEXT"))
   }
 
   // MARK: - Unreadable files

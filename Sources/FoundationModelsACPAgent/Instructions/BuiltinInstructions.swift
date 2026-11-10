@@ -1,5 +1,6 @@
 /// The compiled-in system prompt floor — the base prompt of a root session
-/// that has no `Instructions.md` and no `default` agent. Absent config gives
+/// that has no `Instructions.md` and no session agent: no `agent` option, no
+/// `AGENT.md` in the working directory, and no `default` agent. Absent config gives
 /// defaults, but an absent system prompt gives an agent with no
 /// instructions, silently, so the floor always exists.
 ///

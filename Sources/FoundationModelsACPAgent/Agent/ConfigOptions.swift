@@ -4,12 +4,16 @@ import FoundationModelsRouter
 
 /// The session config options surface.
 ///
-/// Day one ships one real option: a `select` of category `model` over
+/// The first option is a `select` of category `model` over
 /// the resident profile's `standard` and `flash` slots. Both slots are
 /// already resident, so a switch loads nothing and blocks on nothing.
 /// The value ids are the stable slot names; the labels show each slot's
 /// `chosen.stringValue`, because `ModelRef`'s `repo` and `revision` are
 /// internal and `stringValue` is the only public read.
+///
+/// The second option is the `agent` select (ACPA-1, ``AgentOption``). A
+/// session that has no agent catalog does not show it. The agent is set
+/// only at `session/new`.
 ///
 /// One construction serves every announcement: the `session/new`
 /// response, the `session/set_config_option` response, and the
@@ -40,26 +44,39 @@ enum ConfigOptions {
   static let defaultSlot: ModelSlot = .standard
 
   /// The complete, priority-ordered option list for one session:
-  /// the one model-slot select.
+  /// the model-slot select, then the agent select when the session has
+  /// one.
   ///
   /// - Parameters:
   ///   - profile: The resident profile whose slots are offered.
   ///   - selectedSlot: The slot the session currently generates on.
+  ///   - agent: The agent select of the session, or `nil` for none.
   /// - Returns: The complete state every announcement carries.
   static func options(
-    profile: LanguageModelProfile, selectedSlot: ModelSlot
+    profile: LanguageModelProfile, selectedSlot: ModelSlot, agent: AgentOption?
   ) -> [SessionConfigOption] {
-    [
-      SessionConfigOption(
-        configId: modelOptionId,
-        name: modelOptionName,
-        category: .model,
-        description: modelOptionDescription,
-        type: .select(
-          SessionConfigSelect(
-            currentValue: SessionConfigValueId(rawValue: selectedSlot.rawValue),
-            options: makeSelectOptionsValue(profile: profile))))
-    ]
+    [modelOption(profile: profile, selectedSlot: selectedSlot)]
+      + (agent.map { [$0.option] } ?? [])
+  }
+
+  /// The model-slot select.
+  ///
+  /// - Parameters:
+  ///   - profile: The resident profile whose slots are offered.
+  ///   - selectedSlot: The slot the session currently generates on.
+  /// - Returns: The option.
+  private static func modelOption(
+    profile: LanguageModelProfile, selectedSlot: ModelSlot
+  ) -> SessionConfigOption {
+    SessionConfigOption(
+      configId: modelOptionId,
+      name: modelOptionName,
+      category: .model,
+      description: modelOptionDescription,
+      type: .select(
+        SessionConfigSelect(
+          currentValue: SessionConfigValueId(rawValue: selectedSlot.rawValue),
+          options: makeSelectOptionsValue(profile: profile))))
   }
 
   /// Maps a set request's value id to a selectable slot.
@@ -95,24 +112,35 @@ enum ConfigOptions {
   }
 
   /// The select's raw `options` value: the flat list of the two slot
-  /// values, encoded through the generated `SessionConfigSelectOption`
-  /// coder so the wire shape can never drift from the schema.
-  ///
-  /// `SessionConfigSelectOptions` is the wire package's permanently
-  /// deferred union (flat list or groups), represented as raw JSON.
-  /// We ship the flat list, without groups.
+  /// values (``encodedSelectOptions(_:)``).
   ///
   /// - Parameter profile: The resident profile whose slots are shown.
   /// - Returns: The encoded flat list.
   private static func makeSelectOptionsValue(
     profile: LanguageModelProfile
   ) -> SessionConfigSelectOptions {
-    let values = selectableSlots.map { slot in
-      SessionConfigSelectOption(
-        name: handle(for: slot, of: profile).chosen.stringValue,
-        value: SessionConfigValueId(rawValue: slot.rawValue),
-        description: "The profile's \(slot.rawValue) slot.")
-    }
+    encodedSelectOptions(
+      selectableSlots.map { slot in
+        SessionConfigSelectOption(
+          name: handle(for: slot, of: profile).chosen.stringValue,
+          value: SessionConfigValueId(rawValue: slot.rawValue),
+          description: "The profile's \(slot.rawValue) slot.")
+      })
+  }
+
+  /// The raw `options` value of a select: the flat list of `values`,
+  /// encoded through the generated `SessionConfigSelectOption` coder so
+  /// the wire shape can never drift from the schema.
+  ///
+  /// `SessionConfigSelectOptions` is the wire package's permanently
+  /// deferred union (flat list or groups), represented as raw JSON.
+  /// We ship the flat list, without groups.
+  ///
+  /// - Parameter values: The values of the select, in order.
+  /// - Returns: The encoded flat list.
+  static func encodedSelectOptions(
+    _ values: [SessionConfigSelectOption]
+  ) -> SessionConfigSelectOptions {
     do {
       let data = try JSONEncoder().encode(values)
       return try JSONDecoder().decode(SessionConfigSelectOptions.self, from: data)
@@ -176,8 +204,9 @@ extension RoutedACPAgent {
   ///   the tagged value.
   /// - Returns: The complete option state after the set.
   /// - Throws: The order rule's error, `unknownSession`,
-  ///   `closedSession`, `unknownConfigOption`, or
-  ///   `invalidConfigOptionValue`.
+  ///   `closedSession`, `unknownConfigOption`,
+  ///   `invalidConfigOptionValue`, or `agentFixedAtSessionStart` for the
+  ///   `agent` option, which only `session/new` sets.
   public func setSessionConfigOption(
     _ params: SetSessionConfigOptionRequest
   ) async throws -> SetSessionConfigOptionResponse {
@@ -204,6 +233,9 @@ extension RoutedACPAgent {
     if entry.isClosed {
       throw RequestError.closedSession(id: params.sessionId)
     }
+    if params.configId == ConfigOptions.agentOptionId, entry.agentOption != nil {
+      throw RequestError.agentFixedAtSessionStart(id: params.configId)
+    }
     guard params.configId == ConfigOptions.modelOptionId else {
       throw RequestError.unknownConfigOption(id: params.configId)
     }
@@ -214,7 +246,8 @@ extension RoutedACPAgent {
     }
 
     try await applyModelSlot(slot, to: params.sessionId)
-    let options = ConfigOptions.options(profile: residentProfile, selectedSlot: slot)
+    let options = ConfigOptions.options(
+      profile: residentProfile, selectedSlot: slot, agent: entry.agentOption)
     recordAnnouncedConfigOptions(options, for: params.sessionId)
     return SetSessionConfigOptionResponse(configOptions: options)
   }
@@ -250,7 +283,7 @@ extension RoutedACPAgent {
   func reconcileConfigOptions(for sessionId: SessionId) async {
     guard let entry = sessions[sessionId] else { return }
     let truth = ConfigOptions.options(
-      profile: residentProfile, selectedSlot: entry.selectedSlot)
+      profile: residentProfile, selectedSlot: entry.selectedSlot, agent: entry.agentOption)
     guard truth != entry.announcedConfigOptions else { return }
     recordAnnouncedConfigOptions(truth, for: sessionId)
     await connections.path(forSession: sessionId)?.connection.post(

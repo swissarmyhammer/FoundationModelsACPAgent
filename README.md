@@ -598,6 +598,30 @@ the tool groups of the session (`{% if tools.kanban.enabled %}`), and the
 bodies of its `skills:` list follow it, for example the `do-task` skill. The
 `default` agent is never listed, found or started as an agent.
 
+A client selects the agent of a session at `session/new` with the `agent`
+config option. The ACP `NewSessionRequest` has no `configOptions` field, thus
+the value goes in `_meta`: `"_meta": {"sah": {"configOptions": {"agent":
+"<id>"}}}`. The `session/new` response lists the `agent` select after the
+`model` select: `default` first, then each agent that a user can start. The
+current value is the agent of the session. An unknown id gives `-32602`. Only
+`session/new` sets the agent; a `session/set_config_option` for `agent` gives
+`-32602`. The agent of a session comes from, in this order:
+
+1. the `agent` option;
+2. else the `AGENT.md` at the root of the `cwd`;
+3. else the `default` agent, else the compiled-in floor.
+
+The id of the `AGENT.md` of the `cwd` is `<name>` when the `cwd` is an agent
+folder `<synced>/<name>/` of the agent layers, `default` when the `cwd` is the
+root of an agent layer, and else the folder name in the form of an agent id
+(lower case, `-` in place of each other character, at most 64 characters).
+When the `AGENT.md` of the `cwd` is the agent of the session, it is not
+repeated as project instructions. When the client selects the agent, the
+`AGENT.md` of the `cwd` is project instructions, also when an `AGENTS.md` is
+beside it. The recording folder of each session holds its
+agent (`session-agent.json`), so `session/resume` and `session/load` compose
+the same agent.
+
 An `Instructions.md` replaces the base prompt wholesale, resolved through the
 dotfolder stack: the user level (`<synced>/Instructions.md` of a custom home,
 or `~/.config/<name>/Instructions.md` of the XDG home of the CLI), then

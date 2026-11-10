@@ -642,6 +642,7 @@ extension SessionComposition {
       userLayerRoot: context.userLayerRoot,
       transcriptRoot: context.transcriptRoot,
       sessionTag: "",
+      agent: nil,
       isReplayOnly: true)
   }
 }

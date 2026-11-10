@@ -50,7 +50,9 @@ public struct AssembledInstructions: Equatable, Sendable {
 ///    rendered string.
 /// 3. The user-level `AGENTS.md` through `stack.content(_:)`.
 /// 4. The project-level documents through `AgentsMd.documents(from:)`, from
-///    the repository root down to the working directory.
+///    the repository root down to the working directory. The
+///    ``WorkingDirectoryAgent`` role of the session tells what the `AGENT.md`
+///    of the working directory is.
 ///
 /// A header with the absolute path divides each file that came from disk,
 /// so each reader of the session instructions can attribute each line.
@@ -63,6 +65,26 @@ public struct InstructionsAssembler: Sendable {
 
   /// The additive agent-instructions file.
   public static let agentsFileName = "AGENTS.md"
+
+  /// The agent document of a folder (D71).
+  static let agentDocumentName = "AGENT.md"
+
+  /// The role of the `AGENT.md` of the working directory in one assembly
+  /// (ACPA-1, D19, D71).
+  public enum WorkingDirectoryAgent: Sendable {
+    /// The file is the alias of `AGENTS.md`: it is project instructions,
+    /// and an `AGENTS.md` beside it hides it. The session agent is the
+    /// default agent or the builtin floor.
+    case alias
+
+    /// The file is the session agent. It is not repeated as project
+    /// instructions.
+    case sessionAgent
+
+    /// The client selected the session agent. The file is project
+    /// instructions, also when an `AGENTS.md` is beside it.
+    case projectInstructions
+  }
 
   /// The blank line that joins the assembled sections.
   private static let sectionSeparator = "\n\n"
@@ -95,20 +117,23 @@ public struct InstructionsAssembler: Sendable {
   /// - Parameters:
   ///   - registry: The session's skills registry, or `nil` for none. A
   ///     `nil` or empty registry adds nothing.
-  ///   - defaultAgent: The rendered text of the `default` agent of the
-  ///     layers (its body, then the bodies of its `skills:` preload), or
-  ///     `nil` when no layer has one. It is the base prompt in place of
-  ///     the builtin. An `Instructions.md` of a layer still wins over it.
+  ///   - agent: The rendered text of the session agent (its body, then
+  ///     the bodies of its `skills:` preload), or `nil` when the session
+  ///     has no agent. It is the base prompt in place of the builtin. An
+  ///     `Instructions.md` of a layer still wins over it.
+  ///   - workingDirectoryAgent: The role of the `AGENT.md` of the working
+  ///     directory. The default is ``WorkingDirectoryAgent/alias``.
   /// - Returns: The assembled text and the warnings, also logged.
   /// - Throws: `TemplateEngineError` when a document does not render,
   ///   e.g. an untrusted file that uses a disallowed tag.
   public func assemble(
-    skills registry: SkillsRegistry? = nil, defaultAgent: String? = nil
+    skills registry: SkillsRegistry? = nil, agent: String? = nil,
+    workingDirectoryAgent: WorkingDirectoryAgent = .alias
   ) async throws -> AssembledInstructions {
     let renderer = Renderer(engine: TemplateEngine(partials: stack))
     var warnings: [InstructionsWarning] = []
     var sections = [
-      try basePrompt(renderer: renderer, defaultAgent: defaultAgent, warnings: &warnings)
+      try basePrompt(renderer: renderer, agent: agent, warnings: &warnings)
     ]
 
     // Already ONE rendered string, joined with blank lines — never
@@ -124,7 +149,8 @@ public struct InstructionsAssembler: Sendable {
     }
 
     sections.append(
-      contentsOf: try renderedProjectDocuments(renderer: renderer, warnings: &warnings))
+      contentsOf: try renderedProjectDocuments(
+        renderer: renderer, workingDirectoryAgent: workingDirectoryAgent, warnings: &warnings))
 
     for warning in warnings {
       warning.log()
@@ -136,18 +162,18 @@ public struct InstructionsAssembler: Sendable {
   // MARK: - The base prompt
 
   /// The rendered base prompt: the nearest `Instructions.md`, which
-  /// replaces the builtin wholesale; else the text of the `default` agent;
+  /// replaces the builtin wholesale; else the text of the session agent;
   /// else the builtin floor.
   private func basePrompt(
-    renderer: Renderer, defaultAgent: String?, warnings: inout [InstructionsWarning]
+    renderer: Renderer, agent: String?, warnings: inout [InstructionsWarning]
   ) throws -> String {
     if let replacement = try renderedStackFile(
       Self.instructionsFileName, renderer: renderer, warnings: &warnings)
     {
       return replacement
     }
-    if let defaultAgent {
-      return defaultAgent.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let agent {
+      return agent.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     return try renderer.render(BuiltinInstructions.text, from: nil)
   }
@@ -187,12 +213,22 @@ public struct InstructionsAssembler: Sendable {
   /// The rendered project-level AGENTS documents with their path headers,
   /// from the repository root down to the working directory. An
   /// unreadable file appends a warning and gives no documents.
+  ///
+  /// - Parameters:
+  ///   - renderer: The renderer of the assembly.
+  ///   - workingDirectoryAgent: The role of the `AGENT.md` of the working
+  ///     directory.
+  ///   - warnings: The warnings of the assembly.
+  /// - Returns: The rendered documents.
+  /// - Throws: `TemplateEngineError` when a document does not render.
   private func renderedProjectDocuments(
-    renderer: Renderer, warnings: inout [InstructionsWarning]
+    renderer: Renderer, workingDirectoryAgent: WorkingDirectoryAgent,
+    warnings: inout [InstructionsWarning]
   ) throws -> [String] {
     let documents: [AgentsMd.Document]
     do {
-      documents = try AgentsMd.documents(from: workingDirectory)
+      documents = try projectDocuments(
+        workingDirectoryAgent: workingDirectoryAgent, warnings: &warnings)
     } catch let error as AgentsMdError {
       switch error {
       case .fileNotReadable(let path):
@@ -204,6 +240,60 @@ public struct InstructionsAssembler: Sendable {
       let rendered = try renderer.render(document.text, from: .project)
       return Self.divided(rendered, byHeaderFor: document.url.path)
     }
+  }
+
+  /// The project documents of `AgentsMd.documents(from:)`, changed by the
+  /// role of the `AGENT.md` of the working directory: without that file
+  /// for ``WorkingDirectoryAgent/sessionAgent``, and with that file at the
+  /// end for ``WorkingDirectoryAgent/projectInstructions`` when an
+  /// `AGENTS.md` beside it hid it.
+  ///
+  /// - Parameters:
+  ///   - workingDirectoryAgent: The role of the `AGENT.md` of the working
+  ///     directory.
+  ///   - warnings: The warnings of the assembly. An `AGENT.md` that does
+  ///     not read as UTF-8 appends a warning.
+  /// - Returns: The documents, from the repository root down.
+  /// - Throws: `AgentsMdError` when a document of the walk does not read.
+  private func projectDocuments(
+    workingDirectoryAgent: WorkingDirectoryAgent, warnings: inout [InstructionsWarning]
+  ) throws -> [AgentsMd.Document] {
+    let walked = try AgentsMd.documents(from: workingDirectory)
+    let localAgent = workingDirectory.appendingPathComponent(Self.agentDocumentName)
+    let localPath = localAgent.canonicalPath
+    let isLocalAgent = { (document: AgentsMd.Document) in
+      document.url.canonicalPath == localPath
+    }
+    switch workingDirectoryAgent {
+    case .alias:
+      return walked
+    case .sessionAgent:
+      return walked.filter { !isLocalAgent($0) }
+    case .projectInstructions:
+      guard FileManager.default.fileExists(atPath: localAgent.path),
+        !walked.contains(where: isLocalAgent)
+      else {
+        return walked
+      }
+      return walked + readDocument(localAgent, warnings: &warnings)
+    }
+  }
+
+  /// Reads the `AGENT.md` of the working directory as a project document.
+  ///
+  /// - Parameters:
+  ///   - url: The file.
+  ///   - warnings: The warnings of the assembly. A file that does not read
+  ///     as UTF-8 appends a warning.
+  /// - Returns: The document, or no document when the file does not read.
+  private func readDocument(_ url: URL, warnings: inout [InstructionsWarning])
+    -> [AgentsMd.Document]
+  {
+    guard let text = try? String(contentsOf: url, encoding: .utf8) else {
+      warnings.append(.fileUnreadable(path: url.path))
+      return []
+    }
+    return [AgentsMd.Document(url: url, directory: workingDirectory, text: text)]
   }
 
   // MARK: - Headers

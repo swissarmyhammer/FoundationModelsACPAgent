@@ -15,4 +15,4 @@ Decide with testudoapp-75 if the `initialize` result of a `sandboxed` agent must
 - [ ] If the decision is to omit it: a `sandboxed` agent advertises `mcp.http` only, and an `open` agent advertises both.
 
 ## Tests
-- [ ] InitializationTests: the `mcp` capability for each `ToolMode`.
+- [ ] InitializationTests: the `mcp` capability for each `ToolMode`. #step1

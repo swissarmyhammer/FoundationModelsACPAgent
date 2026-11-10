@@ -76,12 +76,12 @@ import Testing
   ///
   /// - Parameter options: The announced complete state.
   /// - Returns: The select payload.
-  /// - Throws: When the state is not exactly one select option.
+  /// - Throws: When the state has no model select.
   private static func modelSelect(in options: [SessionConfigOption]?) throws
     -> SessionConfigSelect
   {
     let options = try #require(options)
-    #expect(options.count == 1)
+    #expect(options.map(\.configId) == [ConfigOptions.modelOptionId, ConfigOptions.agentOptionId])
     let option = try #require(options.first)
     #expect(option.configId == ConfigOptions.modelOptionId)
     #expect(option.category == .model)
@@ -122,7 +122,7 @@ import Testing
 
   // MARK: - The session/new announcement
 
-  /// The `session/new` response carries exactly one config option: a
+  /// The `session/new` response carries the model option first: a
   /// select of category `model` whose default is the standard slot and
   /// whose labels show each slot's `chosen.stringValue`.
   @Test
@@ -334,7 +334,8 @@ import Testing
     // Script the divergence: the announced state claims the flash
     // slot's model while the session generates on standard.
     let stale = ConfigOptions.options(
-      profile: agent.residentProfile, selectedSlot: .flash)
+      profile: agent.residentProfile, selectedSlot: .flash,
+      agent: await agent.sessions[fixture.sessionId]?.agentOption)
     await agent.recordAnnouncedConfigOptions(stale, for: fixture.sessionId)
 
     _ = try await fixture.harness.connection.prompt(

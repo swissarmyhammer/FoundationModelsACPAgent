@@ -1,6 +1,11 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m738ec2rsmdvm09h2qb8htrq
+  text: 'Changes (2026-11-10): testudoapp-75 put this card in step1 (a hang of the session composition in OpenTestudo is a real defect). foundationmodelsmultitool-2a asks: (1) send it the exact cause if the wait is in `StdioServerProcess` or `MCPServer.connect` (Multitool); it then makes a Multitool card with a regression test; (2) a test for it must NOT depend on time. Thus replace the "under 5 seconds" criterion: the test waits for the composition to end (for example with a gated process or an exit signal), not for a clock. The criterion is: `session/new` ends, and the server shows as failed. For the server that never answers, a time limit constant is still the product rule, but the test gives a short injected limit or a fake clock.'
+  timestamp: 2026-11-10T17:35:10.936034+00:00
 position_column: todo
 position_ordinal: 8b80
 title: A config stdio MCP server that exits before it answers must not make session/new wait
@@ -23,4 +28,4 @@ Found on 2026-11-10 during ^xfeamnv. A test marker script ran `touch` and then e
 - [ ] `swift test` passes with no warnings.
 
 ## Workflow
-- Use `/tdd` — write failing tests first, then implement to make them pass.
+- Use `/tdd` — write failing tests first, then implement to make them pass. #step1

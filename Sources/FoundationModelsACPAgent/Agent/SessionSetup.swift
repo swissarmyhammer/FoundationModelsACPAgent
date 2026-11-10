@@ -36,8 +36,8 @@ enum SessionAvailability: Equatable, Sendable {
 /// A root session has no parent. A nested session has a parent and
 /// **borrows** from it the parts that belong to the mounted surface:
 /// ``configuration``, ``instructions``, ``workingDirectory``,
-/// ``additionalRoots``, ``surface``, ``commands``, ``userPresence`` and
-/// ``isReplayOnly``. It **owns** the parts that belong to the events of its
+/// ``additionalRoots``, ``surface``, ``commands``, ``agentOption``,
+/// ``userPresence`` and ``isReplayOnly``. It **owns** the parts that belong to the events of its
 /// own Router session: ``session``, ``transcriptDirectory``, ``stateLedger``,
 /// ``projector`` (with its relay and its join table), ``retainedHistory``,
 /// ``announcement`` and ``openPrompts``.
@@ -93,6 +93,11 @@ struct ActiveSession: Sendable {
   /// `config_option_update` pushed. The divergence check compares the
   /// truth against this baseline.
   var announcedConfigOptions: [SessionConfigOption]
+
+  /// The agent select of the session (ACPA-1), or `nil` when the session
+  /// has no agent catalog. Only `session/new` sets the agent, thus the
+  /// select does not change.
+  let agentOption: ConfigOptions.AgentOption?
 
   /// The user presence that the session got when the agent opened it
   /// (``RoutedACPAgent/userPresence``). A model slot switch gives it to
@@ -579,11 +584,25 @@ struct SessionComposition {
   /// composition, which runs no factory.
   let sessionTag: String
 
+  /// The agent of the session (ACPA-1), or `nil` when the session has no
+  /// agent catalog, as a replay-only composition.
+  let agent: ComposedSessionAgent?
+
   /// Whether the composition is the one of a replay-only resume: no
   /// instructions, no tool surface, and no command source. The mount
   /// then writes no project file and no directory list, and announces no
   /// command.
   let isReplayOnly: Bool
+}
+
+/// The agent of one composed session: the choice that the record of the
+/// session keeps, and the agent select that the session announces.
+struct ComposedSessionAgent {
+  /// The choice that ``SessionAgentStore`` records.
+  let choice: SessionAgentChoice
+
+  /// The agent select of the session.
+  let option: ConfigOptions.AgentOption
 }
 
 /// What one mount of a session announces in the `session/new` or `session/resume` response (ACP schema-v2.0.0-alpha.7).
@@ -636,6 +655,9 @@ extension RoutedACPAgent {
   /// - Returns: The response carrying the new sessionId, the
   ///   `availableCommands` list and the `configOptions` list.
   /// - Throws: The order rule's invalid-request error.
+  ///   `RequestError.invalidConfigOptionValue` for an `agent` option
+  ///   (`_meta.sah.configOptions.agent`) that names no agent that a user
+  ///   can start.
   ///   `RequestError.invalidParams` for a relative cwd.
   ///   The same error for a cwd or an additional directory that is not an existing directory.
   ///   Whatever the composition pipeline throws.
@@ -688,13 +710,16 @@ extension RoutedACPAgent {
     try SessionSetup.requireExistingDirectories(
       workingDirectory: workingDirectory, additionalRoots: additionalRoots)
 
+    let requestedAgent = try ConfigOptions.requestedAgent(in: params.meta)
+
     let userPresence = userPresence(of: caller)
     let composition = try await composeSession(
       from: loadSessionContext(workingDirectory: workingDirectory),
       workingDirectory: workingDirectory,
       additionalRoots: additionalRoots,
       clientMCPServers: params.mcpServers ?? [],
-      userPresence: userPresence)
+      userPresence: userPresence,
+      requestedAgent: requestedAgent)
 
     // The session comes from the profile's standard slot, never from
     // the router.
@@ -724,6 +749,7 @@ extension RoutedACPAgent {
     let sessionId = SessionId(rawValue: session.id.description)
     SnapshotSessionKeys.shared.record(hookLineage.sessionKey, for: sessionId)
     recordSessionTag(of: composition, for: sessionId)
+    recordSessionAgent(of: composition, for: sessionId)
 
     // The connection of the request owns the new session and is its starter (D120 c).
     // This happens before the mount sends anything for the session.
@@ -813,11 +839,13 @@ extension RoutedACPAgent {
         transcriptDirectory: session.recordingDirectory,
         registry: commands))
 
-    // The first announcement of the config-option list is one select over the profile's chat slots.
-    // It defaults to the standard slot the session was just composed from.
+    // The first announcement of the config-option list is one select over the profile's chat slots,
+    // then the agent select when the session has an agent catalog.
+    // The model select defaults to the standard slot the session was just composed from.
     // The announced state is recorded, so the divergence check compares against what the client actually saw.
     let configOptions = ConfigOptions.options(
-      profile: residentProfile, selectedSlot: ConfigOptions.defaultSlot)
+      profile: residentProfile, selectedSlot: ConfigOptions.defaultSlot,
+      agent: composition.agent?.option)
 
     // The one reader of the events of the session starts before anything can mail the session.
     // So it keeps each event (elicitation-plan task 1).
@@ -1032,15 +1060,20 @@ extension RoutedACPAgent {
   ///     wire order.
   ///   - userPresence: The user presence of the session
   ///     (``userPresence(of:)`` of the connection that opens it).
+  ///   - requestedAgent: The value of the `agent` option of `session/new`,
+  ///     or `nil` for none.
+  ///   - resumedSessionId: The id of the resumed session, or `nil` for a
+  ///     new session. A resumed session gets its recorded tag and agent.
   /// - Returns: The composed inputs of `makeSession`.
-  /// - Throws: Whatever the instructions assembly or the tool
-  ///   composition throws.
+  /// - Throws: Whatever the agent resolution, the instructions assembly or
+  ///   the tool composition throws.
   func composeSession(
     from context: LoadedSessionContext,
     workingDirectory: URL,
     additionalRoots: [URL],
     clientMCPServers: [FoundationModelsACP.MCPServer],
     userPresence: UserPresence,
+    requestedAgent: String? = nil,
     resuming resumedSessionId: SessionId? = nil
   ) async throws -> SessionComposition {
     knownRecordingRoots.add(context.transcriptRoot)
@@ -1068,19 +1101,20 @@ extension RoutedACPAgent {
     let surface = try await ToolCatalog.sessionSurface(context: catalogContext, skills: skills)
       .appending(hostTools: hostTools)
 
-    // The `default` agent of the layers is the base prompt of the root
-    // session: its body and its `skills:` preload, rendered with the tool
-    // groups of the session. Without one, the assembler uses the builtin.
+    // The session agent is the base prompt of the root session: its body
+    // and its `skills:` preload, rendered with the tool groups of the
+    // session. Without one, the assembler uses the builtin.
     let instructions: AssembledInstructions
+    let agent: SessionAgentPrompt
     do {
-      let defaultAgent = try await surface.agents?.runner.defaultAgentInstructions()
-      for diagnostic in defaultAgent?.diagnostics ?? [] {
-        ACPAgentTelemetry.logger(.session).warning(
-          "The default agent has a skill that it cannot preload: \(diagnostic)")
-      }
+      agent = try await composeSessionAgent(
+        runner: surface.agents?.runner, requested: requestedAgent, resuming: resumedSessionId,
+        workingDirectory: workingDirectory, transcriptRoot: context.transcriptRoot)
       instructions = try await InstructionsAssembler(
         stack: context.loader.stack, workingDirectory: workingDirectory
-      ).assemble(skills: skills.registry, defaultAgent: defaultAgent?.text)
+      ).assemble(
+        skills: skills.registry, agent: agent.text,
+        workingDirectoryAgent: agent.workingDirectoryAgent)
     } catch {
       await surface.shutdown()
       throw error
@@ -1094,6 +1128,7 @@ extension RoutedACPAgent {
       userLayerRoot: context.userLayerRoot,
       transcriptRoot: context.transcriptRoot,
       sessionTag: sessionTag,
+      agent: agent.agent,
       isReplayOnly: false)
   }
 

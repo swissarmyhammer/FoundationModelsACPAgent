@@ -66,8 +66,9 @@ import Testing
   // MARK: Identity
 
   /// The sessionId parses as a ULID, names the Router session directory
-  /// on disk, and the response carries the one model-slot config
-  /// option, a `select` over the `standard` and `flash` slots.
+  /// on disk, and the response carries the model-slot config option, a
+  /// `select` over the `standard` and `flash` slots, then the agent
+  /// option.
   @Test
   func sessionIdIsARouterULIDAndNamesTheSessionDirectory() async throws {
     let userDirectory = makeResolvedDirectory(label: "SessionSetupTests-user")
@@ -78,7 +79,9 @@ import Testing
     let response = try await agent.newSession(AgentClientHarness.makeNewSessionRequest(cwd: cwd))
 
     #expect(ULID(ulidString: response.sessionId.rawValue) != nil)
-    #expect(response.configOptions?.map(\.configId) == [ConfigOptions.modelOptionId])
+    #expect(
+      response.configOptions?.map(\.configId)
+        == [ConfigOptions.modelOptionId, ConfigOptions.agentOptionId])
 
     let sessionDirectory = Self.projectTranscriptsRoot(of: cwd)
       .appendingPathComponent(response.sessionId.rawValue, isDirectory: true)
