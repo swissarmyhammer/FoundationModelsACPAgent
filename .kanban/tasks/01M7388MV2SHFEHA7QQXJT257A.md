@@ -72,8 +72,15 @@ comments:
     - evidence: 6 source/test files: Sources/FoundationModelsACPAgent/Tools/MCPComposition.swift, Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift, Tests/FoundationModelsACPAgentTests/MCPCompositionTests.swift, Tests/FoundationModelsACPAgentTests/MCPServerStatusReportTests.swift, Tests/FoundationModelsACPAgentTests/AgentMetricsTests.swift, Tests/FoundationModelsACPAgentTests/SessionAgentToolsTests.swift. Pin: FoundationModelsMultitool 4f0c664c -> 558b503e in Package.resolved and IntegrationTests/Package.resolved (both gitignored), no other package moved. `swift build --build-tests`: no warnings. `swift test`: 1962 tests in 215 suites passed, 0 failures, 1 known issue (HarnessSmokeTests withKnownIssue, which this change did not touch). `swift build --build-tests --package-path IntegrationTests`: build complete, no warnings.
     - next: /review
   timestamp: 2026-11-10T21:36:43.062715+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m73pcd7t1vvnzj6n1a99adrf
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (813f7a9): 0 findings, 0 confirmed, 0 refuted, 7 attempted, 0 failed. 6 files reviewed. 2 .kanban files are not reviewed because of .reviewignore.
+    - next: none. The task is in done.
+  timestamp: 2026-11-10T21:38:46.650653+00:00
+position_column: done
+position_ordinal: ffffd680
 title: A config stdio MCP server that exits before it answers must not make session/new wait
 ---
 ## What
