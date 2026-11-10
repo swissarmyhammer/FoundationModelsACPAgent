@@ -2,6 +2,8 @@ import Foundation
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
+import Logging
+import TelemetryTestSupport
 import Testing
 
 @testable import FoundationModelsACPAgent
@@ -78,6 +80,14 @@ import Testing
   /// waits, when the agent obeys the rules.
   private static let requestsWhileTheReplayWaits = 0
 
+  /// The capabilities of a client that answers `url` mode only, so it cannot answer the `form`
+  /// question of the child.
+  private static let urlOnlyCapabilities = ClientCapabilities(
+    elicitation: ElicitationCapabilities(url: ElicitationUrlCapabilities()))
+
+  /// The number of decline records that the relay writes for one question that it declines.
+  private static let declineRecordsOfOneQuestion = 1
+
   /// The live tree of one test: a root with an open prompt and a running child.
   private struct LiveTree {
     /// The first agent and its first connection.
@@ -130,6 +140,31 @@ import Testing
         .permission(title: HotResumeTests.permissionTitle)
       }
     }
+
+    /// The wire method of the request that asks the question.
+    var method: String {
+      switch self {
+      case .elicitation:
+        ElicitationWireRecorder.createMethod
+      case .permission:
+        ElicitationWireRecorder.permissionMethod
+      }
+    }
+  }
+
+  /// The wire of a hot resume across the window between the take and the replay.
+  private struct WindowWire<Observed: Sendable> {
+    /// The trace of the resume, with the wire sequence number of each event.
+    let trace: [SequencedTraceEvent]
+
+    /// The second connection.
+    let second: AgentClientHarness
+
+    /// The model of the resumed root on the second connection.
+    let root: SessionModel
+
+    /// What the wait in the window saw while the first frame of the replay waited.
+    let observed: Observed
   }
 
   /// The wire of a hot resume whose child asks a question in the window between the take and the
@@ -255,15 +290,17 @@ import Testing
   /// - Parameters:
   ///   - tree: The live tree.
   ///   - wire: The wire of the second connection.
+  ///   - capabilities: The capabilities that the second connection sends in `initialize`.
   /// - Returns: The harness of the second connection.
   /// - Throws: Whatever the handshake throws.
   private static func openSecondConnection(
-    to tree: LiveTree, over wire: HarnessWire = .makeInMemory()
+    to tree: LiveTree, over wire: HarnessWire = .makeInMemory(),
+    capabilities: ClientCapabilities = ACPClient.advertisedCapabilities
   ) async throws -> AgentClientHarness {
     let second = await AgentClientHarness.makeRecording(
       agent: tree.fixture.harness.agent, wire: wire)
     _ = try await second.client.initialize(
-      AgentClientHarness.makeInitializeRequest(capabilities: ACPClient.advertisedCapabilities))
+      AgentClientHarness.makeInitializeRequest(capabilities: capabilities))
     return second
   }
 
@@ -299,74 +336,32 @@ import Testing
     return trace
   }
 
-  /// Resumes the root on a second connection, and lets the child send its two live updates after
-  /// the take and before the replay is out. The first frame of the replay waits in the transport
-  /// of the second connection. While it waits, the test releases the window hold of the child, and
-  /// waits until the agent recorded the second update. The projector of the child sends one update
-  /// at a time, so the send of the first update is done then. Then the frame goes. No clock
+  /// Resumes the root on a second connection, and lets the child act after the take and before
+  /// the replay is out. The first frame of the replay waits in the transport of the second
+  /// connection. While it waits, the helper releases the window hold of the child, and runs
+  /// `wait` until what the child does in the window is settled. Then the frame goes. No clock
   /// decides the order. The read of the wire ends at the `state_update` of the child after the
   /// response.
   ///
-  /// - Parameter windowTree: The tree and its window hold.
-  /// - Returns: The trace in wire order, and the harness of the second connection.
-  /// - Throws: Whatever the request or a wait throws.
-  private static func resumeTraceAcrossTheWindow(
-    of windowTree: WindowTree
-  ) async throws -> (trace: [WireTraceEvent], second: AgentClientHarness) {
-    let tree = windowTree.tree
-    let wire = HarnessWire.makeInMemory()
-    let holder = FrameHoldingTransport(
-      wrapping: wire.agentEnd, holdingFirstFrameContaining: announcementMarker)
-    let second = try await openSecondConnection(to: tree, over: wire.replacingAgentEnd(with: holder))
-    let child = tree.childId
-    let agent = tree.fixture.harness.agent
-    let trace = try await second.connection.subscribeToAllSessions().readResumeTrace(
-      startingWith: [WireTraceEvent.resumeRequest(id: .number(1), sessionId: tree.rootId)],
-      settledBy: { event in
-        if case .update(let stream, let update) = event {
-          return stream == child && update.isStateUpdate
-        }
-        return false
-      },
-      timeout: .seconds(syncWaitSeconds)
-    ) {
-      defer { holder.release() }
-      let resume = Task { try await second.connection.resumeSession(tree.replayRequest) }
-      defer { resume.cancel() }
-      await holder.waitUntilHolding()
-      windowTree.window.release()
-      try await waitUntilRecorded(windowSecondText, of: child, in: agent)
-      holder.release()
-      _ = try await resume.value
-    }
-    return (trace, second)
-  }
-
-  /// Resumes the root on a second connection, and lets the child ask its question after the take
-  /// and before the replay is out. The first frame of the replay waits in the transport of the
-  /// second connection. While it waits, the test releases the window hold of the child, and waits
-  /// until the question is settled: the new connection got the request, or the relay of the
-  /// child keeps the question to ask it later. Then the frame goes. No clock decides the order.
-  /// The read of the wire ends at the `state_update` of the child after the response, and the
-  /// trace then gets the agent requests of the new connection, in wire order.
-  ///
-  /// - Parameter windowTree: The tree and its window hold.
+  /// - Parameters:
+  ///   - windowTree: The tree and its window hold.
+  ///   - wait: The wait in the window. It gets the second connection, and gives what it saw
+  ///     while the first frame of the replay waited.
   /// - Returns: The wire of the resume.
   /// - Throws: Whatever the request or a wait throws.
-  private static func resumeAcrossAQuestionWindow(
-    of windowTree: WindowTree
-  ) async throws -> QuestionWindowWire {
+  private static func resumeAcrossTheWindow<Observed: Sendable>(
+    of windowTree: WindowTree,
+    waitingInTheWindow wait: (AgentClientHarness) async throws -> Observed
+  ) async throws -> WindowWire<Observed> {
     let tree = windowTree.tree
     let wire = HarnessWire.makeInMemory()
     let holder = FrameHoldingTransport(
       wrapping: wire.agentEnd, holdingFirstFrameContaining: announcementMarker)
     let second = try await openSecondConnection(to: tree, over: wire.replacingAgentEnd(with: holder))
-    let recorder = try #require(second.elicitations)
-    let relay = try #require(await tree.fixture.harness.agent.sessions[tree.childId]?.projector.relay)
     let child = tree.childId
-    var whileTheReplayWaits = 0
+    var observed: Observed?
     var root: SessionModel?
-    let read = try await second.connection.subscribeToAllSessions().readSequencedResumeTrace(
+    let trace = try await second.connection.subscribeToAllSessions().readSequencedResumeTrace(
       startingWith: [WireTraceEvent.resumeRequest(id: .number(1), sessionId: tree.rootId)],
       settledBy: { event in
         if case .update(let stream, let update) = event {
@@ -381,19 +376,61 @@ import Testing
       defer { resume.cancel() }
       await holder.waitUntilHolding()
       windowTree.window.release()
+      observed = try await wait(second)
+      holder.release()
+      root = try await resume.value
+    }
+    return WindowWire(
+      trace: trace, second: second, root: try #require(root), observed: try #require(observed))
+  }
+
+  /// Resumes the root across the window (``resumeAcrossTheWindow(of:waitingInTheWindow:)``), and
+  /// lets the child send its two live updates in the window. The wait in the window ends when
+  /// the agent recorded the second update. The projector of the child sends one update at a
+  /// time, so the send of the first update is done then.
+  ///
+  /// - Parameter windowTree: The tree and its window hold.
+  /// - Returns: The trace in wire order, and the harness of the second connection.
+  /// - Throws: Whatever the request or a wait throws.
+  private static func resumeTraceAcrossTheWindow(
+    of windowTree: WindowTree
+  ) async throws -> (trace: [WireTraceEvent], second: AgentClientHarness) {
+    let child = windowTree.tree.childId
+    let agent = windowTree.tree.fixture.harness.agent
+    let window = try await resumeAcrossTheWindow(of: windowTree) { _ in
+      try await waitUntilRecorded(windowSecondText, of: child, in: agent)
+    }
+    return (window.trace.map(\.event), window.second)
+  }
+
+  /// Resumes the root across the window (``resumeAcrossTheWindow(of:waitingInTheWindow:)``), and
+  /// lets the child ask its question in the window. The wait in the window ends when the
+  /// question is settled: the new connection got the request, or the relay of the child keeps
+  /// the question to ask it later. The trace then gets the agent requests of the new connection,
+  /// in wire order.
+  ///
+  /// - Parameter windowTree: The tree and its window hold.
+  /// - Returns: The wire of the resume.
+  /// - Throws: Whatever the request or a wait throws.
+  private static func resumeAcrossAQuestionWindow(
+    of windowTree: WindowTree
+  ) async throws -> QuestionWindowWire {
+    let tree = windowTree.tree
+    let relay = try #require(await tree.fixture.harness.agent.sessions[tree.childId]?.projector.relay)
+    let window = try await resumeAcrossTheWindow(of: windowTree) { second in
+      let recorder = try #require(second.elicitations)
       try await pollUntil(limit: recordPollLimit, interval: recordPollInterval) {
         let asked = await !recorder.agentRequests.isEmpty
         let kept = await relay.withdrawnQuestionCount > 0
         return asked || kept
       }
-      whileTheReplayWaits = await recorder.agentRequests.count
-      holder.release()
-      root = try await resume.value
+      return await recorder.agentRequests.count
     }
+    let recorder = try #require(window.second.elicitations)
     let requests = try await recorder.waitForAgentRequests(count: requestsOfOneQuestion)
     return QuestionWindowWire(
-      trace: read + requests, requestsWhileTheReplayWaits: whileTheReplayWaits, second: second,
-      root: try #require(root))
+      trace: window.trace + requests, requestsWhileTheReplayWaits: window.observed,
+      second: window.second, root: window.root)
   }
 
   /// Waits until the retained history of a session holds a text.
@@ -626,12 +663,13 @@ import Testing
 
   /// The answer of the new owner to a question of the window reaches the child, and the child
   /// plays its next text. The question is not lost.
-  @Test func theAnswerToAQuestionOfTheWindowReachesTheChild() async throws {
-    let windowTree = try await Self.startQuestionWindowTree(asking: .elicitation)
+  @Test(arguments: QuestionKind.allCases)
+  func theAnswerToAQuestionOfTheWindowReachesTheChild(kind: QuestionKind) async throws {
+    let windowTree = try await Self.startQuestionWindowTree(asking: kind)
     let wire = try await Self.resumeAcrossAQuestionWindow(of: windowTree)
     let child = windowTree.tree.childId
 
-    try await Self.answerQuestion(of: wire.root)
+    try await Self.answerQuestion(kind, of: wire.root)
     let updates = try await #require(wire.second.collector).wait(for: "the text after the answer") {
       updates in
       ScriptedPromptFixture.agentText(in: updates.filter { $0.sessionId == child })
@@ -645,13 +683,15 @@ import Testing
 
   /// A question of the window is asked one time on the new owner, also after the answer: the
   /// held ask and the re-ask after the release do not both send it.
-  @Test func aQuestionOfTheWindowIsAskedOnceOnTheNewOwner() async throws {
-    let windowTree = try await Self.startQuestionWindowTree(asking: .elicitation)
+  @Test(arguments: QuestionKind.allCases)
+  func aQuestionOfTheWindowIsAskedOnceOnTheNewOwner(kind: QuestionKind) async throws {
+    let windowTree = try await Self.startQuestionWindowTree(asking: kind)
     let wire = try await Self.resumeAcrossAQuestionWindow(of: windowTree)
 
-    try await Self.answerQuestion(of: wire.root)
+    try await Self.answerQuestion(kind, of: wire.root)
     _ = try await windowTree.tree.prompt.value
-    let asked = await wire.second.elicitations?.creates ?? []
+    let requests = try await #require(wire.second.elicitations).agentRequests
+    let asked = requests.filter { $0.event.agentRequestMethod == kind.method }
 
     #expect(asked.count == Self.requestsOfOneQuestion)
     await windowTree.tree.fixture.close()
@@ -756,7 +796,7 @@ import Testing
     let asked = try await recorder.waitForCreates(count: Self.requestsOfOneQuestion)
 
     #expect(asked.count == Self.requestsOfOneQuestion)
-    try await Self.answerQuestion(of: root)
+    try await Self.answerQuestion(.elicitation, of: root)
     _ = try await tree.prompt.value
     await tree.fixture.close()
   }
@@ -772,7 +812,7 @@ import Testing
     let oldRequests = await tree.fixture.harness.elicitations?.creates ?? []
 
     #expect(oldRequests.count == Self.requestsOfOneQuestion)
-    try await Self.answerQuestion(of: root)
+    try await Self.answerQuestion(.elicitation, of: root)
     _ = try await tree.prompt.value
     await tree.fixture.close()
   }
@@ -783,7 +823,7 @@ import Testing
     let second = try await Self.openSecondConnection(to: tree)
     let root = try await second.client.resumeSession(tree.replayRequest)
 
-    try await Self.answerQuestion(of: root)
+    try await Self.answerQuestion(.elicitation, of: root)
     let child = tree.childId
     let updates = try await #require(second.collector).wait(for: "the text after the answer") { updates in
       ScriptedPromptFixture.agentText(in: updates.filter { $0.sessionId == child })
@@ -795,19 +835,47 @@ import Testing
     await tree.fixture.close()
   }
 
-  /// Waits until the model of the root holds the question at the model of the child, and
-  /// answers it.
-  ///
-  /// - Parameter root: The model of the resumed root on the second connection.
-  /// - Throws: Whatever the wait throws.
-  private static func answerQuestion(of root: SessionModel) async throws {
-    try await ObservedValue.wait(for: "the child holds the question") {
-      root.children.first?.pendingElicitations.isEmpty == false
+  /// A pending question whose mode the new owner cannot answer ends with `decline` and the
+  /// reason `unsupportedMode`, as a question that comes new. The relay writes one `notice` record
+  /// of the decline.
+  @Test func aPendingQuestionThatTheNewOwnerCannotAnswerWritesOneDeclineRecord() async throws {
+    let reasonKey = ACPAgentTelemetry.LogMetadataKey.elicitationDeclineReason
+    let unsupportedMode = ElicitationRelay.DeclineReason.unsupportedMode.rawValue
+    let records = try await TelemetryCapture.run(forbidding: []) { context in
+      let tree = try await Self.startAskingTree()
+      let second = try await Self.openSecondConnection(
+        to: tree, capabilities: Self.urlOnlyCapabilities)
+      _ = try await second.client.resumeSession(tree.replayRequest)
+      _ = try await tree.prompt.value
+      await tree.fixture.close()
+      return context.logRecords
     }
+
+    let declines = records.filter { $0.metadata[reasonKey] == .string(unsupportedMode) }
+    #expect(declines.count == Self.declineRecordsOfOneQuestion)
+  }
+
+  /// Waits until the model of the root holds the question at the model of the child, and
+  /// answers it: the user accepts an elicitation with ``answer``, and allows a permission
+  /// request.
+  ///
+  /// - Parameters:
+  ///   - kind: The kind of the question.
+  ///   - root: The model of the resumed root on the second connection.
+  /// - Throws: Whatever the wait throws.
+  private static func answerQuestion(_ kind: QuestionKind, of root: SessionModel) async throws {
+    try await ObservedValue.wait(for: "the root holds the child") { !root.children.isEmpty }
     let child = try #require(await root.children.first)
-    let pending = try await ElicitationWait.firstPendingElicitation(in: child)
-    await MainActor.run {
-      child.acceptElicitation(pending.id, content: .object([answerField: .string(answer)]))
+    switch kind {
+    case .elicitation:
+      let pending = try await ElicitationWait.firstPendingElicitation(in: child)
+      await MainActor.run {
+        child.acceptElicitation(pending.id, content: .object([answerField: .string(answer)]))
+      }
+    case .permission:
+      let pending = try await PermissionWait.firstPendingPermission(in: child)
+      await child.selectPermission(
+        pending.id, option: PermissionOptionId(rawValue: ScriptedPermission.allowOptionId))
     }
   }
 
@@ -848,6 +916,14 @@ extension WireTraceEvent {
       return true
     }
     return false
+  }
+
+  /// The wire method of this event when it is an agent request, or `nil` for any other event.
+  fileprivate var agentRequestMethod: String? {
+    if case .agentRequest(_, let method, _) = self {
+      return method
+    }
+    return nil
   }
 
   /// Whether this event is an announcement of `child`, on any stream.

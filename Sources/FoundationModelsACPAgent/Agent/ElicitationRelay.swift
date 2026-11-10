@@ -379,10 +379,9 @@ actor ElicitationRelay {
       return response
     }
     let path = outboundPath()
-    if let path, !Self.supports(request.mode, by: path.capabilities) {
-      await decline(
-        elicitationId: elicitationId, mode: request.mode, on: session,
-        reason: .unsupportedMode)
+    if let response = unsupportedModeDecline(of: request.mode, elicitationId: elicitationId, on: path)
+    {
+      await session.respond(elicitationId: elicitationId, response: response)
       return .decline
     }
     guard
@@ -836,8 +835,8 @@ actor ElicitationRelay {
       return
     }
     let path = outboundPath()
-    if let path, !Self.supports(open.mode, by: path.capabilities) {
-      deliver(Self.declineResponse(for: .unsupportedMode), toPending: elicitationId)
+    if let response = unsupportedModeDecline(of: open.mode, elicitationId: elicitationId, on: path) {
+      deliver(response, toPending: elicitationId)
       return
     }
     if open.mode == .url {
@@ -1049,6 +1048,27 @@ actor ElicitationRelay {
     }
   }
 
+  /// The capability gate of a question, for the first ask and for a re-ask: when the connection
+  /// of `path` does not answer `mode`, the relay writes the log record of the decline with the
+  /// reason ``DeclineReason/unsupportedMode``, and gives the response of the decline. The caller
+  /// delivers the response.
+  ///
+  /// - Parameters:
+  ///   - mode: The mode of the question.
+  ///   - elicitationId: The pending elicitation's id.
+  ///   - path: The outbound path the question goes through, or `nil` when the session has none.
+  ///     A session with no path passes the gate: the round trip then delivers `cancel`.
+  /// - Returns: The `decline` response, or `nil` when the connection answers the mode.
+  private func unsupportedModeDecline(
+    of mode: ElicitationMode, elicitationId: String, on path: ClientPath?
+  ) -> ElicitationResponse? {
+    guard let path, !Self.supports(mode, by: path.capabilities) else {
+      return nil
+    }
+    logDecline(elicitationId: elicitationId, mode: mode, reason: .unsupportedMode)
+    return Self.declineResponse(for: .unsupportedMode)
+  }
+
   /// Why the relay declines an elicitation. The raw value is the reason
   /// of the decline that goes to Router, and it goes into the log record
   /// of the decline.
@@ -1077,12 +1097,23 @@ actor ElicitationRelay {
     elicitationId: String, mode: ElicitationMode, on session: any RoutedSession,
     reason: DeclineReason
   ) async {
+    logDecline(elicitationId: elicitationId, mode: mode, reason: reason)
+    await session.respond(elicitationId: elicitationId, response: Self.declineResponse(for: reason))
+  }
+
+  /// Writes the `notice` record of a decline of the relay, with the mode and the reason in its
+  /// metadata.
+  ///
+  /// - Parameters:
+  ///   - elicitationId: The pending elicitation's id.
+  ///   - mode: The mode of the request.
+  ///   - reason: Why the relay declined.
+  private func logDecline(elicitationId: String, mode: ElicitationMode, reason: DeclineReason) {
     var metadata = elicitationMetadata(elicitationId)
     metadata[ACPAgentTelemetry.LogMetadataKey.elicitationMode] = "\(mode.rawValue)"
     metadata[ACPAgentTelemetry.LogMetadataKey.elicitationDeclineReason] = "\(reason.rawValue)"
     ACPAgentTelemetry.logger(.elicitationRelay).notice(
       "The relay declined an elicitation.", metadata: metadata)
-    await session.respond(elicitationId: elicitationId, response: Self.declineResponse(for: reason))
   }
 
   /// The response of a decline of the relay: `decline` with the raw value

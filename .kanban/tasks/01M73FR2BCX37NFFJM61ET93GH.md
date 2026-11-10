@@ -19,4 +19,4 @@ The values are made in `ToolCatalog.makeSkillsSource(context:)` and `AgentsCompo
 - [ ] `swift test` passes with no warnings.
 
 ## Workflow
-- Use `/tdd`.
+- Use `/tdd`. #step1

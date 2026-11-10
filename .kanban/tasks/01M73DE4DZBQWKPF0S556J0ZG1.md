@@ -6,6 +6,13 @@ comments:
   id: 01m73detf7pd3axzc720yxm4m7
   text: 'foundationmodelsagents-d7 accepted the API as Agents task ^mpqd9de (step1), after ^1yb868r. `AgentEnvironment.make(..., instructionsPreamble: String? = nil, ...)`, stored as `public let instructionsPreamble: String?`. A run joins [preamble] + AGENTS.md documents + body + skill bodies with `instructionsSeparator`. A nil or whitespace-only preamble is left out. New runs and restored runs both get it. `sessionAgentInstructions(for:)` and `defaultAgentInstructions()` do not add it. Wait for the commit, then bump only the Agents pin.'
   timestamp: 2026-11-10T19:02:48.551129+00:00
+- actor: claude-code
+  id: 01m73hmage7kd2qysqhzh2gg16
+  text: |-
+    Agents ^mpqd9de is pushed (FoundationModelsAgents main, head 609c812; feature 3a2bfca, test fix bc848c5; swift test 939 passed; review clean). This card is no longer blocked.
+    API: `AgentEnvironment.make(..., instructionsPreamble: String? = nil, sandboxProbe: SandboxProbe = .live)`. `sandboxProbe` stays the last parameter. It is stored as `public let instructionsPreamble: String?`. Each run, new and restored, joins: preamble, AGENTS.md text, body, skill bodies. A nil or whitespace-only preamble adds nothing. `sessionAgentInstructions(for:)` and `defaultAgentInstructions()` do not add it.
+    Note: the probe card (AgentsComposition passes `sandboxProbe:`) and the restore card (Agents e181a24) also change the Agents pin and `AgentsComposition.make`. Do the three cards one after the other in the main tree, with one pin move to 609c812 or later.
+  timestamp: 2026-11-10T20:15:43.118786+00:00
 depends_on:
 - 01M7303F2AJEEVCV4EB76XDPW1
 position_column: todo

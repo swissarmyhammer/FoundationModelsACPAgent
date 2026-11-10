@@ -18,6 +18,10 @@ comments:
     Host requirement: the record is under the recording root, so `AgentEnvironment` must have `recordingRoot` set. ACPAgent sets it through `agentRunHost`; confirm it in the test.
     Next run: bump only the Agents pin (with Skills if needed, as in ^b013mv9), and add the end-to-end restore test: a nested run killed after its announcement and before its first generate comes back on `session/resume` with its prompt, and no `restoreFailure`.
   timestamp: 2026-11-10T19:47:47.478490+00:00
+- actor: claude-code
+  id: 01m73hnfatc14s8bkcgcs528nn
+  text: When this card is pushed, send its commit hash to testudoapp-75 AND to foundationmodelsacpclient-76. foundationmodelsacpclient-76 runs its integration package 10 times on it (the `aKilledAgentResumes…` test).
+  timestamp: 2026-11-10T20:16:20.826014+00:00
 position_column: todo
 position_ordinal: '9380'
 title: A run killed after its announcement but before its task prompt was recorded is never restored

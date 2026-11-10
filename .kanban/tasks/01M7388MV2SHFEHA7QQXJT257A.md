@@ -39,6 +39,12 @@ comments:
   id: 01m73gn855vag223vdd7m6fnzp
   text: 'Decision of testudoapp-75 (2026-11-10): the card rule. A config MCP server that fails to connect is recorded as failed: send it as failed in `_mcp_server_status`, with the reason. `session/new` succeeds with the other servers. Change the test `aConfigServerThatFailsAfterAConnectedConfigServerStillThrows` to the new rule, and add a test that the failed status reaches the client. This part does not need the Multitool fix, so it can be done first; the "process exits during the handshake" tests wait for the Multitool commit. A search of README.md, ARCHITECTURE.md and the ACPAgent spec found no text of the old rule; check the doc comments of `MCPComposition.connectServers` and change them.'
   timestamp: 2026-11-10T19:58:44.901029+00:00
+- actor: claude-code
+  id: 01m73hf98qh78w9vv60rexndfm
+  text: |-
+    The Multitool fix is pushed (FoundationModelsMultitool main, fix 43ae953c, tests 381dda64, head 558b503e). This card is no longer blocked. When the transport drops while the state is `.connecting`, MCPServer tears down the client of that attempt: `connect(via:)` throws `MCPError.connectionClosed`, and the state moves to `.faulted`. This covers a drop before the `initialize` answer and a drop during `tools/list`. After a drop, `DropObservingTransport.send(_:)` throws. A drop after `.ready` does not change the state. No public API change. Multitool test: MCPHandshakeDropTests (no clock).
+    Next run of this card (in the main tree): bump only the Multitool pin to 558b503e or later; switch `MCPComposition.connectToReady` to `connect(via:backoffPolicy:)` with a named policy (criterion 4); apply the decision of testudoapp-75 (a failed config server is recorded as failed in `_mcp_server_status` with the reason, and session/new succeeds); change `aConfigServerThatFailsAfterAConnectedConfigServerStillThrows`; add the end-to-end tests with no clock.
+  timestamp: 2026-11-10T20:12:58.007522+00:00
 position_column: todo
 position_ordinal: 8b80
 title: A config stdio MCP server that exits before it answers must not make session/new wait
