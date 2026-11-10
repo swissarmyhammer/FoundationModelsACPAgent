@@ -129,6 +129,13 @@ public struct ComposedAgent: Sendable {
   ///   - sandboxProbe: The probe that tells if the process is sandboxed.
   ///     The default reads the current process. A test gives
   ///     `.fixed(_:)`.
+  ///   - openTestudoDownloadURL: The URL of the download page of
+  ///     OpenTestudo, or `nil` (the default) for none (ACPA-19c, D128 (i)).
+  ///     In `.sandboxed` the instructions of each session tell the user
+  ///     that work that needs a child process needs OpenTestudo, and give
+  ///     this URL (``RoutedACPAgent/openTestudoDownloadURL``). With `nil`,
+  ///     the instructions give no link. In `.open` the instructions do not
+  ///     name OpenTestudo.
   ///   - environment: The environment the stacks read their defaults
   ///     layer from, and the session tools read. The process environment
   ///     by default.
@@ -199,6 +206,7 @@ public struct ComposedAgent: Sendable {
     home: AgentHome,
     mode: ToolMode,
     sandboxProbe: SandboxProbe = .live,
+    openTestudoDownloadURL: URL? = nil,
     environment: [String: String] = ProcessInfo.processInfo.environment,
     modelSource: ModelSource = .live,
     stubChunkGate: String? = nil,
@@ -235,6 +243,7 @@ public struct ComposedAgent: Sendable {
       home: home,
       mode: mode,
       sandboxProbe: sandboxProbe,
+      openTestudoDownloadURL: openTestudoDownloadURL,
       environment: environment,
       transcriptLocation: transcriptLocation,
       secretStore: secretStore,

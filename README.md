@@ -641,6 +641,15 @@ long answer only when the request needs it. The style text comes before the
 base prompt and before each `AGENTS.md`, for each agent. An `Instructions.md`
 does not replace it. It is one copy of the text, never mirrored here.
 
+In the `sandboxed` tool mode, a compiled-in section comes after the style
+text and before the base prompt:
+[`Sources/FoundationModelsACPAgent/Instructions/OpenTestudoInstructions.swift`](Sources/FoundationModelsACPAgent/Instructions/OpenTestudoInstructions.swift).
+It tells the model that work that needs a shell, a stdio MCP server, a skill
+script or code context needs OpenTestudo, and it gives the download URL that
+the host gives to `ComposedAgent.compose(openTestudoDownloadURL:)`. With no
+URL, the section has no link. In the `open` tool mode, the section is not in
+the instructions.
+
 ## Design decisions
 
 The code depends on these decisions. The doc comment at each place in the

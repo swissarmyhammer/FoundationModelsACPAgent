@@ -1061,6 +1061,9 @@ extension RoutedACPAgent {
   /// `session/new` and `session/resume` compose through this function.
   /// A model-slot switch composes nothing.
   /// The restored session gets the tools of this composition.
+  /// The assembler gets the tool mode (``toolMode``) and the OpenTestudo
+  /// download URL (``openTestudoDownloadURL``) of the agent, so a new
+  /// session and a resumed session get the same OpenTestudo section.
   ///
   /// - Parameters:
   ///   - context: The resolved per-cwd configuration.
@@ -1127,7 +1130,8 @@ extension RoutedACPAgent {
         transcriptRoot: context.transcriptRoot)
       surface = try await fullSurface.applying(agent: agent.definition)
       instructions = try await InstructionsAssembler(
-        stack: context.loader.stack, workingDirectory: workingDirectory
+        stack: context.loader.stack, workingDirectory: workingDirectory, toolMode: toolMode,
+        openTestudoDownloadURL: openTestudoDownloadURL
       ).assemble(
         skills: skills.registry, agent: agent.text,
         workingDirectoryAgent: agent.workingDirectoryAgent)

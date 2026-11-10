@@ -70,14 +70,27 @@ import Testing
     /// The assembler for a session at `directory`, or at the workspace
     /// when `directory` is `nil`. The stack injects the fixture's user
     /// layer and an empty environment.
-    func assembler(at directory: URL? = nil) -> InstructionsAssembler {
+    ///
+    /// - Parameters:
+    ///   - directory: The session working directory, or `nil` for the
+    ///     workspace.
+    ///   - mode: The tool mode of the session. `.open` by default.
+    ///   - downloadURL: The download URL of OpenTestudo, or `nil` (the
+    ///     default) for none.
+    /// - Returns: The assembler.
+    func assembler(
+      at directory: URL? = nil, mode: ToolMode = .open,
+      openTestudoDownloadURL downloadURL: URL? = nil
+    ) -> InstructionsAssembler {
       let sessionDirectory = directory ?? workingDirectory
       let stack = DotfolderStack(
         name: InstructionsAssemblerTests.agentName,
         workingDirectory: sessionDirectory,
         userDirectory: userDirectory,
         environment: [:])
-      return InstructionsAssembler(stack: stack, workingDirectory: sessionDirectory)
+      return InstructionsAssembler(
+        stack: stack, workingDirectory: sessionDirectory, toolMode: mode,
+        openTestudoDownloadURL: downloadURL)
     }
 
     /// Writes `text` at `relativePath` under `directory`, and creates
@@ -254,6 +267,64 @@ import Testing
   /// the two texts do not disagree.
   @Test func theBuiltinLeavesTheOrderOfAnAnswerToTheStyleText() {
     #expect(!Self.collapsingWhitespace(BuiltinInstructions.text).contains("Give the result first"))
+  }
+
+  // MARK: - The OpenTestudo section
+
+  /// The download URL of OpenTestudo that the cases of the section give.
+  static let openTestudoDownloadURL = URL(string: "https://example.test/opentestudo")!
+
+  /// In the `sandboxed` mode with a URL, the OpenTestudo section with the
+  /// URL comes after the style text and before the base prompt.
+  @Test func theSandboxedModeWithAURLAddsTheSectionWithTheURL() async throws {
+    let assembled = try await Fixture().assembler(
+      mode: .sandboxed, openTestudoDownloadURL: Self.openTestudoDownloadURL
+    ).assemble()
+
+    #expect(
+      assembled.text
+        == StyleInstructions.prefixed(
+          OpenTestudoInstructions.text(downloadURL: Self.openTestudoDownloadURL)
+            + InstructionsAssembler.sectionSeparator + BuiltinInstructions.text))
+  }
+
+  /// The section of the `sandboxed` mode with a URL holds the URL.
+  @Test func theSectionWithAURLHoldsTheURL() {
+    let section = OpenTestudoInstructions.text(downloadURL: Self.openTestudoDownloadURL)
+
+    #expect(section.contains(Self.openTestudoDownloadURL.absoluteString))
+  }
+
+  /// In the `sandboxed` mode with no URL, the OpenTestudo section comes
+  /// after the style text and before the base prompt.
+  @Test func theSandboxedModeWithNoURLAddsTheSection() async throws {
+    let assembled = try await Fixture().assembler(mode: .sandboxed).assemble()
+
+    #expect(
+      assembled.text
+        == StyleInstructions.prefixed(
+          OpenTestudoInstructions.text(downloadURL: nil)
+            + InstructionsAssembler.sectionSeparator + BuiltinInstructions.text))
+  }
+
+  /// The section of the `sandboxed` mode with no URL has no link.
+  @Test func theSectionWithNoURLHasNoLink() {
+    #expect(!OpenTestudoInstructions.text(downloadURL: nil).contains("://"))
+  }
+
+  /// The section names OpenTestudo, also with no URL.
+  @Test func theSectionWithNoURLNamesOpenTestudo() {
+    #expect(OpenTestudoInstructions.text(downloadURL: nil).contains("OpenTestudo"))
+  }
+
+  /// In the `open` mode, the instructions have no OpenTestudo section and
+  /// no URL, also when the host gives a URL.
+  @Test func theOpenModeAddsNoSection() async throws {
+    let assembled = try await Fixture().assembler(
+      mode: .open, openTestudoDownloadURL: Self.openTestudoDownloadURL
+    ).assemble()
+
+    #expect(assembled.text == StyleInstructions.prefixed(BuiltinInstructions.text))
   }
 
   // MARK: - Wholesale replacement

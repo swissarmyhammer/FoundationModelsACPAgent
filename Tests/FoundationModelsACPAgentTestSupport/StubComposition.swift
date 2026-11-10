@@ -30,6 +30,8 @@ import FoundationModelsExtras
 ///     sandboxed. The default reads the test process, which is not
 ///     sandboxed. A suite that tests the check of the mode gives
 ///     `.fixed(_:)`.
+///   - openTestudoDownloadURL: The download URL of OpenTestudo to give to
+///     the composition, or `nil` (the default) for none.
 /// - Returns: The composition.
 /// - Throws: `DotfolderNameError` when `name` is refused, the write error of
 ///   the defaults layer, or whatever the composition throws.
@@ -42,7 +44,8 @@ public func composeStubAgent(
   userDeviceTokens: Set<String> = [],
   environment: [String: String] = [:],
   mode: ToolMode = .open,
-  sandboxProbe: SandboxProbe = .live
+  sandboxProbe: SandboxProbe = .live,
+  openTestudoDownloadURL: URL? = nil
 ) async throws -> ComposedAgent {
   let workspace = workspace ?? makeResolvedDirectory(label: "\(label)-repo")
   return try await ComposedAgent.compose(
@@ -51,6 +54,7 @@ public func composeStubAgent(
     home: home ?? AgentHomeFixture.make(label: label),
     mode: mode,
     sandboxProbe: sandboxProbe,
+    openTestudoDownloadURL: openTestudoDownloadURL,
     environment: try StubAgentDefaultsLayer.makeEnvironment(name: name, base: environment),
     modelSource: .stub,
     secretStore: secretStore,

@@ -99,6 +99,13 @@ public actor RoutedACPAgent: Agent {
   /// that starts a child process.
   public nonisolated let toolMode: ToolMode
 
+  /// The URL of the download page of OpenTestudo that the host gave, or
+  /// `nil` for none (ACPA-19c, D128 (i)). In
+  /// ``FoundationModelsExtras/ToolMode/sandboxed`` the instructions of each
+  /// session tell the user that work that needs a child process needs
+  /// OpenTestudo, and give this URL (``OpenTestudoInstructions``).
+  public nonisolated let openTestudoDownloadURL: URL?
+
   /// The probe that tells if the process is sandboxed. The init checks
   /// ``toolMode`` against it, and each session gives it to the Multitool
   /// builder (``CatalogContext/sandboxProbe``).
@@ -451,6 +458,9 @@ public actor RoutedACPAgent: Agent {
   ///   - sandboxProbe: The probe that tells if the process is sandboxed.
   ///     The default reads the current process. A test gives
   ///     `.fixed(_:)`.
+  ///   - openTestudoDownloadURL: The URL of the download page of
+  ///     OpenTestudo, or `nil` (the default) for none — see
+  ///     ``openTestudoDownloadURL``.
   ///   - environment: The environment of the host: the stacks read their
   ///     defaults layer from it, and the session tools read it
   ///     (``CatalogContext/environment``).
@@ -481,6 +491,7 @@ public actor RoutedACPAgent: Agent {
     home: AgentHome,
     mode: ToolMode,
     sandboxProbe: SandboxProbe = .live,
+    openTestudoDownloadURL: URL? = nil,
     environment: [String: String] = ProcessInfo.processInfo.environment,
     inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
     transcriptLocation: TranscriptLocation? = nil,
@@ -490,6 +501,7 @@ public actor RoutedACPAgent: Agent {
     try mode.validate(probe: sandboxProbe)
     self.toolMode = mode
     self.sandboxProbe = sandboxProbe
+    self.openTestudoDownloadURL = openTestudoDownloadURL
     self.name = name
     self.sessionDirectory = router.sessionDirectory
     self.hooks = hooks

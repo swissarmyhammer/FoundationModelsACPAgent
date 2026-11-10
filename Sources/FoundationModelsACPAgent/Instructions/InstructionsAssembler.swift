@@ -45,13 +45,16 @@ public struct AssembledInstructions: Equatable, Sendable {
 ///
 /// 1. The compiled-in ``StyleInstructions``, for each base prompt. Nothing
 ///    replaces it.
-/// 2. The base prompt: the nearest `Instructions.md` through
+/// 2. In ``FoundationModelsExtras/ToolMode/sandboxed`` only, the
+///    compiled-in ``OpenTestudoInstructions`` section with the download URL
+///    of the host (ACPA-19c).
+/// 3. The base prompt: the nearest `Instructions.md` through
 ///    `stack.content(_:)`, which **replaces the builtin wholesale**; with no
 ///    file in any layer the compiled-in ``BuiltinInstructions`` renders.
-/// 3. The preloaded skill bodies: `registry.preloadedBodies()`, one already-
+/// 4. The preloaded skill bodies: `registry.preloadedBodies()`, one already-
 ///    rendered string.
-/// 4. The user-level `AGENTS.md` through `stack.content(_:)`.
-/// 5. The project-level documents through `AgentsMd.documents(from:)`, from
+/// 5. The user-level `AGENTS.md` through `stack.content(_:)`.
+/// 6. The project-level documents through `AgentsMd.documents(from:)`, from
 ///    the repository root down to the working directory. The
 ///    ``WorkingDirectoryAgent`` role of the session tells what the `AGENT.md`
 ///    of the working directory is.
@@ -99,6 +102,15 @@ public struct InstructionsAssembler: Sendable {
   /// starts from.
   public let workingDirectory: URL
 
+  /// The tool mode of the host. In
+  /// ``FoundationModelsExtras/ToolMode/sandboxed`` the assembly adds the
+  /// ``OpenTestudoInstructions`` section.
+  public let toolMode: ToolMode
+
+  /// The URL of the download page of OpenTestudo that the host gave, or
+  /// `nil` for none. The ``OpenTestudoInstructions`` section gives it.
+  public let openTestudoDownloadURL: URL?
+
   /// Creates an assembler for one session.
   ///
   /// - Parameters:
@@ -106,9 +118,19 @@ public struct InstructionsAssembler: Sendable {
   ///     working directory, e.g. `ConfigurationLoader.stack`.
   ///   - workingDirectory: The session working directory (ACP's
   ///     `session/new(cwd)`), never the process cwd.
-  public init(stack: DotfolderStack, workingDirectory: URL) {
+  ///   - toolMode: The tool mode of the host (``toolMode``). The default
+  ///     is `.open`, which adds no OpenTestudo section.
+  ///   - openTestudoDownloadURL: The URL of the download page of
+  ///     OpenTestudo (``openTestudoDownloadURL``), or `nil` (the default)
+  ///     for none.
+  public init(
+    stack: DotfolderStack, workingDirectory: URL, toolMode: ToolMode = .open,
+    openTestudoDownloadURL: URL? = nil
+  ) {
     self.stack = stack
     self.workingDirectory = workingDirectory
+    self.toolMode = toolMode
+    self.openTestudoDownloadURL = openTestudoDownloadURL
   }
 
   /// Assembles the instructions text for one session.
@@ -134,10 +156,11 @@ public struct InstructionsAssembler: Sendable {
   ) async throws -> AssembledInstructions {
     let renderer = Renderer(engine: TemplateEngine(partials: stack))
     var warnings: [InstructionsWarning] = []
-    var sections = [
-      StyleInstructions.text,
-      try basePrompt(renderer: renderer, agent: agent, warnings: &warnings),
-    ]
+    var sections = [StyleInstructions.text]
+    if let toolModeSection {
+      sections.append(toolModeSection)
+    }
+    sections.append(try basePrompt(renderer: renderer, agent: agent, warnings: &warnings))
 
     // Already ONE rendered string, joined with blank lines — never
     // rendered again and never iterated.
@@ -160,6 +183,20 @@ public struct InstructionsAssembler: Sendable {
     }
     return AssembledInstructions(
       text: sections.joined(separator: Self.sectionSeparator), warnings: warnings)
+  }
+
+  // MARK: - The tool mode
+
+  /// The section that the tool mode adds: the ``OpenTestudoInstructions``
+  /// text in ``FoundationModelsExtras/ToolMode/sandboxed``, and `nil` in
+  /// ``FoundationModelsExtras/ToolMode/open``.
+  private var toolModeSection: String? {
+    switch toolMode {
+    case .open:
+      return nil
+    case .sandboxed:
+      return OpenTestudoInstructions.text(downloadURL: openTestudoDownloadURL)
+    }
   }
 
   // MARK: - The base prompt

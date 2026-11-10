@@ -102,7 +102,23 @@ import Testing
   /// The tool group of the code context in the template values.
   private static let codeContextTemplateGroup = "codeContext"
 
+  /// The download URL of OpenTestudo that the host of a case gives.
+  private static let openTestudoDownloadURL = URL(string: "https://example.test/opentestudo")!
+
   // MARK: - Harness
+
+  /// Composes a stub agent in the `sandboxed` mode with
+  /// ``openTestudoDownloadURL``, and runs `initialize`.
+  ///
+  /// - Returns: The composition.
+  /// - Throws: Whatever the composition or the handshake throws.
+  private static func composeSandboxedAgent() async throws -> ComposedAgent {
+    let composed = try await composeStubAgent(
+      name: label, label: label, mode: .sandboxed, sandboxProbe: .fixed(true),
+      openTestudoDownloadURL: openTestudoDownloadURL)
+    _ = try await composed.agent.initialize(AgentClientHarness.makeInitializeRequest())
+    return composed
+  }
 
   /// Makes a configuration with the shell and the code context on, and with
   /// `servers` as the `mcp:` section.
@@ -507,6 +523,41 @@ import Testing
       name: Self.label, label: Self.label, mode: .sandboxed, sandboxProbe: .fixed(true))
 
     #expect(composed.agent.toolMode == .sandboxed)
+  }
+
+  @Test func theCompositionGivesTheOpenTestudoDownloadURLToTheAgent() async throws {
+    let composed = try await Self.composeSandboxedAgent()
+
+    #expect(composed.agent.openTestudoDownloadURL == Self.openTestudoDownloadURL)
+  }
+
+  @Test func aNewSessionInTheSandboxedModeHasTheOpenTestudoDownloadURL() async throws {
+    let composed = try await Self.composeSandboxedAgent()
+    let workspace = makeResolvedDirectory(label: "\(Self.label)-new")
+
+    let sessionId = try await composed.agent.newSession(
+      AgentClientHarness.makeNewSessionRequest(cwd: workspace)
+    ).sessionId
+    let instructions = await composed.agent.sessions[sessionId]?.instructions
+    await composed.closeOpenSessions()
+
+    #expect(instructions?.contains(Self.openTestudoDownloadURL.absoluteString) == true)
+  }
+
+  @Test func aResumedSessionInTheSandboxedModeHasTheOpenTestudoDownloadURL() async throws {
+    let composed = try await Self.composeSandboxedAgent()
+    let workspace = makeResolvedDirectory(label: "\(Self.label)-resume")
+    let sessionId = try await composed.agent.newSession(
+      AgentClientHarness.makeNewSessionRequest(cwd: workspace)
+    ).sessionId
+    _ = try await composed.agent.closeSession(CloseSessionRequest(sessionId: sessionId))
+
+    _ = try await composed.agent.resumeSession(
+      ResumeSessionRequest(cwd: AbsolutePath(rawValue: workspace.path), sessionId: sessionId))
+    let instructions = await composed.agent.sessions[sessionId]?.instructions
+    await composed.closeOpenSessions()
+
+    #expect(instructions?.contains(Self.openTestudoDownloadURL.absoluteString) == true)
   }
 
   @Test func eachSessionContextOfTheAgentHasTheModeOfTheAgent() async throws {
