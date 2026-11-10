@@ -29,11 +29,18 @@ comments:
     - notes: The constant is a top-level `public let` in the test support module, because `composeStubAgent` is also top level. A test that reads it uses the bare name, not `Self.`.
     - next: review
   timestamp: 2026-11-10T20:30:06.660994+00:00
+- actor: claude-code
+  id: 01m73jj7n51vbebytwvpsx8epk
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~2..HEAD (517aa2b, 26e961f) in the main tree; 0 findings (attempted 7, failed 0, skipped 0). The five Swift code-hygiene rules read OpenTestudoInstructions.swift; no rule declined an item. The two prior reuse/reuse findings are checked; 26e961f moves the OpenTestudo test URL to one shared constant.
+    - next: none; the task is in done.
+  timestamp: 2026-11-10T20:32:03.237339+00:00
 depends_on:
 - 01M73040J7Q5AB7PRADXFEAMNV
 - 01M7303F2AJEEVCV4EB76XDPW1
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffffd180
 title: 'ACPA-19c: In sandboxed mode, the session instructions send work that needs a child process to OpenTestudo'
 ---
 ## What
