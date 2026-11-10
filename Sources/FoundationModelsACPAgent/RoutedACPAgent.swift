@@ -444,8 +444,10 @@ public actor RoutedACPAgent: Agent {
   ///     session takes its skills marketplace cache and the folder of its
   ///     machine state from it. Tests give a custom home in throwaway
   ///     folders, so they never touch the real home directory.
-  ///   - mode: The tool mode of the host (``toolMode``). It has no default
-  ///     value, so a host must select one. The `acp-agent` CLI gives
+  ///   - mode: The tool mode of the host (``toolMode``). The default
+  ///     `.open` is temporary, until each host gives a mode; then the
+  ///     default goes. `validate(probe:)` refuses `.open` in a sandboxed
+  ///     process. The `acp-agent` CLI gives
   ///     `.open`; an app in the App Sandbox gives `.sandboxed`.
   ///   - sandboxProbe: The probe that tells if the process is sandboxed.
   ///     The default reads the current process. A test gives
@@ -478,7 +480,7 @@ public actor RoutedACPAgent: Agent {
     configuration: AgentConfiguration = AgentConfiguration(),
     reporting: ResolutionProgress? = nil,
     home: AgentHome,
-    mode: ToolMode,
+    mode: ToolMode = .open,
     sandboxProbe: SandboxProbe = .live,
     environment: [String: String] = ProcessInfo.processInfo.environment,
     inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
