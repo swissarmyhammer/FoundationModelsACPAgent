@@ -13,9 +13,6 @@ public enum AgentsFileFixture {
   ///   - directory: The folder the file goes in.
   /// - Throws: The directory-creation or write error.
   public static func write(_ text: String, in directory: URL) throws {
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    try text.write(
-      to: directory.appendingPathComponent(InstructionsAssembler.agentsFileName, isDirectory: false),
-      atomically: true, encoding: .utf8)
+    try TestFileFixture.write(text, named: InstructionsAssembler.agentsFileName, in: directory)
   }
 }

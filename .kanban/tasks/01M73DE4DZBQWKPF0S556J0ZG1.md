@@ -58,6 +58,29 @@ comments:
     - evidence: Tests/FoundationModelsACPAgentTestSupport/AgentsFileFixture.swift (new), Tests/FoundationModelsACPAgentTests/SubagentInstructionsTests.swift, Tests/FoundationModelsACPAgentTests/SessionResumeTests.swift, Tests/FoundationModelsACPAgentTests/BuiltinCommandsTests.swift, Tests/FoundationModelsACPAgentTests/TelemetryContentSafetyTests.swift, Tests/FoundationModelsACPAgentTests/Integration/AgentInstructionsFileTests.swift. Finding SubagentInstructionsTests.swift:68 reuse/reuse is `- [x]`. No pin change. `swift build --build-tests`: complete, 0 compiler warnings. `swift test`: 1951 tests in 213 suites passed, 0 failures (1 known issue is the existing `withKnownIssue` self-test). `swift build --build-tests --package-path IntegrationTests`: complete. The only build note is the SwiftPM "missing creator for mutated node" note for mlx-swift_Cmlx.bundle, which is not a compiler warning.
     - next: /review
   timestamp: 2026-11-10T20:53:46.389148+00:00
+- actor: claude-code
+  id: 01m73kx0j7w27q0t3fv7dd8fs8
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (0586ee3); 1 finding — Tests/FoundationModelsACPAgentTestSupport/AgentsFileFixture.swift:15 (reuse/reuse). The prior finding at SubagentInstructionsTests.swift:68 is addressed: the AGENTS.md write is now one shared helper in the test-support target.
+    - next: make one test-support file writer that takes the file name, and make `AgentsFileFixture.write` and `ConfigFileFixture.write` use it. Then review again.
+  timestamp: 2026-11-10T20:55:24.999192+00:00
+- actor: claude-code
+  id: 01m73m4ewm2bw7rkamm4xqj7aw
+  text: |-
+    Finding work (implement step):
+    - New: `Tests/FoundationModelsACPAgentTestSupport/TestFileFixture.swift`, `TestFileFixture.write(_:named:in:)`. It makes the folder, then writes the named file atomically.
+    - `AgentsFileFixture.write` and `ConfigFileFixture.write` are now thin wrappers. Each passes its own file name. Their callers do not change.
+    - `AgentFolderFixture.write(id:under:description:extraKeys:)` had the same body (make the folder, write `AGENT.md`). It now also calls the shared writer, so the cause is removed from the whole support target.
+    - TDD: new `Tests/FoundationModelsACPAgentTests/TestFileFixtureTests.swift`. It failed first (`cannot find 'TestFileFixture' in scope`), and passes now.
+  timestamp: 2026-11-10T20:59:29.044535+00:00
+- actor: claude-code
+  id: 01m73m4m368zgz3dxg3rvk4bgt
+  text: |-
+    ### implement — changed
+    - evidence: Tests/FoundationModelsACPAgentTestSupport/TestFileFixture.swift (new), Tests/FoundationModelsACPAgentTestSupport/AgentsFileFixture.swift, Tests/FoundationModelsACPAgentTestSupport/ConfigFileFixture.swift, Tests/FoundationModelsACPAgentTestSupport/AgentFolderFixture.swift, Tests/FoundationModelsACPAgentTests/TestFileFixtureTests.swift (new). Finding AgentsFileFixture.swift:15 reuse/reuse is `- [x]`. No pin change. `swift test`: 1952 tests in 214 suites passed, 0 failures (1 known issue is the existing `withKnownIssue` self-test in HarnessSmokeTests), 0 compiler warnings. `swift build --build-tests --package-path IntegrationTests`: complete. The only build note is the SwiftPM "missing creator for mutated node" note for mlx-swift_Cmlx.bundle, which is not a compiler warning.
+    - next: /review
+  timestamp: 2026-11-10T20:59:34.374691+00:00
 depends_on:
 - 01M7303F2AJEEVCV4EB76XDPW1
 position_column: doing
@@ -96,3 +119,12 @@ External dependency: FoundationModelsAgents `AgentEnvironment.make(..., instruct
 > - `README.md` — no validator matches this file
 
 - [x] `Tests/FoundationModelsACPAgentTests/SubagentInstructionsTests.swift:68` `reuse/reuse` — `writeAgentsMd(_:in:)` re-implements the write of an `AGENTS.md` file that the test suite already does in other places. The fixture helper `write(_:to:under:)` and the `AgentInstructionsFileTests.write(_:to:in:)` helper do the same job. Use the existing write helper for `AGENTS.md`, or move the helper into `Tests/FoundationModelsACPAgentTestSupport` so that all AGENTS.md writes use one function. Do not add a fourth copy.
+
+## Review Findings (2026-11-10 14:54)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 6 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTestSupport/AgentsFileFixture.swift:15` `reuse/reuse` — The new `AgentsFileFixture.write` repeats the body of `ConfigFileFixture.write`. Both create a directory and write a text file with a fixed name into it. They differ only in the file name. Two helpers for one capability can diverge, and the file-write behavior is then kept in two places. Generalize into one test-support writer that takes the file name, for example `TestFileFixture.write(_ text: String, named fileName: String, in directory: URL)`. Keep `AgentsFileFixture.write` and `ConfigFileFixture.write` as thin wrappers that pass their own file name, or change the call sites to use the shared writer.

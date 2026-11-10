@@ -36,11 +36,9 @@ public enum AgentFolderFixture {
   public static func write(
     id: String, under layer: URL, description: String, extraKeys: [String] = []
   ) throws {
-    let folder = layer.appendingPathComponent(id, isDirectory: true)
-    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-    try document(id: id, description: description, extraKeys: extraKeys).write(
-      to: folder.appendingPathComponent(documentName, isDirectory: false),
-      atomically: true, encoding: .utf8)
+    try TestFileFixture.write(
+      document(id: id, description: description, extraKeys: extraKeys),
+      named: documentName, in: layer.appendingPathComponent(id, isDirectory: true))
   }
 
   /// Writes the agent folder `<project>/.agents/agents/<id>/AGENT.md`.

@@ -14,9 +14,6 @@ public enum ConfigFileFixture {
   ///   - directory: The layer root the file goes in.
   /// - Throws: The directory-creation or write error.
   public static func write(_ yaml: String, in directory: URL) throws {
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    try yaml.write(
-      to: directory.appendingPathComponent(ConfigurationLoader.configFileName),
-      atomically: true, encoding: .utf8)
+    try TestFileFixture.write(yaml, named: ConfigurationLoader.configFileName, in: directory)
   }
 }
