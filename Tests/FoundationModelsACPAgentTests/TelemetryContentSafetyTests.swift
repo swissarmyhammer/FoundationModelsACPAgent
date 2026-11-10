@@ -390,8 +390,7 @@ import Testing
   /// - Throws: The directory-creation or write error.
   private static func makeWorkingDirectory() throws -> URL {
     let cwd = makeResolvedDirectory(label: "\(fixtureLabel)-repo")
-    try Data(agentsFileContent.utf8).write(
-      to: cwd.appendingPathComponent(InstructionsAssembler.agentsFileName))
+    try AgentsFileFixture.write(agentsFileContent, in: cwd)
     let dotfolder = cwd.appendingPathComponent(
       ".\(AgentClientHarness.dotfolderName)", isDirectory: true)
     try FileManager.default.createDirectory(at: dotfolder, withIntermediateDirectories: true)

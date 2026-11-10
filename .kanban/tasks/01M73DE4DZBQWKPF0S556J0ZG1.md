@@ -34,6 +34,30 @@ comments:
     - `swift build --build-tests`: complete, no compiler warnings. `swift test`: 1951 tests in 213 suites passed, 0 failures (1 known issue is the existing `withKnownIssue` self-test in HarnessSmokeTests). `swift build --build-tests --package-path IntegrationTests`: complete. Both builds print the SwiftPM build-system note "missing creator for mutated node" for the mlx-swift_Cmlx.bundle. That note is not a compiler warning and does not come from the source of this change.
     - next: /review
   timestamp: 2026-11-10T20:47:23.454714+00:00
+- actor: claude-code
+  id: 01m73kjm5kgp2eg81v0bh089tv
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (8d7c456): 1 finding (1 confirmed, 1 refuted) — Tests/FoundationModelsACPAgentTests/SubagentInstructionsTests.swift:68 reuse/reuse
+    - next: implement the finding (use one shared AGENTS.md write helper), then review again.
+  timestamp: 2026-11-10T20:49:44.627346+00:00
+- actor: claude-code
+  id: 01m73kswjwbvkmsghr0cpx57m2
+  text: |-
+    Finding work (implement step):
+    - The fixture helper `write(_:to:under:)` is a member of the private fixture of InstructionsAssemblerTests, and `AgentInstructionsFileTests.write(_:to:in:)` is private. The new test file cannot call them. Thus a new shared helper is in the support target.
+    - New: `Tests/FoundationModelsACPAgentTestSupport/AgentsFileFixture.swift`, `AgentsFileFixture.write(_:in:)`. It has the shape of `ConfigFileFixture.write(_:in:)`: it makes the folder, then writes `InstructionsAssembler.agentsFileName` atomically.
+    - SubagentInstructionsTests: `writeAgentsMd(_:in:)` is removed. The two tests call `AgentsFileFixture.write`.
+    - The helper also replaces four inline AGENTS.md writes, each with the same bytes and no change in behavior: SessionResumeTests (diverge test), BuiltinCommandsTests (fixture), TelemetryContentSafetyTests (`makeWorkingDirectory`), AgentInstructionsFileTests (precedence test). In AgentInstructionsFileTests the private `agentsFileName` constant had no more callers, thus it is removed. Its private `write(_:to:in:)` stays, because it also writes AGENT.md.
+    - Not changed: the InstructionsAssemblerTests fixture helper. It is a general writer (skills, user and project layers, nested paths) with many callers. A change there is a refactor of an older file with risk.
+  timestamp: 2026-11-10T20:53:42.620757+00:00
+- actor: claude-code
+  id: 01m73kt08n3x3bnhcrbtaysxxs
+  text: |-
+    ### implement — changed
+    - evidence: Tests/FoundationModelsACPAgentTestSupport/AgentsFileFixture.swift (new), Tests/FoundationModelsACPAgentTests/SubagentInstructionsTests.swift, Tests/FoundationModelsACPAgentTests/SessionResumeTests.swift, Tests/FoundationModelsACPAgentTests/BuiltinCommandsTests.swift, Tests/FoundationModelsACPAgentTests/TelemetryContentSafetyTests.swift, Tests/FoundationModelsACPAgentTests/Integration/AgentInstructionsFileTests.swift. Finding SubagentInstructionsTests.swift:68 reuse/reuse is `- [x]`. No pin change. `swift build --build-tests`: complete, 0 compiler warnings. `swift test`: 1951 tests in 213 suites passed, 0 failures (1 known issue is the existing `withKnownIssue` self-test). `swift build --build-tests --package-path IntegrationTests`: complete. The only build note is the SwiftPM "missing creator for mutated node" note for mlx-swift_Cmlx.bundle, which is not a compiler warning.
+    - next: /review
+  timestamp: 2026-11-10T20:53:46.389148+00:00
 depends_on:
 - 01M7303F2AJEEVCV4EB76XDPW1
 position_column: doing
@@ -60,3 +84,15 @@ External dependency: FoundationModelsAgents `AgentEnvironment.make(..., instruct
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #step1
+
+## Review Findings (2026-11-10 14:47)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 6 file(s) reviewed, 3 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `README.md` — no validator matches this file
+
+- [x] `Tests/FoundationModelsACPAgentTests/SubagentInstructionsTests.swift:68` `reuse/reuse` — `writeAgentsMd(_:in:)` re-implements the write of an `AGENTS.md` file that the test suite already does in other places. The fixture helper `write(_:to:under:)` and the `AgentInstructionsFileTests.write(_:to:in:)` helper do the same job. Use the existing write helper for `AGENTS.md`, or move the helper into `Tests/FoundationModelsACPAgentTestSupport` so that all AGENTS.md writes use one function. Do not add a fourth copy.

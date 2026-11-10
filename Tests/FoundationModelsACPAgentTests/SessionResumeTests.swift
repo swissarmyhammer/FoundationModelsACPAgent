@@ -705,10 +705,7 @@ import Testing
       agent: resume.fixture.harness.agent)
     await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
 
-    try marker.write(
-      to: resume.fixture.cwd.appendingPathComponent(
-        InstructionsAssembler.agentsFileName),
-      atomically: true, encoding: .utf8)
+    try AgentsFileFixture.write(marker, in: resume.fixture.cwd)
     _ = try await resume.fixture.harness.connection.resumeSession(
       resume.makeResumeRequest())
 

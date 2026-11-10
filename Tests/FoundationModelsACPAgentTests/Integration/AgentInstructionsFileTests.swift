@@ -21,9 +21,6 @@ import Testing
   /// The alias file name of the agents.md specification.
   private static let agentFileName = "AGENT.md"
 
-  /// The file name that wins over the alias.
-  private static let agentsFileName = InstructionsAssembler.agentsFileName
-
   /// The marker text of the `AGENT.md` at the repository root.
   private static let rootAgentText = "ROOT-AGENT-MD-RULES"
 
@@ -150,7 +147,7 @@ import Testing
   /// reach the model.
   @Test func anAgentsMdHidesTheAgentMdBesideIt() async throws {
     let root = try Self.makeRepository(label: "AgentInstructionsFileTests-precedence")
-    try Self.write(Self.agentsText, to: Self.agentsFileName, in: root)
+    try AgentsFileFixture.write(Self.agentsText, in: root)
     try Self.write(Self.hiddenAgentText, to: Self.agentFileName, in: root)
 
     let text = try await Self.instructionsText(

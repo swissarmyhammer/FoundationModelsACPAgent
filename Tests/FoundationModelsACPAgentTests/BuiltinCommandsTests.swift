@@ -83,9 +83,7 @@ import Testing
           atomically: true, encoding: .utf8)
       }
       if let agentsMarkdown {
-        try agentsMarkdown.write(
-          to: cwd.appendingPathComponent(InstructionsAssembler.agentsFileName),
-          atomically: true, encoding: .utf8)
+        try AgentsFileFixture.write(agentsMarkdown, in: cwd)
       }
       let agent = try await makeStubAgent(
         name: AgentClientHarness.dotfolderName,

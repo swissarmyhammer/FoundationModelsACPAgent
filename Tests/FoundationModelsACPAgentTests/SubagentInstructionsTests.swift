@@ -59,18 +59,6 @@ import Testing
     return [StyleInstructions.text, agentsMd, body].joined(separator: runPartSeparator)
   }
 
-  /// Writes the `AGENTS.md` file of a working folder.
-  ///
-  /// - Parameters:
-  ///   - text: The text of the file.
-  ///   - cwd: The working folder.
-  /// - Throws: The write error.
-  private static func writeAgentsMd(_ text: String, in cwd: URL) throws {
-    try text.write(
-      to: cwd.appendingPathComponent(InstructionsAssembler.agentsFileName, isDirectory: false),
-      atomically: true, encoding: .utf8)
-  }
-
   /// The leading instructions of the session of `sessionId` in the table of `fixture`.
   ///
   /// - Parameters:
@@ -91,7 +79,7 @@ import Testing
   @Test
   func aNewRunStartsWithTheStyleTextThenTheAgentsMdTextThenTheBody() async throws {
     let cwd = makeResolvedDirectory(label: "\(Self.label)-repo")
-    try Self.writeAgentsMd(Self.agentsMdText, in: cwd)
+    try AgentsFileFixture.write(Self.agentsMdText, in: cwd)
     try AgentsToolTests.writeAgent(named: Self.childAgent, in: cwd)
     let hold = ScriptedHold()
     let script: [ScriptedPassStep] = [
@@ -136,7 +124,7 @@ import Testing
   @Test
   func aRestoredRunStartsWithTheStyleTextThenTheAgentsMdTextThenTheBody() async throws {
     let recording = try await ResumeNestedSessionsTests.recordShutDownChain()
-    try Self.writeAgentsMd(Self.changedAgentsMdText, in: recording.cwd)
+    try AgentsFileFixture.write(Self.changedAgentsMdText, in: recording.cwd)
     let fixture = try await ScriptedPromptFixture.make(
       script: [.endPass], label: "\(Self.label)-second", workingDirectory: recording.cwd)
     try await ResumeNestedSessionsTests.resumeRoot(of: recording, on: fixture)
