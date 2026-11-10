@@ -68,8 +68,15 @@ comments:
     - evidence: Tests/FoundationModelsACPAgentTests/SessionAgentToolsTests.swift (4 new tests). `swift test`: 1977 tests in 215 suites passed, 0 failures, 0 compiler warnings (1 known issue: the existing `withKnownIssue` in HarnessSmokeTests; the SwiftPM line "missing creator for mutated node" for the mlx bundle is a build-graph message, not a compiler warning).
     - next: /review
   timestamp: 2026-11-10T22:17:38.327825+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m73rnszabj6bavyjmcbxpz98
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (efdb766), 0 findings (7 validators attempted, 0 failed). All prior Review Findings items are checked. The finding at SessionAgentToolsTests.swift (disallowedTools: [code_context] direction) is addressed.
+    - next: none. The task is in done.
+  timestamp: 2026-11-10T22:18:51.754368+00:00
+position_column: done
+position_ordinal: ffffd880
 title: The skills template values follow the tool selection of the session agent
 ---
 ## What
