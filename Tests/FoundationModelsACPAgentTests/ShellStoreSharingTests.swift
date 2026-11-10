@@ -57,7 +57,7 @@ import Testing
       workingDirectory: workingDirectory,
       configuration: configuration,
       profile: agent.profile,
-      settingsFolders: agent.settingsFolders,
+      settingsFolders: agent.settingsFolders, mode: .open,
       environment: [:])
   }
 

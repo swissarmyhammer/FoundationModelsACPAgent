@@ -38,6 +38,7 @@ import Testing
       name: DotfolderName(Self.dotfolderName),
       workingDirectory: workspace,
       home: AgentHomeFixture.make(label: Self.label, synced: synced, projects: projects),
+      mode: .open,
       environment: try StubAgentDefaultsLayer.makeEnvironment(name: Self.dotfolderName, base: [:]),
       modelSource: .stub)
     let harness = await AgentClientHarness.makeRecording(agent: composed.agent)

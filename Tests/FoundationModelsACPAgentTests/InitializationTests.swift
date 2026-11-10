@@ -3,6 +3,7 @@ import FoundationModelsACP
 import FoundationModelsACPAgent
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
+import FoundationModelsExtras
 import Testing
 
 /// The `initialize` handshake of `RoutedACPAgent`:
@@ -282,5 +283,30 @@ import Testing
       _ = try await harness.connection.logoutAuth(LogoutAuthRequest())
     }
     await harness.close()
+  }
+
+  // MARK: - The tool mode
+
+  /// The `mode` member of `_meta.sah`, the one member that this suite reads
+  /// from the SAH object.
+  private struct AdvertisedMode: Decodable {
+    /// The tool mode of the agent.
+    let mode: ToolMode
+  }
+
+  /// The `initialize` response gives the tool mode of the agent in
+  /// `_meta.sah.mode`, as the raw value of `ToolMode` (ACPA-19b).
+  @Test(arguments: ToolMode.allCases)
+  func initializeAdvertisesTheToolModeInTheSAHObject(_ mode: ToolMode) async throws {
+    let agent = try await makeStubAgent(
+      name: AgentClientHarness.dotfolderName,
+      cacheDirectory: makeResolvedDirectory(label: "InitializationTests-mode-cache"),
+      mode: mode)
+
+    let response = try await agent.initialize(AgentClientHarness.makeInitializeRequest())
+
+    let advertised = try #require(
+      ExtensionMeta.payload(AdvertisedMode.self, in: response.meta, member: SAH.metaKey))
+    #expect(advertised.mode == mode)
   }
 }

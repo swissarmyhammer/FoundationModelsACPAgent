@@ -101,7 +101,7 @@ import Testing
     let composed = try await ComposedAgent.compose(
       name: DotfolderName(dotfolderName),
       workingDirectory: workspace,
-      home: AgentHomeFixture.make(label: label),
+      home: AgentHomeFixture.make(label: label), mode: .open,
       environment: environment,
       modelSource: .stub,
       transcriptLocation: transcriptLocation)

@@ -416,7 +416,7 @@ struct SettingsFoldersTests {
       configuration: configuration,
       profile: try await makeStubProfile(
         cacheDirectory: makeResolvedDirectory(label: "SettingsFoldersTests-cache")),
-      settingsFolders: try fixture.settingsFolders(hasRoot: hasRoot),
+      settingsFolders: try fixture.settingsFolders(hasRoot: hasRoot), mode: .open,
       environment: fixture.environment)
   }
 

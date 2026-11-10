@@ -124,7 +124,7 @@ import Testing
       profile: try await makeStubProfile(
         cacheDirectory: try makeTemporaryDirectory(label: "cache")),
       clientMCPServers: clientServers,
-      settingsFolders: try SettingsFoldersFixture.make(label: "MCPCompositionTests"),
+      settingsFolders: try SettingsFoldersFixture.make(label: "MCPCompositionTests"), mode: .open,
       userPresence: userPresence)
   }
 
@@ -267,7 +267,7 @@ import Testing
   private static func mountSurface(
     of server: FoundationModelsMultitool.MCPServer
   ) async throws -> MountedSurface {
-    let builder = MultiTool.Builder()
+    let builder = MultiTool.Builder(mode: .open)
     try await builder.withMCP(servers: [server])
     let registry = try builder.buildRegistry()
     let mounted = try registry.makeSessionToolsAndStaging(selection: nil)
@@ -287,7 +287,8 @@ import Testing
     ])
     let client = try Self.clientStdioServer(named: Self.gammaName, command: Self.unusedCommand)
 
-    let roster = MCPComposition.composeRoster(section: section, clientServers: [client])
+    let roster = MCPComposition.composeRoster(
+      mode: .open, section: section, clientServers: [client])
 
     #expect(
       roster.entries.map(\.configuration.name) == [Self.alphaName, Self.betaName, Self.gammaName])
@@ -303,7 +304,7 @@ import Testing
     let clean = try Self.clientStdioServer(named: Self.gammaName, command: Self.unusedCommand)
 
     let roster = MCPComposition.composeRoster(
-      section: section, clientServers: [colliding, clean])
+      mode: .open, section: section, clientServers: [colliding, clean])
 
     #expect(roster.entries.map(\.configuration.name) == [Self.alphaName, Self.gammaName])
     #expect(roster.refusals == [.nameCollision(serverName: Self.alphaName)])
@@ -314,7 +315,7 @@ import Testing
     let repeated = try Self.clientStdioServer(named: Self.gammaName, command: Self.unusedCommand)
 
     let roster = MCPComposition.composeRoster(
-      section: .enabled(servers: []), clientServers: [first, repeated])
+      mode: .open, section: .enabled(servers: []), clientServers: [first, repeated])
 
     #expect(roster.entries.map(\.configuration.name) == [Self.gammaName])
     #expect(roster.refusals == [.nameCollision(serverName: Self.gammaName)])
@@ -326,14 +327,15 @@ import Testing
       try Self.clientStdioServer(named: Self.deltaName, command: Self.unusedCommand),
     ]
 
-    let roster = MCPComposition.composeRoster(section: .disabled, clientServers: clients)
+    let roster = MCPComposition.composeRoster(
+      mode: .open, section: .disabled, clientServers: clients)
 
     #expect(roster.entries.isEmpty)
     #expect(roster.refusals == [.mcpDisabled(serverNames: [Self.gammaName, Self.deltaName])])
   }
 
   @Test func mcpDisabledWithNoClientServersRecordsNoRefusal() async throws {
-    let roster = MCPComposition.composeRoster(section: .disabled, clientServers: [])
+    let roster = MCPComposition.composeRoster(mode: .open, section: .disabled, clientServers: [])
 
     #expect(roster.entries.isEmpty)
     #expect(roster.refusals.isEmpty)
@@ -344,7 +346,7 @@ import Testing
       "carrier-pigeon", .object(["name": .string(Self.remoteName)]))
 
     let roster = MCPComposition.composeRoster(
-      section: .enabled(servers: []), clientServers: [client])
+      mode: .open, section: .enabled(servers: []), clientServers: [client])
 
     #expect(roster.entries.isEmpty)
     #expect(roster.refusals == [.unknownTransport(serverName: Self.remoteName)])
@@ -362,7 +364,7 @@ import Testing
         ]))
 
     let roster = MCPComposition.composeRoster(
-      section: .enabled(servers: []), clientServers: [client])
+      mode: .open, section: .enabled(servers: []), clientServers: [client])
 
     #expect(
       roster.entries.map(\.configuration) == [
@@ -385,7 +387,7 @@ import Testing
         ]))
 
     let roster = MCPComposition.composeRoster(
-      section: .enabled(servers: []), clientServers: [client])
+      mode: .open, section: .enabled(servers: []), clientServers: [client])
 
     #expect(
       roster.entries.map(\.configuration) == [
@@ -409,7 +411,7 @@ import Testing
     await #expect(
       throws: StdioServerProcess.StdioServerProcessError.commandNotAbsolute(Self.relativeCommand)
     ) {
-      _ = try await MCPComposition.connectServers(section: section, clientServers: [])
+      _ = try await MCPComposition.connectServers(mode: .open, section: section, clientServers: [])
     }
   }
 
@@ -421,7 +423,7 @@ import Testing
     await #expect(
       throws: MCPCompositionError.invalidServerURL(serverName: Self.remoteName, url: "")
     ) {
-      _ = try await MCPComposition.connectServers(section: section, clientServers: [])
+      _ = try await MCPComposition.connectServers(mode: .open, section: section, clientServers: [])
     }
   }
 
@@ -429,7 +431,7 @@ import Testing
     let client = try Self.clientStdioServer(named: Self.gammaName, command: Self.unusedCommand)
 
     let connected = try await MCPComposition.connectServers(
-      section: .disabled, clientServers: [client])
+      mode: .open, section: .disabled, clientServers: [client])
 
     #expect(connected.servers.isEmpty)
     #expect(connected.processes.isEmpty)
@@ -468,7 +470,7 @@ import Testing
       forbidding: [Self.secretEnvValue, Self.secretHeaderValue]
     ) { context in
       _ = try await MCPComposition.connectServers(
-        section: .enabled(servers: []), clientServers: [client])
+        mode: .open, section: .enabled(servers: []), clientServers: [client])
       return context.logRecords
     }
 
@@ -496,7 +498,8 @@ import Testing
     ]
 
     let records = try await TelemetryCapture.run(forbidding: []) { context in
-      _ = try await MCPComposition.connectServers(section: .disabled, clientServers: clients)
+      _ = try await MCPComposition.connectServers(
+        mode: .open, section: .disabled, clientServers: clients)
       return context.logRecords
     }
 
@@ -735,7 +738,7 @@ import Testing
     let client = try Self.clientStdioServer(named: Self.gammaName, command: Self.relativeCommand)
 
     let connected = try await MCPComposition.connectServers(
-      section: .enabled(servers: []), clientServers: [client])
+      mode: .open, section: .enabled(servers: []), clientServers: [client])
 
     #expect(connected.servers.isEmpty)
     #expect(connected.processes.isEmpty)
@@ -754,7 +757,7 @@ import Testing
       MCPServerHTTP(name: Self.remoteName, url: "", headers: []))
 
     let connected = try await MCPComposition.connectServers(
-      section: .enabled(servers: []), clientServers: [client])
+      mode: .open, section: .enabled(servers: []), clientServers: [client])
 
     #expect(connected.servers.isEmpty)
     #expect(
@@ -775,7 +778,7 @@ import Testing
     await #expect(
       throws: StdioServerProcess.StdioServerProcessError.commandNotAbsolute(Self.relativeCommand)
     ) {
-      _ = try await MCPComposition.connectServers(section: section, clientServers: [])
+      _ = try await MCPComposition.connectServers(mode: .open, section: section, clientServers: [])
     }
   }
 
@@ -786,7 +789,7 @@ import Testing
     let client = try Self.clientStdioServer(named: Self.gammaName, command: command)
 
     let connected = try await MCPComposition.connectServers(
-      section: .enabled(servers: []), clientServers: [client])
+      mode: .open, section: .enabled(servers: []), clientServers: [client])
     await MCPComposition.shutDown(servers: connected.servers, processes: connected.processes)
 
     #expect(connected.servers.count == 1)
@@ -835,7 +838,7 @@ import Testing
       MCPServerHTTP(name: Self.gammaName, url: Self.remoteURL, headers: []))
 
     let roster = MCPComposition.composeRoster(
-      section: .enabled(servers: []), clientServers: [first, repeated])
+      mode: .open, section: .enabled(servers: []), clientServers: [first, repeated])
 
     #expect(
       roster.refusalOutcomes == [
@@ -856,7 +859,7 @@ import Testing
     ]
 
     let connected = try await MCPComposition.connectServers(
-      section: .disabled, clientServers: clients)
+      mode: .open, section: .disabled, clientServers: clients)
 
     #expect(
       connected.outcomes == [
@@ -873,7 +876,7 @@ import Testing
       "carrier-pigeon", .object(["name": .string(Self.remoteName)]))
 
     let roster = MCPComposition.composeRoster(
-      section: .enabled(servers: []), clientServers: [client])
+      mode: .open, section: .enabled(servers: []), clientServers: [client])
 
     #expect(
       roster.refusalOutcomes == [
@@ -887,7 +890,7 @@ import Testing
     let client = FoundationModelsACP.MCPServer.unknown("carrier-pigeon", .object([:]))
 
     let roster = MCPComposition.composeRoster(
-      section: .enabled(servers: []), clientServers: [client])
+      mode: .open, section: .enabled(servers: []), clientServers: [client])
 
     #expect(roster.refusals == [.unknownTransport(serverName: nil)])
     #expect(roster.refusalOutcomes.isEmpty)
@@ -909,7 +912,7 @@ import Testing
         headers: [HTTPHeader(name: "Authorization", value: Self.secretHeaderValue)]))
 
     let connected = try await MCPComposition.connectServers(
-      section: .enabled(servers: []), clientServers: [stdio, http])
+      mode: .open, section: .enabled(servers: []), clientServers: [stdio, http])
 
     let rendered = String(reflecting: connected.outcomes)
     #expect(connected.outcomes.count == 2)
@@ -949,7 +952,8 @@ import Testing
       ]
     ) { context in
       let connected = try await MCPComposition.connectServers(
-        section: .enabled(servers: []), clientServers: [connecting, failing, colliding])
+        mode: .open, section: .enabled(servers: []),
+        clientServers: [connecting, failing, colliding])
       await MCPComposition.shutDown(servers: connected.servers, processes: connected.processes)
       return context.logRecords
     }

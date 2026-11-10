@@ -222,7 +222,8 @@ import Testing
     let metrics = try await TelemetryCapture.run(forbidding: [Self.relativeServerCommand]) {
       context in
       await #expect(throws: StdioServerProcess.StdioServerProcessError.self) {
-        _ = try await MCPComposition.connectServers(section: section, clientServers: [])
+        _ = try await MCPComposition.connectServers(
+          mode: .open, section: section, clientServers: [])
       }
       #expect(!Self.dimensionValues(in: context).contains(Self.brokenServerName))
       return context.metricsFactory

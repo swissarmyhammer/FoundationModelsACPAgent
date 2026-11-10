@@ -246,7 +246,7 @@ import Testing
         headers: [HTTPHeader(name: Self.headerName, value: text)]))
 
     let roster = MCPComposition.composeRoster(
-      section: .enabled(servers: []), clientServers: [client])
+      mode: .open, section: .enabled(servers: []), clientServers: [client])
 
     #expect(
       roster.entries.map(\.configuration) == [

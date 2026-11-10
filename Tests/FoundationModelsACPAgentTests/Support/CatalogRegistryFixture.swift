@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsACPAgentTestSupport
+import FoundationModelsExtras
 import FoundationModelsMultitool
 
 @testable import FoundationModelsACPAgent
@@ -26,10 +27,11 @@ enum CatalogRegistryFixture {
   /// - Parameters:
   ///   - workingDirectory: The session working directory.
   ///   - configuration: The configuration under test.
+  ///   - mode: The tool mode of the session. `.open` by default.
   /// - Returns: The built registry, with its pool and its stream.
   /// - Throws: Whatever the profile resolve or the registry build throws.
   static func makeBuiltRegistry(
-    workingDirectory: URL, configuration: AgentConfiguration
+    workingDirectory: URL, configuration: AgentConfiguration, mode: ToolMode = .open
   ) async throws -> ToolCatalog.BuiltRegistry {
     let context = CatalogContext(
       workingDirectory: workingDirectory,
@@ -37,6 +39,7 @@ enum CatalogRegistryFixture {
       profile: try await makeStubProfile(
         cacheDirectory: makeResolvedDirectory(label: cacheLabel)),
       settingsFolders: try SettingsFoldersFixture.make(label: cacheLabel),
+      mode: mode,
       environment: [:])
     return try await ToolCatalog.makeRegistry(context: context)
   }

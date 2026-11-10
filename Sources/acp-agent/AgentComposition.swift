@@ -131,7 +131,7 @@ enum AgentComposition {
   }
 
   /// Composes the agent of the CLI through the public library helper
-  /// `ComposedAgent.compose(name:workingDirectory:home:environment:modelSource:stubChunkGate:stubScript:transcriptLocation:secretStore:userDeviceTokens:huggingFaceTokenProvider:sessionToolFactories:reporting:)`.
+  /// `ComposedAgent.compose(name:workingDirectory:home:mode:sandboxProbe:environment:modelSource:stubChunkGate:stubScript:transcriptLocation:secretStore:userDeviceTokens:huggingFaceTokenProvider:sessionToolFactories:reporting:)`.
   /// The CLI gives no `transcriptLocation`: its config files decide.
   ///
   /// The CLI adds its own choices only: ``dotfolderName``, the home that
@@ -147,6 +147,11 @@ enum AgentComposition {
   /// the library, `.environment`, reads `HF_TOKEN`, then
   /// `~/.cache/huggingface/token`, and that is the token of the CLI
   /// (task ^4avf24e).
+  ///
+  /// The CLI always composes in the `open` tool mode (ACPA-19b): it runs
+  /// outside the App Sandbox, so each session gets every tool that the
+  /// configuration turns on, the shell, the stdio MCP servers and the code
+  /// context too.
   ///
   /// With the XDG home, the hooks keep their data and the snapshot
   /// timeline in the XDG data home (ACPA-15, D96), the skills marketplace
@@ -177,6 +182,7 @@ enum AgentComposition {
       name: DotfolderName(dotfolderName),
       workingDirectory: workingDirectory,
       home: try home(environment: environment),
+      mode: .open,
       environment: environment,
       modelSource: modelSource(),
       stubChunkGate: stubChunkGate(),

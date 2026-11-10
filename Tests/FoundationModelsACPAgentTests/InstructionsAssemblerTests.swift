@@ -284,7 +284,7 @@ import Testing
     #expect(before.text.contains("PRELOADED-BODY-V1"))
     // The subscription comes before the edit, so no reload of the edit is
     // lost.
-    let reloads = try #require(registry.onReload)
+    let reloads = registry.onReload
 
     fixture.writeSkill(
       id: "alpha",

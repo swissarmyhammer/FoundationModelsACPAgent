@@ -156,7 +156,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
       profile: try await makeStubProfile(
         cacheDirectory: makeResolvedDirectory(label: "SkillsMarketplaceTests-models")),
       settingsFolders: SettingsFolders(
-        name: try DotfolderName(dotfolderName), home: home, environment: [:]),
+        name: try DotfolderName(dotfolderName), home: home, environment: [:]), mode: .open,
       environment: environment)
   }
 

@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsACP
+import FoundationModelsExtras
 import FoundationModelsHooks
 import FoundationModelsRouter
 import HuggingFace
@@ -10,7 +11,7 @@ import HuggingFace
 ///
 /// The work has two steps, and only the first one is slow or can fail:
 ///
-/// 1. ``compose(name:workingDirectory:home:environment:modelSource:stubChunkGate:stubScript:transcriptLocation:secretStore:userDeviceTokens:huggingFaceTokenProvider:sessionToolFactories:reporting:)``
+/// 1. ``compose(name:workingDirectory:home:mode:sandboxProbe:environment:modelSource:stubChunkGate:stubScript:transcriptLocation:secretStore:userDeviceTokens:huggingFaceTokenProvider:sessionToolFactories:reporting:)``
 ///    loads the configuration, builds the router and resolves the profile.
 ///    It is `async` and `throws`. A host calls it one time, before it opens
 ///    a connection.
@@ -25,7 +26,8 @@ import HuggingFace
 /// ```swift
 /// let composed = try await ComposedAgent.compose(
 ///     name: try DotfolderName("my-host"), workingDirectory: projectDirectory,
-///     home: .makeCustom(synced: syncedFolder, local: localFolder, projects: projectsFolder))
+///     home: .makeCustom(synced: syncedFolder, local: localFolder, projects: projectsFolder),
+///     mode: .sandboxed)
 /// let connection = await AgentSideConnection(stream: transport) { connection in
 ///     composed.agent(boundTo: connection)
 /// }
@@ -116,6 +118,16 @@ public struct ComposedAgent: Sendable {
   ///     persist. The `acp-agent` CLI gives
   ///     ``AgentHome/makeXDG(name:environment:)``. The model check of `doctor`
   ///     reads the model cache of the same home.
+  ///   - mode: The tool mode of the host (ACPA-19b, D128 (d)). It has no
+  ///     default value, so a host must select one. In `.sandboxed` no
+  ///     session gets a tool that starts a child process: no shell, no
+  ///     stdio MCP server and no code context. An app in the App Sandbox
+  ///     gives `.sandboxed`; the `acp-agent` CLI gives `.open`. The
+  ///     `initialize` result gives the mode in `_meta.sah.mode`
+  ///     (``RoutedACPAgent/toolMode``).
+  ///   - sandboxProbe: The probe that tells if the process is sandboxed.
+  ///     The default reads the current process. A test gives
+  ///     `.fixed(_:)`.
   ///   - environment: The environment the stacks read their defaults
   ///     layer from, and the session tools read. The process environment
   ///     by default.
@@ -174,7 +186,9 @@ public struct ComposedAgent: Sendable {
   ///     tools of the catalog. The default is none.
   /// - Returns: The composed agent, the model path it was built over, and
   ///   the configuration the load resolved.
-  /// - Throws: The configuration load errors, the creation error of a
+  /// - Throws: `ToolModeError.openModeInSandbox` when `mode` is `.open` in
+  ///   a sandboxed process, before any other work; the configuration load
+  ///   errors, the creation error of a
   ///   throwaway directory of the router, or `ProfileResolutionError`
   ///   when the profile does not resolve. Each is fatal before the wire
   ///   opens.
@@ -182,6 +196,8 @@ public struct ComposedAgent: Sendable {
     name: DotfolderName,
     workingDirectory: URL,
     home: AgentHome,
+    mode: ToolMode,
+    sandboxProbe: SandboxProbe = .live,
     environment: [String: String] = ProcessInfo.processInfo.environment,
     modelSource: ModelSource = .live,
     stubChunkGate: String? = nil,
@@ -193,6 +209,9 @@ public struct ComposedAgent: Sendable {
     sessionToolFactories: [SessionToolFactory] = [],
     reporting progress: ResolutionProgress? = nil
   ) async throws -> ComposedAgent {
+    // The check comes first, so a wrong mode fails before the router
+    // builds and before any tool registers.
+    try mode.validate(probe: sandboxProbe)
     let configuration = try ConfigurationLoader(
       settingsFolders: SettingsFolders(name: name, home: home, environment: environment),
       workingDirectory: workingDirectory, transcriptLocation: transcriptLocation,
@@ -213,6 +232,8 @@ public struct ComposedAgent: Sendable {
       configuration: configuration,
       reporting: progress,
       home: home,
+      mode: mode,
+      sandboxProbe: sandboxProbe,
       environment: environment,
       transcriptLocation: transcriptLocation,
       secretStore: secretStore,

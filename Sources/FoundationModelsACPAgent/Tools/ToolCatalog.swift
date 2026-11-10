@@ -2,6 +2,7 @@ import Foundation
 import FoundationModels
 import FoundationModelsAgents
 import FoundationModelsCodeContext
+import FoundationModelsExtras
 import FoundationModelsMultitool
 import FoundationModelsRanker
 import FoundationModelsRouter
@@ -455,13 +456,23 @@ public enum ToolCatalog {
   /// thus a call goes through `runCode` as a call of a built-in verb does.
   /// It has no config section.
   ///
+  /// The builder gets the tool mode and the sandbox probe of the context,
+  /// and checks the mode against the probe before it registers a tool. In
+  /// ``FoundationModelsExtras/ToolMode/sandboxed`` the registry gets no
+  /// tool that starts a child process (ACPA-19b, D131): no shell
+  /// (``composeShell(into:context:)``), no stdio MCP server (the MCP
+  /// composition refuses each one before the connect step), and no code
+  /// context (``composeCodeContext(into:context:)``).
+  ///
   /// - Parameter context: What the builder calls need.
   /// - Returns: The built registry and the MCP composition around it.
   /// - Throws: Whatever the shell store, the MCP composition,
-  ///   `withMCP(servers:)` or `buildRegistry()` throws. After a failure
-  ///   the build gives its shell store lease back.
+  ///   `withMCP(servers:)` or `buildRegistry()` throws, for example
+  ///   `ToolModeError.openModeInSandbox` when the mode is `open` in a
+  ///   sandboxed process. After a failure the build gives its shell store
+  ///   lease back.
   static func makeRegistry(context: CatalogContext) async throws -> BuiltRegistry {
-    let builder = MultiTool.Builder()
+    let builder = MultiTool.Builder(mode: context.toolMode, sandboxProbe: context.sandboxProbe)
     if case .enabled(let options) = context.configuration.tools.files {
       builder.withFiles(
         root: context.workingDirectory,
@@ -482,7 +493,8 @@ public enum ToolCatalog {
 
   /// Leases the shared shell store of the session from
   /// ``ShellStores/shared``, and queues the shell capability over it in
-  /// `builder`, or does nothing when the shell section is off.
+  /// `builder`, or does nothing when the shell section is off or the tool
+  /// mode is `sandboxed`. A sandboxed process cannot start the shell.
   ///
   /// The store is the folder that `tools.shell.storeDirectory` names, or
   /// the shell store of the project in the local root of the home: never
@@ -506,12 +518,14 @@ public enum ToolCatalog {
   ///   - context: The session whose working directory and home the shell
   ///     reads.
   /// - Returns: The shell mount of the session, or `nil` when the section
-  ///   is off.
+  ///   is off or the mode is `sandboxed`.
   /// - Throws: Whatever the store lease throws.
   static func composeShell(
     into builder: MultiTool.Builder, context: CatalogContext
   ) async throws -> ShellMount? {
-    guard case .enabled(let options) = context.configuration.tools.shell else {
+    guard context.toolMode == .open,
+      case .enabled(let options) = context.configuration.tools.shell
+    else {
       return nil
     }
     let lease = try await ShellStores.shared.acquire(
@@ -569,6 +583,7 @@ public enum ToolCatalog {
       builder.withOperationTool(noun: mount.noun, tool: mount.tool)
     }
     let composed = try await MCPComposition.connectServers(
+      mode: context.toolMode,
       section: context.configuration.tools.mcp,
       clientServers: context.clientMCPServers,
       userPresence: context.userPresence)
@@ -600,7 +615,9 @@ public enum ToolCatalog {
   /// Leases the shared code context of the session working directory from
   /// ``CodeContextLeases/shared``, and queues its three tools in `builder`
   /// as the `tools.code_context` group, or does nothing when the
-  /// `codeContext:` section is off.
+  /// `codeContext:` section is off or the tool mode is `sandboxed`. The
+  /// code context starts language servers, and a sandboxed process cannot
+  /// start them (D131), thus in that mode no lease opens.
   ///
   /// The sessions of one working directory share one code context, and a
   /// session in a folder inside an open root shares the context of that
@@ -622,14 +639,16 @@ public enum ToolCatalog {
   ///   - context: The session whose working directory and profile the
   ///     code context reads.
   /// - Returns: The lease of the session on the code context, or `nil`
-  ///   when the section is off.
+  ///   when the section is off or the mode is `sandboxed`.
   /// - Throws: Whatever the open or the start of the context or
   ///   `CodeContextTools.make(context:)` throws. After a failure the
   ///   lease is given back.
   static func composeCodeContext(
     into builder: MultiTool.Builder, context: CatalogContext
   ) async throws -> CodeContextLease? {
-    guard case .enabled(let options) = context.configuration.tools.codeContext else {
+    guard context.toolMode == .open,
+      case .enabled(let options) = context.configuration.tools.codeContext
+    else {
       return nil
     }
     let home = context.settingsFolders.home

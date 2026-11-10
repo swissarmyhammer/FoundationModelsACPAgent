@@ -1,13 +1,14 @@
 import Foundation
 import FoundationModelsACP
+import FoundationModelsExtras
 import FoundationModelsHooks
 import FoundationModelsRouter
 
 /// What each builder call of the tool catalog needs: the
 /// session working directory, the session's additional roots, the decoded
 /// configuration, the resolved profile, the client's per-session MCP
-/// servers, the settings folders of the host, and the environment of the
-/// host.
+/// servers, the settings folders of the host, the tool mode of the host,
+/// and the environment of the host.
 ///
 /// The name is `CatalogContext` because Router's `Hosting/` substrate owns
 /// the name `ToolContext`.
@@ -51,6 +52,18 @@ public struct CatalogContext: Sendable {
   /// and the shell store of the project
   /// (``AgentHome/shellStoreDirectory(of:)``).
   public let settingsFolders: SettingsFolders
+
+  /// The tool mode of the host (``RoutedACPAgent/toolMode``, ACPA-19b).
+  ///
+  /// In ``ToolMode/sandboxed`` the catalog registers no tool that starts a
+  /// child process: no shell, no stdio MCP server and no code context
+  /// (``ToolCatalog/makeRegistry(context:)``). In ``ToolMode/open`` it
+  /// registers each tool that the configuration turns on.
+  public let toolMode: ToolMode
+
+  /// The probe that tells if the process is sandboxed. The Multitool
+  /// builder checks ``toolMode`` against it before it registers a tool.
+  public let sandboxProbe: SandboxProbe
 
   /// The environment of the host: the session composition of the agent
   /// gives `RoutedACPAgent.environment` (task ^b2kb6j1).
@@ -126,6 +139,10 @@ public struct CatalogContext: Sendable {
   ///     in wire order. Defaults to none.
   ///   - settingsFolders: The settings folders that the `skills` and
   ///     `agents` stacks come from (``settingsFolders``).
+  ///   - mode: The tool mode of the host (``toolMode``). It has no default
+  ///     value, so each caller selects one.
+  ///   - sandboxProbe: The probe that tells if the process is sandboxed
+  ///     (``sandboxProbe``). The default reads the current process.
   ///   - environment: The environment of the host, which the session tools
   ///     read (``environment``). Defaults to the environment of the
   ///     process, for a caller that composes a catalog with no host.
@@ -148,6 +165,8 @@ public struct CatalogContext: Sendable {
     profile: LanguageModelProfile,
     clientMCPServers: [FoundationModelsACP.MCPServer] = [],
     settingsFolders: SettingsFolders,
+    mode: ToolMode,
+    sandboxProbe: SandboxProbe = .live,
     environment: [String: String] = ProcessInfo.processInfo.environment,
     inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
     userPresence: UserPresence = .interactive,
@@ -166,6 +185,8 @@ public struct CatalogContext: Sendable {
     self.profile = profile
     self.clientMCPServers = clientMCPServers
     self.settingsFolders = settingsFolders
+    self.toolMode = mode
+    self.sandboxProbe = sandboxProbe
     self.environment = environment
     self.inlineSettleGrace = inlineSettleGrace
     self.userPresence = userPresence

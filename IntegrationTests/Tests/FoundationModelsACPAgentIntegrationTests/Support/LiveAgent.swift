@@ -54,7 +54,7 @@ enum LiveAgent {
       router: router,
       hooks: hooks,
       configuration: configuration,
-      home: home,
+      home: home, mode: .open,
       environment: [:])
     return await AgentClientHarness.makeRecording(agent: agent)
   }

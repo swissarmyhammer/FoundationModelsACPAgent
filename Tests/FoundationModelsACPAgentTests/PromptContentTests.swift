@@ -39,7 +39,7 @@ import Testing
   /// - Returns: The mounted `tools.files.read` verb.
   /// - Throws: Whatever the registry build throws.
   private static func makeReadVerb(root: URL) throws -> any FoundationModels.Tool {
-    let builder = MultiTool.Builder()
+    let builder = MultiTool.Builder(mode: .open)
     builder.withFiles(root: root)
     let registry = try builder.buildRegistry()
     return try #require(registry.tools[ToolCatalog.filesReadVerbPath])

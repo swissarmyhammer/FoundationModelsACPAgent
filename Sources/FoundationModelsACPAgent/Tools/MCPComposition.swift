@@ -5,6 +5,7 @@ import Logging
 import MCP
 import Tracing
 
+import enum FoundationModelsExtras.ToolMode
 import enum FoundationModelsExtras.UserPresence
 
 /// Errors thrown while the MCP composition connects a server.
@@ -43,12 +44,22 @@ enum MCPCompositionError: Error, CustomStringConvertible, Equatable {
 /// refused as well, with one logged refusal that names them. This differs
 /// from `mcp: []`, which still accepts the client's servers.
 ///
+/// **The `sandboxed` tool mode.** A sandboxed process cannot start a
+/// child process, thus the roster refuses each stdio server, from the
+/// config and from the client, with one logged refusal for each
+/// (ACPA-19b). The refusal comes before the connect step, so no
+/// `StdioServerProcess` starts. Each process that the connect step makes
+/// also gets the mode, as a second guard: Multitool refuses to spawn a
+/// sandboxed process. An http server is kept.
+///
 /// **Elicitation.** Every composed server keeps `elicitationHandler`
 /// nil on purpose: we are a Router host, and the `ToolContext` of the
 /// calling run answers first through Router's mailbox. Router wins when
 /// present, so a Router host never sets the handler.
 enum MCPComposition {
-  /// One refused client-supplied server, and why.
+  /// One refused server, and why. Each refusal refuses a client-supplied
+  /// server, except ``stdioInSandboxedMode(serverName:)``, which also
+  /// refuses a config-derived one.
   enum Refusal: Equatable, Sendable {
     /// `mcp: false` turned MCP fully off, so every client-supplied
     /// server is refused in one entry.
@@ -61,6 +72,10 @@ enum MCPComposition {
     /// The client server arrived with a transport this agent does not
     /// know. The name is `nil` when the payload does not carry one.
     case unknownTransport(serverName: String?)
+
+    /// The server has the stdio transport, and the tool mode is
+    /// `sandboxed`: a sandboxed process cannot start the server.
+    case stdioInSandboxedMode(serverName: String)
 
     /// The metadata of the log record of this refusal: the name of the
     /// refusal case, and the server name. The `mcp: false` refusal gives
@@ -87,6 +102,8 @@ enum MCPComposition {
         "The composition refused all client-supplied MCP servers, because MCP is off."
       case .nameCollision, .unknownTransport:
         "The composition refused a client-supplied MCP server."
+      case .stdioInSandboxedMode:
+        "The composition refused a stdio MCP server, because the tool mode is sandboxed."
       }
     }
 
@@ -97,6 +114,7 @@ enum MCPComposition {
       case .mcpDisabled: .mcpDisabled
       case .nameCollision: .nameCollision
       case .unknownTransport: .unknownTransport
+      case .stdioInSandboxedMode: .stdioInSandboxedMode
       }
     }
 
@@ -106,7 +124,7 @@ enum MCPComposition {
       switch self {
       case .mcpDisabled(let serverNames):
         .array(serverNames.map { .string($0) })
-      case .nameCollision(let serverName):
+      case .nameCollision(let serverName), .stdioInSandboxedMode(let serverName):
         .string(serverName)
       case .unknownTransport(let serverName):
         serverName.map { .string($0) }
@@ -173,6 +191,10 @@ enum MCPComposition {
       /// The agent does not know the transport of the server.
       case unknownTransport = "The transport is not known."
 
+      /// The server has the stdio transport, and the tool mode is
+      /// `sandboxed`.
+      case stdioInSandboxedMode = "The stdio transport is off in the sandboxed tool mode."
+
       /// The table from a connect error to its reason. Each row holds
       /// the test that matches the type and the case of an error, and
       /// the reason of that error. An error that no row matches is a
@@ -188,6 +210,16 @@ enum MCPComposition {
               }
             },
             .commandNotAbsolute
+          ),
+          (
+            {
+              if case .notAvailable? = $0 as? StdioServerProcess.StdioServerProcessError {
+                true
+              } else {
+                false
+              }
+            },
+            .stdioInSandboxedMode
           ),
           (
             { if case .invalidServerURL? = $0 as? MCPCompositionError { true } else { false } },
@@ -338,14 +370,60 @@ enum MCPComposition {
   /// entry, with a refusal for each collision — see the collision rule in
   /// the type documentation — and one refusal for every client server
   /// when the section is `mcp: false`. Each refused server that has a name
-  /// also gets one `.failed` outcome.
+  /// also gets one `.failed` outcome. In the `sandboxed` mode the roster
+  /// then refuses each accepted stdio entry
+  /// (``droppingStdioEntries(of:)``).
+  ///
+  /// - Parameters:
+  ///   - mode: The tool mode of the session.
+  ///   - section: The decoded `mcp:` section.
+  ///   - clientServers: The client-supplied per-session servers, in wire
+  ///     order.
+  /// - Returns: The composed roster.
+  static func composeRoster(
+    mode: ToolMode,
+    section: MCPToolSection,
+    clientServers: [FoundationModelsACP.MCPServer]
+  ) -> Roster {
+    let roster = composeRoster(section: section, clientServers: clientServers)
+    switch mode {
+    case .open: return roster
+    case .sandboxed: return droppingStdioEntries(of: roster)
+    }
+  }
+
+  /// Refuses each stdio entry of `roster`, with one refusal and one
+  /// `.failed` outcome for each, and keeps every other entry in order.
+  ///
+  /// - Parameter roster: The roster of the section and the client servers.
+  /// - Returns: The roster with no stdio entry.
+  private static func droppingStdioEntries(of roster: Roster) -> Roster {
+    let isStdio = { (entry: Roster.Entry) in transport(of: entry.configuration.transport) == .stdio }
+    let stdioEntries = roster.entries.filter(isStdio)
+    let refusals = stdioEntries.map {
+      Refusal.stdioInSandboxedMode(serverName: $0.configuration.name)
+    }
+    let outcomes = stdioEntries.map {
+      ServerOutcome(
+        name: $0.configuration.name, transport: .stdio, origin: $0.origin,
+        result: .failed(reason: .stdioInSandboxedMode))
+    }
+    return Roster(
+      entries: roster.entries.filter { !isStdio($0) },
+      refusals: refusals + roster.refusals,
+      refusalOutcomes: outcomes + roster.refusalOutcomes)
+  }
+
+  /// Composes the roster of the two sources with no regard to the tool
+  /// mode: the work of ``composeRoster(mode:section:clientServers:)``
+  /// before the mode applies.
   ///
   /// - Parameters:
   ///   - section: The decoded `mcp:` section.
   ///   - clientServers: The client-supplied per-session servers, in wire
   ///     order.
   /// - Returns: The composed roster.
-  static func composeRoster(
+  private static func composeRoster(
     section: MCPToolSection,
     clientServers: [FoundationModelsACP.MCPServer]
   ) -> Roster {
@@ -543,6 +621,9 @@ enum MCPComposition {
   /// spawned is shut down, so a failed `session/new` leaks nothing.
   ///
   /// - Parameters:
+  ///   - mode: The tool mode of the session. In `sandboxed` the roster
+  ///     refuses each stdio entry before the connect step, and each
+  ///     process gets the mode as a second guard.
   ///   - section: The decoded `mcp:` section.
   ///   - clientServers: The client-supplied per-session servers.
   ///   - userPresence: Whether a user can answer the questions of the
@@ -555,11 +636,12 @@ enum MCPComposition {
   ///   not an absolute path, ``MCPCompositionError`` for a url that does
   ///   not parse, and whatever a connect throws.
   static func connectServers(
+    mode: ToolMode,
     section: MCPToolSection,
     clientServers: [FoundationModelsACP.MCPServer],
     userPresence: UserPresence = .interactive
   ) async throws -> ConnectedServers {
-    let roster = composeRoster(section: section, clientServers: clientServers)
+    let roster = composeRoster(mode: mode, section: section, clientServers: clientServers)
     for refusal in roster.refusals {
       ACPAgentTelemetry.logger(.mcpComposition).error(
         refusal.logMessage, metadata: refusal.logMetadata)
@@ -569,7 +651,8 @@ enum MCPComposition {
     var outcomes: [ServerOutcome] = []
     for entry in roster.entries {
       let result = try await connect(
-        entry: entry, userPresence: userPresence, servers: &servers, processes: &processes)
+        entry: entry, mode: mode, userPresence: userPresence, servers: &servers,
+        processes: &processes)
       outcomes.append(
         ServerOutcome(
           name: entry.configuration.name,
@@ -609,6 +692,7 @@ enum MCPComposition {
   ///
   /// - Parameters:
   ///   - entry: The entry to connect.
+  ///   - mode: The tool mode that a stdio process gets.
   ///   - userPresence: The user presence that the server gets.
   ///   - servers: The servers connected so far; a connected server is
   ///     appended.
@@ -619,6 +703,7 @@ enum MCPComposition {
   /// - Throws: What the connect of a config-derived entry throws.
   private static func connect(
     entry: Roster.Entry,
+    mode: ToolMode,
     userPresence: UserPresence,
     servers: inout [FoundationModelsMultitool.MCPServer],
     processes: inout [StdioServerProcess]
@@ -627,7 +712,8 @@ enum MCPComposition {
       name: entry.configuration.name, userPresence: userPresence)
     var spawned: [StdioServerProcess] = []
     do {
-      try await connect(entry: entry.configuration, server: server, spawnedProcesses: &spawned)
+      try await connect(
+        entry: entry.configuration, mode: mode, server: server, spawnedProcesses: &spawned)
     } catch {
       await shutDown(servers: [server], processes: spawned)
       guard entry.origin == .client else {
@@ -666,6 +752,7 @@ enum MCPComposition {
   ///
   /// - Parameters:
   ///   - entry: The entry to connect.
+  ///   - mode: The tool mode that a stdio process gets.
   ///   - server: The server to connect, named for the entry. The caller
   ///     disconnects it when the connect throws.
   ///   - spawnedProcesses: Where a spawned stdio subprocess is recorded —
@@ -675,6 +762,7 @@ enum MCPComposition {
   ///   wait throws.
   private static func connect(
     entry: MCPServerConfiguration,
+    mode: ToolMode,
     server: FoundationModelsMultitool.MCPServer,
     spawnedProcesses: inout [StdioServerProcess]
   ) async throws {
@@ -690,7 +778,7 @@ enum MCPComposition {
         metadata: [ACPAgentTelemetry.LogMetadataKey.mcpServerName: "\(entry.name)"]
       ) { _ in
         try await connectToReady(
-          entry: entry, server: server, spawnedProcesses: &spawnedProcesses)
+          entry: entry, mode: mode, server: server, spawnedProcesses: &spawnedProcesses)
       }
     } catch {
       AgentMetrics.recordMCPConnectFailure(transport: transportName)
@@ -712,23 +800,28 @@ enum MCPComposition {
   }
 
   /// Connects one entry and waits until the server is `.ready`: the work
-  /// of ``connect(entry:server:spawnedProcesses:)`` in the connect span.
+  /// of ``connect(entry:mode:server:spawnedProcesses:)`` in the connect
+  /// span.
   ///
   /// - Parameters:
   ///   - entry: The entry to connect.
+  ///   - mode: The tool mode that a stdio process gets. In `sandboxed`
+  ///     Multitool refuses to spawn the process
+  ///     (`StdioServerProcessError.notAvailable(mode:)`).
   ///   - server: The server to connect.
   ///   - spawnedProcesses: Where a spawned stdio subprocess is recorded.
   /// - Throws: What the process construction, the connect, or the ready
   ///   wait throws.
   private static func connectToReady(
     entry: MCPServerConfiguration,
+    mode: ToolMode,
     server: FoundationModelsMultitool.MCPServer,
     spawnedProcesses: inout [StdioServerProcess]
   ) async throws {
     switch entry.transport {
     case .stdio(let command, let args, let env):
       let process = try StdioServerProcess(
-        command: command, args: args, env: envVariables(env), name: entry.name)
+        command: command, args: args, env: envVariables(env), name: entry.name, mode: mode)
       spawnedProcesses.append(process)
       try await server.connect(via: process.respawn)
     case .http(let url, let headers):

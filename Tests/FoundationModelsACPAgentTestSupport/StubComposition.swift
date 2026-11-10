@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsACPAgent
+import FoundationModelsExtras
 
 /// Composes the agent over the stub model through the public
 /// `ComposedAgent.compose`, with its home in throwaway folders. The suites
@@ -23,6 +24,12 @@ import FoundationModelsACPAgent
 ///     to the composition (ACPA-5b). None by default.
 ///   - environment: The environment of the composition, below the key of the
 ///     defaults layer. Empty by default.
+///   - mode: The tool mode to give to the composition. `.open` by default,
+///     the mode of the `acp-agent` CLI.
+///   - sandboxProbe: The probe that tells the composition if the process is
+///     sandboxed. The default reads the test process, which is not
+///     sandboxed. A suite that tests the check of the mode gives
+///     `.fixed(_:)`.
 /// - Returns: The composition.
 /// - Throws: `DotfolderNameError` when `name` is refused, the write error of
 ///   the defaults layer, or whatever the composition throws.
@@ -33,13 +40,17 @@ public func composeStubAgent(
   home: AgentHome? = nil,
   secretStore: (any SecretStore)? = nil,
   userDeviceTokens: Set<String> = [],
-  environment: [String: String] = [:]
+  environment: [String: String] = [:],
+  mode: ToolMode = .open,
+  sandboxProbe: SandboxProbe = .live
 ) async throws -> ComposedAgent {
   let workspace = workspace ?? makeResolvedDirectory(label: "\(label)-repo")
   return try await ComposedAgent.compose(
     name: DotfolderName(name),
     workingDirectory: workspace,
     home: home ?? AgentHomeFixture.make(label: label),
+    mode: mode,
+    sandboxProbe: sandboxProbe,
     environment: try StubAgentDefaultsLayer.makeEnvironment(name: name, base: environment),
     modelSource: .stub,
     secretStore: secretStore,

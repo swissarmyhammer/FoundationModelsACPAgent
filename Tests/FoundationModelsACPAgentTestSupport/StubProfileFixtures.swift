@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsACPAgent
+import FoundationModelsExtras
 import FoundationModelsRouter
 import Tracing
 
@@ -57,6 +58,13 @@ import Tracing
 ///   - userDeviceTokens: The bearer tokens of the devices of the user that
 ///     the host gives the agent (ACPA-5b). None by default, so a connection
 ///     with any token is `external`.
+///   - mode: The tool mode of the agent. `.open` by default, the mode of
+///     the `acp-agent` CLI. A suite that tests the `sandboxed` mode gives it
+///     here.
+///   - sandboxProbe: The probe that tells the agent if the process is
+///     sandboxed. The default reads the test process, which is not
+///     sandboxed. A suite that tests the check of the mode gives
+///     `.fixed(_:)`.
 ///   - prepareRouter: The work on the router before the agent resolves its
 ///     profile. A suite that drives the timers of its runs gives the router
 ///     a `ManualRunClock` here. It does nothing by default.
@@ -75,6 +83,8 @@ public func makeStubAgent(
   environment: [String: String] = [:],
   secretStore: any SecretStore = InMemorySecretStore(),
   userDeviceTokens: Set<String> = [],
+  mode: ToolMode = .open,
+  sandboxProbe: SandboxProbe = .live,
   prepareRouter: @Sendable (Router) async -> Void = { _ in }
 ) async throws -> RoutedACPAgent {
   // A custom home over throwaway folders, so no test reads or writes the
@@ -94,6 +104,8 @@ public func makeStubAgent(
     router: router,
     hooks: hooks,
     home: home,
+    mode: mode,
+    sandboxProbe: sandboxProbe,
     environment: StubAgentDefaultsLayer.makeEnvironment(name: name, base: environment),
     inlineSettleGrace: inlineSettleGrace,
     secretStore: secretStore,
@@ -102,7 +114,7 @@ public func makeStubAgent(
 
 // MARK: - The defaults layer of a stub agent
 
-/// The defaults layer that ``makeStubAgent(name:cacheDirectory:recordingsDirectory:userDirectory:loader:tracer:inlineSettleGrace:environment:secretStore:userDeviceTokens:prepareRouter:)``
+/// The defaults layer that ``makeStubAgent(name:cacheDirectory:recordingsDirectory:userDirectory:loader:tracer:inlineSettleGrace:environment:secretStore:userDeviceTokens:mode:sandboxProbe:prepareRouter:)``
 /// gives each agent: the lowest layer of the configuration stack, below the
 /// user layer and the project layer.
 ///

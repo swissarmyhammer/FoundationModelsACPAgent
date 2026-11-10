@@ -41,10 +41,46 @@ comments:
   id: 01m733f7a346f21j3179c41kq0
   text: 'FYI from testudoapp-75: FoundationModelsSkills c04d4cc (SK-6a, head 0c615bd) changes an API. `SkillsRegistry.onReload` is now a non-optional `AsyncStream`. `SkillsToolAssembly` always makes the notice follower, so `commandUpdates` stays optional but is never nil. Check of this package (2026-11-10): no source uses `onReload`. `CommandRegistry.swift:336-337` reads `registry.commandUpdates` with `guard let`. It still compiles, but the `nil` branch is dead code. At the Skills bump, remove the dead branch, and change the doc text at `ToolCatalog.swift:678` and `SessionSetup.swift:1062` that says "`watch: true` makes `commandUpdates` non-nil".'
   timestamp: 2026-11-10T16:08:15.939238+00:00
+- actor: claude-code
+  id: 01m73594tqdt53ymwc00r80r9p
+  text: 'SCOPE CHANGE (2026-11-10, agreed with testudoapp-75): this task does NOT wait for SK-7a now. Do the mode part only: the mode and `SandboxProbe` in `compose` and the `RoutedACPAgent` init (with `mode.validate(probe:)` before any tool registers), `mode:` in every `MultiTool.Builder` call (Sources and Tests), no shell in `sandboxed` mode, no stdio MCP server before `MCPComposition.connectServers`, no CodeContext lease or tools, `_meta.sah.mode` in the initialize result, the CLI on `.open`, and the data folders. The skills part (step 3 "no skill scripts", the SK-7a mode for `SkillsToolContext` and `SkillsRegistry`, and the SK-6a `commandUpdates` cleanup) moves to the new follow-up task ACPA-19d. Leave the skill script criterion and test to that task. Keep the mode where ACPA-19d can read it. When pushed, send the commit to foundationmodelsmultitool-2a (for ^amym5ns) and to testudoapp-75.'
+  timestamp: 2026-11-10T16:39:53.943591+00:00
+- actor: claude-code
+  id: 01m735msjdptmrex1pwnssj983
+  text: |-
+    Research (implement step, mode part only):
+    - `swift package update` (root and IntegrationTests): Extras 4254281 (has af13e80), Multitool e079c44 (has d5090dea and "c86908b1 remove Seatbelt"), Skills ac4250d (SK-6a and SK-6b, no SK-7a). The root package builds. One new warning came from SK-6a: `InstructionsAssemblerTests.swift` had `try #require(registry.onReload)`, and `onReload` is not optional now. I removed the `#require`. This is not the `commandUpdates` cleanup of ^bwgmkc0.
+    - `SAH.InitializeMeta` (FoundationModelsACP) has no `mode` field. This package cannot edit that repository. Thus the agent writes `mode` into the `_meta.sah` object itself.
+    - Data folders (D128 h): `compose` takes `AgentHome`. It has `hooksDirectory`, `modelCacheDirectory` and `skillsMarketplaceCacheDirectory`, and `makeCustom(synced:local:projects:)` lets the host set the root of each. `compose` uses `home.hooksDirectory` for the hooks and `home.modelCacheDirectory` for the router, and the session reads `home.skillsMarketplaceCacheDirectory`. No parameter is missing.
+    - The mode flows: `compose(mode:sandboxProbe:)` -> `RoutedACPAgent(mode:sandboxProbe:)` -> `CatalogContext.toolMode` and `CatalogContext.sandboxProbe` -> `ToolCatalog` and `MCPComposition`. ACPA-19d (^bwgmkc0) can read `context.toolMode` in `makeSkillsSource`.
+    - Outside the scope, for ^bwgmkc0: `ToolCatalog.skillsTemplateContext` gives `tools.shell.enabled` and `tools.codeContext.enabled` from the configuration only. In `sandboxed` mode these are true when the configuration has them on, but the session has no such tool.
+    - The sibling FoundationModelsACPClient (IntegrationTests/LiveAgentServer) calls `RoutedACPAgent(...)` with no `mode:`. It will not build after this change until it gives the mode.
+  timestamp: 2026-11-10T16:46:15.629486+00:00
+- actor: claude-code
+  id: 01m7366acvbx5kftd9entjtc2r
+  text: |-
+    Implementation landed (mode part only; the skills part stays with ^bwgmkc0).
+    - Pins after `swift package update` (root and IntegrationTests): Extras 4254281 (has af13e80), Multitool 4f0c664c (has d5090dea and ^t8ye77q), Skills ac4250d (no SK-7a), Agents 40dfd05 (NOT e539c27, thus no `DefaultAgentInstructions` rename was necessary).
+    - `ComposedAgent.compose(...mode:sandboxProbe:...)` and `RoutedACPAgent.init(...mode:sandboxProbe:...)`: `mode` has no default; `sandboxProbe` defaults to `.live`. Each calls `mode.validate(probe:)` first. `RoutedACPAgent.toolMode` is public.
+    - `CatalogContext` has `toolMode` (init label `mode:`, required) and `sandboxProbe`. ^bwgmkc0 reads `context.toolMode`.
+    - `ToolCatalog.makeRegistry`: `MultiTool.Builder(mode:sandboxProbe:)`. `composeShell` and `composeCodeContext` do nothing in `sandboxed` (no shell store lease, no CodeContext lease, no `code_context` group).
+    - `MCPComposition.composeRoster(mode:section:clientServers:)` and `connectServers(mode:...)`: in `sandboxed` each stdio entry (config and client) is removed before the connect step, with one `Refusal.stdioInSandboxedMode(serverName:)` and one `.failed(reason: .stdioInSandboxedMode)` outcome for each. Second guard: `StdioServerProcess(... mode:)` gets the mode; its `.notAvailable` error maps to the same reason.
+    - `_meta.sah.mode` = "open" | "sandboxed": `AdvertisedSAHObject` in Initialization.swift encodes the `SAH.InitializeMeta` members plus `mode` into one object (the wire package has no `mode` field).
+    - CLI `AgentComposition.compose` gives `.open`.
+    - Data folders: no change; `AgentHome` already carries the hooks, model cache and marketplace cache folders (see the research comment).
+    - Every `MultiTool.Builder(` call in Sources and Tests gives `mode:`. `grep -rn "MultiTool.Builder()" Sources Tests` finds nothing.
+    - Also: removed a redundant `try #require(registry.onReload)` in InstructionsAssemblerTests (a warning from the SK-6a pin).
+    - Cross-repository note: FoundationModelsACPClient IntegrationTests/LiveAgentServer calls `RoutedACPAgent(...)` with no `mode:`; it must add `mode: .open` when it takes this commit.
+    - New task added: the static `advertisedCapabilities` still advertise `mcp.stdio` in `sandboxed` mode.
+
+    ### implement — changed
+    - evidence: 37 files (new Tests/FoundationModelsACPAgentTests/ToolModeTests.swift with 18 tests; InitializationTests +2 cases; AgentCompositionTests +1). `swift test`: 1863 tests in 209 suites passed (1 known issue, the existing `withKnownIssue` in HarnessSmokeTests), 0 compiler warnings. `swift build --build-tests --package-path IntegrationTests`: Build complete.
+    - next: review
+  timestamp: 2026-11-10T16:55:49.915154+00:00
 depends_on:
 - 01M73026P78T3QV61E24Z44FHR
-position_column: todo
-position_ordinal: '8580'
+position_column: doing
+position_ordinal: '8180'
 title: 'ACPA-19b: The host ToolMode in ComposedAgent and RoutedACPAgent; sandboxed mode removes child-process tools and CodeContext'
 ---
 ## What

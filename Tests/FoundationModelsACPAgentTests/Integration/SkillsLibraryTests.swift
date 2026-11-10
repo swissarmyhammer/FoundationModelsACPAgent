@@ -100,7 +100,8 @@ import Testing
       configuration: configuration,
       profile: try await makeStubProfile(
         cacheDirectory: makeResolvedDirectory(label: "SkillsLibraryTests-\(label)-cache")),
-      settingsFolders: try SettingsFoldersFixture.make(label: "SkillsLibraryTests-\(label)"))
+      settingsFolders: try SettingsFoldersFixture.make(label: "SkillsLibraryTests-\(label)"),
+      mode: .open)
     return try await ToolCatalog.sessionSurface(context: context)
   }
 

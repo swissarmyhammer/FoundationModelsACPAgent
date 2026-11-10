@@ -50,8 +50,10 @@ struct SkillsMarketplaceNetworkTests {
     let composed = try await ComposedAgent.compose(
       name: DotfolderName(TierThreeFixture.agentDotfolderName),
       workingDirectory: workspace,
-      home: home,
-      environment: [TierThreeFixture.defaultsDirectoryVariable: TierThreeFixture.noDefaultsLayerValue],
+      home: home, mode: .open,
+      environment: [
+        TierThreeFixture.defaultsDirectoryVariable: TierThreeFixture.noDefaultsLayerValue
+      ],
       modelSource: .stub)
     try await ComposedClientWire.withSession(of: composed, in: workspace) { _, _ in }
   }

@@ -192,13 +192,17 @@ extension RoutedACPAgent {
 
   /// The `_meta` of the `initialize` response: `_meta.sah` advertises the
   /// SAH extensions and the endpoints of the GraphQL tunnel (ACP-5,
-  /// ACPA-13), the same list as `_sah/graphql/endpoints`.
+  /// ACPA-13), the same list as `_sah/graphql/endpoints`, and the tool mode
+  /// of the agent in `_meta.sah.mode` (``toolMode``, ACPA-19b).
   ///
   /// - Returns: The `_meta` value, or `nil` when the SAH object does not
   ///   encode; the response then advertises no extension.
   private func advertisedSAHMeta() -> FoundationModelsACP.JSONValue? {
     do {
-      return try SAH.InitializeMeta(graphql: graphQLEndpointList()).inject(into: nil)
+      return try ExtensionMeta.inject(
+        AdvertisedSAHObject(
+          extensions: SAH.InitializeMeta(graphql: graphQLEndpointList()), mode: toolMode),
+        into: nil, member: SAH.metaKey)
     } catch {
       assertionFailure("the SAH object of initialize did not encode: \(error)")
       ACPAgentTelemetry.logger(.initialization).error(
@@ -229,5 +233,36 @@ extension RoutedACPAgent {
       return latestProtocolVersion
     }
     return requested
+  }
+}
+
+/// The `_meta.sah` object of the `initialize` response of this agent: the
+/// members of `SAH.InitializeMeta` and the `mode` member.
+///
+/// `SAH.InitializeMeta` of the wire package has no `mode` member, thus the
+/// agent writes it beside the other members of the one object. The value is
+/// the raw value of `ToolMode`: `"open"` or `"sandboxed"`.
+struct AdvertisedSAHObject: Encodable {
+  /// The member names that this type adds to the SAH object.
+  private enum CodingKeys: String, CodingKey {
+    /// The tool mode of the agent.
+    case mode
+  }
+
+  /// The SAH extensions and the GraphQL endpoints of the agent.
+  let extensions: SAH.InitializeMeta
+
+  /// The tool mode of the agent.
+  let mode: ToolMode
+
+  /// Encodes the members of ``extensions`` and the `mode` member into one
+  /// object.
+  ///
+  /// - Parameter encoder: The encoder to write into.
+  /// - Throws: Whatever the encoder throws.
+  func encode(to encoder: any Encoder) throws {
+    try extensions.encode(to: encoder)
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(mode, forKey: .mode)
   }
 }

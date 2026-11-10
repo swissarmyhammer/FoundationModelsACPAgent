@@ -173,7 +173,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
       workingDirectory: cwd,
       configuration: configuration,
       profile: profile,
-      settingsFolders: try SettingsFoldersFixture.make(label: "AgentsToolTests"),
+      settingsFolders: try SettingsFoldersFixture.make(label: "AgentsToolTests"), mode: .open,
       environment: [:],
       inlineSettleGrace: inlineSettleGrace)
   }

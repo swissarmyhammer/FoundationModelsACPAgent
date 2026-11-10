@@ -89,6 +89,22 @@ import Testing
         == KeychainSecretStore(service: "acp-agent", synchronizable: false))
   }
 
+  // MARK: - The tool mode
+
+  /// The CLI composes in the `open` tool mode (ACPA-19b): it runs outside
+  /// the App Sandbox, so each session gets the shell, the stdio MCP servers
+  /// and the code context.
+  @Test func theCompositionOfTheCLIIsInTheOpenMode() async throws {
+    let configHome = makeResolvedDirectory(label: "AgentCompositionTests-mode-config")
+    let workspace = makeResolvedDirectory(label: "AgentCompositionTests-mode-repo")
+    let environment = try ComposedPromptFixture.makeStubEnvironment(configHome: configHome)
+
+    let composed = try await AgentComposition.compose(
+      workingDirectory: workspace, environment: environment)
+
+    #expect(composed.agent.toolMode == .open)
+  }
+
   // MARK: - The stub composition
 
   /// With the stub selected the composition returns the echo model, and

@@ -3,10 +3,10 @@ import FoundationModels
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsCodeContext
 import FoundationModelsExtras
+import FoundationModelsKanban
 import FoundationModelsMultitool
 import FoundationModelsRouter
 import FoundationModelsSkills
-import FoundationModelsKanban
 import Testing
 
 @testable import FoundationModelsACPAgent
@@ -155,7 +155,7 @@ import Testing
       profile: try await makeStubProfile(
         cacheDirectory: try makeTemporaryDirectory(label: "cache"),
         loader: loader),
-      settingsFolders: settingsFolders,
+      settingsFolders: settingsFolders, mode: .open,
       environment: environment,
       settingsEndpoint: hasSettingsStore
         ? try SettingsGraph(
@@ -675,7 +675,7 @@ import Testing
       workingDirectory: base.workingDirectory, actor: "ToolCatalogTests kanban")
     let context = CatalogContext(
       workingDirectory: base.workingDirectory, configuration: base.configuration,
-      profile: base.profile, settingsFolders: base.settingsFolders,
+      profile: base.profile, settingsFolders: base.settingsFolders, mode: .open,
       sessionOperationTools: [
         SessionOperationMount(
           noun: KanbanOperationTool.noun, tool: KanbanOperationTool(KanbanTool(graph: graph)))

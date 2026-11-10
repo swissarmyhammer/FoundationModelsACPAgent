@@ -29,7 +29,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
       claimCompletion: { _, _, _, _ in false })
     return CatalogContext(
       workingDirectory: base.workingDirectory, configuration: base.configuration,
-      profile: base.profile, settingsFolders: base.settingsFolders,
+      profile: base.profile, settingsFolders: base.settingsFolders, mode: .open,
       environment: base.environment, agentRunHost: host)
   }
 

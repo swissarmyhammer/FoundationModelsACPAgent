@@ -92,6 +92,18 @@ public actor RoutedACPAgent: Agent {
   /// the host owns the pairing of the devices.
   public nonisolated let userDeviceTokens: Set<String>
 
+  /// The tool mode that the host selected (ACPA-19b, D128 (d)). Each
+  /// session composes its tools in this mode (``CatalogContext/toolMode``),
+  /// and the `initialize` result gives it in `_meta.sah.mode`. In
+  /// ``FoundationModelsExtras/ToolMode/sandboxed`` no session gets a tool
+  /// that starts a child process.
+  public nonisolated let toolMode: ToolMode
+
+  /// The probe that tells if the process is sandboxed. The init checks
+  /// ``toolMode`` against it, and each session gives it to the Multitool
+  /// builder (``CatalogContext/sandboxProbe``).
+  nonisolated let sandboxProbe: SandboxProbe
+
   /// The client capabilities of the `initialize` of one connection.
   ///
   /// - Parameter id: The id of the connection.
@@ -258,7 +270,7 @@ public actor RoutedACPAgent: Agent {
   /// opens or resumes after this call. A factory runs once for each
   /// composition of a session, with the context of that session, so a tool
   /// can be bound to the folder of its session. The composition of the
-  /// agent (``ComposedAgent/compose(name:workingDirectory:home:environment:modelSource:stubChunkGate:stubScript:transcriptLocation:secretStore:userDeviceTokens:huggingFaceTokenProvider:sessionToolFactories:reporting:)``)
+  /// agent (``ComposedAgent/compose(name:workingDirectory:home:mode:sandboxProbe:environment:modelSource:stubChunkGate:stubScript:transcriptLocation:secretStore:userDeviceTokens:huggingFaceTokenProvider:sessionToolFactories:reporting:)``)
   /// calls it for its host.
   ///
   /// - Parameter factories: The factories to append, in order.
@@ -432,6 +444,12 @@ public actor RoutedACPAgent: Agent {
   ///     session takes its skills marketplace cache and the folder of its
   ///     machine state from it. Tests give a custom home in throwaway
   ///     folders, so they never touch the real home directory.
+  ///   - mode: The tool mode of the host (``toolMode``). It has no default
+  ///     value, so a host must select one. The `acp-agent` CLI gives
+  ///     `.open`; an app in the App Sandbox gives `.sandboxed`.
+  ///   - sandboxProbe: The probe that tells if the process is sandboxed.
+  ///     The default reads the current process. A test gives
+  ///     `.fixed(_:)`.
   ///   - environment: The environment of the host: the stacks read their
   ///     defaults layer from it, and the session tools read it
   ///     (``CatalogContext/environment``).
@@ -449,7 +467,9 @@ public actor RoutedACPAgent: Agent {
   ///     or none (the default) — see ``userDeviceTokens``. A host with no
   ///     HTTP server gives none: its stdio and in-process connections are
   ///     `userDevice` with no token.
-  /// - Throws: `ProfileResolutionError` when the profile does not
+  /// - Throws: `ToolModeError.openModeInSandbox` when `mode` is `open`
+  ///   and `sandboxProbe` tells that the process is sandboxed, before any
+  ///   other work; `ProfileResolutionError` when the profile does not
   ///   resolve; an error of the schema builder of ``settingsEndpoint``.
   public init(
     name: DotfolderName,
@@ -458,12 +478,17 @@ public actor RoutedACPAgent: Agent {
     configuration: AgentConfiguration = AgentConfiguration(),
     reporting: ResolutionProgress? = nil,
     home: AgentHome,
+    mode: ToolMode,
+    sandboxProbe: SandboxProbe = .live,
     environment: [String: String] = ProcessInfo.processInfo.environment,
     inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
     transcriptLocation: TranscriptLocation? = nil,
     secretStore: (any SecretStore)? = nil,
     userDeviceTokens: Set<String> = []
   ) async throws {
+    try mode.validate(probe: sandboxProbe)
+    self.toolMode = mode
+    self.sandboxProbe = sandboxProbe
     self.name = name
     self.sessionDirectory = router.sessionDirectory
     self.hooks = hooks

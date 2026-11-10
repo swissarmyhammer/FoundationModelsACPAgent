@@ -54,7 +54,7 @@ import Testing
 
     let entry = try #require(await fixture.harness.agent.sessions[fixture.sessionId])
     let store = try #require(entry.surface.shellStoreLease).store
-    let reader = try MultiTool.Builder().withShell(store: store).buildRegistry()
+    let reader = try MultiTool.Builder(mode: .open).withShell(store: store).buildRegistry()
     let grep = try await ShellVerbSupport.grepHistory(in: reader, pattern: Self.commandOutput)
     let matches = try #require(grep["matches"] as? [[String: Any]])
     await fixture.close()

@@ -970,6 +970,8 @@ extension RoutedACPAgent {
   /// That includes the snapshot store.
   /// It also includes the one `settings` endpoint of the agent (``settingsEndpoint``).
   /// So the `settings` tool of each session runs on that same instance.
+  /// It also holds the tool mode (``toolMode``) and the sandbox probe of the agent.
+  /// So each session composes its tools in the mode of the host.
   ///
   /// - Parameters:
   ///   - context: The resolved per-cwd configuration.
@@ -998,6 +1000,8 @@ extension RoutedACPAgent {
       profile: residentProfile,
       clientMCPServers: clientMCPServers,
       settingsFolders: settingsFolders,
+      mode: toolMode,
+      sandboxProbe: sandboxProbe,
       environment: environment,
       inlineSettleGrace: inlineSettleGrace,
       userPresence: userPresence,
