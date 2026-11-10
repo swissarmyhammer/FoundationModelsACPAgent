@@ -10,8 +10,9 @@ import Marketplace
 ///
 /// - ``synced``: the data of the user that must follow the user from device
 ///   to device. The user layer of each settings stack (`config.yaml`,
-///   `Instructions.md`, the skills, the agents and the rules) and the
-///   projects folder (``projectsDirectory``) are in it.
+///   `Instructions.md`, the skills, the agents and the rules) is in it.
+///   The XDG preset also puts the projects folder (``projectsDirectory``)
+///   in it.
 /// - ``local``: the state of this machine, which never syncs. The hook data
 ///   (the snapshot timelines point into a local git checkout), the caches,
 ///   and the machine state of each project (``projectStateDirectory(of:)``)
@@ -19,9 +20,10 @@ import Marketplace
 ///
 /// The host chooses the home. The `acp-agent` CLI uses the XDG preset
 /// ``makeXDG(name:environment:)``, which keeps the folders that the CLI always
-/// used. An app gives its own two roots with ``makeCustom(synced:local:)``, for
-/// example a folder in its iCloud container and a folder in Application
-/// Support. This package holds no app path.
+/// used. An app gives its own two roots and its projects folder with
+/// ``makeCustom(synced:local:projects:)``, for example two folders in its
+/// iCloud container and a folder in Application Support. This package holds
+/// no app path.
 ///
 /// The session data of a project stays in the project folder: the
 /// transcripts in `<cwd>/.<name>/transcripts`, and the session layer of the
@@ -42,7 +44,8 @@ public struct AgentHome: Sendable, Equatable {
 
   // MARK: - Constants
 
-  /// The folder of the projects in ``synced``.
+  /// The folder of the projects in ``synced`` for the XDG preset, and the
+  /// folder of the machine state of the projects in ``local``.
   static let projectsFolderName = "projects"
 
   /// The folder of the hook data in ``local``.
@@ -98,6 +101,12 @@ public struct AgentHome: Sendable, Equatable {
   /// The root of the state of this machine.
   public let local: URL
 
+  /// The projects folder: the folder of the project store of the host
+  /// (Router `ProjectStore`, task ^am394r2), one file for each project.
+  /// The XDG preset puts it in ``synced``. A custom home puts it in the
+  /// folder that the host gives, which can be outside ``synced``.
+  public let projectsDirectory: URL
+
   /// The folder where the hooks keep their data. The snapshot timeline of
   /// each session goes into its `snapshot` folder.
   public let hooksDirectory: URL
@@ -134,11 +143,15 @@ public struct AgentHome: Sendable, Equatable {
   /// - Parameters:
   ///   - synced: The root of the data that follows the user.
   ///   - local: The root of the state of this machine.
+  ///   - projects: The projects folder (``projectsDirectory``). It can be
+  ///     outside `synced`, for example a folder of an iCloud container that
+  ///     the Files app does not show.
   /// - Returns: The home.
-  public static func makeCustom(synced: URL, local: URL) -> AgentHome {
+  public static func makeCustom(synced: URL, local: URL, projects: URL) -> AgentHome {
     AgentHome(
       synced: synced,
       local: local,
+      projectsDirectory: projects,
       hooksDirectory: local.appendingPathComponent(hooksFolderName, isDirectory: true),
       skillsMarketplaceCacheDirectory: local.appendingPathComponent(
         skillsMarketplaceFolderName, isDirectory: true),
@@ -156,6 +169,7 @@ public struct AgentHome: Sendable, Equatable {
   ///   settings stack is `$XDG_CONFIG_HOME/<dotfolder>/`.
   /// - ``local`` is `$XDG_DATA_HOME/<name>/`, and the hooks are in its
   ///   `hooks` folder.
+  /// - ``projectsDirectory`` is the `projects` folder of ``synced``.
   /// - The caches stay the shared caches of the environment: the skills
   ///   marketplace cache of `MarketplaceStore.cacheDirectory(environment:)`
   ///   (`SKILLS_MARKETPLACE_CACHE`, or its default folder), and the Hugging
@@ -176,9 +190,11 @@ public struct AgentHome: Sendable, Equatable {
     let local = baseDirectory(
       environment: environment, key: dataHomeEnvironmentKey, defaultPath: defaultDataHomePath
     ).appendingPathComponent(name.rawValue, isDirectory: true)
+    let synced = configHome.appendingPathComponent(name.rawValue, isDirectory: true)
     return AgentHome(
-      synced: configHome.appendingPathComponent(name.rawValue, isDirectory: true),
+      synced: synced,
       local: local,
+      projectsDirectory: synced.appendingPathComponent(projectsFolderName, isDirectory: true),
       hooksDirectory: local.appendingPathComponent(hooksFolderName, isDirectory: true),
       skillsMarketplaceCacheDirectory: MarketplaceStore.cacheDirectory(environment: environment),
       modelCacheDirectory: SystemModelResolver.hubCacheDirectory(environment: environment),
@@ -188,12 +204,6 @@ public struct AgentHome: Sendable, Equatable {
   }
 
   // MARK: - Derived folders
-
-  /// The projects folder in ``synced``: the folder of the project store
-  /// of the host (Router `ProjectStore`, task ^am394r2).
-  public var projectsDirectory: URL {
-    synced.appendingPathComponent(Self.projectsFolderName, isDirectory: true)
-  }
 
   /// The folder of the machine state of one project:
   /// `<local>/projects/<key>/`, where the key is ``projectKey(of:)`` of

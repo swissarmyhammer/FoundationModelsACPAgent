@@ -38,6 +38,20 @@ import Testing
     #expect(home == Self.customHome(in: folder))
   }
 
+  /// The custom home of `ACP_AGENT_HOME=<dir>` keeps the projects folder of
+  /// today: `<dir>/synced/projects/`.
+  @Test func theVariableKeepsTheProjectsFolderInTheSyncedFolder() throws {
+    let folder = makeResolvedDirectory(label: "HomeOptions-projects")
+
+    let home = try AgentComposition.home(
+      environment: [AgentComposition.homeVariable: folder.path])
+
+    #expect(
+      home.projectsDirectory
+        == home.synced.appendingPathComponent(
+          AgentComposition.projectsFolderName, isDirectory: true))
+  }
+
   /// A relative `ACP_AGENT_HOME` resolves against the process working
   /// directory.
   @Test func aRelativeVariableResolvesAgainstTheProcessWorkingDirectory() throws {
@@ -102,14 +116,18 @@ import Testing
 
   // MARK: - Helpers
 
-  /// The custom home that the CLI makes in one folder: its synced and its
-  /// local folder.
+  /// The custom home that the CLI makes in one folder: its synced folder,
+  /// its local folder, and the projects folder in the synced folder.
   ///
   /// - Parameter folder: The folder of the home.
   /// - Returns: The home.
   private static func customHome(in folder: URL) -> AgentHome {
-    .makeCustom(
-      synced: folder.appendingPathComponent(AgentComposition.syncedFolderName, isDirectory: true),
-      local: folder.appendingPathComponent(AgentComposition.localFolderName, isDirectory: true))
+    let synced = folder.appendingPathComponent(
+      AgentComposition.syncedFolderName, isDirectory: true)
+    return .makeCustom(
+      synced: synced,
+      local: folder.appendingPathComponent(AgentComposition.localFolderName, isDirectory: true),
+      projects: synced.appendingPathComponent(
+        AgentComposition.projectsFolderName, isDirectory: true))
   }
 }

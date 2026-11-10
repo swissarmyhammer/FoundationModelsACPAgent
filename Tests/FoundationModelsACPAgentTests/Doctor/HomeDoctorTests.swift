@@ -42,7 +42,8 @@ struct HomeDoctorTests {
     let folder = makeResolvedDirectory(label: "HomeDoctorTests-missing")
     let home = AgentHome.makeCustom(
       synced: folder.appendingPathComponent(Self.missingFolderName, isDirectory: true),
-      local: folder)
+      local: folder,
+      projects: folder)
 
     let checks = await HomeDoctor(home: home).runHealthChecks()
 
@@ -56,7 +57,7 @@ struct HomeDoctorTests {
     let folder = makeResolvedDirectory(label: "HomeDoctorTests-blocked")
     let file = folder.appendingPathComponent(Self.blockingFileName)
     try Data().write(to: file)
-    let home = AgentHome.makeCustom(synced: folder, local: file)
+    let home = AgentHome.makeCustom(synced: folder, local: file, projects: folder)
 
     let checks = await HomeDoctor(home: home).runHealthChecks()
 

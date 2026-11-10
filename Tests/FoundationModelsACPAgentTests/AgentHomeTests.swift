@@ -30,14 +30,16 @@ struct AgentHomeTests {
 
   // MARK: - Fixture
 
-  /// A custom home: a temporary synced root and a temporary local root.
+  /// A custom home: a temporary synced root, a temporary local root, and
+  /// a temporary projects folder that is not in the synced root.
   ///
   /// - Parameter label: The prefix that names the test.
   /// - Returns: The home.
   private static func makeCustomHome(label: String) -> AgentHome {
     .makeCustom(
       synced: makeResolvedDirectory(label: "AgentHomeTests-\(label)-synced"),
-      local: makeResolvedDirectory(label: "AgentHomeTests-\(label)-local"))
+      local: makeResolvedDirectory(label: "AgentHomeTests-\(label)-local"),
+      projects: makeResolvedDirectory(label: "AgentHomeTests-\(label)-projects"))
   }
 
   /// The lowercase hexadecimal SHA-256 of the path of `directory`.
@@ -52,13 +54,18 @@ struct AgentHomeTests {
 
   // MARK: - The custom preset
 
-  /// A custom home puts the projects folder in the synced root.
+  /// A custom home puts the project store in the projects folder that the
+  /// host gives, also when that folder is not in the synced root.
   @Test
-  func theProjectsFolderOfACustomHomeIsInTheSyncedRoot() {
-    let home = Self.makeCustomHome(label: "projects")
+  func theProjectsFolderOfACustomHomeIsTheGivenFolder() {
+    let projects = makeResolvedDirectory(label: "AgentHomeTests-projects-outside")
 
-    #expect(
-      home.projectsDirectory == home.synced.appendingPathComponent("projects", isDirectory: true))
+    let home = AgentHome.makeCustom(
+      synced: makeResolvedDirectory(label: "AgentHomeTests-projects-synced"),
+      local: makeResolvedDirectory(label: "AgentHomeTests-projects-local"),
+      projects: projects)
+
+    #expect(home.projectsDirectory == projects)
   }
 
   /// A custom home puts the hooks, the skills marketplace cache and the
@@ -122,6 +129,16 @@ struct AgentHomeTests {
   }
 
   // MARK: - The XDG preset
+
+  /// The XDG preset keeps the projects folder of today: the `projects`
+  /// folder of the synced root.
+  @Test
+  func theXDGPresetKeepsTheProjectsFolderInTheSyncedRoot() throws {
+    let home = AgentHome.makeXDG(name: try DotfolderName(Self.dotfolderName), environment: [:])
+
+    #expect(
+      home.projectsDirectory == home.synced.appendingPathComponent("projects", isDirectory: true))
+  }
 
   /// The XDG preset of the CLI keeps the paths of today: the synced root is
   /// `$XDG_CONFIG_HOME/<name>/`, the local root is `$XDG_DATA_HOME/<name>/`,

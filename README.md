@@ -22,7 +22,8 @@ let cwd = URL(
     fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
 
 // The home of the host: here the XDG folders, ~/.config/acp-agent/ for the
-// user layer. An app gives its own two roots with AgentHome.makeCustom.
+// user layer. An app gives its own two roots and its projects folder with
+// AgentHome.makeCustom.
 let home = AgentHome.makeXDG(name: name, environment: ProcessInfo.processInfo.environment)
 
 // Loads the configuration stack and resolves the profile over the real
@@ -544,19 +545,23 @@ The home holds each folder outside the project that the agent reads or
 writes. It has two roots:
 
 - **synced**: the data that follows the user from device to device: the user
-  level of each settings stack, and the projects folder.
+  level of each settings stack. The XDG home and the home of `--home` also put
+  the projects folder in it.
 - **local**: the state of this machine, which never syncs: the hook data and
   the snapshot timelines, the caches (the skills marketplace, the models, the
   router metadata, the install record of the language servers), and the
   machine state of each project, such as the shell store.
 
-An app gives its own two roots with `AgentHome.makeCustom(synced:local:)`, for
-example a folder in its iCloud container and a folder in Application Support.
+An app gives its own two roots and its projects folder with
+`AgentHome.makeCustom(synced:local:projects:)`, for example two folders in its
+iCloud container and a folder in Application Support. The projects folder can
+be outside the synced root.
 The `acp-agent` CLI uses `AgentHome.makeXDG(name:environment:)`, which keeps the
 XDG folders that the CLI always used. The CLI takes a home folder with
 `--home <dir>` (on `run`, `acp`, `config`, `instructions eject`, `doctor` and
 `snapshots`) or with the `ACP_AGENT_HOME` variable; `--home` wins. That folder
-gives the custom home `<dir>/synced` and `<dir>/local`. With neither, the CLI
+gives the custom home `<dir>/synced` and `<dir>/local`, with the projects folder
+`<dir>/synced/projects/`. With neither, the CLI
 uses the XDG home.
 
 | Kind | Custom home | XDG home (the CLI) |
@@ -569,7 +574,7 @@ uses the XDG home.
 | skills marketplace cache | `<local>/skills-marketplace/` | `SKILLS_MARKETPLACE_CACHE`, or its default folder |
 | model cache | `<local>/models/` | `HF_HUB_CACHE` or `HF_HOME`, or `~/.cache/huggingface/hub` |
 | shell store of a project | `<local>/projects/<key>/shell/` | `$XDG_DATA_HOME/<name>/projects/<key>/shell/` |
-| projects folder (one file for each project) | `<synced>/projects/` | `$XDG_CONFIG_HOME/<name>/projects/` |
+| projects folder (one file for each project) | the `projects:` folder | `$XDG_CONFIG_HOME/<name>/projects/` |
 
 With a custom home, no stack holds a folder in the home directory or in
 `XDG_CONFIG_HOME`. The agents layer of the synced root is the root itself, so
