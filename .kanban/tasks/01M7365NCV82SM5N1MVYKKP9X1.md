@@ -1,6 +1,14 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m73fa2xyznntmdqeq8nztk1q
+  text: |-
+    Decision (from the dispatch order of this step): the `initialize` result of a `sandboxed` agent omits `mcp.stdio`, because no stdio server can start in that mode (`MCPComposition.Refusal.stdioInSandboxedMode`). It advertises `mcp.http` only. An `open` agent advertises both, as before.
+
+    Research: `RoutedACPAgent.advertisedCapabilities` was a `static let`. `negotiate(_:from:)` in Initialization.swift is its only production reader. Tests read it in InitializationTests and PromptContentTests. `ToolMode` (FoundationModelsExtras) is a closed enum with `open` and `sandboxed`. `MCPCapabilities.stdio` is optional. Plan: replace the static property with `static func advertisedCapabilities(in mode: ToolMode)`, and `negotiate` gives it `toolMode`.
+  timestamp: 2026-11-10T19:35:10.526286+00:00
 position_column: todo
 position_ordinal: '8980'
 title: The initialize capabilities advertise mcp.stdio in sandboxed mode

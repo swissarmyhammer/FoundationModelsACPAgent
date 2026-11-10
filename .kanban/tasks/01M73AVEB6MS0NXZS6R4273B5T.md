@@ -83,6 +83,10 @@ comments:
     - evidence: review sha HEAD~1..HEAD (1201c7f) — 0 findings, 0 confirmed, 1 refuted, 7 attempted, 0 failed. The two prior findings (ConnectionTable.swift duplication, HotResumeTests.swift concurrency) are checked and the fix commit has no new finding.
     - next: none. The task moved to done.
   timestamp: 2026-11-10T18:58:46.981195+00:00
+- actor: claude-code
+  id: 01m73enx7q05g0f94qxr8yx7b7
+  text: 'Acceptance confirmed by foundationmodelsacpclient-76 (2026-11-10): 10 of 10 full runs of `swift test --package-path IntegrationTests` pass with FoundationModelsACPAgent 89152e3 (only the ACPAgent pin moved from 728276c). `aHotResumeKeepsTheRunningChildRunning` passed 10/10 (1.6–1.9 s). Before the fix it failed in about 1 of 3 runs. Logs: /private/tmp/claude-501/-Users-wballard-github-swissarmyhammer-FoundationModelsACPClient/c6a2f1c1-d86c-4e3e-8e84-1327458d50a2/scratchpad/runs10/. The two hang tests also passed 10/10, but their faults are probably only not hit: the killed-agent case is the prompt-record race of card 01M73DP5EY59X102WFGYJJ4MR5.'
+  timestamp: 2026-11-10T19:24:09.335134+00:00
 position_column: done
 position_ordinal: ffffcb80
 title: 'Hot resume: a live child update can reach the new connection before the replay announces the child'

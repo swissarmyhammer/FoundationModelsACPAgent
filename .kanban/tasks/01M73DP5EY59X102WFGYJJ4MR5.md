@@ -10,6 +10,14 @@ comments:
   id: 01m73dt87r8rh9wc71kns4azq6
   text: 'foundationmodelsagents-d7 accepted the defect as Agents task ^vejnx2n (step1, bug). A run records its task prompt durably before it is announced, for a host-started run and for a nested run. The restore reads that record, and a host `prompts:` value still wins. Its test holds the first generate, waits for the announcement, stops, restores and expects the run back with its prompt, with no wall-clock waits. Agents order: ^1yb868r (in review), then ^vejnx2n, then ^mpqd9de.'
   timestamp: 2026-11-10T19:09:03.096621+00:00
+- actor: claude-code
+  id: 01m73g164psfhvdgk6zzmw5m0t
+  text: |-
+    Agents ^vejnx2n is pushed (FoundationModelsAgents main, head e181a24; fix 28808c9, review fixes 6027446 and b4e3824; swift test 934 passed; review clean). This card is no longer blocked.
+    What changed: `AgentRun.make` writes the task prompt to `task-prompt.md` in the session folder right after it makes the session, before the run is in the runner index (so before any announcement). The restore takes the prompt from the host `prompts:` first, then this record, then the Router first prompt. A record that cannot be read logs a warning and the restore uses the next source.
+    Host requirement: the record is under the recording root, so `AgentEnvironment` must have `recordingRoot` set. ACPAgent sets it through `agentRunHost`; confirm it in the test.
+    Next run: bump only the Agents pin (with Skills if needed, as in ^b013mv9), and add the end-to-end restore test: a nested run killed after its announcement and before its first generate comes back on `session/resume` with its prompt, and no `restoreFailure`.
+  timestamp: 2026-11-10T19:47:47.478490+00:00
 position_column: todo
 position_ordinal: '9380'
 title: A run killed after its announcement but before its task prompt was recorded is never restored

@@ -1,11 +1,16 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m73fk03gydssb77yjh2ya0st
+  text: 'Research: The resume path (`SessionResume.swift` `composeResumedSession`) calls `composeSession(..., resuming:)` in `SessionSetup.swift`. Thus one change in `composeSession` gives the section to a new session and to a resumed session. A replay-only resume assembles no instructions; it keeps the recorded text. The plan: a new `OpenTestudoInstructions` enum in `Instructions/` holds the section text. `InstructionsAssembler.init` gets `toolMode` and `openTestudoDownloadURL` (both with defaults). `assemble` puts the section after `StyleInstructions.text` and before the base prompt, in `sandboxed` mode only. `RoutedACPAgent` keeps `openTestudoDownloadURL` beside `toolMode`.'
+  timestamp: 2026-11-10T19:40:02.544588+00:00
 depends_on:
 - 01M73040J7Q5AB7PRADXFEAMNV
 - 01M7303F2AJEEVCV4EB76XDPW1
-position_column: todo
-position_ordinal: '8680'
+position_column: doing
+position_ordinal: '8180'
 title: 'ACPA-19c: In sandboxed mode, the session instructions send work that needs a child process to OpenTestudo'
 ---
 ## What

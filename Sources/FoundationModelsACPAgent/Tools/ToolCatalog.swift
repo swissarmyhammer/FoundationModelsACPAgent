@@ -85,6 +85,11 @@ public struct SessionSurface: Sendable {
   /// when the session closes.
   let registryEndpoints: [any GraphQLEndpoint]
 
+  /// The staging of the root `runCode`, which applies the selection of the
+  /// session agent to each staged registry (``SessionRegistryStaging``), or
+  /// `nil` for a surface that the catalog did not compose.
+  let registryStaging: SessionRegistryStaging?
+
   /// Makes a session surface with no MCP server outcome and no `agents`
   /// tool.
   ///
@@ -136,6 +141,8 @@ public struct SessionSurface: Sendable {
   ///     environment of `agents` writes.
   ///   - registryEndpoints: The endpoints of the tools of the registry that
   ///     a noun holds. Empty by default.
+  ///   - registryStaging: The staging of the root `runCode`, or `nil` for
+  ///     none. `nil` by default.
   init(
     tools: [any FoundationModels.Tool],
     serverPool: MCPServerPool,
@@ -148,9 +155,11 @@ public struct SessionSurface: Sendable {
     inlineSettleGrace: TimeInterval,
     agents: AgentsMount?,
     runCallJoins: RunCallJoinTable,
-    registryEndpoints: [any GraphQLEndpoint] = []
+    registryEndpoints: [any GraphQLEndpoint] = [],
+    registryStaging: SessionRegistryStaging? = nil
   ) {
     self.registryEndpoints = registryEndpoints
+    self.registryStaging = registryStaging
     self.tools = tools
     self.serverPool = serverPool
     self.filesReadVerb = filesReadVerb
@@ -172,8 +181,19 @@ public struct SessionSurface: Sendable {
   /// - Returns: The surface with the host tools.
   func appending(hostTools: [any FoundationModels.Tool]) -> SessionSurface {
     guard !hostTools.isEmpty else { return self }
-    return SessionSurface(
-      tools: tools + hostTools,
+    return replacing(tools: tools + hostTools, agents: agents)
+  }
+
+  /// This surface with `tools` and `agents` in place of its own. Each other
+  /// part does not change.
+  ///
+  /// - Parameters:
+  ///   - tools: The tools of the new surface, in mount order.
+  ///   - agents: The `agents` mount of the new surface.
+  /// - Returns: The new surface.
+  func replacing(tools: [any FoundationModels.Tool], agents: AgentsMount?) -> SessionSurface {
+    SessionSurface(
+      tools: tools,
       serverPool: serverPool,
       filesReadVerb: filesReadVerb,
       shellOutput: shellOutput,
@@ -184,7 +204,8 @@ public struct SessionSurface: Sendable {
       inlineSettleGrace: inlineSettleGrace,
       agents: agents,
       runCallJoins: runCallJoins,
-      registryEndpoints: registryEndpoints)
+      registryEndpoints: registryEndpoints,
+      registryStaging: registryStaging)
   }
 
   /// Makes a surface that mounts nothing: no tool, no MCP server, no
@@ -275,6 +296,27 @@ public enum ToolCatalog {
   /// render at `tools.code_context.<verb>`, for example
   /// `tools.code_context.getSymbol`.
   static let codeContextGroupName = "code_context"
+
+  /// The name of the `agents` tool of a session.
+  static let agentsToolName = "agents"
+
+  /// The tools that give an endpoint (D90 (c)). The `tools:` and
+  /// `disallowedTools:` keys of a session agent cannot remove them
+  /// (``SessionToolSelection``). `settings` and `kanban` are nouns in the
+  /// registry of `runCode`; `sessions` and `rules` are not mounted yet
+  /// (ACPA-9).
+  static let endpointToolNames: Set<String> = [
+    agentsToolName, SkillOutputProtection.skillsToolName, "sessions", "kanban", "rules",
+    SettingsGraph.endpointName, NoOpToolCall.runCodeToolName,
+  ]
+
+  /// The discovery half of `runCode`. The description of `runCode` tells the
+  /// model to call it, thus it stays when `runCode` stays.
+  static let searchToolsName = "searchTools"
+
+  /// The tools that a session agent cannot remove: the endpoint tools and
+  /// `searchTools`.
+  static let alwaysOnToolNames = endpointToolNames.union([searchToolsName])
 
   /// One built registry and the MCP composition around it: the recorded
   /// registrations for a rebuild, the pool that owns the servers, the
@@ -383,9 +425,11 @@ public enum ToolCatalog {
         mounted: mounted.tools),
       runCallJoins: runCallJoins)
     let tools = mounted.tools + makeStandaloneTools(agents: agents)
+    // The refresher stages through the staging of the surface, so a
+    // refresh after the session agent is known keeps its selection.
+    let staging = SessionRegistryStaging(wrapping: mounted.staging)
     await MCPComposition.startSurfaceRefresher(
-      source: built.source, staging: mounted.staging, servers: built.mcpServers,
-      pool: built.pool)
+      source: built.source, staging: staging, servers: built.mcpServers, pool: built.pool)
     return SessionSurface(
       tools: tools,
       serverPool: built.pool,
@@ -398,7 +442,8 @@ public enum ToolCatalog {
       inlineSettleGrace: context.inlineSettleGrace,
       agents: agents,
       runCallJoins: runCallJoins,
-      registryEndpoints: context.sessionOperationTools.flatMap { $0.tool.graphQLEndpoints })
+      registryEndpoints: context.sessionOperationTools.flatMap { $0.tool.graphQLEndpoints },
+      registryStaging: staging)
   }
 
   /// The standalone tools that follow the Multitool session tools, in

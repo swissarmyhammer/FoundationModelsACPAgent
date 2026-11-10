@@ -92,6 +92,35 @@ enum ConfigOptions {
     return slot
   }
 
+  /// The `model:` value of an agent that asks for the default slot.
+  static let inheritModelValue = "inherit"
+
+  /// The start slot of a session for the `model:` key of its session agent
+  /// (ACPA-1b): the start value of the `model` option.
+  ///
+  /// The case of the letters does not matter.
+  ///
+  /// - Parameter model: The `model:` value of the session agent, or `nil`
+  ///   when the agent has no such key.
+  /// - Returns: The selectable slot that `model` names. No value and
+  ///   `inherit` give ``defaultSlot``. A value that names no selectable slot
+  ///   gives ``defaultSlot`` and a warning for the log.
+  static func slot(forAgentModel model: String?) -> (slot: ModelSlot, warning: String?) {
+    guard let model, model.lowercased() != inheritModelValue else {
+      return (defaultSlot, nil)
+    }
+    guard let slot = slot(for: SessionConfigValueId(rawValue: model.lowercased())) else {
+      let valid = ([inheritModelValue] + selectableSlots.map(\.rawValue))
+        .map { "`\($0)`" }.joined(separator: ", ")
+      return (
+        defaultSlot,
+        "The model `\(model)` of the session agent is not a slot. The session starts on the "
+          + "`\(defaultSlot.rawValue)` slot. Use one of these values: \(valid)."
+      )
+    }
+    return (slot, nil)
+  }
+
   /// The generation handle of a selectable slot.
   ///
   /// - Parameters:

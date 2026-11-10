@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModelsACP
 import FoundationModelsAgents
+import FoundationModelsRouter
 
 /// The agent part of one session composition: the agent, the rendered text
 /// of its instructions, and the role of the `AGENT.md` of the working
@@ -14,12 +15,18 @@ struct SessionAgentPrompt {
   /// its `skills:` preload), or `nil` for the builtin floor.
   let text: String?
 
+  /// The definition of the agent, or `nil` for the builtin floor. Its
+  /// `tools:` and `disallowedTools:` keys filter the surface of the session
+  /// (``SessionSurface/applying(agent:)``).
+  let definition: AgentDefinition?
+
   /// The role of the `AGENT.md` of the working directory in the
   /// instructions of the session.
   let workingDirectoryAgent: InstructionsAssembler.WorkingDirectoryAgent
 
   /// The prompt of a session with no agent catalog: the builtin floor.
-  static let builtin = SessionAgentPrompt(agent: nil, text: nil, workingDirectoryAgent: .alias)
+  static let builtin = SessionAgentPrompt(
+    agent: nil, text: nil, definition: nil, workingDirectoryAgent: .alias)
 }
 
 extension RoutedACPAgent {
@@ -73,9 +80,25 @@ extension RoutedACPAgent {
     return SessionAgentPrompt(
       agent: ComposedSessionAgent(
         choice: resolved.choice,
-        option: ConfigOptions.AgentOption(catalog: catalog, agent: resolved)),
+        option: ConfigOptions.AgentOption(catalog: catalog, agent: resolved),
+        slot: startSlot(of: resolved.definition)),
       text: try await renderedInstructions(of: resolved.definition, runner: runner),
+      definition: resolved.definition,
       workingDirectoryAgent: resolved.workingDirectoryAgent)
+  }
+
+  /// The start slot of a session for the `model:` key of its agent
+  /// (``ConfigOptions/slot(forAgentModel:)``). A value that names no slot
+  /// gives a warning in the log.
+  ///
+  /// - Parameter definition: The agent, or `nil` for the builtin floor.
+  /// - Returns: The slot.
+  private func startSlot(of definition: AgentDefinition?) -> ModelSlot {
+    let start = ConfigOptions.slot(forAgentModel: definition?.model)
+    if let warning = start.warning {
+      ACPAgentTelemetry.logger(.session).warning("\(warning)")
+    }
+    return start.slot
   }
 
   /// The rendered instructions of the session agent. Each skill of its

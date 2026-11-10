@@ -46,7 +46,7 @@ enum SessionAvailability: Equatable, Sendable {
 struct ActiveSession: Sendable {
   /// The Router session that answers this ACP session's prompts.
   /// Retaining it keeps the resident profile alive for the lifetime of the session.
-  /// It is born as the root session from the standard slot.
+  /// It is born as the root session from the slot of its agent (`model:`), else the standard slot.
   /// A model-slot switch suspends it and restores it onto the handle of the selected slot.
   /// The restored session has the same id.
   var session: any RoutedSession
@@ -593,6 +593,12 @@ struct SessionComposition {
   /// then writes no project file and no directory list, and announces no
   /// command.
   let isReplayOnly: Bool
+
+  /// The slot that the session starts on: the slot of its agent
+  /// (``ComposedSessionAgent/slot``), else ``ConfigOptions/defaultSlot``.
+  var startSlot: ModelSlot {
+    agent?.slot ?? ConfigOptions.defaultSlot
+  }
 }
 
 /// The agent of one composed session: the choice that the record of the
@@ -603,6 +609,10 @@ struct ComposedSessionAgent {
 
   /// The agent select of the session.
   let option: ConfigOptions.AgentOption
+
+  /// The slot that the `model:` key of the agent names: the start slot of
+  /// the session and the start value of the `model` option (ACPA-1b).
+  let slot: ModelSlot
 }
 
 /// What one mount of a session announces in the `session/new` or `session/resume` response (ACP schema-v2.0.0-alpha.7).
@@ -721,8 +731,8 @@ extension RoutedACPAgent {
       userPresence: userPresence,
       requestedAgent: requestedAgent)
 
-    // The session comes from the profile's standard slot, never from
-    // the router.
+    // The session comes from the slot of its agent (`model:`), else from
+    // the profile's standard slot, never from the router.
     // `grammar` stays absent: a plain session, not a guided one.
     // `agentSpawn` stays nil.
     // An agent run starts from the standalone `agents` tool of the surface, never from `session/new`.
@@ -734,18 +744,19 @@ extension RoutedACPAgent {
     // The hooks see the key of the working directory.
     // Each session of that folder shares the key, so they share one snapshot timeline.
     let hookLineage = HookLineage(workingDirectory: workingDirectory, origin: .new)
-    let session = residentProfile.standard.makeBudgetedSession(
-      instructions: composition.instructions,
-      workingDirectory: workingDirectory,
-      recordingRoot: composition.transcriptRoot,
-      tools: composition.surface.tools,
-      compaction: composition.configuration.compaction,
-      repetition: composition.configuration.repetition,
-      inlineSettleGrace: composition.surface.inlineSettleGrace,
-      userPresence: userPresence,
-      mailOnlyAnswerLimit: mailOnlyAnswerLimit,
-      hookLineage: hookLineage,
-      transcriptReader: transcriptReader)
+    let session = ConfigOptions.handle(for: composition.startSlot, of: residentProfile)
+      .makeBudgetedSession(
+        instructions: composition.instructions,
+        workingDirectory: workingDirectory,
+        recordingRoot: composition.transcriptRoot,
+        tools: composition.surface.tools,
+        compaction: composition.configuration.compaction,
+        repetition: composition.configuration.repetition,
+        inlineSettleGrace: composition.surface.inlineSettleGrace,
+        userPresence: userPresence,
+        mailOnlyAnswerLimit: mailOnlyAnswerLimit,
+        hookLineage: hookLineage,
+        transcriptReader: transcriptReader)
     let sessionId = SessionId(rawValue: session.id.description)
     SnapshotSessionKeys.shared.record(hookLineage.sessionKey, for: sessionId)
     recordSessionTag(of: composition, for: sessionId)
@@ -841,10 +852,10 @@ extension RoutedACPAgent {
 
     // The first announcement of the config-option list is one select over the profile's chat slots,
     // then the agent select when the session has an agent catalog.
-    // The model select defaults to the standard slot the session was just composed from.
+    // The model select starts on the slot the session was just made on: the slot of its agent.
     // The announced state is recorded, so the divergence check compares against what the client actually saw.
     let configOptions = ConfigOptions.options(
-      profile: residentProfile, selectedSlot: ConfigOptions.defaultSlot,
+      profile: residentProfile, selectedSlot: composition.startSlot,
       agent: composition.agent?.option)
 
     // The one reader of the events of the session starts before anything can mail the session.
@@ -856,7 +867,7 @@ extension RoutedACPAgent {
       parent: nil,
       build: SessionBuild(
         composition: composition, placement: placement, commands: commands,
-        selectedSlot: ConfigOptions.defaultSlot, announcedConfigOptions: configOptions,
+        selectedSlot: composition.startSlot, announcedConfigOptions: configOptions,
         titleRecorded: titleRecorded, history: history))
     sessions[sessionId]?.builtinContext = commandContext
 
@@ -1099,25 +1110,29 @@ extension RoutedACPAgent {
     // With `watch: true` it rebuilds on a skill file change, and its
     // `commandUpdates` gives each rebuild to the slash-command source.
     let skills = await ToolCatalog.makeSkillsSource(context: catalogContext)
-    let surface = try await ToolCatalog.sessionSurface(context: catalogContext, skills: skills)
+    let fullSurface = try await ToolCatalog.sessionSurface(context: catalogContext, skills: skills)
       .appending(hostTools: hostTools)
 
     // The session agent is the base prompt of the root session: its body
     // and its `skills:` preload, rendered with the tool groups of the
-    // session. Without one, the assembler uses the builtin.
+    // session. Without one, the assembler uses the builtin. Its `tools:`
+    // and `disallowedTools:` keys then filter the surface (ACPA-1b).
     let instructions: AssembledInstructions
     let agent: SessionAgentPrompt
+    let surface: SessionSurface
     do {
       agent = try await composeSessionAgent(
-        runner: surface.agents?.runner, requested: requestedAgent, resuming: resumedSessionId,
-        workingDirectory: workingDirectory, transcriptRoot: context.transcriptRoot)
+        runner: fullSurface.agents?.runner, requested: requestedAgent,
+        resuming: resumedSessionId, workingDirectory: workingDirectory,
+        transcriptRoot: context.transcriptRoot)
+      surface = try await fullSurface.applying(agent: agent.definition)
       instructions = try await InstructionsAssembler(
         stack: context.loader.stack, workingDirectory: workingDirectory
       ).assemble(
         skills: skills.registry, agent: agent.text,
         workingDirectoryAgent: agent.workingDirectoryAgent)
     } catch {
-      await surface.shutdown()
+      await fullSurface.shutdown()
       throw error
     }
 

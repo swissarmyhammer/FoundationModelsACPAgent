@@ -1,6 +1,17 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m73fr03pe11amvxcg9hkwetg
+  text: |-
+    Research (implement step, worktree agent-acfb1dc7cdccf262d).
+    - Note: the implement step moved this card to `doing` by mistake, and then moved it back to `todo` at ordinal 9080. The `started` time of the card stays set.
+    - The only agent requests that name a session are the questions of `ElicitationRelay` (`elicitation/create` and `session/request_permission`). Both go out in `startWireRequest`, which reads the connection that `relayRequest` got from `outboundPath` before some awaits.
+    - So there is a second race: a question can read the old connection before the take, and start its wire request after the take and after `withdrawOpenQuestions`. The decision must be made in the same actor step as the start of the wire request.
+    - Plan: the relay gets a second closure that gives the hold of the tree (`ConnectionTable.route(forSession:)`). When that hold holds, the question becomes a withdrawn question, and the relay puts one send in the hold queue that asks it. Thus the ask goes in order with the held updates, after the snapshots. When the hold is discarded (a later take, or the close of the connection), the question stays withdrawn, and the next hot resume asks it again (`reaskWithdrawnQuestions`). The held ask takes the id out of the withdrawn set, so the re-ask after the release does not ask it a second time.
+    - Test: the client side can record the wire arrival number of each agent request (`ClientSideConnection.currentRequestArrival`), so a test can merge the requests with the subscription events into one trace for `SubagentWireTraceValidator`.
+  timestamp: 2026-11-10T19:42:46.390680+00:00
 position_column: todo
 position_ordinal: '9080'
 title: 'Hot resume: a new question of a child in the window between the take and the response goes to the new connection before the replay'

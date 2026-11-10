@@ -441,7 +441,9 @@ extension RoutedACPAgent {
     claimingRuns: Set<RunKey>
   ) async throws -> RestoredSession {
     do {
-      let restored = try await residentProfile.standard.restoreSessionWithHostChecks(
+      let restored = try await ConfigOptions.handle(
+        for: composition.startSlot, of: residentProfile
+      ).restoreSessionWithHostChecks(
         id: rootId,
         recordingRoot: composition.transcriptRoot,
         instructions: composition.isReplayOnly ? nil : composition.instructions,
