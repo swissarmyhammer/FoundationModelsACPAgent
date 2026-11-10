@@ -86,6 +86,18 @@ import Testing
       configuration: configuration, mode: mode)
   }
 
+  /// Makes the catalog context of one session in `mode` over a new working
+  /// directory, with the configuration of ``makeConfiguration(servers:)``.
+  ///
+  /// - Parameter mode: The tool mode of the session.
+  /// - Returns: The catalog context.
+  /// - Throws: Whatever the context fixture throws.
+  private static func makeContext(mode: ToolMode) async throws -> CatalogContext {
+    try await CatalogRegistryFixture.makeContext(
+      workingDirectory: makeResolvedDirectory(label: "\(label)-context"),
+      configuration: makeConfiguration(), mode: mode)
+  }
+
   /// Gives back every lease and stops every process of `built`.
   ///
   /// - Parameter built: The built registry of a case.
@@ -96,16 +108,21 @@ import Testing
   }
 
   /// Writes a script that writes a marker file when it starts, and then
-  /// exits. A stdio MCP server over the script shows if the composition
-  /// started its process.
+  /// runs the `mcp-test-server` executable with its arguments. A stdio MCP
+  /// server over the script shows if the composition started its process.
+  /// In the `open` mode the server connects, thus the build does not wait
+  /// for a server that never answers.
   ///
   /// - Returns: The script and the marker file that it writes.
-  /// - Throws: Whatever the write of the script throws.
+  /// - Throws: Whatever the search for the server or the write of the
+  ///   script throws.
   private static func makeMarkerScript() throws -> (script: URL, marker: URL) {
     let directory = makeResolvedDirectory(label: "\(label)-marker")
     let marker = directory.appendingPathComponent(markerFileName)
     let script = directory.appendingPathComponent(markerScriptName)
-    try "#!/bin/sh\ntouch '\(marker.path)'\n".write(to: script, atomically: true, encoding: .utf8)
+    let server = try BuiltProductLocator.mcpTestServerURL().path
+    try "#!/bin/sh\ntouch '\(marker.path)'\nexec '\(server)' \"$@\"\n".write(
+      to: script, atomically: true, encoding: .utf8)
     try FileManager.default.setAttributes(
       [.posixPermissions: executablePermissions], ofItemAtPath: script.path)
     return (script, marker)
@@ -198,6 +215,13 @@ import Testing
     #expect(!FileManager.default.fileExists(atPath: marker.path))
   }
 
+  @Test func theSandboxedModeGivesNoChildProcessOptions() async throws {
+    let context = try await Self.makeContext(mode: .sandboxed)
+
+    #expect(
+      ToolCatalog.childProcessOptions(of: context.configuration.tools.shell, in: context) == nil)
+  }
+
   @Test func theSandboxedModeRecordsTheRefusalOfAConfigStdioServer() async throws {
     let (script, _) = try Self.makeMarkerScript()
     let configuration = Self.makeConfiguration(servers: [Self.stdioServer(command: script.path)])
@@ -253,6 +277,32 @@ import Testing
     #expect(built.mcpServerOutcomes.map(\.result) == [.connected])
   }
 
+  @Test func theOpenModeStartsTheStdioServerProcess() async throws {
+    let (script, marker) = try Self.makeMarkerScript()
+    let configuration = Self.makeConfiguration(servers: [Self.stdioServer(command: script.path)])
+
+    let built = try await Self.makeBuiltRegistry(mode: .open, configuration: configuration)
+    await Self.release(built)
+
+    #expect(FileManager.default.fileExists(atPath: marker.path))
+  }
+
+  @Test func theOpenModeGivesTheOptionsOfAnEnabledSection() async throws {
+    let context = try await Self.makeContext(mode: .open)
+
+    #expect(
+      ToolCatalog.childProcessOptions(of: context.configuration.tools.shell, in: context)
+        == ShellToolOptions())
+  }
+
+  @Test func theOpenModeGivesNoOptionsOfADisabledSection() async throws {
+    let context = try await Self.makeContext(mode: .open)
+
+    #expect(
+      ToolCatalog.childProcessOptions(of: ToolSection<ShellToolOptions>.disabled, in: context)
+        == nil)
+  }
+
   @Test func theOpenRosterKeepsAClientStdioServer() {
     let roster = MCPComposition.composeRoster(
       mode: .open, section: .enabled(servers: []), clientServers: [Self.clientStdioServer])
@@ -266,6 +316,12 @@ import Testing
     await #expect(throws: ToolModeError.openModeInSandbox) {
       _ = try await Self.makeAgent(mode: .open, probe: .fixed(true))
     }
+  }
+
+  @Test func theAgentAcceptsTheOpenModeOutsideASandbox() async throws {
+    let agent = try await Self.makeAgent(mode: .open, probe: .fixed(false))
+
+    #expect(agent.toolMode == .open)
   }
 
   @Test func theCompositionRefusesTheOpenModeInASandbox() async throws {

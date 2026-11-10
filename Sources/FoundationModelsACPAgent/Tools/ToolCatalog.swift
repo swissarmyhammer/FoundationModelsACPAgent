@@ -491,6 +491,29 @@ public enum ToolCatalog {
     }
   }
 
+  /// The options of `section` when its capability may start child
+  /// processes in the session, or `nil` when it may not.
+  ///
+  /// This is the one rule of the tool mode for such a capability, such as
+  /// the shell or the code context. The capability may start child
+  /// processes only in the ``FoundationModelsExtras/ToolMode/open`` mode of
+  /// `context`, and only when `section` is on. A sandboxed process cannot
+  /// start a child process.
+  ///
+  /// - Parameters:
+  ///   - section: The configuration section of the capability.
+  ///   - context: The session whose tool mode the rule reads.
+  /// - Returns: The options of the section, or `nil` when the section is
+  ///   off or the mode is `sandboxed`.
+  static func childProcessOptions<Options>(
+    of section: ToolSection<Options>, in context: CatalogContext
+  ) -> Options? {
+    guard context.toolMode == .open, case .enabled(let options) = section else {
+      return nil
+    }
+    return options
+  }
+
   /// Leases the shared shell store of the session from
   /// ``ShellStores/shared``, and queues the shell capability over it in
   /// `builder`, or does nothing when the shell section is off or the tool
@@ -523,8 +546,7 @@ public enum ToolCatalog {
   static func composeShell(
     into builder: MultiTool.Builder, context: CatalogContext
   ) async throws -> ShellMount? {
-    guard context.toolMode == .open,
-      case .enabled(let options) = context.configuration.tools.shell
+    guard let options = childProcessOptions(of: context.configuration.tools.shell, in: context)
     else {
       return nil
     }
@@ -646,8 +668,9 @@ public enum ToolCatalog {
   static func composeCodeContext(
     into builder: MultiTool.Builder, context: CatalogContext
   ) async throws -> CodeContextLease? {
-    guard context.toolMode == .open,
-      case .enabled(let options) = context.configuration.tools.codeContext
+    guard
+      let options = childProcessOptions(
+        of: context.configuration.tools.codeContext, in: context)
     else {
       return nil
     }

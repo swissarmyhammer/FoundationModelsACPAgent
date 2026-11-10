@@ -77,6 +77,35 @@ comments:
     - evidence: 37 files (new Tests/FoundationModelsACPAgentTests/ToolModeTests.swift with 18 tests; InitializationTests +2 cases; AgentCompositionTests +1). `swift test`: 1863 tests in 209 suites passed (1 known issue, the existing `withKnownIssue` in HarnessSmokeTests), 0 compiler warnings. `swift build --build-tests --package-path IntegrationTests`: Build complete.
     - next: review
   timestamp: 2026-11-10T16:55:49.915154+00:00
+- actor: claude-code
+  id: 01m736ftewd910mk25wrhtr0pw
+  text: |-
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` (d3e0463): 3 findings (3 confirmed, 2 refuted) — Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift:526, Tests/FoundationModelsACPAgentTests/ToolModeTests.swift:198, Tests/FoundationModelsACPAgentTests/ToolModeTests.swift:265. No finding is about the skills part that moved to ^bwgmkc0.
+    - next: implement the 3 findings in the "Review Findings (2026-11-10 10:56)" section, then review again.
+  timestamp: 2026-11-10T17:01:01.276133+00:00
+- actor: claude-code
+  id: 01m736s53vccz61czfgyxscfap
+  text: |-
+    Picked up the 3 findings of "Review Findings (2026-11-10 10:56)".
+    - Finding 1: the mode test is in two guards of ToolCatalog.swift only (composeShell, composeCodeContext). The stdio filter is not in ToolCatalog.swift: ToolCatalog gives `context.toolMode` to `MCPComposition.connectServers`, and MCPComposition has one `switch mode` (no second copy). New helper `ToolCatalog.childProcessOptions(of:in:)` holds the rule; both guards call it.
+    - `CatalogRegistryFixture.makeContext(workingDirectory:configuration:mode:)` is new; `makeBuiltRegistry` uses it. The helper tests use it.
+  timestamp: 2026-11-10T17:06:07.099558+00:00
+- actor: claude-code
+  id: 01m7387vt2ngtpjrrxazqjd4pe
+  text: |-
+    Work on the 3 findings is complete. All 3 are now `- [x]`.
+    - Finding 1: the new `ToolCatalog.childProcessOptions(of:in:)` holds the mode rule. `composeShell` and `composeCodeContext` call it. No other copy of the rule is in ToolCatalog.swift: the stdio filter is in MCPComposition.swift, and it uses one `switch mode`. New tests: the sandboxed mode gives nil, the open mode gives the options of an enabled section, and the open mode gives nil for a disabled section.
+    - Finding 2: new `theOpenModeStartsTheStdioServerProcess` uses the same marker script, and the marker file is there after the build.
+    - Finding 3: new `theAgentAcceptsTheOpenModeOutsideASandbox` uses `mode: .open` with `.fixed(false)` and expects `agent.toolMode == .open`.
+    - Approach that did not work: the old marker script ran `touch` and then exited. In the open mode the connect of a config stdio server waits for `.ready`, and it did not stop when the process exited. The test run stopped for more than 15 minutes. Correction: the script now runs `touch` and then `exec` of the `mcp-test-server` executable, so the server connects in the open mode. The sandboxed test uses the same script. There is a latent problem here: a config stdio server that exits before it answers can make `session/new` wait for a long time. I did not change this in the scope of this task.
+    - Pins: no `swift package update`. Skills stays at ac4250d (the coordinator said this; the SK-7a bump belongs to ^bwgmkc0).
+    - The `sah tool kanban task update` CLI did not complete in 120 s while the MCP server was running. Use the MCP `update task` op.
+
+    ### implement — changed
+    - evidence: 3 files — Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift, Tests/FoundationModelsACPAgentTests/ToolModeTests.swift, Tests/FoundationModelsACPAgentTests/Support/CatalogRegistryFixture.swift. `swift test --filter ToolModeTests`: 22 tests passed. Full `swift test`: 1868 tests in 209 suites passed (1 known issue, the existing `withKnownIssue` in HarnessSmokeTests), 0 compiler warnings. The only "warning:" line is the build-system note "missing creator for mutated node" on the mlx bundle.
+    - next: review
+  timestamp: 2026-11-10T17:31:37.666297+00:00
 depends_on:
 - 01M73026P78T3QV61E24Z44FHR
 position_column: doing
@@ -114,3 +143,14 @@ External dependencies (not on this board; do not start until they are pushed): E
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #step1
+
+## Review Findings (2026-11-10 10:56)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 36 file(s) reviewed, 10 not reviewed.
+
+> 10 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 10 file(s)
+
+- [x] `Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift:526` `duplication/duplication` — The sandbox gate `context.toolMode == .open` is written out twice, once in `composeShell` and once in `composeCodeContext`, and each sits in a near-verbatim `guard ..., case .enabled(let options) = ... else { return nil }` block. The two blocks differ only by the config section (`shell` or `codeContext`). The mode check is the rule that keeps a sandboxed process from starting child processes. If a later edit changes one gate and not the other, the sandbox guarantee breaks silently. One helper that takes the section and applies the mode check would hold the rule in one place.
+- [x] `Tests/FoundationModelsACPAgentTests/ToolModeTests.swift:198` `completeness/inverse-operation-coverage` — The sandboxed no-process test asserts that the marker file does not exist, but no test in this file shows that the same marker script creates the marker when the server is allowed. The negative assertion would also pass if the marker script never ran for any reason, so it does not prove that sandboxed mode refused the start. Add a positive control: build the same marker-script configuration in `.open` mode and assert that the marker file exists after `buildRegistry`, then keep the sandboxed assertion that it does not exist. This shows the negative assertion can fail.
+- [x] `Tests/FoundationModelsACPAgentTests/ToolModeTests.swift:265` `completeness/inverse-operation-coverage` — The agent-level guard is tested only in the refusal direction. No test builds an open-mode agent or composition with a probe that reports no sandbox and checks that it is accepted. A guard that wrongly refuses open mode outside a sandbox would still pass every test in this suite. Add one case that composes or makes a stub agent with `mode: .open` and `sandboxProbe: .fixed(false)`, and asserts that it succeeds and that `agent.toolMode == .open`.

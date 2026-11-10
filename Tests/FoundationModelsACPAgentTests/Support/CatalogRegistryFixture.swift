@@ -18,11 +18,8 @@ enum CatalogRegistryFixture {
   private static let cacheLabel = "CatalogRegistryFixture-cache"
 
   /// Builds the catalog registry of a session over `workingDirectory`
-  /// with `configuration`, and returns all that the build gives.
-  ///
-  /// The stub profile gets a new cache directory for each build. The
-  /// environment is empty, so the build does not read the API keys of
-  /// the machine that runs the tests.
+  /// with `configuration`, and returns all that the build gives. The
+  /// context comes from ``makeContext(workingDirectory:configuration:mode:)``.
   ///
   /// - Parameters:
   ///   - workingDirectory: The session working directory.
@@ -33,7 +30,28 @@ enum CatalogRegistryFixture {
   static func makeBuiltRegistry(
     workingDirectory: URL, configuration: AgentConfiguration, mode: ToolMode = .open
   ) async throws -> ToolCatalog.BuiltRegistry {
-    let context = CatalogContext(
+    try await ToolCatalog.makeRegistry(
+      context: makeContext(
+        workingDirectory: workingDirectory, configuration: configuration, mode: mode))
+  }
+
+  /// Makes the catalog context of a session over `workingDirectory` with
+  /// `configuration`, and builds nothing.
+  ///
+  /// The stub profile gets a new cache directory for each context. The
+  /// environment is empty, so the context does not read the API keys of
+  /// the machine that runs the tests.
+  ///
+  /// - Parameters:
+  ///   - workingDirectory: The session working directory.
+  ///   - configuration: The configuration under test.
+  ///   - mode: The tool mode of the session. `.open` by default.
+  /// - Returns: The catalog context.
+  /// - Throws: Whatever the profile resolve or the settings folders throw.
+  static func makeContext(
+    workingDirectory: URL, configuration: AgentConfiguration, mode: ToolMode = .open
+  ) async throws -> CatalogContext {
+    CatalogContext(
       workingDirectory: workingDirectory,
       configuration: configuration,
       profile: try await makeStubProfile(
@@ -41,7 +59,6 @@ enum CatalogRegistryFixture {
       settingsFolders: try SettingsFoldersFixture.make(label: cacheLabel),
       mode: mode,
       environment: [:])
-    return try await ToolCatalog.makeRegistry(context: context)
   }
 
   /// Builds the catalog registry of a session over `workingDirectory`
