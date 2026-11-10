@@ -10,10 +10,9 @@ import Testing
 /// components registered so far, and the fix rule that holds over every
 /// finding they report.
 ///
-/// The registry takes an injected prober, an injected resolver and the two
-/// machine figures, so the tools component starts no confined command and
-/// no MCP server here, the profile component asks no network endpoint, and
-/// no finding depends on the machine the suite runs on.
+/// The registry takes an injected resolver and the two machine figures, so
+/// the profile component asks no network endpoint here, and no finding
+/// depends on the machine the suite runs on.
 struct DoctorRegistryTests {
   // MARK: - Constants
 
@@ -21,8 +20,12 @@ struct DoctorRegistryTests {
   /// the configuration component warn.
   private static let unknownSectionName = "surprise"
 
+  /// The group the removed tools component reported in. No component of
+  /// the registry may report in it.
+  private static let toolsCategory = "tools"
+
   /// The number of components the registry states.
-  private static let registeredComponentCount = 6
+  private static let registeredComponentCount = 5
 
   // MARK: - Helpers
 
@@ -38,7 +41,7 @@ struct DoctorRegistryTests {
   ) -> [any Doctorable] {
     AcpAgentCommand.Doctor.components(
       workingDirectory: fixture.workspace, environment: environment ?? fixture.environment,
-      prober: StubToolsProber(), resolver: StubModelResolver(),
+      resolver: StubModelResolver(),
       memoryBytes: DoctorMachineFigures.generousMemoryBytes,
       freeDiskBytes: DoctorMachineFigures.generousDiskBytes)
   }
@@ -46,8 +49,8 @@ struct DoctorRegistryTests {
   // MARK: - The registry
 
   /// The registry states the configuration component, the home component,
-  /// the profile component, the transcripts component, the tools component
-  /// and the runtime component, in that order.
+  /// the profile component, the transcripts component and the runtime
+  /// component, in that order.
   @Test func theRegistryStatesTheComponentsInPlanOrder() {
     let fixture = ConfigCommandFixture(label: "DoctorRegistryTests-registry")
 
@@ -57,9 +60,18 @@ struct DoctorRegistryTests {
     #expect(
       components.map(\.doctorCategory) == [
         ConfigurationDoctor.category, HomeDoctor.category, ProfileDoctor.category,
-        TranscriptsDoctor.category, ToolsDoctor.category,
-        RuntimeDoctor.category,
+        TranscriptsDoctor.category, RuntimeDoctor.category,
       ])
+  }
+
+  /// The registry states no tools component: the shell has no sandbox to
+  /// probe (ACPA-19), so no component reports in the tools group.
+  @Test func theRegistryHasNoToolsComponent() {
+    let fixture = ConfigCommandFixture(label: "DoctorRegistryTests-no-tools")
+
+    let components = Self.components(in: fixture)
+
+    #expect(!components.contains { $0.doctorCategory == Self.toolsCategory })
   }
 
   /// `doctor` shows the resolved home: with `ACP_AGENT_HOME`, the home rows

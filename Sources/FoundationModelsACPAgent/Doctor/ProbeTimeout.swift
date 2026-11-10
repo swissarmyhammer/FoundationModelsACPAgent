@@ -8,9 +8,8 @@ import Foundation
 /// still print its table, so each call races the probe against a timer and
 /// gives the caller's own late answer when the timer wins.
 ///
-/// The type is generic over the answer, because two components use it:
-/// ``ToolsDoctor`` over ``ProbeOutcome``, and ``ProfileDoctor`` over
-/// ``ModelLookup``. Each one states its own late answer.
+/// The type is generic over the answer: ``ProfileDoctor`` uses it over
+/// ``ModelLookup``, and states its own late answer.
 ///
 /// **The probe runs in an unstructured task on purpose.** A structured
 /// child would have to be awaited at the end of its scope, so a probe that

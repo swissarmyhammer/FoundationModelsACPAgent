@@ -153,7 +153,7 @@ is on by default. Set its config section to `false` to set it off.
 | Capability | What it gives the model | Config section |
 |---|---|---|
 | `files` | The `tools.files.*` verbs, confined to the session root set | `tools.files` |
-| `shell` | The `tools.shell.*` verbs, under a Seatbelt sandbox over the root set | `tools.shell` |
+| `shell` | The `tools.shell.*` verbs, with no sandbox, in the session working directory | `tools.shell` |
 | `mcp` | The verbs of each connected MCP server, as `tools.<server>.*` | `tools.mcp` |
 | `codeContext` | The `tools.code_context.*` verbs — symbol lookup, call graph, blast radius and the language server operations — over an index of the session working directory | `tools.codeContext` |
 | `web` | The `tools.web.search` and `tools.web.fetch` verbs: search the web, and read one page | `tools.web` |
@@ -236,19 +236,19 @@ warning that says the lookup failed, and the key is not set. Another value is
 the key itself.
 
 Set `enabled: false` (or `web: false`) to set the web tool off. No key value
-shows: `config show`, `/config`, `doctor` and the logs show
+shows: `config show`, `/config` and the logs show
 `keychain:<name>`, `<redacted>` or the provider name only, and
 `/config export` writes the references and no key. `config show`
-ends with one comment line that names the providers in force, and `doctor`
-has one row for them. The web verbs run in the agent process, not in the
-shell sandbox; they refuse private and local addresses.
+ends with one comment line that names the providers in force. The web verbs
+run in the agent process, not as shell commands; they refuse private and
+local addresses.
 
 `tools.git` has one key, `enabled` (default `true`). The git verbs only read
 the repository: they change no file, no index and no branch. Their root is the
 session working directory, which can be a folder below the top of the
 repository. Outside a repository, each verb gives a correction that the model
 reads, and the session continues. Set `enabled: false` (or `git: false`) to set
-the git tool off; `doctor` then has one row that says it is disabled.
+the git tool off.
 
 ```yaml
 tools:
@@ -262,8 +262,7 @@ process, or the variables that a `name` or a `prefix` selects), `os` (the
 platform name and version, the architecture, the host name, the user name, the
 home directory, the processor count, the memory and the locale) and `now` (the
 date and the time, in an optional `timeZone`). Set `enabled: false` (or
-`environment: false`) to set the environment tool off; `doctor` then has one
-row that says it is disabled.
+`environment: false`) to set the environment tool off.
 
 ```yaml
 tools:
@@ -275,8 +274,7 @@ each variable of the agent process, and secrets are included. An example is
 the web API keys that `tools.web.apiKeys` reads from the environment. The
 value goes into the model context and into the transcript. There is no
 variable filter. If the agent process holds a secret, set the environment tool
-off. When the tool is on, `doctor` has one row that states this risk; the row
-shows no variable value.
+off.
 
 The `tools.skills.marketplaces` list names remote skill marketplaces. Each entry
 has a `url`, and optionally a `ref` (a branch or a tag), a `sha`, a `path`, an
@@ -324,11 +322,11 @@ working again. Each run gets the `searchTools`,
 `runCode` and `skills` tools, and the root session and the runs read one skills
 registry. When the session closes, its agent runs stop first.
 
-**Know the sandbox limit.** The sandbox is the only gate on shell commands:
-there is no permission prompt, and the agent never sends
-`session/request_permission` (the `permission` step of the stub script in tests is the only
-exception).
-The sandbox bounds writing and deleting only. Reads are free and the network is open, so exfiltration is not bounded.
+**Know the shell limit.** The shell has no sandbox and no gate: there is no
+permission prompt, and the agent never sends `session/request_permission` (the
+`permission` step of the stub script in tests is the only exception). A shell
+command can read, write and delete each file that the agent process can reach,
+and the network is open.
 
 ## Shutdown and restart
 
@@ -701,18 +699,17 @@ code gives the local detail.
   "Compaction started." and the `SignalID`. The compaction entry of the
   session gives the result: the summary, the tokens before and after and the
   summarizer model, or the reason of a failure or a shortfall.
-- **The sandbox is the only gate.** The agent does not advertise or send
+- **There is no gate on a command.** The agent does not advertise or send
   `session/request_permission` (only the `permission` step of the stub script sends it, in tests).
   There is no permission mode, no
   `permissions:` section and no stored decision. A denylist over the command
   text is easy to bypass, and a question that a person answers a hundred
-  times each day is not a boundary. `SeatbeltSandbox` is a kernel boundary,
-  and the spelling of a command does not change it. Its writable roots are
-  the session root set: the `cwd` and the `additionalDirectories`. The root
-  set is never empty, because an empty list gives write access to the working
-  directory of the process. `sandbox.extraWritePaths` is the only
-  configuration key. A failed sandbox preflight stops the command, and no
-  command runs without the sandbox. The sandbox limit below applies.
+  times each day is not a boundary. The shell runs with no sandbox, and
+  there is no `sandbox:` section: a `config.yaml` with one gives the
+  unknown-section warning. A shell command runs in the session working
+  directory when it names no other directory. The files verbs stay confined
+  to the session root set: the `cwd` and the `additionalDirectories`. The
+  shell limit above applies.
 - **Transcripts are project context, and you commit them.** A session records
   to `<cwd>/.<name>/transcripts/<sessionId>/`: one folder for each session,
   with its transcript and an `index.md`, whose YAML frontmatter holds the

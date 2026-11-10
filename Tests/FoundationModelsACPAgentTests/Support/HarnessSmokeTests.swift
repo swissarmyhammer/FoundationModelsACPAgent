@@ -83,8 +83,8 @@ final class PathRecordingTool: Tool, Sendable {
 
   /// The recording harness completes the same round trip, and the
   /// collector holds no session update, because `initialize` streams
-  /// none. No permission request is pending on any session either: the
-  /// sandbox is the only gate, and this agent never sends one.
+  /// none. No permission request is pending on any session either: this
+  /// agent never sends one.
   @Test
   func recordingHarnessCollectsNoUpdateAcrossInitialize() async throws {
     let harness = try await AgentClientHarness.makeRecording()

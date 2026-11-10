@@ -229,7 +229,7 @@ public final class GraphQLTunnelRecorder: Sendable {
 ///
 /// There is no configurable permission answer. This agent sends
 /// `session/request_permission` only for the `permission` step of the stub
-/// script (the sandbox is the only gate), and a test asserts
+/// script, and a test asserts
 /// `pendingPermissions` stays empty for every other script as a regression
 /// tripwire. Every request therefore forwards to the router unchanged, after
 /// the recorder keeps a copy.

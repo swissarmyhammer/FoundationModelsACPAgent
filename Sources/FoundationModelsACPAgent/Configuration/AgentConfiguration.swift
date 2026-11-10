@@ -24,8 +24,8 @@ extension KeyCheckedSection {
 /// A test makes sure that the builtin file decodes to exactly
 /// `AgentConfiguration()`.
 ///
-/// There is no `permissions` section: the sandbox is the only gate, and it
-/// has no policy to configure (see ``SandboxConfiguration``).
+/// There is no `permissions` section and no `sandbox` section: the agent
+/// asks for no permission, and the shell runs with no sandbox.
 /// There is no `instructions` section: the system prompt is the markdown
 /// file `Instructions.md`. There is no context-size key: the context comes
 /// from the model.
@@ -49,17 +49,13 @@ public struct AgentConfiguration: Codable, Equatable, Sendable {
   /// The settings of Router's repetition detector (task ^k51h6bb).
   public var repetition = RepetitionConfiguration()
 
-  /// The sandbox section: the extra write grants beyond the
-  /// session root set.
-  public var sandbox = SandboxConfiguration()
-
   /// The appearance that a host applies. The agent does not read it: it
   /// keeps the key in the settings stack for the host.
   public var theme = AgentTheme.system
 
   /// The YAML spelling of each top-level section.
   public enum CodingKeys: String, CodingKey, CaseIterable {
-    case profile, tools, recording, transcripts, compaction, repetition, sandbox, theme
+    case profile, tools, recording, transcripts, compaction, repetition, theme
   }
 
   /// The builtin configuration: every section at its default.
@@ -83,7 +79,6 @@ public struct AgentConfiguration: Codable, Equatable, Sendable {
     repetition =
       try container.decodeIfPresent(RepetitionConfiguration.self, forKey: .repetition)
       ?? repetition
-    sandbox = try container.decodeIfPresent(SandboxConfiguration.self, forKey: .sandbox) ?? sandbox
     theme = try container.decodeIfPresent(AgentTheme.self, forKey: .theme) ?? theme
   }
 }
@@ -110,7 +105,6 @@ extension AgentConfiguration {
     CodingKeys.transcripts.stringValue: .checked(TranscriptsConfiguration.knownKeys),
     CodingKeys.compaction.stringValue: .checked(CompactionConfiguration.knownKeys),
     CodingKeys.repetition.stringValue: .checked(RepetitionConfiguration.knownKeys),
-    CodingKeys.sandbox.stringValue: .checked(SandboxConfiguration.knownKeys),
     CodingKeys.theme.stringValue: .scalar,
   ]
 }

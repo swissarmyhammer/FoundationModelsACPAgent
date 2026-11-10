@@ -192,9 +192,8 @@ public struct FilesToolOptions: ToolSectionOptions, KeyCheckedSection {
 }
 
 /// The `tools.shell:` body — the one option of the shell capability that
-/// config may set: the directory of its shell store. The sandbox comes from
-/// the `sandbox:` section, and the chunk stream and the session id are
-/// runtime wiring, so none of them is here.
+/// config may set: the directory of its shell store. The chunk stream and
+/// the session id are runtime wiring, so neither of them is here.
 public struct ShellToolOptions: ToolSectionOptions, KeyCheckedSection {
   /// Where the shell capability stores command output, or `nil` for the
   /// shell store of the project in the local root of the home

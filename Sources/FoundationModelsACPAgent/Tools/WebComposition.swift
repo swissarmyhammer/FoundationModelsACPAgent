@@ -13,7 +13,7 @@ import FoundationModelsMultitool
 /// `WebConfiguration.fromEnvironment(_:)` owns the provider table and its
 /// order; this type only gives it the merged environment.
 ///
-/// **The web verbs are not in the shell sandbox.** They run in the agent
+/// **The web verbs are not shell commands.** They run in the agent
 /// process through `URLSession`. Multitool's address guard refuses private
 /// and local addresses.
 ///

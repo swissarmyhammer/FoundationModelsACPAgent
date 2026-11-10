@@ -14,7 +14,7 @@ import Testing
 ///
 /// The proof drives the real agent over the scripted model: the scripted
 /// model calls `runCode`, the snippet calls `tools.shell.execute`, and the
-/// command runs under the real sandbox. No weights load and no network is
+/// command runs as a real process. No weights load and no network is
 /// used.
 @Suite(.closesHarnesses) struct ShellSessionOwnerTests {
   /// The marker of the prompt that runs the command.

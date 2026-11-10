@@ -16,10 +16,10 @@ import Testing
 ///
 /// Each proof checks a fact that this agent owns: the composition of the
 /// catalog, the projection of a tool call to the wire, the wire order, the
-/// enable and disable rule, and the MCP mount. The confinement and the
-/// sandbox rules belong to Multitool and to `SandboxComposition`, and the
-/// suites of those rules prove them (`MultiRootConfinementTests`,
-/// `SandboxCompositionTests`). The terminal projection has its own
+/// enable and disable rule, and the MCP mount. The confinement rules belong
+/// to Multitool, and the suites of those rules prove them
+/// (`MultiRootConfinementTests`, `ShellCompositionTests`). The terminal
+/// projection has its own
 /// synthetic suite (`TerminalStreamTests`).
 ///
 /// Each script is `runCode`, then the end. No script waits for an async

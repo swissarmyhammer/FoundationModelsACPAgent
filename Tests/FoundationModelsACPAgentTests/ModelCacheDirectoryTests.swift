@@ -96,7 +96,6 @@ struct ModelCacheDirectoryTests {
     let components = AcpAgentCommand.Doctor.components(
       workingDirectory: fixture.workspace,
       environment: fixture.environment.merging(environment) { _, new in new },
-      prober: StubToolsProber(),
       memoryBytes: DoctorMachineFigures.generousMemoryBytes,
       freeDiskBytes: DoctorMachineFigures.generousDiskBytes)
     return components.lazy.compactMap { $0 as? ProfileDoctor }.first

@@ -576,6 +576,23 @@ import Testing
     #expect(loaded.warnings[0].description.contains("permissions"))
   }
 
+  /// A `sandbox:` section is unknown at the top level: the shell has no
+  /// sandbox (ACPA-19), so the section gives the unknown-section warning
+  /// that each other unknown section gives. No special reader reads it.
+  @Test func sandboxSectionGivesTheUnknownSectionWarning() throws {
+    let fixture = Fixture()
+    fixture.writeConfig(
+      """
+      sandbox:
+        writePaths:
+          - /tmp/cache
+      """, in: fixture.projectDirectory)
+
+    let loaded = try fixture.makeLoader().load()
+
+    #expect(loaded.warnings == [.unknownSection(name: "sandbox")])
+  }
+
   // MARK: - The tools that are always on
 
   /// One `tools:` entry that tries to turn off a tool that is always on,
@@ -710,23 +727,18 @@ import Testing
     }
   }
 
-  /// The `tools` and `sandbox` sections decode their bodies through the
-  /// codec: a `shell: false` disables the tool and
-  /// an `extraWritePaths` entry lands in the sandbox section.
-  @Test func toolsAndSandboxBodiesDecodeThroughTheCodec() throws {
+  /// The `tools` section decodes its body through the codec: a
+  /// `shell: false` disables the tool.
+  @Test func toolsBodyDecodesThroughTheCodec() throws {
     let fixture = Fixture()
 
     let loaded = try fixture.loadProjectConfig(
       """
       tools:
         shell: false
-      sandbox:
-        extraWritePaths:
-          - /tmp/cache
       """)
 
     #expect(loaded.configuration.tools.shell == .disabled)
-    #expect(loaded.configuration.sandbox.extraWritePaths == ["/tmp/cache"])
     #expect(loaded.warnings.isEmpty)
   }
 

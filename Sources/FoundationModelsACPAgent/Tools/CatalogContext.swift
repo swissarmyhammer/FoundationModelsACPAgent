@@ -18,7 +18,7 @@ public struct CatalogContext: Sendable {
 
   /// The session's additional roots, in order. Together
   /// with ``workingDirectory`` they are the root set that confines the
-  /// files verbs and bounds the shell sandbox's writes.
+  /// files verbs.
   public let additionalRoots: [URL]
 
   /// The decoded configuration whose sections decide which capabilities

@@ -25,6 +25,10 @@ struct RuntimeDoctorTests {
   /// The start of the name of each row of the agents tool.
   private static let agentsRowPrefix = "the agents"
 
+  /// The word a row of a tool that is off would carry. No row of this
+  /// component carries it, because its tools are always on.
+  private static let disabledWord = "disabled"
+
   /// The dotfolder name of the configuration of the settings folders. The
   /// skills and agents stacks do not read it.
   private static let dotfolderName = "runtime-doctor-test"
@@ -147,7 +151,7 @@ struct RuntimeDoctorTests {
       checks.allSatisfy {
         $0.name.hasPrefix(Self.skillsRowPrefix) || $0.name.hasPrefix(Self.agentsRowPrefix)
       })
-    #expect(!checks.contains { $0.message.contains(DisabledSectionCheck.disabledWord) })
+    #expect(!checks.contains { $0.message.contains(Self.disabledWord) })
   }
 
   // MARK: - The fix rule

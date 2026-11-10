@@ -114,8 +114,8 @@ extension RoutedACPAgent {
   /// (the two stable MCP transports), `delete` (a real delete, not a
   /// tombstone), and `additionalDirectories` (multi-root confinement).
   /// There is no `auth` member, because a local agent has no
-  /// authentication. There is no permission capability: the Seatbelt
-  /// sandbox is the only gate on a command.
+  /// authentication. There is no permission capability: the agent asks
+  /// for no permission before a command.
   public static let advertisedCapabilities = AgentCapabilities(
     session: SessionCapabilities(
       additionalDirectories: SessionAdditionalDirectoriesCapabilities(),

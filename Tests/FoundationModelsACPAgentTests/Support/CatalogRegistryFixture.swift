@@ -6,7 +6,7 @@ import FoundationModelsMultitool
 
 /// The shared build of the catalog registry of a session over one
 /// working directory and one configuration. `FilesExcludeTests`,
-/// `SandboxCompositionTests`, `TerminalStreamTests` and `TierTwoTests`
+/// `ShellCompositionTests`, `TerminalStreamTests` and `TierTwoTests`
 /// compose their tools through the same door, so the setup lives here
 /// once, in the pattern of ``FilesVerbSupport``.
 ///

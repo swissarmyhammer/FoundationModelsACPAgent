@@ -77,13 +77,13 @@ extension AcpAgentCommand {
     /// The ``Doctorable`` components this package checks.
     ///
     /// **This is the one place a later card touches.** Each card that
-    /// writes checks — the profile, the sandbox, the tools, the skills
-    /// — appends its own conformance here, and the command around it
-    /// never changes again.
+    /// writes checks — the profile, the skills — appends its own
+    /// conformance here, and the command around it never changes again.
     ///
-    /// The configuration, the home, the profile, the transcripts, the
-    /// tools and the runtime are registered, in the order cli-plan.md
-    /// §5.12 lists them, with the home after the configuration. All six
+    /// The configuration, the home, the profile, the transcripts and the
+    /// runtime are registered, in the order cli-plan.md §5.12 lists them,
+    /// with the home after the configuration. There is no tools component:
+    /// the shell has no sandbox to probe (ACPA-19). All five
     /// read one load of `config.yaml` and one home, which this function
     /// makes once and hands to each of them, so a `doctor` run reads the
     /// stack a single time.
@@ -109,10 +109,6 @@ extension AcpAgentCommand {
     ///     the dotfolder stack the checks read.
     ///   - environment: The environment the checks read, and the home of
     ///     the stack is read from (``AgentComposition/home(environment:)``).
-    ///   - prober: How ``ToolsDoctor`` reaches the world. The default
-    ///     starts the real seatbelt canary and connects each real MCP
-    ///     server; a test injects a stub, so no unit test spawns a
-    ///     process.
     ///   - resolver: How ``ProfileDoctor`` reaches Hugging Face and the
     ///     model cache. The default asks the real Hub and reads the
     ///     real cache; a test injects a stub, so no unit test asks the
@@ -124,7 +120,6 @@ extension AcpAgentCommand {
     /// - Returns: The components, in the order the report lists them.
     static func components(
       workingDirectory: URL, environment: [String: String],
-      prober: any ToolsProber = SystemToolsProber(),
       resolver: (any ModelResolver)? = nil,
       memoryBytes: Int64 = MachineFigures.physicalMemoryBytes,
       freeDiskBytes: Int64? = nil
@@ -152,9 +147,6 @@ extension AcpAgentCommand {
         TranscriptsDoctor(
           configuration: outcome.configuration, stack: loader.stack,
           name: loader.name, workingDirectory: workingDirectory),
-        ToolsDoctor(
-          configuration: outcome.configuration, workingDirectory: workingDirectory, home: home,
-          prober: prober, environment: environment),
         RuntimeDoctor(workingDirectory: workingDirectory, settingsFolders: loader.settingsFolders),
       ]
     }

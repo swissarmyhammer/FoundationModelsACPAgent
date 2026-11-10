@@ -24,7 +24,7 @@ import Testing
 /// The proofs drive the real agent over the scripted model: the agent
 /// composes its real tool catalog and a Router session that records. The
 /// scripted model calls `runCode`, the snippet calls `tools.shell.execute`,
-/// and the command runs in the background under the real sandbox. The prompt
+/// and the command runs in the background as a real process. The prompt
 /// waits for the mail of the settled run, so the run has ended when the
 /// prompt is idle. No weights load and no network is used.
 @Suite(.closesHarnesses) struct ExecuteProgressRowsTests {

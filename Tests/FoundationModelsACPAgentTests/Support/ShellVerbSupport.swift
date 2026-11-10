@@ -7,7 +7,7 @@ import Testing
 @testable import FoundationModelsACPAgent
 
 /// The shared helpers that invoke the mounted `tools.shell.execute` verb
-/// in a built registry. `SandboxCompositionTests` and
+/// in a built registry. `ShellCompositionTests` and
 /// `TerminalStreamTests` run real commands through the same door, so the
 /// helpers live here once.
 enum ShellVerbSupport {

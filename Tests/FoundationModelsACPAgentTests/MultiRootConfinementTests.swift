@@ -221,8 +221,8 @@ import Testing
   // MARK: - The shell write into the additional root
 
   /// A shell command run in the additional root writes a file there,
-  /// shown by reading the file from disk: the sandbox's writable roots
-  /// carry the whole root set, not the cwd alone.
+  /// shown by reading the file from disk: a command runs in each root of
+  /// the root set, not in the cwd alone.
   @Test
   func aShellCommandWritesIntoTheAdditionalRoot() async throws {
     let cwd = Self.makeResolvedDirectory(named: "shell-cwd")

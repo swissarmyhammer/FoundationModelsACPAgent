@@ -137,8 +137,8 @@ import Testing
   /// The response carries `capabilities.session` with the four markers as
   /// objects, `mcp` with both transports, `prompt` with the honest
   /// `embeddedContext` marker, and nothing else: no auth and no
-  /// permission capability. The agent has no authentication, and the
-  /// sandbox is the only gate on a command, so the agent never sends
+  /// permission capability. The agent has no authentication, and it asks
+  /// for no permission before a command, so it never sends
   /// `session/request_permission`.
   @Test
   func advertisedCapabilitiesCarryTheFourSessionMarkersAsObjects() async throws {

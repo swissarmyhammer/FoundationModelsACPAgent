@@ -548,7 +548,7 @@ import Testing
 
   /// The emitted YAML round-trips a non-default configuration — a read-only
   /// files body with an exclude list, an stdio `mcp` server with args and
-  /// env, extra sandbox write paths and a changed compaction trigger — back
+  /// env and a changed compaction trigger — back
   /// through the loader to the same value, proving the emitter's nested
   /// mapping and sequence forms parse. The exclude list is set, because a
   /// load puts the dotfolder default in for a list that no layer sets.
@@ -563,7 +563,6 @@ import Testing
         transport: .stdio(
           command: "/bin/echo", args: ["--flag"], env: ["KEY": ConfiguredSecret("VALUE")]))
     ])
-    configuration.sandbox.extraWritePaths = ["/private/tmp/extra"]
     configuration.compaction.trigger = changedTrigger
 
     let projectRoot = makeResolvedDirectory(label: "BuiltinCommandsTests-yaml-repo")

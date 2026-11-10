@@ -431,9 +431,8 @@ public enum ToolCatalog {
   /// `withFiles(root:additionalRoots:)`, and its search verbs skip
   /// each path that `tools.files.exclude` names (an exclude list that is
   /// `nil` excludes no path; the loader puts the dotfolder default in
-  /// before the catalog sees the configuration), `shell` runs under a
-  /// `SeatbeltSandbox` over the same root set — the sandbox is the only
-  /// gate; there is no policy and no permission layer — `web`
+  /// before the catalog sees the configuration), `shell` runs each command
+  /// with no sandbox, by default in the session working directory, `web`
   /// mounts `tools.web.search` and `tools.web.fetch` with the providers
   /// that ``CatalogContext/environment`` and `tools.web.apiKeys` select (see
   /// ``WebComposition``), `git` mounts the read-only `tools.git` verbs
@@ -458,7 +457,7 @@ public enum ToolCatalog {
   ///
   /// - Parameter context: What the builder calls need.
   /// - Returns: The built registry and the MCP composition around it.
-  /// - Throws: Whatever the shell store, the sandbox, the MCP composition,
+  /// - Throws: Whatever the shell store, the MCP composition,
   ///   `withMCP(servers:)` or `buildRegistry()` throws. After a failure
   ///   the build gives its shell store lease back.
   static func makeRegistry(context: CatalogContext) async throws -> BuiltRegistry {
@@ -498,14 +497,17 @@ public enum ToolCatalog {
   /// environment, and its runner starts each child with the process
   /// environment.
   ///
+  /// The shell runs with no sandbox. A `tools.shell.execute` call that
+  /// omits `workingDirectory` runs in the session working directory, never
+  /// in the agent process directory.
+  ///
   /// - Parameters:
   ///   - builder: The builder that gets the shell capability.
-  ///   - context: The session whose root set, sandbox section and home the
-  ///     shell reads.
+  ///   - context: The session whose working directory and home the shell
+  ///     reads.
   /// - Returns: The shell mount of the session, or `nil` when the section
   ///   is off.
-  /// - Throws: Whatever the store or the sandbox throws. After a failure
-  ///   the lease is given back.
+  /// - Throws: Whatever the store lease throws.
   static func composeShell(
     into builder: MultiTool.Builder, context: CatalogContext
   ) async throws -> ShellMount? {
@@ -519,17 +521,10 @@ public enum ToolCatalog {
     // each raw chunk into it, the terminal projection reads it, and the
     // settlement reads `snapshot(for:)` on the same stream.
     let mount = ShellMount(output: ShellOutputChunkStream(), storeLease: lease)
-    do {
-      try SandboxComposition.composeShell(
-        into: builder,
-        store: lease.store,
-        configuration: context.configuration.sandbox,
-        rootSet: [context.workingDirectory] + context.additionalRoots,
-        outputChunkStream: mount.output)
-    } catch {
-      await lease.release()
-      throw error
-    }
+    builder.withShell(
+      store: lease.store,
+      outputChunkStream: mount.output,
+      defaultWorkingDirectory: context.workingDirectory)
     return mount
   }
 
