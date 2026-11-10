@@ -48,8 +48,28 @@ comments:
     - evidence: Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift, Sources/FoundationModelsACPAgent/Tools/SessionAgentTools.swift, Tests/FoundationModelsACPAgentTests/SessionAgentToolsTests.swift (1 new test). `swift test`: 1973 tests in 215 suites passed, 0 failures, 0 compiler warnings (1 known issue: the existing `withKnownIssue` in HarnessSmokeTests; the SwiftPM line "missing creator for mutated node" for the mlx bundle is a build-graph message, not a compiler warning).
     - next: /review
   timestamp: 2026-11-10T22:12:20.200761+00:00
+- actor: claude-code
+  id: 01m73rd8pqmhx2xqs58yx26tgw
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (ec3f6ce). 1 finding (1 confirmed, 0 refuted). Tests/FoundationModelsACPAgentTests/SessionAgentToolsTests.swift:401. The 2 prior findings (ToolCatalog.swift:919, SessionAgentToolsTests.swift:390) are checked.
+    - next: implement — add a test that `disallowedTools: [code_context]` renders `tools.codeContext.enabled` as false.
+  timestamp: 2026-11-10T22:14:11.927110+00:00
+- actor: claude-code
+  id: 01m73rkj8q3aptxf0ee9tfhyxk
+  text: |-
+    Findings pass (implement), finding 2026-11-10 16:12:
+    - I examined each template group for one-sided tests. `mcp` had the two directions (`tools: [web]` gives false, `"mcp__*"` gives true). Four groups had only one direction: `codeContext` (keep only), `web` (keep only), `shell` (remove only in the `open` mode; the keep test used the `sandboxed` mode), `files` (keep only). `git`, `environment`, `kanban` and `agents` have no template value test in either direction. I did not add tests for them, because the order is for groups with one direction tested.
+    - New tests in SessionAgentToolsTests.swift: `disallowedCodeContextTurnsTheCodeContextTemplateValueOff` (the finding), `disallowedWebTurnsTheWebTemplateValueOff`, `toolsShellInTheOpenModeKeepsTheShellTemplateValueOn`, `disallowedFilesKeepsTheFilesTemplateValueOn` (files always stays, D90 (c)).
+    - The tests cover behavior that exists, thus they passed on the first run. To prove that the code_context test can fail, I changed `surfaceName(ofTemplateGroup:)` to return the template key. The test then failed (1 issue). I reverted the change; `git diff` of SessionAgentTools.swift is empty.
+    - The finding is now `- [x]`.
+
+    ### implement — changed
+    - evidence: Tests/FoundationModelsACPAgentTests/SessionAgentToolsTests.swift (4 new tests). `swift test`: 1977 tests in 215 suites passed, 0 failures, 0 compiler warnings (1 known issue: the existing `withKnownIssue` in HarnessSmokeTests; the SwiftPM line "missing creator for mutated node" for the mlx bundle is a build-graph message, not a compiler warning).
+    - next: /review
+  timestamp: 2026-11-10T22:17:38.327825+00:00
 position_column: doing
-position_ordinal: '8280'
+position_ordinal: '80'
 title: The skills template values follow the tool selection of the session agent
 ---
 ## What
@@ -77,3 +97,12 @@ The values are made in `ToolCatalog.makeSkillsSource(context:)` and `AgentsCompo
 
 - [x] `Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift:919` `completeness/invariant-propagation` — The new `templateGroups` match compares each template group key against the tool names the agent selects. The `codeContext` key is matched as a tool name, but the Multitool group that the surface mounts is `code_context` (`ToolCatalog.codeContextGroupName`). An agent that keeps `tools: [code_context]` still gets `tools.codeContext.enabled` = false, so skills tell the model that code context is off while the tool is present. The same rule is not applied to the name the runtime surface uses. Match each template group against its surface name, not its template key. Either map `codeContext` to `ToolCatalog.codeContextGroupName` before calling `templateGroups`, or add a case in `templateGroups` for that key. Add one test that `tools: [code_context]` keeps `tools.codeContext.enabled` at its configured value.
 - [x] `Tests/FoundationModelsACPAgentTests/SessionAgentToolsTests.swift:390` `reuse/reuse` — The test `noToolsKeyKeepsTheTemplateValuesOfTheConfiguration` writes out the baseline expression `enabledValues(of: ToolCatalog.skillsTemplateContext(AgentConfiguration.withoutMarketplaces.tools, mode: .open))` by hand. The helper `templateValues(keys:mode:)` already builds the same call from the same configuration, and differs only in the session agent it passes. The near-match was not extended, so the test carries its own copy of the call. Give the helper an optional agent, for example `templateValues(keys: [String]?, mode:)`, or add a `configuredValues(mode:)` helper that both the baseline and `templateValues` call. Then the no-key test compares the two helper results and does not repeat the call.
+
+## Review Findings (2026-11-10 16:12)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 3 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTests/SessionAgentToolsTests.swift:401` `completeness/inverse-operation-coverage` — The new test covers only the keep direction of code_context. The remove direction, where disallowedTools: [code_context] renders codeContext as false, is not asserted, although the fix changes that path too. Add a test that renders the template values for keys: ["disallowedTools: [code_context]"] and asserts that the codeContext value is false.

@@ -404,6 +404,34 @@ import Testing
         Self.codeContextTemplateGroup] == true)
   }
 
+  /// A session agent with `disallowedTools: [code_context]` in the `open`
+  /// mode renders `tools.codeContext.enabled` as `false`: the selection
+  /// removes the group by its surface name.
+  @Test func disallowedCodeContextTurnsTheCodeContextTemplateValueOff() throws {
+    #expect(
+      try Self.templateValues(keys: ["disallowedTools: [\(ToolCatalog.codeContextGroupName)]"])[
+        Self.codeContextTemplateGroup] == false)
+  }
+
+  /// A session agent with `disallowedTools: [web]` renders
+  /// `tools.web.enabled` as `false`.
+  @Test func disallowedWebTurnsTheWebTemplateValueOff() throws {
+    #expect(try Self.templateValues(keys: ["disallowedTools: [web]"])[Self.webName] == false)
+  }
+
+  /// A session agent with `tools: [shell]` in the `open` mode renders
+  /// `tools.shell.enabled` as `true`.
+  @Test func toolsShellInTheOpenModeKeepsTheShellTemplateValueOn() throws {
+    #expect(try Self.templateValues(keys: ["tools: [shell]"])[Self.shellName] == true)
+  }
+
+  /// A session agent with `disallowedTools: [files]` renders
+  /// `tools.files.enabled` as `true`: `files` gives an endpoint, thus the
+  /// selection cannot remove it (D90 (c)).
+  @Test func disallowedFilesKeepsTheFilesTemplateValueOn() throws {
+    #expect(try Self.templateValues(keys: ["disallowedTools: [files]"])[Self.filesName] == true)
+  }
+
   /// A composed session whose session agent has `disallowedTools: [shell]`
   /// renders a preloaded skill with `tools.shell.enabled` as `false`.
   @Test func aComposedSessionRendersASkillWithTheSelectionOfTheSessionAgent() async throws {
