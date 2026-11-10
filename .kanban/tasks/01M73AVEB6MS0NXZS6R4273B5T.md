@@ -50,6 +50,32 @@ comments:
   id: 01m73cm6nk5j53pwgge2wj4ewm
   text: 'Note for review: the card says "Keep the history sink unchanged." The record part of `historySink` is unchanged: each update still merges into the retained history before its send, and the gate path is the same. The send part changed: the sink now reads the route in the same actor step as the record (`recordAndRoute`), not when the send runs. Without this, an update recorded before the take and sent after it reaches the new connection two times (replay and live), and the acceptance item "not sent twice" fails; the test `anUpdateRecordedBeforeTheTakeGoesToTheOldConnection` shows it. If the card meant "no change at all to historySink", a person must decide.'
   timestamp: 2026-11-10T18:48:16.307476+00:00
+- actor: claude-code
+  id: 01m73cmxr43n2xx76k1pvnyz4m
+  text: 'Decision of the orchestrator (2026-11-10): the change of the send routing in `historySink` is accepted. The card text "Keep the history sink unchanged" was about the recording of the history, and the recording is unchanged. The routing change is necessary, because without it an update recorded before the take is sent two times (`anUpdateRecordedBeforeTheTakeGoesToTheOldConnection`).'
+  timestamp: 2026-11-10T18:48:39.940150+00:00
+- actor: claude-code
+  id: 01m73cv45dvh5x68e48j1bdwwb
+  text: |-
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD`, 2 findings (2 confirmed, 3 refuted) — Sources/FoundationModelsACPAgent/Agent/ConnectionTable.swift:452 (duplication/duplication), Tests/FoundationModelsACPAgentTests/HotResumeTests.swift:274 (swift/concurrency). The routing change in `historySink` is an accepted decision and the engine did not report it.
+    - next: /implement the two items in "Review Findings (2026-11-10 12:48)", then /review again.
+  timestamp: 2026-11-10T18:52:03.117517+00:00
+- actor: claude-code
+  id: 01m73cxznkkwdkb2w5g69n4q9p
+  text: |-
+    Work on the findings of 2026-11-10 12:48 (2026-11-10).
+    - Finding 1: new private static `ConnectionTable.nearestRecord(in:along:) -> SessionId?`. It is the one definition of "the nearest session in the lineage that has an owner record". `owner(in:along:)` returns `nearestRecord(...).flatMap { state.owners[$0] }`. `route(forSession:)` gets the record from the same helper, then reads the owner and the hold. No other lineage lookup is in the file (the reads in `take` and `claim` read the record of the session itself, not a lineage).
+    - Finding 2: `resumeTraceAcrossTheWindow` cancels the `resume` task on each exit (`defer { resume.cancel() }`). The same cause in the new tests: `anUpdateRecordedBeforeTheTakeGoesToTheOldConnection` cancels the `recorded` task and the prompt task of the tree on each exit; the three window tests cancel the prompt task of the tree on each exit. A cancel after the success path is a no-op, because the task is done then. `waitForText` already cancels its limit task with `defer`, and awaits its `delivered` task on each path. SessionResumeHoldTests.swift makes no unstructured `Task`. The old helpers (`openPrompt`, `resumeTrace`) and the old tests are not changed: the review skill drops findings that ask to refactor tests that already existed.
+  timestamp: 2026-11-10T18:53:36.819653+00:00
+- actor: claude-code
+  id: 01m73d53revj9mcenshn6434kx
+  text: |-
+    ### implement — changed
+    - evidence: `swift test` exit 0, 1910 tests in 211 suites passed (1 known issue: the existing withKnownIssue in HarnessSmokeTests), zero compiler warnings (only the SwiftPM "missing creator for mutated node" mlx bundle message of the build system). Files: Sources/FoundationModelsACPAgent/Agent/ConnectionTable.swift, Tests/FoundationModelsACPAgentTests/HotResumeTests.swift. Both items of "Review Findings (2026-11-10 12:48)" are checked.
+    - note: the change of ConnectionTable is a refactor with the same behavior; the existing SessionResumeHoldTests and HotResumeTests cover `owner(of:)` and `route(forSession:)`, so no new test was added.
+    - next: /review
+  timestamp: 2026-11-10T18:57:30.382620+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'Hot resume: a live child update can reach the new connection before the replay announces the child'
@@ -78,3 +104,16 @@ Probable cause (from the code, 2026-11-10; confirm it first):
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #step1
+
+## Review Findings (2026-11-10 12:48)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 11 file(s) reviewed, 9 not reviewed.
+
+> 8 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 8 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `ARCHITECTURE.md` — no validator matches this file
+
+- [x] `Sources/FoundationModelsACPAgent/Agent/ConnectionTable.swift:452` `duplication/duplication` — The new `route(forSession:)` repeats the nearest-ancestor-with-an-owner lookup that `owner(in:along:)` already implements at line 385, as `lineage.lazy.compactMap { state.owners[$0] }.first`. Two copies of the rule "nearest session in the lineage that has an owner record" must stay in step. If one changes and the other does not, `owner(of:)` and `route(forSession:)` can name different owners for the same session, which breaks the single-locked-read guarantee the doc comments describe. Add one private static helper, for example `nearestRecord(in state: State, along lineage: [SessionId]) -> SessionId?`, that returns the first session in the lineage with an owner record. Have `owner(in:along:)` return `nearestRecord(...).flatMap { state.owners[$0] }`, and have `route(forSession:)` use the same helper to get the record, then read the owner and the hold from it. The two lookups then share one definition of the rule.
+- [x] `Tests/FoundationModelsACPAgentTests/HotResumeTests.swift:274` `swift/concurrency` — The resume request is started in an unstructured `Task`. The task is awaited only on the success path. If `waitUntilRecorded` or any earlier step throws, the `Task` is never awaited or cancelled, so the request keeps running after the test has already failed. Cancel the task on the throw path, for example with `defer { resume.cancel() }` placed after the task is created, or move the work into a `withThrowingTaskGroup` so the child task is awaited or cancelled on every exit.

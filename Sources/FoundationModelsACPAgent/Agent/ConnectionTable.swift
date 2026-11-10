@@ -382,7 +382,20 @@ final class ConnectionTable: Sendable {
   ///   - lineage: The sessions to look at, the nearest first.
   /// - Returns: The owner of the nearest session that has one, or `nil`.
   private static func owner(in state: State, along lineage: [SessionId]) -> ConnectionId? {
-    lineage.lazy.compactMap { state.owners[$0] }.first
+    nearestRecord(in: state, along: lineage).flatMap { state.owners[$0] }
+  }
+
+  /// The session whose owner record gives the owner of a lineage: the
+  /// nearest session along the lineage that has an owner record. This is
+  /// the one definition of the rule, so ``owner(of:)`` and
+  /// ``route(forSession:)`` always name the same owner.
+  ///
+  /// - Parameters:
+  ///   - state: The table.
+  ///   - lineage: The sessions to look at, the nearest first.
+  /// - Returns: The nearest session that has an owner record, or `nil`.
+  private static func nearestRecord(in state: State, along lineage: [SessionId]) -> SessionId? {
+    lineage.first { state.owners[$0] != nil }
   }
 
   /// The connection that started a session with `session/new`.
@@ -449,7 +462,7 @@ final class ConnectionTable: Sendable {
   func route(forSession sessionId: SessionId) -> SessionUpdateRoute? {
     let lineage = lineage(of: sessionId)
     return state.withLock { state in
-      guard let record = lineage.first(where: { state.owners[$0] != nil }),
+      guard let record = Self.nearestRecord(in: state, along: lineage),
         let owner = state.owners[record]
       else {
         return nil

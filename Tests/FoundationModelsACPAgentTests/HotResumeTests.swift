@@ -272,6 +272,7 @@ import Testing
     ) {
       defer { holder.release() }
       let resume = Task { try await second.connection.resumeSession(tree.replayRequest) }
+      defer { resume.cancel() }
       await holder.waitUntilHolding()
       windowTree.window.release()
       try await waitUntilRecorded(windowSecondText, of: child, in: agent)
@@ -431,6 +432,7 @@ import Testing
   /// new connection only after the announcement of the child.
   @Test func aLiveUpdateOfTheChildDuringTheReplayComesAfterItsAnnouncement() async throws {
     let windowTree = try await Self.startWindowTree()
+    defer { windowTree.tree.prompt.cancel() }
     let child = windowTree.tree.childId
 
     let (trace, second) = try await Self.resumeTraceAcrossTheWindow(of: windowTree)
@@ -447,6 +449,7 @@ import Testing
   /// not hold these updates, so they go with the live traffic.
   @Test func eachLiveUpdateOfTheWindowComesOnceAfterTheResponseInOrder() async throws {
     let windowTree = try await Self.startWindowTree()
+    defer { windowTree.tree.prompt.cancel() }
     let child = windowTree.tree.childId
 
     let (trace, second) = try await Self.resumeTraceAcrossTheWindow(of: windowTree)
@@ -466,6 +469,7 @@ import Testing
   /// trace validator.
   @Test func theWireOfAHotResumeAcrossTheWindowFollowsTheRulesOfTheValidator() async throws {
     let windowTree = try await Self.startWindowTree()
+    defer { windowTree.tree.prompt.cancel() }
 
     let (trace, second) = try await Self.resumeTraceAcrossTheWindow(of: windowTree)
 
@@ -480,6 +484,7 @@ import Testing
   /// from the record until after the take.
   @Test func anUpdateRecordedBeforeTheTakeGoesToTheOldConnection() async throws {
     let tree = try await Self.startLiveTree()
+    defer { tree.prompt.cancel() }
     let agent = tree.fixture.harness.agent
     let gate = SessionAnnouncementGate(isOpen: false)
     let sink = agent.historySink(for: tree.rootId, gate: gate)
@@ -487,6 +492,7 @@ import Testing
       content: .text(TextContent(text: Self.recordedBeforeTheTakeText)),
       messageId: ACPEventTranslator.makeMessageId())
     let recorded = Task { await sink(.agentMessageChunk(chunk)) }
+    defer { recorded.cancel() }
     try await pollUntil(limit: Self.recordPollLimit, interval: Self.recordPollInterval) {
       gate.pendingCount == Self.sendsBeforeTheTake
     }
