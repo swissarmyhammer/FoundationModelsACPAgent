@@ -2,6 +2,11 @@ import Foundation
 import FoundationModelsACPAgent
 import FoundationModelsExtras
 
+/// The download URL of OpenTestudo that the stub host gives in the cases of
+/// the `sandboxed` mode. The suites that test the OpenTestudo section share
+/// this one value, so the value cannot drift apart between them.
+public let openTestudoDownloadURL = URL(string: "https://example.test/opentestudo")!
+
 /// Composes the agent over the stub model through the public
 /// `ComposedAgent.compose`, with its home in throwaway folders. The suites
 /// that test the public composition share this one setup, so the setup

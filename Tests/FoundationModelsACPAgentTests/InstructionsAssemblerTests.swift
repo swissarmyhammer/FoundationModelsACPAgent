@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsExtras
 import FoundationModelsSkills
 import Logging
@@ -271,28 +272,25 @@ import Testing
 
   // MARK: - The OpenTestudo section
 
-  /// The download URL of OpenTestudo that the cases of the section give.
-  static let openTestudoDownloadURL = URL(string: "https://example.test/opentestudo")!
-
   /// In the `sandboxed` mode with a URL, the OpenTestudo section with the
   /// URL comes after the style text and before the base prompt.
   @Test func theSandboxedModeWithAURLAddsTheSectionWithTheURL() async throws {
     let assembled = try await Fixture().assembler(
-      mode: .sandboxed, openTestudoDownloadURL: Self.openTestudoDownloadURL
+      mode: .sandboxed, openTestudoDownloadURL: openTestudoDownloadURL
     ).assemble()
 
     #expect(
       assembled.text
         == StyleInstructions.prefixed(
-          OpenTestudoInstructions.text(downloadURL: Self.openTestudoDownloadURL)
+          OpenTestudoInstructions.text(downloadURL: openTestudoDownloadURL)
             + InstructionsAssembler.sectionSeparator + BuiltinInstructions.text))
   }
 
   /// The section of the `sandboxed` mode with a URL holds the URL.
   @Test func theSectionWithAURLHoldsTheURL() {
-    let section = OpenTestudoInstructions.text(downloadURL: Self.openTestudoDownloadURL)
+    let section = OpenTestudoInstructions.text(downloadURL: openTestudoDownloadURL)
 
-    #expect(section.contains(Self.openTestudoDownloadURL.absoluteString))
+    #expect(section.contains(openTestudoDownloadURL.absoluteString))
   }
 
   /// In the `sandboxed` mode with no URL, the OpenTestudo section comes
@@ -321,7 +319,7 @@ import Testing
   /// no URL, also when the host gives a URL.
   @Test func theOpenModeAddsNoSection() async throws {
     let assembled = try await Fixture().assembler(
-      mode: .open, openTestudoDownloadURL: Self.openTestudoDownloadURL
+      mode: .open, openTestudoDownloadURL: openTestudoDownloadURL
     ).assemble()
 
     #expect(assembled.text == StyleInstructions.prefixed(BuiltinInstructions.text))

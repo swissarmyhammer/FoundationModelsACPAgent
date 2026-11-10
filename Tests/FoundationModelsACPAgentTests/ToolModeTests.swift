@@ -102,9 +102,6 @@ import Testing
   /// The tool group of the code context in the template values.
   private static let codeContextTemplateGroup = "codeContext"
 
-  /// The download URL of OpenTestudo that the host of a case gives.
-  private static let openTestudoDownloadURL = URL(string: "https://example.test/opentestudo")!
-
   // MARK: - Harness
 
   /// Composes a stub agent in the `sandboxed` mode with
@@ -528,7 +525,7 @@ import Testing
   @Test func theCompositionGivesTheOpenTestudoDownloadURLToTheAgent() async throws {
     let composed = try await Self.composeSandboxedAgent()
 
-    #expect(composed.agent.openTestudoDownloadURL == Self.openTestudoDownloadURL)
+    #expect(composed.agent.openTestudoDownloadURL == openTestudoDownloadURL)
   }
 
   @Test func aNewSessionInTheSandboxedModeHasTheOpenTestudoDownloadURL() async throws {
@@ -541,7 +538,7 @@ import Testing
     let instructions = await composed.agent.sessions[sessionId]?.instructions
     await composed.closeOpenSessions()
 
-    #expect(instructions?.contains(Self.openTestudoDownloadURL.absoluteString) == true)
+    #expect(instructions?.contains(openTestudoDownloadURL.absoluteString) == true)
   }
 
   @Test func aResumedSessionInTheSandboxedModeHasTheOpenTestudoDownloadURL() async throws {
@@ -557,7 +554,7 @@ import Testing
     let instructions = await composed.agent.sessions[sessionId]?.instructions
     await composed.closeOpenSessions()
 
-    #expect(instructions?.contains(Self.openTestudoDownloadURL.absoluteString) == true)
+    #expect(instructions?.contains(openTestudoDownloadURL.absoluteString) == true)
   }
 
   @Test func eachSessionContextOfTheAgentHasTheModeOfTheAgent() async throws {

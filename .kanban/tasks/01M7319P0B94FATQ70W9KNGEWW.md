@@ -21,11 +21,19 @@ comments:
     - evidence: review sha 329793c~1..329793c — 2 findings (2 confirmed, 0 refuted): Tests/FoundationModelsACPAgentTests/InstructionsAssemblerTests.swift:275, Tests/FoundationModelsACPAgentTests/ToolModeTests.swift:106. Five code-hygiene tool rules could not read Sources/FoundationModelsACPAgent/Instructions/OpenTestudoInstructions.swift, because the MCP server runs in the main working tree and the file is only in the worktree.
     - next: declare `openTestudoDownloadURL` one time in Tests/FoundationModelsACPAgentTestSupport and use it from the two test files; then review again.
   timestamp: 2026-11-10T20:06:56.016436+00:00
+- actor: claude-code
+  id: 01m73jent4qr7nhrn49crbe56h
+  text: |-
+    ### implement — changed
+    - evidence: The work is in the main tree, on top of 517aa2b. Files: Tests/FoundationModelsACPAgentTestSupport/StubComposition.swift (new public `openTestudoDownloadURL`, beside `composeStubAgent`), Tests/FoundationModelsACPAgentTests/InstructionsAssemblerTests.swift (private copy removed, imports FoundationModelsACPAgentTestSupport), Tests/FoundationModelsACPAgentTests/ToolModeTests.swift (private copy removed). The two review findings are checked. `swift build --build-tests`: build complete. `swift build --build-tests --package-path IntegrationTests`: build complete. Thus 517aa2b compiles on top of 5bb9381 (the mode is required). Full `swift test`: 1947 tests in 212 suites passed, 1 known issue (the deliberate one in HarnessSmokeTests, there before this change), zero compiler warnings. The only build output with "warning:" is the build-system line "missing creator for mutated node" for the mlx-swift_Cmlx bundle. It is not a compiler warning and it was there before this change. No package pins changed.
+    - notes: The constant is a top-level `public let` in the test support module, because `composeStubAgent` is also top level. A test that reads it uses the bare name, not `Self.`.
+    - next: review
+  timestamp: 2026-11-10T20:30:06.660994+00:00
 depends_on:
 - 01M73040J7Q5AB7PRADXFEAMNV
 - 01M7303F2AJEEVCV4EB76XDPW1
-position_column: review
-position_ordinal: '8180'
+position_column: doing
+position_ordinal: '80'
 title: 'ACPA-19c: In sandboxed mode, the session instructions send work that needs a child process to OpenTestudo'
 ---
 ## What
@@ -72,5 +80,5 @@ Decision D128 (i): "In Testudo, the agent says that the work needs OpenTestudo a
 > ⚠️ tool rule 'code-hygiene/missing-docs-swift' declined an item — it judged the rest of the code, and this it could not judge:
 > missing-docs-swift found no file at Sources/FoundationModelsACPAgent/Instructions/OpenTestudoInstructions.swift, so its declarations are unread
 
-- [ ] `Tests/FoundationModelsACPAgentTests/InstructionsAssemblerTests.swift:275` `reuse/reuse` — The test constant `openTestudoDownloadURL` repeats the URL literal that ToolModeTests already defines. The same value lives in two places. Move the constant to shared test support, as in the finding for ToolModeTests.swift:106, and use the shared constant in this file.
-- [ ] `Tests/FoundationModelsACPAgentTests/ToolModeTests.swift:106` `reuse/reuse` — The test constant `openTestudoDownloadURL` repeats the same URL literal that another test file already defines. Two copies can drift apart, so a test of one file may not match the other. Declare the URL once in the shared test support, for example beside `composeStubAgent` in Tests/FoundationModelsACPAgentTestSupport/StubComposition.swift, and reference it from both test files. Remove the private copy in ToolModeTests.swift.
+- [x] `Tests/FoundationModelsACPAgentTests/InstructionsAssemblerTests.swift:275` `reuse/reuse` — The test constant `openTestudoDownloadURL` repeats the URL literal that ToolModeTests already defines. The same value lives in two places. Move the constant to shared test support, as in the finding for ToolModeTests.swift:106, and use the shared constant in this file.
+- [x] `Tests/FoundationModelsACPAgentTests/ToolModeTests.swift:106` `reuse/reuse` — The test constant `openTestudoDownloadURL` repeats the same URL literal that another test file already defines. Two copies can drift apart, so a test of one file may not match the other. Declare the URL once in the shared test support, for example beside `composeStubAgent` in Tests/FoundationModelsACPAgentTestSupport/StubComposition.swift, and reference it from both test files. Remove the private copy in ToolModeTests.swift.
