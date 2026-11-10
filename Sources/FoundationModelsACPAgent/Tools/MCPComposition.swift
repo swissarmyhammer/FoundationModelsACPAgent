@@ -316,9 +316,9 @@ enum MCPComposition {
       /// The entry, in the config shape.
       let configuration: MCPServerConfiguration
 
-      /// The source of the entry. A connect failure of a
-      /// config-derived entry throws; a connect failure of a
-      /// client-supplied entry gives a `.failed` outcome.
+      /// The source of the entry. The outcome of the server carries
+      /// it; a connect failure of an entry of each source gives a
+      /// `.failed` outcome.
       let origin: ServerOutcome.Origin
     }
 
@@ -610,15 +610,17 @@ enum MCPComposition {
   /// its catalog. `elicitationHandler` stays nil — see the type
   /// documentation.
   ///
-  /// A connect failure of a client-supplied entry does not throw: the
-  /// failed server is disconnected, its subprocess is shut down, the entry
-  /// gets a `.failed` outcome, and the next entry connects. Thus one broken
-  /// client server does not stop `session/new` or `session/resume`.
+  /// A connect failure of an entry does not throw, for a config-derived
+  /// entry and for a client-supplied entry alike: the failed server is
+  /// disconnected, its subprocess is shut down, the entry gets a `.failed`
+  /// outcome with the reason, and the next entry connects. Thus one broken
+  /// server does not stop `session/new` or `session/resume`, and the
+  /// status report shows the server as failed to the client.
   ///
-  /// A connect failure of a config-derived entry throws, because the
-  /// config is the committed intent of the user. Before the throw, every
-  /// server this call connected is disconnected and every subprocess it
-  /// spawned is shut down, so a failed `session/new` leaks nothing.
+  /// Each connect makes one attempt under `backoffPolicy`. A stdio
+  /// process that exits before it answers ends its attempt at once. A
+  /// server that stays alive and never answers fails at the time limit of
+  /// the policy (``connectBackoffPolicy``).
   ///
   /// - Parameters:
   ///   - mode: The tool mode of the session. In `sandboxed` the roster
@@ -630,17 +632,17 @@ enum MCPComposition {
   ///     servers. Each server gets it: a headless server advertises no
   ///     elicitation capability. The session surface and the `doctor`
   ///     probe give it; the default is Multitool's default.
+  ///   - backoffPolicy: The connect policy of each server: the number of
+  ///     attempts and the time limit of one attempt. The default is
+  ///     ``connectBackoffPolicy``; a test gives a short time limit.
   /// - Returns: The connected composition.
-  /// - Throws: For a config-derived entry:
-  ///   `StdioServerProcess.StdioServerProcessError` for a command that is
-  ///   not an absolute path, ``MCPCompositionError`` for a url that does
-  ///   not parse, and whatever a connect throws.
   static func connectServers(
     mode: ToolMode,
     section: MCPToolSection,
     clientServers: [FoundationModelsACP.MCPServer],
-    userPresence: UserPresence = .interactive
-  ) async throws -> ConnectedServers {
+    userPresence: UserPresence = .interactive,
+    backoffPolicy: BackoffPolicy = connectBackoffPolicy
+  ) async -> ConnectedServers {
     let roster = composeRoster(mode: mode, section: section, clientServers: clientServers)
     for refusal in roster.refusals {
       ACPAgentTelemetry.logger(.mcpComposition).error(
@@ -650,9 +652,9 @@ enum MCPComposition {
     var processes: [StdioServerProcess] = []
     var outcomes: [ServerOutcome] = []
     for entry in roster.entries {
-      let result = try await connect(
-        entry: entry, mode: mode, userPresence: userPresence, servers: &servers,
-        processes: &processes)
+      let result = await connect(
+        entry: entry, mode: mode, userPresence: userPresence, backoffPolicy: backoffPolicy,
+        servers: &servers, processes: &processes)
       outcomes.append(
         ServerOutcome(
           name: entry.configuration.name,
@@ -684,48 +686,58 @@ enum MCPComposition {
   /// Connects one entry of the roster, and records the connected server
   /// and its subprocess.
   ///
-  /// A failure first disconnects the failed server and shuts its
-  /// subprocess down. A client-supplied entry then gives a `.failed`
-  /// result. A config-derived entry also disconnects every server in
-  /// `servers` and shuts every subprocess in `processes` down, and then
-  /// throws the error again.
+  /// A failure disconnects the failed server, shuts its subprocess down,
+  /// and gives a `.failed` result. The servers in `servers` stay
+  /// connected.
   ///
   /// - Parameters:
   ///   - entry: The entry to connect.
   ///   - mode: The tool mode that a stdio process gets.
   ///   - userPresence: The user presence that the server gets.
+  ///   - backoffPolicy: The connect policy of the server.
   ///   - servers: The servers connected so far; a connected server is
   ///     appended.
   ///   - processes: The subprocesses spawned so far; the subprocess of a
   ///     connected stdio server is appended.
-  /// - Returns: `.connected`, or `.failed` with the reason of the failure
-  ///   of a client-supplied entry.
-  /// - Throws: What the connect of a config-derived entry throws.
+  /// - Returns: `.connected`, or `.failed` with the reason of the failure.
   private static func connect(
     entry: Roster.Entry,
     mode: ToolMode,
     userPresence: UserPresence,
+    backoffPolicy: BackoffPolicy,
     servers: inout [FoundationModelsMultitool.MCPServer],
     processes: inout [StdioServerProcess]
-  ) async throws -> ServerOutcome.Result {
+  ) async -> ServerOutcome.Result {
     let server = FoundationModelsMultitool.MCPServer(
       name: entry.configuration.name, userPresence: userPresence)
     var spawned: [StdioServerProcess] = []
     do {
       try await connect(
-        entry: entry.configuration, mode: mode, server: server, spawnedProcesses: &spawned)
+        entry: entry.configuration, mode: mode, backoffPolicy: backoffPolicy, server: server,
+        spawnedProcesses: &spawned)
     } catch {
       await shutDown(servers: [server], processes: spawned)
-      guard entry.origin == .client else {
-        await shutDown(servers: servers, processes: processes)
-        throw error
-      }
       return .failed(reason: ServerOutcome.FailureReason(connectError: error))
     }
     servers.append(server)
     processes.append(contentsOf: spawned)
     return .connected
   }
+
+  /// How many seconds one connect attempt of a server may take: the time
+  /// limit of a server that stays alive and never answers the `initialize`
+  /// request or the `tools/list` request.
+  private static let connectTimeLimitSeconds = 10
+
+  /// The connect policy of each server of the composition: one attempt,
+  /// with a time limit of ``connectTimeLimitSeconds``.
+  ///
+  /// One attempt, because `session/new` waits for the composition: a
+  /// server that fails gets a `.failed` outcome at once, with no retry
+  /// and no backoff delay. A stdio process that exits before it answers
+  /// ends its attempt when its transport drops, before the time limit.
+  static let connectBackoffPolicy = BackoffPolicy(
+    connectTimeout: .seconds(connectTimeLimitSeconds), maxAttempts: 1)
 
   /// The ``ACPAgentTelemetry/AttributeKey/mcpServerTransport`` value of a
   /// stdio server.
@@ -753,6 +765,7 @@ enum MCPComposition {
   /// - Parameters:
   ///   - entry: The entry to connect.
   ///   - mode: The tool mode that a stdio process gets.
+  ///   - backoffPolicy: The connect policy of the server.
   ///   - server: The server to connect, named for the entry. The caller
   ///     disconnects it when the connect throws.
   ///   - spawnedProcesses: Where a spawned stdio subprocess is recorded —
@@ -763,6 +776,7 @@ enum MCPComposition {
   private static func connect(
     entry: MCPServerConfiguration,
     mode: ToolMode,
+    backoffPolicy: BackoffPolicy,
     server: FoundationModelsMultitool.MCPServer,
     spawnedProcesses: inout [StdioServerProcess]
   ) async throws {
@@ -778,7 +792,8 @@ enum MCPComposition {
         metadata: [ACPAgentTelemetry.LogMetadataKey.mcpServerName: "\(entry.name)"]
       ) { _ in
         try await connectToReady(
-          entry: entry, mode: mode, server: server, spawnedProcesses: &spawnedProcesses)
+          entry: entry, mode: mode, backoffPolicy: backoffPolicy, server: server,
+          spawnedProcesses: &spawnedProcesses)
       }
     } catch {
       AgentMetrics.recordMCPConnectFailure(transport: transportName)
@@ -800,14 +815,19 @@ enum MCPComposition {
   }
 
   /// Connects one entry and waits until the server is `.ready`: the work
-  /// of ``connect(entry:mode:server:spawnedProcesses:)`` in the connect
-  /// span.
+  /// of ``connect(entry:mode:backoffPolicy:server:spawnedProcesses:)`` in
+  /// the connect span.
+  ///
+  /// The connect runs under `backoffPolicy`, so each attempt has a time
+  /// limit. A failed attempt throws an `MCPServerError` of Multitool, and
+  /// its reason is ``ServerOutcome/FailureReason/connectFailed``.
   ///
   /// - Parameters:
   ///   - entry: The entry to connect.
   ///   - mode: The tool mode that a stdio process gets. In `sandboxed`
   ///     Multitool refuses to spawn the process
   ///     (`StdioServerProcessError.notAvailable(mode:)`).
+  ///   - backoffPolicy: The connect policy of the server.
   ///   - server: The server to connect.
   ///   - spawnedProcesses: Where a spawned stdio subprocess is recorded.
   /// - Throws: What the process construction, the connect, or the ready
@@ -815,6 +835,7 @@ enum MCPComposition {
   private static func connectToReady(
     entry: MCPServerConfiguration,
     mode: ToolMode,
+    backoffPolicy: BackoffPolicy,
     server: FoundationModelsMultitool.MCPServer,
     spawnedProcesses: inout [StdioServerProcess]
   ) async throws {
@@ -823,12 +844,14 @@ enum MCPComposition {
       let process = try StdioServerProcess(
         command: command, args: args, env: envVariables(env), name: entry.name, mode: mode)
       spawnedProcesses.append(process)
-      try await server.connect(via: process.respawn)
+      try await server.connect(via: process.respawn, backoffPolicy: backoffPolicy)
     case .http(let url, let headers):
       guard let endpoint = URL(string: url), endpoint.scheme != nil else {
         throw MCPCompositionError.invalidServerURL(serverName: entry.name, url: url)
       }
-      try await server.connect(via: httpTransportFactory(endpoint: endpoint, headers: headers))
+      try await server.connect(
+        via: httpTransportFactory(endpoint: endpoint, headers: headers),
+        backoffPolicy: backoffPolicy)
     }
     try await server.waitUntilReady()
   }
@@ -889,7 +912,7 @@ enum MCPComposition {
   }
 
   /// Disconnects each server and shuts each subprocess down — the cleanup
-  /// of a connect step that threw partway.
+  /// of a server whose connect failed.
   ///
   /// - Parameters:
   ///   - servers: The servers already connected.

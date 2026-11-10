@@ -282,7 +282,7 @@ import Testing
   @Test func aStagedRegistryGetsTheSelectionAgain() throws {
     let recorder = RecordingStaging()
     let staging = SessionRegistryStaging(wrapping: recorder)
-    let registry = try MultiTool.Builder().withEnvironment().withGit(
+    let registry = try MultiTool.Builder(mode: .open).withEnvironment().withGit(
       root: makeResolvedDirectory(label: "\(Self.label)-git")
     ).buildRegistry()
     staging.select(

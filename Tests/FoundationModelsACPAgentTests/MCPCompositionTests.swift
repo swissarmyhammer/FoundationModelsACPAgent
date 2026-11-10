@@ -401,36 +401,49 @@ import Testing
 
   // MARK: - Connect errors
 
-  @Test func aRelativeStdioCommandThrowsInsteadOfSpawning() async throws {
+  /// A config-derived stdio server whose command is not an absolute path
+  /// gives a `.failed` outcome, and spawns no process.
+  @Test func aConfigStdioServerWithARelativeCommandGivesAFailedOutcomeAndSpawnsNothing()
+    async throws
+  {
     let section = MCPToolSection.enabled(servers: [
       MCPServerConfiguration(
         name: Self.alphaName,
         transport: .stdio(command: Self.relativeCommand, args: [], env: [:]))
     ])
 
-    await #expect(
-      throws: StdioServerProcess.StdioServerProcessError.commandNotAbsolute(Self.relativeCommand)
-    ) {
-      _ = try await MCPComposition.connectServers(mode: .open, section: section, clientServers: [])
-    }
+    let connected = await MCPComposition.connectServers(
+      mode: .open, section: section, clientServers: [])
+
+    #expect(connected.processes.isEmpty)
+    #expect(
+      connected.outcomes == [
+        Self.failedOutcome(
+          named: Self.alphaName, transport: .stdio, origin: .config, reason: .commandNotAbsolute)
+      ])
   }
 
-  @Test func anHTTPServerURLThatDoesNotParseThrows() async throws {
+  /// A config-derived http server whose url does not parse gives a
+  /// `.failed` outcome, and the connect does not throw.
+  @Test func aConfigHTTPServerWhoseURLDoesNotParseGivesAFailedOutcome() async throws {
     let section = MCPToolSection.enabled(servers: [
       MCPServerConfiguration(name: Self.remoteName, transport: .http(url: "", headers: [:]))
     ])
 
-    await #expect(
-      throws: MCPCompositionError.invalidServerURL(serverName: Self.remoteName, url: "")
-    ) {
-      _ = try await MCPComposition.connectServers(mode: .open, section: section, clientServers: [])
-    }
+    let connected = await MCPComposition.connectServers(
+      mode: .open, section: section, clientServers: [])
+
+    #expect(
+      connected.outcomes == [
+        Self.failedOutcome(
+          named: Self.remoteName, transport: .http, origin: .config, reason: .invalidURL)
+      ])
   }
 
   @Test func mcpDisabledConnectsNothingAndKeepsTheRefusal() async throws {
     let client = try Self.clientStdioServer(named: Self.gammaName, command: Self.unusedCommand)
 
-    let connected = try await MCPComposition.connectServers(
+    let connected = await MCPComposition.connectServers(
       mode: .open, section: .disabled, clientServers: [client])
 
     #expect(connected.servers.isEmpty)
@@ -469,7 +482,7 @@ import Testing
     let records = try await TelemetryCapture.run(
       forbidding: [Self.secretEnvValue, Self.secretHeaderValue]
     ) { context in
-      _ = try await MCPComposition.connectServers(
+      _ = await MCPComposition.connectServers(
         mode: .open, section: .enabled(servers: []), clientServers: [client])
       return context.logRecords
     }
@@ -498,7 +511,7 @@ import Testing
     ]
 
     let records = try await TelemetryCapture.run(forbidding: []) { context in
-      _ = try await MCPComposition.connectServers(
+      _ = await MCPComposition.connectServers(
         mode: .open, section: .disabled, clientServers: clients)
       return context.logRecords
     }
@@ -713,21 +726,24 @@ import Testing
   /// The secret command argument of the no-secret case.
   private static let secretArgument = "mcp-composition-secret-argument"
 
-  /// The outcome of a client-supplied server that failed for `reason`.
+  /// The outcome of a server that failed for `reason`.
   ///
   /// - Parameters:
   ///   - name: The server name.
   ///   - transport: The transport of the server, or `nil` when it is not
   ///     known.
+  ///   - origin: The source of the entry of the server. The default is
+  ///     the client.
   ///   - reason: Why the server failed.
   /// - Returns: The outcome.
-  private static func failedClientOutcome(
+  private static func failedOutcome(
     named name: String,
     transport: MCPComposition.ServerOutcome.Transport?,
+    origin: MCPComposition.ServerOutcome.Origin = .client,
     reason: MCPComposition.ServerOutcome.FailureReason
   ) -> MCPComposition.ServerOutcome {
     MCPComposition.ServerOutcome(
-      name: name, transport: transport, origin: .client, result: .failed(reason: reason))
+      name: name, transport: transport, origin: origin, result: .failed(reason: reason))
   }
 
   /// A client-supplied stdio server whose command is not an absolute path
@@ -737,14 +753,14 @@ import Testing
   {
     let client = try Self.clientStdioServer(named: Self.gammaName, command: Self.relativeCommand)
 
-    let connected = try await MCPComposition.connectServers(
+    let connected = await MCPComposition.connectServers(
       mode: .open, section: .enabled(servers: []), clientServers: [client])
 
     #expect(connected.servers.isEmpty)
     #expect(connected.processes.isEmpty)
     #expect(
       connected.outcomes == [
-        Self.failedClientOutcome(
+        Self.failedOutcome(
           named: Self.gammaName, transport: .stdio, reason: .commandNotAbsolute)
       ])
   }
@@ -756,30 +772,111 @@ import Testing
     let client = FoundationModelsACP.MCPServer.http(
       MCPServerHTTP(name: Self.remoteName, url: "", headers: []))
 
-    let connected = try await MCPComposition.connectServers(
+    let connected = await MCPComposition.connectServers(
       mode: .open, section: .enabled(servers: []), clientServers: [client])
 
     #expect(connected.servers.isEmpty)
     #expect(
       connected.outcomes == [
-        Self.failedClientOutcome(named: Self.remoteName, transport: .http, reason: .invalidURL)
+        Self.failedOutcome(named: Self.remoteName, transport: .http, reason: .invalidURL)
       ])
   }
 
   /// A config-derived server that fails after a config-derived server that
-  /// connected still makes the connect throw.
-  @Test func aConfigServerThatFailsAfterAConnectedConfigServerStillThrows() async throws {
+  /// connected gives a `.failed` outcome, and the connected server stays
+  /// connected.
+  @Test func aConfigServerThatFailsAfterAConnectedConfigServerGivesAFailedOutcome() async throws {
     let command = try BuiltProductLocator.mcpTestServerURL().path
     let section = MCPToolSection.enabled(servers: [
       Self.configServer(named: Self.alphaName, command: command, mode: Self.echoMode),
       Self.configServer(named: Self.betaName, command: Self.relativeCommand, mode: Self.echoMode),
     ])
 
-    await #expect(
-      throws: StdioServerProcess.StdioServerProcessError.commandNotAbsolute(Self.relativeCommand)
-    ) {
-      _ = try await MCPComposition.connectServers(mode: .open, section: section, clientServers: [])
-    }
+    let connected = await MCPComposition.connectServers(
+      mode: .open, section: section, clientServers: [])
+    await MCPComposition.shutDown(servers: connected.servers, processes: connected.processes)
+
+    #expect(
+      connected.outcomes == [
+        MCPComposition.ServerOutcome(
+          name: Self.alphaName, transport: .stdio, origin: .config, result: .connected),
+        Self.failedOutcome(
+          named: Self.betaName, transport: .stdio, origin: .config, reason: .commandNotAbsolute),
+      ])
+  }
+
+  // MARK: - A server that does not answer
+
+  /// The shell that runs the script of a stdio server that does not
+  /// answer.
+  private static let shellCommand = "/bin/sh"
+
+  /// The flag that makes the shell run its next argument as a script.
+  private static let shellScriptFlag = "-c"
+
+  /// The name of the stdio server that does not answer.
+  private static let silentName = "silent"
+
+  /// A config-derived stdio entry that runs `script` in the shell.
+  ///
+  /// - Parameters:
+  ///   - name: The server name.
+  ///   - script: The shell script that is the server.
+  /// - Returns: The config entry.
+  private static func shellServer(named name: String, script: String) -> MCPServerConfiguration {
+    MCPServerConfiguration(
+      name: name,
+      transport: .stdio(command: shellCommand, args: [shellScriptFlag, script], env: [:]))
+  }
+
+  /// A config-derived stdio server that exits before it answers the
+  /// `initialize` request gives a `.failed` outcome, and the config server
+  /// after it still connects. The exit of the process ends the connect, not
+  /// a clock: the time limit of the test is only a guard against a hang.
+  @Test(
+    .timeLimit(.minutes(1)),
+    arguments: ["exit 0", "read line; exit 1"])
+  func aConfigStdioServerThatExitsBeforeItAnswersFailsAndTheNextServerConnects(script: String)
+    async throws
+  {
+    let command = try BuiltProductLocator.mcpTestServerURL().path
+    let section = MCPToolSection.enabled(servers: [
+      Self.shellServer(named: Self.silentName, script: script),
+      Self.configServer(named: Self.alphaName, command: command, mode: Self.echoMode),
+    ])
+
+    let connected = await MCPComposition.connectServers(
+      mode: .open, section: section, clientServers: [])
+    await MCPComposition.shutDown(servers: connected.servers, processes: connected.processes)
+
+    #expect(
+      connected.outcomes == [
+        Self.failedOutcome(
+          named: Self.silentName, transport: .stdio, origin: .config, reason: .connectFailed),
+        MCPComposition.ServerOutcome(
+          name: Self.alphaName, transport: .stdio, origin: .config, result: .connected),
+      ])
+  }
+
+  /// A config-derived stdio server that stays alive and never answers
+  /// fails at the time limit of the connect policy. The policy of the test
+  /// has a zero time limit, so the test waits for no real clock: the
+  /// server never answers, thus the time limit always ends the attempt.
+  @Test(.timeLimit(.minutes(1)))
+  func aConfigStdioServerThatNeverAnswersFailsAtTheTimeLimit() async throws {
+    let section = MCPToolSection.enabled(servers: [
+      Self.shellServer(named: Self.silentName, script: "while read line; do :; done")
+    ])
+
+    let connected = await MCPComposition.connectServers(
+      mode: .open, section: section, clientServers: [],
+      backoffPolicy: BackoffPolicy(connectTimeout: .zero, maxAttempts: 1))
+
+    #expect(
+      connected.outcomes == [
+        Self.failedOutcome(
+          named: Self.silentName, transport: .stdio, origin: .config, reason: .connectFailed)
+      ])
   }
 
   /// A client-supplied server that connects gives a `.connected` outcome,
@@ -788,7 +885,7 @@ import Testing
     let command = try BuiltProductLocator.mcpTestServerURL().path
     let client = try Self.clientStdioServer(named: Self.gammaName, command: command)
 
-    let connected = try await MCPComposition.connectServers(
+    let connected = await MCPComposition.connectServers(
       mode: .open, section: .enabled(servers: []), clientServers: [client])
     await MCPComposition.shutDown(servers: connected.servers, processes: connected.processes)
 
@@ -823,7 +920,7 @@ import Testing
       built.mcpServerOutcomes == [
         MCPComposition.ServerOutcome(
           name: Self.alphaName, transport: .stdio, origin: .config, result: .connected),
-        Self.failedClientOutcome(
+        Self.failedOutcome(
           named: Self.gammaName, transport: .stdio, reason: .commandNotAbsolute),
         MCPComposition.ServerOutcome(
           name: Self.deltaName, transport: .stdio, origin: .client, result: .connected),
@@ -842,7 +939,7 @@ import Testing
 
     #expect(
       roster.refusalOutcomes == [
-        Self.failedClientOutcome(named: Self.gammaName, transport: .http, reason: .nameCollision)
+        Self.failedOutcome(named: Self.gammaName, transport: .http, reason: .nameCollision)
       ])
   }
 
@@ -858,14 +955,14 @@ import Testing
       FoundationModelsACP.MCPServer.unknown("carrier-pigeon", .object([:])),
     ]
 
-    let connected = try await MCPComposition.connectServers(
+    let connected = await MCPComposition.connectServers(
       mode: .open, section: .disabled, clientServers: clients)
 
     #expect(
       connected.outcomes == [
-        Self.failedClientOutcome(named: Self.gammaName, transport: .stdio, reason: .mcpDisabled),
-        Self.failedClientOutcome(named: Self.deltaName, transport: .http, reason: .mcpDisabled),
-        Self.failedClientOutcome(named: Self.remoteName, transport: nil, reason: .mcpDisabled),
+        Self.failedOutcome(named: Self.gammaName, transport: .stdio, reason: .mcpDisabled),
+        Self.failedOutcome(named: Self.deltaName, transport: .http, reason: .mcpDisabled),
+        Self.failedOutcome(named: Self.remoteName, transport: nil, reason: .mcpDisabled),
       ])
   }
 
@@ -880,7 +977,7 @@ import Testing
 
     #expect(
       roster.refusalOutcomes == [
-        Self.failedClientOutcome(named: Self.remoteName, transport: nil, reason: .unknownTransport)
+        Self.failedOutcome(named: Self.remoteName, transport: nil, reason: .unknownTransport)
       ])
   }
 
@@ -911,7 +1008,7 @@ import Testing
         url: Self.secretURL,
         headers: [HTTPHeader(name: "Authorization", value: Self.secretHeaderValue)]))
 
-    let connected = try await MCPComposition.connectServers(
+    let connected = await MCPComposition.connectServers(
       mode: .open, section: .enabled(servers: []), clientServers: [stdio, http])
 
     let rendered = String(reflecting: connected.outcomes)
@@ -951,7 +1048,7 @@ import Testing
         Self.secretArgument, Self.secretEnvValue, Self.secretURL, Self.secretHeaderValue,
       ]
     ) { context in
-      let connected = try await MCPComposition.connectServers(
+      let connected = await MCPComposition.connectServers(
         mode: .open, section: .enabled(servers: []),
         clientServers: [connecting, failing, colliding])
       await MCPComposition.shutDown(servers: connected.servers, processes: connected.processes)

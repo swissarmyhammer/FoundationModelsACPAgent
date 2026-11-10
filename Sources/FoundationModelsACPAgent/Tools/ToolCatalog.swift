@@ -404,9 +404,10 @@ public enum ToolCatalog {
   ///     one registry and one marketplace store. With `nil`, the call
   ///     makes its own through ``makeSkillsSource(context:)``.
   /// - Returns: The composed surface.
-  /// - Throws: Whatever the MCP composition, the registry build, the
-  ///   session-tool construction, the skills assembly, or the agents
-  ///   composition throws.
+  /// - Throws: Whatever the registry build, the session-tool
+  ///   construction, the skills assembly, or the agents composition
+  ///   throws. An MCP server that fails to connect does not throw: its
+  ///   outcome is `.failed`.
   public static func sessionSurface(
     context: CatalogContext, skills: SkillsSource? = nil
   ) async throws -> SessionSurface {
@@ -515,8 +516,8 @@ public enum ToolCatalog {
   ///
   /// - Parameter context: What the builder calls need.
   /// - Returns: The built registry and the MCP composition around it.
-  /// - Throws: Whatever the shell store, the MCP composition,
-  ///   `withMCP(servers:)` or `buildRegistry()` throws, for example
+  /// - Throws: Whatever the shell store, `withMCP(servers:)` or
+  ///   `buildRegistry()` throws, for example
   ///   `ToolModeError.openModeInSandbox` when the mode is `open` in a
   ///   sandboxed process. After a failure the build gives its shell store
   ///   lease back.
@@ -623,8 +624,8 @@ public enum ToolCatalog {
   ///   - shell: The shell mount of the session, or `nil` when the shell
   ///     section is off.
   /// - Returns: The built registry and the MCP composition around it.
-  /// - Throws: Whatever the MCP composition, `withMCP(servers:)`, the code
-  ///   context or `buildRegistry()` throws.
+  /// - Throws: Whatever `withMCP(servers:)`, the code context or
+  ///   `buildRegistry()` throws.
   private static func composeRest(
     into builder: MultiTool.Builder, context: CatalogContext, shell: ShellMount?
   ) async throws -> BuiltRegistry {
@@ -653,7 +654,7 @@ public enum ToolCatalog {
     for mount in context.sessionOperationTools {
       builder.withOperationTool(noun: mount.noun, tool: mount.tool)
     }
-    let composed = try await MCPComposition.connectServers(
+    let composed = await MCPComposition.connectServers(
       mode: context.toolMode,
       section: context.configuration.tools.mcp,
       clientServers: context.clientMCPServers,

@@ -263,6 +263,40 @@ import Testing
       ])
   }
 
+  /// The name of the config stdio server whose process exits at once.
+  private static let exitingServerName = "statusExiting"
+
+  /// The project `config.yaml` with one config stdio server whose process
+  /// exits before it answers the `initialize` request.
+  private static let exitingServerConfigYAML = """
+    tools:
+      mcp:
+        - name: \(exitingServerName)
+          command: /bin/sh
+          args:
+            - -c
+            - exit 0
+    """
+
+  /// A config server whose process exits before it answers does not stop
+  /// `session/new`: the report gives it `failed` with the reason of a
+  /// failed connect, and the client server connects.
+  @Test(.timeLimit(.minutes(1)))
+  func aConfigServerThatFailsToConnectReportsFailedAndTheSessionStarts() async throws {
+    let fixture = try await Self.makeFixture(
+      mcpServers: [try Self.loopbackServer()], projectConfigYAML: Self.exitingServerConfigYAML)
+    let payloads = try await Self.waitForStatusPayloads(in: fixture.collector, count: 2)
+    await fixture.close()
+
+    #expect(
+      payloads == [
+        Self.payload(
+          name: Self.exitingServerName, transport: "stdio", origin: "config", status: "failed",
+          reason: MCPComposition.ServerOutcome.FailureReason.connectFailed.rawValue),
+        Self.payload(name: Self.loopbackServerName, transport: "stdio", status: "connected"),
+      ])
+  }
+
   /// A session with no MCP server sends no status update: a prompt after
   /// `session/new` ends, and the wire holds no status update.
   @Test
@@ -419,16 +453,18 @@ import Testing
   /// - Parameters:
   ///   - name: The server name.
   ///   - transport: The transport text.
+  ///   - origin: The origin text. The default is `client`.
   ///   - status: The status text.
   ///   - reason: The reason text, or `nil` for none.
   /// - Returns: The members of the payload.
   private static func payload(
-    name: String, transport: String, status: String, reason: String? = nil
+    name: String, transport: String, origin: String = "client", status: String,
+    reason: String? = nil
   ) -> [String: JSONValue] {
     var members: [String: JSONValue] = [
       MCPServerStatusReport.MemberName.name: .string(name),
       MCPServerStatusReport.MemberName.transport: .string(transport),
-      MCPServerStatusReport.MemberName.origin: .string("client"),
+      MCPServerStatusReport.MemberName.origin: .string(origin),
       MCPServerStatusReport.MemberName.status: .string(status),
     ]
     members[MCPServerStatusReport.MemberName.reason] = reason.map { .string($0) }
