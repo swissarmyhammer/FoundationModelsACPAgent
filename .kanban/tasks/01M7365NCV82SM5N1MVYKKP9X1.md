@@ -18,8 +18,15 @@ comments:
     - full `swift test`: 1919 tests in 211 suites. The machine load average was 60 to 143 from parallel agents. Three full runs failed only from timing: 60 s and 120 s time limits, and late updates (AgentsToolTests, HookCompositionTests, GraphQLTunnelTests, BackgroundListTests, ScriptedElicitStepTests, ElicitationRelayTests, SubagentSessionsReplayTests, HotResumeTests, SubagentMessageWireTests). The failed set changed in each run. Each of these suites passed when it ran alone: 100/100, 86/86, 11/11. The last full run (`--no-parallel`) had 2 issues, in SubagentMessageWireTests, and that suite passes alone. No compiler warning from project code. The only `warning:` line is the SwiftPM note `missing creator for mutated node` on the mlx bundle.
     - next: run the full suite again when the machine is not loaded, then review.
   timestamp: 2026-11-10T20:06:59.399130+00:00
-position_column: todo
-position_ordinal: '8980'
+- actor: claude-code
+  id: 01m73jpjfdps1apbeaghrr2w90
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (b52c7cd, main tree): 0 findings, 0 confirmed, 0 refuted; 7 validator runs attempted, 0 failed; 3 files reviewed.
+    - next: none. The task is in done.
+  timestamp: 2026-11-10T20:34:25.389985+00:00
+position_column: done
+position_ordinal: ffffd280
 title: The initialize capabilities advertise mcp.stdio in sandboxed mode
 ---
 ## What
