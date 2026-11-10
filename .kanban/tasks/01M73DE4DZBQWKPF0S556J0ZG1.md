@@ -81,10 +81,17 @@ comments:
     - evidence: Tests/FoundationModelsACPAgentTestSupport/TestFileFixture.swift (new), Tests/FoundationModelsACPAgentTestSupport/AgentsFileFixture.swift, Tests/FoundationModelsACPAgentTestSupport/ConfigFileFixture.swift, Tests/FoundationModelsACPAgentTestSupport/AgentFolderFixture.swift, Tests/FoundationModelsACPAgentTests/TestFileFixtureTests.swift (new). Finding AgentsFileFixture.swift:15 reuse/reuse is `- [x]`. No pin change. `swift test`: 1952 tests in 214 suites passed, 0 failures (1 known issue is the existing `withKnownIssue` self-test in HarnessSmokeTests), 0 compiler warnings. `swift build --build-tests --package-path IntegrationTests`: complete. The only build note is the SwiftPM "missing creator for mutated node" note for mlx-swift_Cmlx.bundle, which is not a compiler warning.
     - next: /review
   timestamp: 2026-11-10T20:59:34.374691+00:00
+- actor: claude-code
+  id: 01m73m77qjeqb2savst32qxqbb
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (c39788a), 0 findings (attempted 7, confirmed 0, refuted 0). All prior findings are checked. The finding at Tests/FoundationModelsACPAgentTestSupport/AgentsFileFixture.swift:15 is addressed by TestFileFixture.write(_:named:in:).
+    - next: none. The task moved to done.
+  timestamp: 2026-11-10T21:01:00.018074+00:00
 depends_on:
 - 01M7303F2AJEEVCV4EB76XDPW1
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: ffffd380
 title: 'ACPA-20b: Sub-agent runs start with the style text (AgentEnvironment instructionsPreamble)'
 ---
 ## What
