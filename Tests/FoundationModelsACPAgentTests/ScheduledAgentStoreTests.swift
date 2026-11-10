@@ -40,7 +40,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     let surface = try await SurfaceCatalog.sessionSurface(
       context: try await AgentsToolTests.makeContext(label: "schedule-store"))
     let owner = ULID()
-    let task = await try #require(surface.agents).runner.schedule(Self.hourly(owner: owner))
+    let task = try await #require(surface.agents).runner.schedule(Self.hourly(owner: owner))
     let store = ScheduleFileStore(recordingRoot: root)
 
     try await store.save([task], of: owner)
@@ -63,12 +63,12 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     let owner = ULID()
     let first = try await SurfaceCatalog.sessionSurface(
       context: try await Self.context(label: "schedule-first", root: root))
-    let task = await try #require(first.agents).runner.schedule(Self.hourly(owner: owner))
+    let task = try await #require(first.agents).runner.schedule(Self.hourly(owner: owner))
     await first.stopAgentRuns()
 
     let second = try await SurfaceCatalog.sessionSurface(
       context: try await Self.context(label: "schedule-second", root: root))
-    let restored = try await try #require(second.agents).runner.restoreSchedules(of: owner)
+    let restored = try await #require(second.agents).runner.restoreSchedules(of: owner)
 
     #expect(FileManager.default.fileExists(atPath: ScheduleFileStore.file(of: owner, in: root).path))
     #expect(restored.map(\.id) == [task.id])
