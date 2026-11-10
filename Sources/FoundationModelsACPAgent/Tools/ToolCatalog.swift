@@ -717,8 +717,15 @@ public enum ToolCatalog {
   /// `.project`, which Skills renders untrusted, so a trusted defaults
   /// layer would be downgraded. `init(stack:)` passes the layers through
   /// unchanged, and Skills derives trust from each layer's `source`.
-  /// `watch: true` is what makes `commandUpdates` non-nil for the
-  /// slash-command registry.
+  /// `watch: true` makes the registry rebuild its catalog when a skill
+  /// file changes. Each rebuild goes to `commandUpdates`, thus the
+  /// slash-command registry follows the changes.
+  ///
+  /// The registry gets the tool mode of the session
+  /// (``CatalogContext/toolMode``). The `skills` tool of the root session
+  /// and of the agent runs is made from this registry, thus it has the same
+  /// mode: in the `sandboxed` mode it has no `run script` operation, and a
+  /// render starts no process for a shell injection.
   ///
   /// With a `marketplaces:` list in the section, the registry also reads
   /// one layer for each marketplace, below the full local stack. The
@@ -752,10 +759,12 @@ public enum ToolCatalog {
     let options = context.configuration.tools.skills
     let stack = context.settingsFolders.stack(
       for: .skills, workingDirectory: context.workingDirectory)
-    let templateContext = skillsTemplateContext(context.configuration.tools)
+    let templateContext = skillsTemplateContext(
+      context.configuration.tools, mode: context.toolMode)
     guard !options.marketplaces.isEmpty else {
       return SkillsSource(
-        registry: SkillsRegistry(stack: stack, watch: true, templateContext: templateContext),
+        registry: SkillsRegistry(
+          stack: stack, mode: context.toolMode, watch: true, templateContext: templateContext),
         marketplaces: nil)
     }
     let store = MarketplaceStore(
@@ -765,7 +774,8 @@ public enum ToolCatalog {
     await store.start()
     return SkillsSource(
       registry: SkillsRegistry(
-        marketplaces: store, stack: stack, watch: true, templateContext: templateContext),
+        marketplaces: store, stack: stack, mode: context.toolMode, watch: true,
+        templateContext: templateContext),
       marketplaces: store)
   }
 
@@ -776,16 +786,29 @@ public enum ToolCatalog {
   /// tool, for example `{% if tools.kanban.enabled %}`, and the model does
   /// not have to find out. The skills and agents tools are always on.
   ///
-  /// - Parameter tools: The tool groups of the configuration.
+  /// The shell and the code context start child processes. In the
+  /// `sandboxed` mode the session has neither of them
+  /// (``childProcessOptions(of:in:)``), thus their values are `false` in
+  /// that mode, whatever the configuration tells.
+  ///
+  /// - Parameters:
+  ///   - tools: The tool groups of the configuration.
+  ///   - mode: The tool mode of the session (``CatalogContext/toolMode``).
   /// - Returns: The values, under the key `tools`.
-  static func skillsTemplateContext(_ tools: ToolsConfiguration) -> [String: TemplateValue] {
+  static func skillsTemplateContext(
+    _ tools: ToolsConfiguration, mode: ToolMode
+  ) -> [String: TemplateValue] {
     func isOn<Options>(_ section: ToolSection<Options>) -> Bool {
       if case .enabled = section { true } else { false }
     }
+    func isChildProcessGroupOn<Options>(_ section: ToolSection<Options>) -> Bool {
+      mode == .open && isOn(section)
+    }
     let mcpIsOn = if case .enabled = tools.mcp { true } else { false }
     let groups: [String: Bool] = [
-      "files": isOn(tools.files), "shell": isOn(tools.shell), "skills": true, "agents": true,
-      "codeContext": isOn(tools.codeContext), "web": isOn(tools.web), "git": isOn(tools.git),
+      "files": isOn(tools.files), "shell": isChildProcessGroupOn(tools.shell), "skills": true,
+      "agents": true, "codeContext": isChildProcessGroupOn(tools.codeContext),
+      "web": isOn(tools.web), "git": isOn(tools.git),
       "environment": isOn(tools.environment), "kanban": isOn(tools.kanban), "mcp": mcpIsOn,
     ]
     return [

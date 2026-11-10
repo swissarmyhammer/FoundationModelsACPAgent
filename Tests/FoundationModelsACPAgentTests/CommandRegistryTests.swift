@@ -152,7 +152,7 @@ struct CommandRegistryTests {
 
     let registry = CommandRegistry(
       builtins: [],
-      providers: [SkillCommandSource(registry: SkillsRegistry(roots: [root]))],
+      providers: [SkillCommandSource(registry: SkillsRegistry(roots: [root], mode: .open))],
       workingDirectory: root)
     await registry.load()
 
@@ -183,7 +183,9 @@ struct CommandRegistryTests {
     ])
     let registry = CommandRegistry(
       builtins: [makeActionCommand(name: "status", output: "STATUS")],
-      providers: [provider, SkillCommandSource(registry: SkillsRegistry(roots: [root]))],
+      providers: [
+        provider, SkillCommandSource(registry: SkillsRegistry(roots: [root], mode: .open)),
+      ],
       workingDirectory: root)
     await registry.load()
 

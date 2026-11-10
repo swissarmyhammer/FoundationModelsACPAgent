@@ -1,8 +1,10 @@
 import Foundation
+import FoundationModels
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsExtras
 import FoundationModelsMultitool
+import FoundationModelsSkills
 import Testing
 
 @testable import FoundationModelsACPAgent
@@ -13,6 +15,11 @@ import Testing
 /// process: no shell, no stdio MCP server and no code context. In the `open`
 /// mode a session gets the same tools as before the mode. The composition
 /// checks the mode against the sandbox probe before it registers a tool.
+///
+/// The skills of a session get the same mode (ACPA-19d): in the `sandboxed`
+/// mode the `skills` tool has no `run script` operation, a shell injection of
+/// a skill body stays as text, and the template values of a skill tell that
+/// the shell and the code context are off.
 ///
 /// Each case builds the catalog registry of one session over the stub
 /// profile, or makes one stub agent. No case needs the network.
@@ -52,6 +59,48 @@ import Testing
 
   /// The label of each throwaway folder of this suite.
   private static let label = "ToolModeTests"
+
+  /// The name of the `skills` tool on the session surface.
+  private static let skillsToolName = "skills"
+
+  /// The op string of the `run script` operation of the `skills` tool.
+  private static let runScriptOp = "run script"
+
+  /// The op string of the `use skill` operation of the `skills` tool.
+  private static let useSkillOp = "use skill"
+
+  /// The id of the fixture skill, which is also its directory name.
+  private static let scriptSkillID = "mode-fixture"
+
+  /// The inline shell injection of the body of the fixture skill. In the
+  /// `open` mode a render replaces it with the output of the command.
+  private static let shellInjection = "!`echo MODE-FIXTURE-OUTPUT`"
+
+  /// The `SKILL.md` text of the fixture skill.
+  private static let scriptSkillMarkdown = """
+    ---
+    description: A skill with a script and a shell injection.
+    ---
+    Injection: \(shellInjection)
+    """
+
+  /// The path of the script of the fixture skill, under its directory.
+  private static let scriptPath = "scripts/run.sh"
+
+  /// The text of the script of the fixture skill. No case runs it.
+  private static let scriptText = "#!/bin/sh\necho run\n"
+
+  /// The key of the tool groups in the template values of a skill render.
+  private static let toolsTemplateKey = "tools"
+
+  /// The key of the on state of one tool group in the template values.
+  private static let enabledTemplateKey = "enabled"
+
+  /// The tool group of the shell in the template values.
+  private static let shellTemplateGroup = "shell"
+
+  /// The tool group of the code context in the template values.
+  private static let codeContextTemplateGroup = "codeContext"
 
   // MARK: - Harness
 
@@ -175,6 +224,82 @@ import Testing
       userPresence: .headless)
   }
 
+  /// Makes a working directory whose project skills layer holds the
+  /// fixture skill: a `SKILL.md` with a shell injection, and a script.
+  ///
+  /// - Returns: The working directory.
+  /// - Throws: Whatever a file write throws.
+  private static func makeSkillsWorkspace() throws -> URL {
+    let workspace = makeResolvedDirectory(label: "\(label)-skills")
+    let skillsRoot = workspace.appendingPathComponent(
+      ".\(ToolCatalog.skillsDotfolderName)", isDirectory: true)
+    try writeSkillFixture(id: scriptSkillID, markdown: scriptSkillMarkdown, under: skillsRoot)
+    let script = skillsRoot.appendingPathComponent(scriptSkillID, isDirectory: true)
+      .appendingPathComponent(scriptPath, isDirectory: false)
+    try FileManager.default.createDirectory(
+      at: script.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try scriptText.write(to: script, atomically: true, encoding: .utf8)
+    return workspace
+  }
+
+  /// Makes the session surface in `mode` over a workspace that holds the
+  /// fixture skill, and gives its `skills` tool. The shell and the code
+  /// context are off, thus the open mode starts no child process of a
+  /// tool group. The surface is shut down before the return.
+  ///
+  /// - Parameter mode: The tool mode of the session.
+  /// - Returns: The `skills` tool of the session.
+  /// - Throws: Whatever the context, the surface, or the search for the
+  ///   tool throws.
+  private static func makeSessionSkillsTool(mode: ToolMode) async throws -> SkillsCatalogTool {
+    var configuration = AgentConfiguration.withoutMarketplaces
+    configuration.tools.shell = .disabled
+    configuration.tools.codeContext = .disabled
+    let context = try await CatalogRegistryFixture.makeContext(
+      workingDirectory: makeSkillsWorkspace(), configuration: configuration, mode: mode)
+    let surface = try await ToolCatalog.sessionSurface(context: context)
+    await surface.shutdown()
+    let tool = surface.tools.first { $0.name == skillsToolName }
+    return try #require(tool as? SkillsCatalogTool)
+  }
+
+  /// The op strings of the operations of a `skills` tool.
+  ///
+  /// - Parameter tool: The `skills` tool.
+  /// - Returns: The op strings, in tool order.
+  private static func opStrings(of tool: SkillsCatalogTool) -> [String] {
+    tool.operationDescriptors.map(\.opString)
+  }
+
+  /// The text of a `use skill` call of the fixture skill.
+  ///
+  /// - Parameter tool: The `skills` tool.
+  /// - Returns: The answer of the tool.
+  /// - Throws: Whatever the call throws.
+  private static func useScriptSkill(with tool: SkillsCatalogTool) async throws -> String {
+    try await tool.call(
+      arguments: GeneratedContent(properties: ["op": useSkillOp, "id": scriptSkillID]))
+  }
+
+  /// The `tools.<group>.enabled` value of the template values of a skill
+  /// render.
+  ///
+  /// - Parameters:
+  ///   - group: The tool group.
+  ///   - values: The template values.
+  /// - Returns: The value, or `nil` when the values have no such entry.
+  private static func isEnabled(
+    _ group: String, in values: [String: TemplateValue]
+  ) -> Bool? {
+    if case .dictionary(let groups)? = values[toolsTemplateKey],
+      case .dictionary(let entry)? = groups[group],
+      case .bool(let isOn)? = entry[enabledTemplateKey]
+    {
+      return isOn
+    }
+    return nil
+  }
+
   // MARK: - The sandboxed mode
 
   @Test func theSandboxedModeMountsNoShellVerb() async throws {
@@ -251,6 +376,34 @@ import Testing
     #expect(roster.entries.map(\.configuration.name) == [Self.httpServerName])
   }
 
+  @Test func theSandboxedSkillsToolHasNoRunScriptOperation() async throws {
+    let tool = try await Self.makeSessionSkillsTool(mode: .sandboxed)
+
+    #expect(!Self.opStrings(of: tool).contains(Self.runScriptOp))
+  }
+
+  @Test func theSandboxedSkillsToolKeepsTheShellInjectionAsText() async throws {
+    let tool = try await Self.makeSessionSkillsTool(mode: .sandboxed)
+
+    let text = try await Self.useScriptSkill(with: tool)
+
+    #expect(text.contains(Self.shellInjection))
+  }
+
+  @Test func theSandboxedTemplateValuesTurnTheShellOff() {
+    let values = ToolCatalog.skillsTemplateContext(
+      Self.makeConfiguration().tools, mode: .sandboxed)
+
+    #expect(Self.isEnabled(Self.shellTemplateGroup, in: values) == false)
+  }
+
+  @Test func theSandboxedTemplateValuesTurnTheCodeContextOff() {
+    let values = ToolCatalog.skillsTemplateContext(
+      Self.makeConfiguration().tools, mode: .sandboxed)
+
+    #expect(Self.isEnabled(Self.codeContextTemplateGroup, in: values) == false)
+  }
+
   // MARK: - The open mode
 
   @Test func theOpenModeMountsTheShellVerbs() async throws {
@@ -308,6 +461,24 @@ import Testing
       mode: .open, section: .enabled(servers: []), clientServers: [Self.clientStdioServer])
 
     #expect(roster.entries.map(\.configuration.name) == [Self.stdioServerName])
+  }
+
+  @Test func theOpenSkillsToolHasTheRunScriptOperation() async throws {
+    let tool = try await Self.makeSessionSkillsTool(mode: .open)
+
+    #expect(Self.opStrings(of: tool).contains(Self.runScriptOp))
+  }
+
+  @Test func theOpenTemplateValuesKeepAnEnabledShellOn() {
+    let values = ToolCatalog.skillsTemplateContext(Self.makeConfiguration().tools, mode: .open)
+
+    #expect(Self.isEnabled(Self.shellTemplateGroup, in: values) == true)
+  }
+
+  @Test func theOpenTemplateValuesKeepAnEnabledCodeContextOn() {
+    let values = ToolCatalog.skillsTemplateContext(Self.makeConfiguration().tools, mode: .open)
+
+    #expect(Self.isEnabled(Self.codeContextTemplateGroup, in: values) == true)
   }
 
   // MARK: - The agent

@@ -197,7 +197,8 @@ enum AgentsComposition {
   ) -> AgentRegistry {
     let stack = context.settingsFolders.stack(
       for: .agents, workingDirectory: context.workingDirectory)
-    let templateContext = ToolCatalog.skillsTemplateContext(context.configuration.tools)
+    let templateContext = ToolCatalog.skillsTemplateContext(
+      context.configuration.tools, mode: context.toolMode)
     guard let marketplaces else {
       return AgentRegistry(stack: stack, templateContext: templateContext)
     }

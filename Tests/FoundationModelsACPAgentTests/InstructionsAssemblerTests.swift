@@ -257,7 +257,7 @@ import Testing
       frontmatter: "description: a plain skill",
       body: "PLAIN-BETA-BODY")
     fixture.write("USER-AGENTS-TEXT", to: "AGENTS.md", under: fixture.userDirectory)
-    let registry = SkillsRegistry(roots: [fixture.skillsDirectory])
+    let registry = SkillsRegistry(roots: [fixture.skillsDirectory], mode: .open)
 
     let assembled = try await fixture.assembler().assemble(skills: registry)
 
@@ -277,7 +277,7 @@ import Testing
       id: "alpha",
       frontmatter: Self.preloadedFrontmatter,
       body: "PRELOADED-BODY-V1")
-    let registry = SkillsRegistry(roots: [fixture.skillsDirectory], watch: true)
+    let registry = SkillsRegistry(roots: [fixture.skillsDirectory], mode: .open, watch: true)
     let assembler = fixture.assembler()
 
     let before = try await assembler.assemble(skills: registry)

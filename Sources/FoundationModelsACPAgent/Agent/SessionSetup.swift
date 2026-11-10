@@ -1096,7 +1096,8 @@ extension RoutedACPAgent {
     // It also serves the slash-command source below.
     // It also serves the `skills` tool and the agent runs.
     // These are a standalone tool, not a Multitool capability.
-    // `watch: true` is what makes its `commandUpdates` non-nil.
+    // With `watch: true` it rebuilds on a skill file change, and its
+    // `commandUpdates` gives each rebuild to the slash-command source.
     let skills = await ToolCatalog.makeSkillsSource(context: catalogContext)
     let surface = try await ToolCatalog.sessionSurface(context: catalogContext, skills: skills)
       .appending(hostTools: hostTools)

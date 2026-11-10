@@ -318,8 +318,9 @@ enum CommandKind: String, Sendable {
 /// `.rendered` itself (upstream adoption `c2pad49`): the
 /// pass-through arm below already forwards a `.rendered` body unchanged.
 struct SkillCommandSource: SlashCommandProviding {
-  /// The session's skills registry, built with `watch: true` so
-  /// `commandUpdates` is non-nil.
+  /// The session's skills registry. Its `commandUpdates` is never `nil`:
+  /// each registry publishes its commands again after each catalog
+  /// rebuild, whatever its `watch` value is.
   let registry: SkillsRegistry
 
   /// The registry's user-invocable skills, one `/id` command each,
@@ -332,9 +333,20 @@ struct SkillCommandSource: SlashCommandProviding {
   }
 
   /// The registry's pushed re-publications, each set wrapped the same
-  /// way. `nil` when the registry was built with `watch: false`.
+  /// way. The value is optional only because `SlashCommandProviding`
+  /// declares it so: the registry always gives a stream.
   var commandUpdates: AsyncStream<[SlashCommand]>? {
-    guard let updates = registry.commandUpdates else { return nil }
+    registry.commandUpdates.map(routedUpdates(_:))
+  }
+
+  /// Wraps each command set of `updates` the same way as ``commands(workingDirectory:)``.
+  ///
+  /// - Parameter updates: The pushed command sets of the registry.
+  /// - Returns: The stream of the wrapped sets. It ends when `updates`
+  ///   ends, and a cancel of the stream stops the bridge task.
+  private func routedUpdates(
+    _ updates: AsyncStream<[SlashCommand]>
+  ) -> AsyncStream<[SlashCommand]> {
     let (stream, continuation) = AsyncStream<[SlashCommand]>.makeStream()
     let source = self
     let bridge = Task {
