@@ -43,30 +43,45 @@ import Testing
   static let builtinInstructionsPath =
     "Sources/FoundationModelsACPAgent/Instructions/BuiltinInstructions.swift"
 
+  /// The repository-relative path of the one copy of the style text that
+  /// starts the instructions of each session — a link target the README
+  /// must carry.
+  static let styleInstructionsPath =
+    "Sources/FoundationModelsACPAgent/Instructions/StyleInstructions.swift"
+
+  /// The compiled-in instructions texts that the README links to, by the
+  /// path of their one source file.
+  static let compiledInInstructions = [
+    builtinInstructionsPath: BuiltinInstructions.text,
+    styleInstructionsPath: StyleInstructions.text,
+  ]
+
   /// The heading of the README's tool roster section. Step 3 of the
   /// `ToolCatalog` contract adds a row to this section for each new
   /// capability.
   static let toolsHeading = "## Tools"
 
-  /// The README links to the builtin instructions source, and that path
-  /// resolves. A moved or renamed file fails here, at the link, instead
-  /// of silently leaving the README pointing at nothing.
-  @Test func readmeLinksToTheBuiltinInstructionsSource() throws {
+  /// The README links to each compiled-in instructions source, and that
+  /// path resolves. A moved or renamed file fails here, at the link,
+  /// instead of silently leaving the README pointing at nothing.
+  @Test(arguments: compiledInInstructions.keys.sorted())
+  func readmeLinksToTheInstructionsSource(at path: String) throws {
     let readme = try Self.readmeText()
 
-    #expect(readme.contains(Self.builtinInstructionsPath))
+    #expect(readme.contains(path))
     #expect(
       FileManager.default.fileExists(
-        atPath: Self.repositoryRootURL
-          .appendingPathComponent(Self.builtinInstructionsPath).path))
+        atPath: Self.repositoryRootURL.appendingPathComponent(path).path))
   }
 
-  /// The README does not repeat the builtin instructions text. One copy
+  /// The README does not repeat a compiled-in instructions text. One copy
   /// only: the source file the link names.
-  @Test func readmeDoesNotRepeatTheBuiltinInstructionsText() throws {
+  @Test(arguments: compiledInInstructions.keys.sorted())
+  func readmeDoesNotRepeatTheInstructionsText(at path: String) throws {
     let readme = try Self.readmeText()
+    let text = try #require(Self.compiledInInstructions[path])
 
-    #expect(!readme.contains(BuiltinInstructions.text))
+    #expect(!readme.contains(text))
   }
 
   // MARK: - The links

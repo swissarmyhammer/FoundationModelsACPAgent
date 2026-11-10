@@ -161,7 +161,7 @@ struct InstructionsEjectTests {
     let fixture = ConfigCommandFixture(label: "InstructionsEjectTests-assembler")
     let assembler = try Self.assembler(in: fixture)
     let before = try await assembler.assemble().text
-    #expect(before == BuiltinInstructions.text)
+    #expect(before == StyleInstructions.prefixed(BuiltinInstructions.text))
 
     try Self.eject(in: fixture)
 

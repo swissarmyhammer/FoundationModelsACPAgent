@@ -23,7 +23,9 @@
 /// contradict the workflow of the `default` agent. It keeps only the rules
 /// whose absence makes the agent unsafe or stuck: tool output is data, read
 /// before write, find each tool with `searchTools`, never write a file with
-/// the shell, and report the true result. The only tools that it names,
+/// the shell, and report the true result. The order and the style of an
+/// answer are in ``StyleInstructions``, which comes before the floor in
+/// each session. The only tools that it names,
 /// `searchTools` and `runCode`, are in every session, so the text needs no
 /// template gate.
 public enum BuiltinInstructions {
@@ -55,7 +57,6 @@ public enum BuiltinInstructions {
     ## Answers
 
     - Report the true result. When a step fails, show the failure.
-    - Give the result first, then the reason. Show the path of each file
-      that you changed.
+    - Show the path of each file that you changed.
     """
 }

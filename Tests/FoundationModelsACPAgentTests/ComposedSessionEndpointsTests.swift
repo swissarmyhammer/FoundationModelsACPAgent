@@ -85,7 +85,9 @@ import Testing
         "---\nname: default\ndescription: The root.\n---\n\nDEFAULT-AGENT-PROMPT"
         + "{% if tools.files.enabled %} FILES-ON{% endif %}\n")
 
-    #expect(instructions.hasPrefix("DEFAULT-AGENT-PROMPT FILES-ON"), "\(instructions.prefix(120))")
+    #expect(
+      instructions.hasPrefix(StyleInstructions.prefixed("DEFAULT-AGENT-PROMPT FILES-ON")),
+      "\(instructions.prefix(120))")
     #expect(!instructions.contains(BuiltinInstructions.text))
   }
 
@@ -94,7 +96,17 @@ import Testing
     let instructions = try await Self.composedInstructions(
       label: "ComposedSessionEndpointsTests-builtin", defaultAgent: nil)
 
-    #expect(instructions.hasPrefix(BuiltinInstructions.text))
+    #expect(instructions.hasPrefix(StyleInstructions.prefixed(BuiltinInstructions.text)))
+  }
+
+  /// The instructions of a composed session start with the style text
+  /// (ACPA-20).
+  @Test func theInstructionsOfAComposedSessionStartWithTheStyleText() async throws {
+    let instructions = try await Self.composedInstructions(
+      label: "ComposedSessionEndpointsTests-style",
+      defaultAgent: "---\nname: default\ndescription: The root.\n---\n\nDEFAULT-AGENT-PROMPT\n")
+
+    #expect(instructions.hasPrefix(StyleInstructions.text))
   }
 
   /// The top-level tools of a composed session give the `settings`

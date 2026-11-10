@@ -159,7 +159,8 @@ import Testing
     let session = try await Self.openSession(in: cwd, agent: Self.catalogAgentID)
 
     #expect(
-      session.instructions.hasPrefix(Self.catalogAgentBody), "\(session.instructions.prefix(80))")
+      session.instructions.hasPrefix(StyleInstructions.prefixed(Self.catalogAgentBody)),
+      "\(session.instructions.prefix(80))")
   }
 
   /// The current value of the `agent` option is the selected agent.
@@ -237,7 +238,8 @@ import Testing
     let session = try await Self.openSession(in: cwd)
 
     #expect(
-      session.instructions.hasPrefix(Self.folderAgentBody), "\(session.instructions.prefix(80))")
+      session.instructions.hasPrefix(StyleInstructions.prefixed(Self.folderAgentBody)),
+      "\(session.instructions.prefix(80))")
   }
 
   /// The `AGENT.md` of the working directory that is the session agent is
@@ -261,7 +263,8 @@ import Testing
     let session = try await Self.openSession(in: cwd)
 
     #expect(
-      session.instructions.hasPrefix(Self.defaultAgentBody), "\(session.instructions.prefix(80))")
+      session.instructions.hasPrefix(StyleInstructions.prefixed(Self.defaultAgentBody)),
+      "\(session.instructions.prefix(80))")
     #expect(session.currentAgent == ConfigOptions.defaultAgentValue)
   }
 
@@ -350,7 +353,7 @@ import Testing
 
     let session = try await Self.openSession(in: cwd)
 
-    #expect(session.instructions.hasPrefix(BuiltinInstructions.text))
+    #expect(session.instructions.hasPrefix(StyleInstructions.prefixed(BuiltinInstructions.text)))
   }
 
   // MARK: - The id of the agent of the working directory
@@ -366,7 +369,8 @@ import Testing
 
     #expect(session.currentAgent == Self.invalidFolderAgentID)
     #expect(
-      session.instructions.hasPrefix(Self.folderAgentBody), "\(session.instructions.prefix(80))")
+      session.instructions.hasPrefix(StyleInstructions.prefixed(Self.folderAgentBody)),
+      "\(session.instructions.prefix(80))")
   }
 
   /// A working directory that is a catalog folder `Agents/<name>/` gives the
@@ -438,7 +442,9 @@ import Testing
     _ = try await resume.fixture.harness.connection.resumeSession(resume.makeResumeRequest())
 
     let entry = try #require(await resume.fixture.harness.agent.sessions[resume.fixture.sessionId])
-    #expect(entry.instructions.hasPrefix(Self.defaultAgentBody), "\(entry.instructions.prefix(80))")
+    #expect(
+      entry.instructions.hasPrefix(StyleInstructions.prefixed(Self.defaultAgentBody)),
+      "\(entry.instructions.prefix(80))")
     await resume.fixture.close()
   }
 }

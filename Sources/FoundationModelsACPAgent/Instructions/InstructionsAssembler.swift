@@ -43,13 +43,15 @@ public struct AssembledInstructions: Equatable, Sendable {
 
 /// Assembles the per-session instructions, in this order:
 ///
-/// 1. The base prompt: the nearest `Instructions.md` through
+/// 1. The compiled-in ``StyleInstructions``, for each base prompt. Nothing
+///    replaces it.
+/// 2. The base prompt: the nearest `Instructions.md` through
 ///    `stack.content(_:)`, which **replaces the builtin wholesale**; with no
 ///    file in any layer the compiled-in ``BuiltinInstructions`` renders.
-/// 2. The preloaded skill bodies: `registry.preloadedBodies()`, one already-
+/// 3. The preloaded skill bodies: `registry.preloadedBodies()`, one already-
 ///    rendered string.
-/// 3. The user-level `AGENTS.md` through `stack.content(_:)`.
-/// 4. The project-level documents through `AgentsMd.documents(from:)`, from
+/// 4. The user-level `AGENTS.md` through `stack.content(_:)`.
+/// 5. The project-level documents through `AgentsMd.documents(from:)`, from
 ///    the repository root down to the working directory. The
 ///    ``WorkingDirectoryAgent`` role of the session tells what the `AGENT.md`
 ///    of the working directory is.
@@ -87,7 +89,7 @@ public struct InstructionsAssembler: Sendable {
   }
 
   /// The blank line that joins the assembled sections.
-  private static let sectionSeparator = "\n\n"
+  static let sectionSeparator = "\n\n"
 
   /// The stack `Instructions.md`, `AGENTS.md` and `_partials/` resolve
   /// against.
@@ -133,7 +135,8 @@ public struct InstructionsAssembler: Sendable {
     let renderer = Renderer(engine: TemplateEngine(partials: stack))
     var warnings: [InstructionsWarning] = []
     var sections = [
-      try basePrompt(renderer: renderer, agent: agent, warnings: &warnings)
+      StyleInstructions.text,
+      try basePrompt(renderer: renderer, agent: agent, warnings: &warnings),
     ]
 
     // Already ONE rendered string, joined with blank lines — never

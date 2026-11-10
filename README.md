@@ -634,6 +634,13 @@ compiled-in floor,
 — one copy of the text, never mirrored here. It is a minimal fallback with no
 workflow, and its doc comment states why.
 
+The instructions of each session start with the compiled-in style text,
+[`Sources/FoundationModelsACPAgent/Instructions/StyleInstructions.swift`](Sources/FoundationModelsACPAgent/Instructions/StyleInstructions.swift):
+answers in ASD-STE100 Simplified Technical English, the answer first, and a
+long answer only when the request needs it. The style text comes before the
+base prompt and before each `AGENTS.md`, for each agent. An `Instructions.md`
+does not replace it. It is one copy of the text, never mirrored here.
+
 ## Design decisions
 
 The code depends on these decisions. The doc comment at each place in the

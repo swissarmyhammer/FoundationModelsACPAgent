@@ -109,13 +109,151 @@ import Testing
 
   // MARK: - The builtin floor
 
-  @Test func assemblesExactlyTheBuiltinWithNoFiles() async throws {
+  @Test func assemblesExactlyTheStyleAndTheBuiltinWithNoFiles() async throws {
     let fixture = Fixture()
 
     let assembled = try await fixture.assembler().assemble()
 
-    #expect(assembled.text == BuiltinInstructions.text)
+    #expect(assembled.text == StyleInstructions.prefixed(BuiltinInstructions.text))
     #expect(assembled.warnings.isEmpty)
+  }
+
+  // MARK: - The style text
+
+  /// One way that a session gets its base prompt (ACPA-1a, ACPA-20). Each
+  /// case writes its files into a fixture and assembles, with a user
+  /// `AGENTS.md` and a project `AGENTS.md` in each case.
+  enum BasePromptCase: CaseIterable, CustomTestStringConvertible {
+    /// The client selected the agent. The `AGENT.md` of the working
+    /// directory is then project instructions.
+    case namedAgent
+    /// The `AGENT.md` of the working directory is the session agent.
+    case workingDirectoryAgent
+    /// The `default` agent of the layers is the session agent.
+    case defaultAgent
+    /// An `Instructions.md` of a layer replaces the base prompt.
+    case instructionsFile
+    /// No agent and no `Instructions.md`: the builtin floor.
+    case builtinFloor
+
+    /// The text of the user `AGENTS.md` of each case.
+    static let userAgentsText = "USER-AGENTS-TEXT"
+
+    /// The text of the project `AGENTS.md` of each case.
+    static let projectAgentsText = "PROJECT-AGENTS-TEXT"
+
+    /// The text of the `AGENT.md` of the working directory.
+    static let workingDirectoryAgentText = "CWD-AGENT-TEXT"
+
+    var testDescription: String { "\(self)" }
+
+    /// A line of the base prompt of the case. The line is not in the style
+    /// text.
+    var baseMarker: String {
+      switch self {
+      case .namedAgent: "NAMED-AGENT-TEXT"
+      case .workingDirectoryAgent: Self.workingDirectoryAgentText
+      case .defaultAgent: "DEFAULT-AGENT-TEXT"
+      case .instructionsFile: "PROJECT-PROMPT-TEXT"
+      case .builtinFloor: InstructionsAssemblerTests.builtinMarker
+      }
+    }
+
+    /// Writes the files of the case into `fixture` and assembles.
+    ///
+    /// - Parameter fixture: The fixture tree.
+    /// - Returns: The assembled text.
+    /// - Throws: What the assembly throws.
+    func assemble(in fixture: Fixture) async throws -> String {
+      fixture.write(Self.userAgentsText, to: "AGENTS.md", under: fixture.userDirectory)
+      fixture.write(Self.projectAgentsText, to: "AGENTS.md", under: fixture.workingDirectory)
+      let assembler = fixture.assembler()
+      switch self {
+      case .namedAgent:
+        fixture.write(
+          Self.workingDirectoryAgentText, to: "AGENT.md", under: fixture.workingDirectory)
+        return try await assembler.assemble(
+          agent: baseMarker, workingDirectoryAgent: .projectInstructions
+        ).text
+      case .workingDirectoryAgent:
+        fixture.write(baseMarker, to: "AGENT.md", under: fixture.workingDirectory)
+        return try await assembler.assemble(agent: baseMarker, workingDirectoryAgent: .sessionAgent)
+          .text
+      case .defaultAgent:
+        return try await assembler.assemble(agent: baseMarker).text
+      case .instructionsFile:
+        fixture.write(baseMarker, to: "Instructions.md", under: fixture.projectDirectory)
+        return try await assembler.assemble().text
+      case .builtinFloor:
+        return try await assembler.assemble().text
+      }
+    }
+  }
+
+  /// Whether `marker` starts after the end of the style text in `text`.
+  ///
+  /// - Parameters:
+  ///   - marker: The text to find.
+  ///   - text: The assembled text.
+  /// - Returns: `true` when the first copy of `marker` starts at or after
+  ///   the end of the first copy of the style text.
+  /// - Throws: When `text` does not hold `marker` or the style text.
+  static func follows(_ marker: String, theStyleTextIn text: String) throws -> Bool {
+    let style = try #require(text.range(of: StyleInstructions.text))
+    let found = try #require(text.range(of: marker))
+    return found.lowerBound >= style.upperBound
+  }
+
+  /// The style text is the start of the instructions for each base prompt.
+  @Test(arguments: BasePromptCase.allCases)
+  func theStyleTextStartsTheInstructions(of basePrompt: BasePromptCase) async throws {
+    let text = try await basePrompt.assemble(in: Fixture())
+
+    #expect(text.hasPrefix(StyleInstructions.text))
+  }
+
+  /// The base prompt comes after the style text for each base prompt.
+  @Test(arguments: BasePromptCase.allCases)
+  func theBasePromptFollowsTheStyleText(of basePrompt: BasePromptCase) async throws {
+    let text = try await basePrompt.assemble(in: Fixture())
+
+    #expect(try Self.follows(basePrompt.baseMarker, theStyleTextIn: text))
+  }
+
+  /// The user `AGENTS.md` comes after the style text for each base prompt.
+  @Test(arguments: BasePromptCase.allCases)
+  func theUserAgentsTextFollowsTheStyleText(of basePrompt: BasePromptCase) async throws {
+    let text = try await basePrompt.assemble(in: Fixture())
+
+    #expect(try Self.follows(BasePromptCase.userAgentsText, theStyleTextIn: text))
+  }
+
+  /// The project `AGENTS.md` comes after the style text for each base
+  /// prompt.
+  @Test(arguments: BasePromptCase.allCases)
+  func theProjectAgentsTextFollowsTheStyleText(of basePrompt: BasePromptCase) async throws {
+    let text = try await basePrompt.assemble(in: Fixture())
+
+    #expect(try Self.follows(BasePromptCase.projectAgentsText, theStyleTextIn: text))
+  }
+
+  /// The `AGENT.md` of the working directory comes after the style text
+  /// when the client selected the agent.
+  @Test func theWorkingDirectoryAgentMdFollowsTheStyleText() async throws {
+    let text = try await BasePromptCase.namedAgent.assemble(in: Fixture())
+
+    #expect(try Self.follows(BasePromptCase.workingDirectoryAgentText, theStyleTextIn: text))
+  }
+
+  /// The style text asks for ASD-STE100 Simplified Technical English.
+  @Test func theStyleTextAsksForSimplifiedTechnicalEnglish() {
+    #expect(StyleInstructions.text.contains("ASD-STE100 Simplified Technical English"))
+  }
+
+  /// The builtin floor leaves the order of an answer to the style text, so
+  /// the two texts do not disagree.
+  @Test func theBuiltinLeavesTheOrderOfAnAnswerToTheStyleText() {
+    #expect(!Self.collapsingWhitespace(BuiltinInstructions.text).contains("Give the result first"))
   }
 
   // MARK: - Wholesale replacement
@@ -158,7 +296,7 @@ import Testing
 
     let assembled = try await fixture.assembler().assemble(agent: "DEFAULT-AGENT-TEXT")
 
-    #expect(assembled.text.hasPrefix("DEFAULT-AGENT-TEXT"))
+    #expect(assembled.text.hasPrefix(StyleInstructions.prefixed("DEFAULT-AGENT-TEXT")))
     #expect(!assembled.text.contains(Self.builtinMarker))
     let base = try #require(assembled.text.range(of: "DEFAULT-AGENT-TEXT"))
     let agents = try #require(assembled.text.range(of: "USER-AGENTS-TEXT"))
@@ -376,7 +514,7 @@ import Testing
 
     let assembled = try await fixture.assembler().assemble()
 
-    #expect(assembled.text == BuiltinInstructions.text)
+    #expect(assembled.text == StyleInstructions.prefixed(BuiltinInstructions.text))
     #expect(assembled.warnings == [.fileUnreadable(path: path)])
   }
 
