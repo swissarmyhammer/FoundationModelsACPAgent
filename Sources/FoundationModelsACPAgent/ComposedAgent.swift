@@ -118,10 +118,9 @@ public struct ComposedAgent: Sendable {
   ///     persist. The `acp-agent` CLI gives
   ///     ``AgentHome/makeXDG(name:environment:)``. The model check of `doctor`
   ///     reads the model cache of the same home.
-  ///   - mode: The tool mode of the host (ACPA-19b, D128 (d)). The default
-  ///     `.open` is temporary, until each host gives a mode; then the
-  ///     default goes. `validate(probe:)` refuses `.open` in a sandboxed
-  ///     process. In `.sandboxed` no
+  ///   - mode: The tool mode of the host (ACPA-19b, D128 (d)). It has no
+  ///     default value, so a host must select one. `validate(probe:)`
+  ///     refuses `.open` in a sandboxed process. In `.sandboxed` no
   ///     session gets a tool that starts a child process: no shell, no
   ///     stdio MCP server and no code context. An app in the App Sandbox
   ///     gives `.sandboxed`; the `acp-agent` CLI gives `.open`. The
@@ -198,7 +197,7 @@ public struct ComposedAgent: Sendable {
     name: DotfolderName,
     workingDirectory: URL,
     home: AgentHome,
-    mode: ToolMode = .open,
+    mode: ToolMode,
     sandboxProbe: SandboxProbe = .live,
     environment: [String: String] = ProcessInfo.processInfo.environment,
     modelSource: ModelSource = .live,
