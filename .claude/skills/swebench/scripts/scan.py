@@ -1516,7 +1516,10 @@ def scan_transcripts(dirs, gap_s, R):
                 if m and m.group(4) != "running":
                     ops[m.group(3)] = detail_of(r.get("entry")) or r.get("text", "")
 
-        last_err = {}  # group -> the made-up verb, for the recovery check
+        # The made-up verbs that wait for a recovery: the next snippet that
+        # succeeds and no longer calls the verb. The correct verb is often in
+        # another group (tools.code.runShell -> tools.shell.execute).
+        last_err = set()
         for r in sorted(rows, key=lambda r: r.get("seq") if isinstance(r.get("seq"), int) else -1):
             kind = r.get("kind")
             T["kinds"][kind] += 1
@@ -1558,9 +1561,6 @@ def scan_transcripts(dirs, gap_s, R):
                 elif sort == "failure":
                     T["tool_err"][tool] += 1
                     add_sample(T, f"execute: {why}", f"{where}: {det[:200]!r}")
-                elif "shell" in last_err:
-                    # The execute tool and tools.shell.* are the same group.
-                    T["recovered"][last_err.pop("shell")] += 1
                 continue
 
             # The result of one tool call of the model. Pair it with its call by the id.
@@ -1635,11 +1635,11 @@ def scan_transcripts(dirs, gap_s, R):
                 T["made_up_hint"][full] = hint.group(1) if hint else "?"
                 # The evidence of a made-up verb is its own "is not a function" result.
                 T["made_up_ev"].setdefault(full, f"{where}: {detail[:200]!r}")
-                last_err[full.split(".")[1]] = full
+                last_err.add(full)
             elif not cls:
-                for g in groups:
-                    if g in last_err:
-                        T["recovered"][last_err.pop(g)] += 1
+                for full in sorted(last_err - set(f"tools.{v}" for v in verbs)):
+                    T["recovered"][full] += 1
+                    last_err.discard(full)
 
 
 def report_tools(R):

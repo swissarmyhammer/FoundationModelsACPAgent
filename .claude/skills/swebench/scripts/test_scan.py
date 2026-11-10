@@ -494,6 +494,36 @@ class AnUpstreamFixFromTheWebIsInformation(ScanTestCase):
         self.assertNotIn("does not measure the agent", out)
 
 
+class AMadeUpVerbRecoversInAnyGroup(ScanTestCase):
+    """The model recovers from a made-up verb when its next snippet that
+    succeeds no longer calls it. The correct verb is often in a different
+    group: tools.code.runShell becomes tools.shell.execute (planner24, 14016)."""
+
+    MADE_UP = "tools.code.runShell"
+    FAILED = ("The snippet failed: tools.code.runShell is not a function. "
+              "(In 'tools.code.runShell({ command: \"pwd\" })', 'tools.code.runShell' is undefined) (line 1)\n\n"
+              "tools.code.runShell does not exist. Call tools.shell.execute instead.")
+
+    def made_up_call(self, seq):
+        """Give the rows of one snippet that calls the made-up verb and fails."""
+        return snippet(seq, "return await tools.code.runShell({ command: 'pwd' });", self.FAILED)
+
+    def test_a_success_with_a_verb_of_another_group_is_a_recovery(self):
+        """The next snippet uses tools.shell.execute and succeeds: one recovery."""
+        rows = self.made_up_call(1) + snippet(3, "return await tools.shell.execute({ command: 'pwd' });",
+                                              '{"output": "/repo"}')
+        self.scan_rows(FIRST, rows)
+        self.assertEqual(self.R["tools"]["made_up"][self.MADE_UP], 1)
+        self.assertEqual(self.R["tools"]["recovered"][self.MADE_UP], 1)
+
+    def test_a_snippet_that_fails_again_is_not_a_recovery(self):
+        """The next snippet fails too: no recovery yet."""
+        rows = self.made_up_call(1) + self.made_up_call(3)
+        self.scan_rows(FIRST, rows)
+        self.assertEqual(self.R["tools"]["made_up"][self.MADE_UP], 2)
+        self.assertEqual(self.R["tools"]["recovered"][self.MADE_UP], 0)
+
+
 class ConfigTestCase(ScanTestCase):
     """A scan test that writes an agent config and reads the config part of the scan."""
 
