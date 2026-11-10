@@ -106,10 +106,17 @@ comments:
     - evidence: 3 files — Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift, Tests/FoundationModelsACPAgentTests/ToolModeTests.swift, Tests/FoundationModelsACPAgentTests/Support/CatalogRegistryFixture.swift. `swift test --filter ToolModeTests`: 22 tests passed. Full `swift test`: 1868 tests in 209 suites passed (1 known issue, the existing `withKnownIssue` in HarnessSmokeTests), 0 compiler warnings. The only "warning:" line is the build-system note "missing creator for mutated node" on the mlx bundle.
     - next: review
   timestamp: 2026-11-10T17:31:37.666297+00:00
+- actor: claude-code
+  id: 01m738at76xjnswb12sps7gy5k
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (bbf575e); 0 findings (0 confirmed, 1 refuted, 7 attempted, 0 failed). The 3 prior findings are checked.
+    - next: none. The task is in done. The skills part continues in ^bwgmkc0.
+  timestamp: 2026-11-10T17:33:14.342626+00:00
 depends_on:
 - 01M73026P78T3QV61E24Z44FHR
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: ffffc880
 title: 'ACPA-19b: The host ToolMode in ComposedAgent and RoutedACPAgent; sandboxed mode removes child-process tools and CodeContext'
 ---
 ## What
