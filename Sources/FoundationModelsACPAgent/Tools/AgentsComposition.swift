@@ -85,6 +85,8 @@ enum AgentsComposition {
   ///   - skills: The skills source of the session. The runs get a `skills`
   ///     tool over its registry, and the agent registry reads its
   ///     marketplace store.
+  ///   - agentRegistry: The loaded agent registry of the session, or `nil`
+  ///     to make and load one (``loadedAgentRegistry(context:marketplaces:)``).
   ///   - runTools: The tools that a run can get, by name.
   ///   - runCallJoins: The join table of the session. The environment
   ///     writes the entry of each tool run of each agent run into it
@@ -100,11 +102,15 @@ enum AgentsComposition {
   ///   the `open` mode and the probe of `context` tells that the process is
   ///   sandboxed.
   static func compose(
-    context: CatalogContext, skills: SkillsSource, runTools: FoundationModelsAgents::ToolCatalog,
-    runCallJoins: RunCallJoinTable
+    context: CatalogContext, skills: SkillsSource, agentRegistry: AgentRegistry? = nil,
+    runTools: FoundationModelsAgents::ToolCatalog, runCallJoins: RunCallJoinTable
   ) async throws -> AgentsMount {
-    let registry = makeAgentRegistry(context: context, marketplaces: skills.marketplaces)
-    try await registry.load()
+    let registry =
+      if let agentRegistry {
+        agentRegistry
+      } else {
+        try await loadedAgentRegistry(context: context, marketplaces: skills.marketplaces)
+      }
     let announcer = SubagentAnnouncer(holds: runCallJoins.holds)
     let made = try await AgentEnvironment.make(
       profile: context.profile,
@@ -221,6 +227,26 @@ enum AgentsComposition {
     }
     return AgentRegistry(
       marketplaces: marketplaces, stack: stack, templateContext: templateContext)
+  }
+
+  /// Makes the agent registry of the session
+  /// (``makeAgentRegistry(context:marketplaces:)``) and loads it.
+  ///
+  /// A session loads the registry before it makes its skills registry: the
+  /// session agent comes from the catalog of this registry, and the
+  /// template values of the skills follow the keys of that agent.
+  ///
+  /// - Parameters:
+  ///   - context: The session whose folders give the stack.
+  ///   - marketplaces: The started skills marketplace store, or `nil`.
+  /// - Returns: The loaded registry.
+  /// - Throws: Whatever `AgentRegistry.load()` throws.
+  static func loadedAgentRegistry(
+    context: CatalogContext, marketplaces: MarketplaceStore?
+  ) async throws -> AgentRegistry {
+    let registry = makeAgentRegistry(context: context, marketplaces: marketplaces)
+    try await registry.load()
+    return registry
   }
 
   /// Makes the tool catalog of the runs. It has one factory for each

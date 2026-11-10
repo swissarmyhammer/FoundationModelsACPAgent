@@ -3,6 +3,7 @@ import FoundationModels
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsAgents
+import FoundationModelsExtras
 import FoundationModelsMultitool
 import FoundationModelsRouter
 import Synchronization
@@ -84,6 +85,33 @@ import Testing
 
   /// A `model:` value that names no slot.
   private static let unknownModel = "no-such-model"
+
+  /// The key of the tool groups in a skills template context.
+  private static let templateToolsKey = "tools"
+
+  /// The key of the value of one tool group in a skills template context.
+  private static let templateEnabledKey = "enabled"
+
+  /// The template group of the MCP tools.
+  private static let mcpTemplateGroup = "mcp"
+
+  /// The id of the preloaded skill that renders the shell value.
+  private static let probeSkillID = "probe-tools"
+
+  /// The text that the probe skill renders when the shell value is `false`.
+  private static let shellOffMarker = "PROBE-SHELL-OFF"
+
+  /// The `SKILL.md` of the probe skill: a preloaded skill whose body tells
+  /// the value of `tools.shell.enabled`.
+  private static let probeSkillMarkdown = """
+    ---
+    name: \(probeSkillID)
+    description: Tells the shell value.
+    preload: true
+    ---
+
+    {% if tools.shell.enabled %}PROBE-SHELL-ON{% else %}\(shellOffMarker){% endif %}
+    """
 
   // MARK: - Helpers
 
@@ -273,6 +301,117 @@ import Testing
     let agentsTool = try #require(entry.surface.tools.first { $0.name == Self.agentsName })
     #expect(agentsTool.description.contains(Self.grantedAgentID), "\(agentsTool.description)")
     #expect(!agentsTool.description.contains(Self.otherAgentID), "\(agentsTool.description)")
+  }
+
+  // MARK: - The skills template values
+
+  /// The `tools.<group>.enabled` values of a skill render for the session
+  /// agent `keys`, in `mode`, over the in-code configuration.
+  ///
+  /// - Parameters:
+  ///   - keys: The frontmatter lines of the session agent.
+  ///   - mode: The tool mode of the session.
+  /// - Returns: The value of each group, by its name.
+  /// - Throws: The write error, or when the session agent does not load.
+  private static func templateValues(keys: [String], mode: ToolMode = .open) throws
+    -> [String: Bool]
+  {
+    enabledValues(
+      of: ToolCatalog.skillsTemplateContext(
+        AgentConfiguration.withoutMarketplaces.tools, mode: mode,
+        sessionAgent: try definition(keys: keys)))
+  }
+
+  /// The `tools.<group>.enabled` values of a template context.
+  ///
+  /// - Parameter context: The template context.
+  /// - Returns: The value of each group, by its name. A group with no
+  ///   Boolean `enabled` value is not in the result.
+  private static func enabledValues(of context: [String: TemplateValue]) -> [String: Bool] {
+    guard case .dictionary(let groups)? = context[templateToolsKey] else {
+      return [:]
+    }
+    return groups.compactMapValues { group in
+      guard case .dictionary(let entry) = group, case .bool(let isOn)? = entry[templateEnabledKey]
+      else {
+        return nil
+      }
+      return isOn
+    }
+  }
+
+  /// A session agent with `tools: [web]` renders `tools.web.enabled` as
+  /// `true`.
+  @Test func toolsWebKeepsTheWebTemplateValueOn() throws {
+    #expect(try Self.templateValues(keys: ["tools: [web]"])[Self.webName] == true)
+  }
+
+  /// A session agent with `tools: [web]` renders `tools.shell.enabled` as
+  /// `false`.
+  @Test func toolsWebTurnsTheShellTemplateValueOff() throws {
+    #expect(try Self.templateValues(keys: ["tools: [web]"])[Self.shellName] == false)
+  }
+
+  /// A session agent with `tools: [web]` renders `tools.files.enabled` as
+  /// `true`: `files` gives an endpoint, thus it always stays (D90 (c)).
+  @Test func toolsWebKeepsTheFilesTemplateValueOn() throws {
+    #expect(try Self.templateValues(keys: ["tools: [web]"])[Self.filesName] == true)
+  }
+
+  /// A session agent with `tools: [web]` renders `tools.mcp.enabled` as
+  /// `false`: the selection keeps no MCP tool.
+  @Test func toolsWebTurnsTheMCPTemplateValueOff() throws {
+    #expect(try Self.templateValues(keys: ["tools: [web]"])[Self.mcpTemplateGroup] == false)
+  }
+
+  /// A session agent with `tools: [web, "mcp__*"]` renders
+  /// `tools.mcp.enabled` as `true`.
+  @Test func anMCPEntryKeepsTheMCPTemplateValueOn() throws {
+    #expect(
+      try Self.templateValues(keys: ["tools: [web, \"mcp__*\"]"])[Self.mcpTemplateGroup] == true)
+  }
+
+  /// A session agent with `disallowedTools: [shell]` renders
+  /// `tools.shell.enabled` as `false`.
+  @Test func disallowedShellTurnsTheShellTemplateValueOff() throws {
+    #expect(try Self.templateValues(keys: ["disallowedTools: [shell]"])[Self.shellName] == false)
+  }
+
+  /// A session agent with `tools: [shell]` in the `sandboxed` mode renders
+  /// `tools.shell.enabled` as `false`: the mode gives no shell.
+  @Test func toolsShellInTheSandboxedModeKeepsTheShellTemplateValueOff() throws {
+    #expect(
+      try Self.templateValues(keys: ["tools: [shell]"], mode: .sandboxed)[Self.shellName] == false)
+  }
+
+  /// A session agent with no `tools:` and no `disallowedTools:` renders the
+  /// values of the configuration alone.
+  @Test func noToolsKeyKeepsTheTemplateValuesOfTheConfiguration() throws {
+    let configured = Self.enabledValues(
+      of: ToolCatalog.skillsTemplateContext(
+        AgentConfiguration.withoutMarketplaces.tools, mode: .open))
+
+    #expect(try Self.templateValues(keys: []) == configured)
+  }
+
+  /// A composed session whose session agent has `disallowedTools: [shell]`
+  /// renders a preloaded skill with `tools.shell.enabled` as `false`.
+  @Test func aComposedSessionRendersASkillWithTheSelectionOfTheSessionAgent() async throws {
+    let routed = try await AgentClientHarness.makeInitializedAgent(label: Self.label)
+    let cwd = makeResolvedDirectory(label: "\(Self.label)-skill")
+    try Self.writeSessionAgent(keys: ["disallowedTools: [shell]"], in: cwd)
+    try writeSkillFixture(
+      id: Self.probeSkillID, markdown: Self.probeSkillMarkdown,
+      under: cwd.appendingPathComponent(".\(ToolCatalog.skillsDotfolderName)", isDirectory: true))
+    let loaded = try await LoadedSessionContext.load(
+      workingDirectory: cwd, from: routed.settingsStore)
+
+    let composition = try await routed.composeSession(
+      from: loaded, workingDirectory: cwd, additionalRoots: [], clientMCPServers: [],
+      userPresence: .headless)
+    await composition.surface.shutdown()
+
+    #expect(composition.instructions.contains(Self.shellOffMarker), "\(composition.instructions)")
   }
 
   // MARK: - The refresh of the registry

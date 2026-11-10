@@ -7,9 +7,8 @@ import FoundationModelsRouter
 /// of its instructions, and the role of the `AGENT.md` of the working
 /// directory.
 struct SessionAgentPrompt {
-  /// The agent of the session, or `nil` when the session has no agent
-  /// catalog.
-  let agent: ComposedSessionAgent?
+  /// The agent of the session.
+  let agent: ComposedSessionAgent
 
   /// The rendered instructions of the agent (its body, then the bodies of
   /// its `skills:` preload), or `nil` for the builtin floor.
@@ -23,53 +22,44 @@ struct SessionAgentPrompt {
   /// The role of the `AGENT.md` of the working directory in the
   /// instructions of the session.
   let workingDirectoryAgent: InstructionsAssembler.WorkingDirectoryAgent
-
-  /// The prompt of a session with no agent catalog: the builtin floor.
-  static let builtin = SessionAgentPrompt(
-    agent: nil, text: nil, definition: nil, workingDirectoryAgent: .alias)
 }
 
 extension RoutedACPAgent {
-  /// Resolves the agent of one session and renders its instructions
-  /// (ACPA-1, ``SessionAgentResolution``).
+  /// Resolves the agent of one session (ACPA-1, ``SessionAgentResolution``).
   ///
   /// A new session resolves its agent from the `agent` option, the
   /// `AGENT.md` of the working directory, and the default agent. A resumed
   /// session reads the agent that ``SessionAgentStore`` recorded; a session
   /// with no record resolves as a new session with no option.
   ///
+  /// The session resolves its agent one time, before it makes its skills
+  /// registry: the template values of the skills follow the `tools:` and
+  /// `disallowedTools:` keys of the agent
+  /// (``ToolCatalog/skillsTemplateContext(_:mode:sessionAgent:)``).
+  ///
   /// - Parameters:
-  ///   - runner: The agent runner of the session surface, or `nil` when the
-  ///     session has no agent catalog.
+  ///   - catalog: The agent catalog of the session.
   ///   - requested: The value of the `agent` option, or `nil` for none.
   ///   - resumedSessionId: The id of the resumed session, or `nil` for a new
   ///     session.
   ///   - workingDirectory: The working directory of the session.
   ///   - transcriptRoot: The recording root of the session.
-  /// - Returns: The agent and its instructions.
+  /// - Returns: The resolved agent.
   /// - Throws: `RequestError.invalidConfigOptionValue(id:)` for an unknown
-  ///   agent, or the render failure of the agent.
-  func composeSessionAgent(
-    runner: AgentRunner?,
+  ///   agent.
+  func resolveSessionAgent(
+    in catalog: AgentCatalog,
     requested: String?,
     resuming resumedSessionId: SessionId?,
     workingDirectory: URL,
     transcriptRoot: URL
-  ) async throws -> SessionAgentPrompt {
-    guard let runner else {
-      // With no catalog, only `default` (here the builtin floor) is known.
-      guard requested == nil || requested == ConfigOptions.defaultAgentValue else {
-        throw RequestError.invalidConfigOptionValue(id: ConfigOptions.agentOptionId)
-      }
-      return .builtin
-    }
-    let catalog = runner.catalog()
+  ) throws -> ResolvedSessionAgent {
     let layerRoots = settingsFolders.stack(for: .agents, workingDirectory: workingDirectory)
       .layers.map(\.root)
     let recorded = resumedSessionId.flatMap { id in
       SessionAgentStore.choice(of: id, in: transcriptRoot)
     }
-    let resolved =
+    return
       try recorded.map { choice in
         SessionAgentResolution.restore(
           choice, catalog: catalog, workingDirectory: workingDirectory, layerRoots: layerRoots)
@@ -77,7 +67,22 @@ extension RoutedACPAgent {
       ?? SessionAgentResolution.resolve(
         requested: requested, catalog: catalog, workingDirectory: workingDirectory,
         layerRoots: layerRoots)
-    return SessionAgentPrompt(
+  }
+
+  /// Renders the instructions of the resolved agent of one session.
+  ///
+  /// - Parameters:
+  ///   - resolved: The agent that ``resolveSessionAgent(in:requested:resuming:workingDirectory:transcriptRoot:)``
+  ///     gave.
+  ///   - catalog: The agent catalog that `resolved` came from.
+  ///   - runner: The agent runner of the session surface, over the same
+  ///     catalog. A surface that the catalog composes always has one.
+  /// - Returns: The agent and its instructions.
+  /// - Throws: The render failure of the agent.
+  func composeSessionAgent(
+    _ resolved: ResolvedSessionAgent, catalog: AgentCatalog, runner: AgentRunner?
+  ) async throws -> SessionAgentPrompt {
+    SessionAgentPrompt(
       agent: ComposedSessionAgent(
         choice: resolved.choice,
         option: ConfigOptions.AgentOption(catalog: catalog, agent: resolved),
@@ -106,13 +111,22 @@ extension RoutedACPAgent {
   ///
   /// - Parameters:
   ///   - definition: The agent, or `nil` for the builtin floor.
-  ///   - runner: The agent runner that renders the agent.
+  ///   - runner: The agent runner that renders the agent, or `nil` for a
+  ///     surface with no agents mount. The catalog always composes the
+  ///     mount, thus `nil` is a defect: the session then gets the builtin
+  ///     floor and the log tells it.
   /// - Returns: The text, or `nil` for the builtin floor.
   /// - Throws: The render failure of the agent.
-  private func renderedInstructions(of definition: AgentDefinition?, runner: AgentRunner)
+  private func renderedInstructions(of definition: AgentDefinition?, runner: AgentRunner?)
     async throws -> String?
   {
     guard let definition else {
+      return nil
+    }
+    guard let runner else {
+      assertionFailure("The session surface has no agents mount.")
+      ACPAgentTelemetry.logger(.session).error(
+        "The session surface has no agent runner. The session gets the builtin instructions.")
       return nil
     }
     let instructions = try await runner.sessionAgentInstructions(for: definition)

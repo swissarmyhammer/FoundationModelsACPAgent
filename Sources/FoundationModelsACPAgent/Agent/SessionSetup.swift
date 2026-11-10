@@ -1106,15 +1106,32 @@ extension RoutedACPAgent {
       clientMCPServers: clientMCPServers, userPresence: userPresence,
       sessionOperationTools: factoryMounts)
 
+    // The session agent comes first: the skills registry fixes its
+    // template values when it is made, and the values follow the `tools:`
+    // and `disallowedTools:` keys of the agent. The agent registry reads
+    // the marketplace layers, thus the store starts before it. The surface
+    // then reuses the loaded agent registry, so the `agents` tool and the
+    // session agent read one catalog.
+    let marketplaces = await ToolCatalog.startSkillsMarketplaces(context: catalogContext)
+    let agentRegistry = try await AgentsComposition.loadedAgentRegistry(
+      context: catalogContext, marketplaces: marketplaces)
+    let catalog = agentRegistry.catalog()
+    let resolvedAgent = try resolveSessionAgent(
+      in: catalog, requested: requestedAgent, resuming: resumedSessionId,
+      workingDirectory: workingDirectory, transcriptRoot: context.transcriptRoot)
+
     // One watched registry serves the preload assembly here.
     // It also serves the slash-command source below.
     // It also serves the `skills` tool and the agent runs.
     // These are a standalone tool, not a Multitool capability.
     // With `watch: true` it rebuilds on a skill file change, and its
     // `commandUpdates` gives each rebuild to the slash-command source.
-    let skills = await ToolCatalog.makeSkillsSource(context: catalogContext)
-    let fullSurface = try await ToolCatalog.sessionSurface(context: catalogContext, skills: skills)
-      .appending(hostTools: hostTools)
+    let skills = ToolCatalog.makeSkillsSource(
+      context: catalogContext, marketplaces: marketplaces,
+      sessionAgent: resolvedAgent.definition)
+    let fullSurface = try await ToolCatalog.sessionSurface(
+      context: catalogContext, skills: skills, agentRegistry: agentRegistry
+    ).appending(hostTools: hostTools)
 
     // The session agent is the base prompt of the root session: its body
     // and its `skills:` preload, rendered with the tool groups of the
@@ -1125,9 +1142,7 @@ extension RoutedACPAgent {
     let surface: SessionSurface
     do {
       agent = try await composeSessionAgent(
-        runner: fullSurface.agents?.runner, requested: requestedAgent,
-        resuming: resumedSessionId, workingDirectory: workingDirectory,
-        transcriptRoot: context.transcriptRoot)
+        resolvedAgent, catalog: catalog, runner: fullSurface.agents?.runner)
       surface = try await fullSurface.applying(agent: agent.definition)
       instructions = try await InstructionsAssembler(
         stack: context.loader.stack, workingDirectory: workingDirectory, toolMode: toolMode,

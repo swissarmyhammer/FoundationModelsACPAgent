@@ -304,6 +304,10 @@ public enum ToolCatalog {
   /// `runCode` gives (D90 (c)).
   static let filesGroupName = "files"
 
+  /// The tool group of the MCP tools in the skills template values
+  /// (``skillsTemplateContext(_:mode:sessionAgent:)``).
+  static let mcpGroupName = "mcp"
+
   /// The tools that give an endpoint (D90 (c)). The `tools:` and
   /// `disallowedTools:` keys of a session agent cannot remove them
   /// (``SessionToolSelection``). `files`, `settings` and `kanban` are nouns
@@ -403,13 +407,17 @@ public enum ToolCatalog {
   ///     `skills` tool, the slash-command source and the agent runs read
   ///     one registry and one marketplace store. With `nil`, the call
   ///     makes its own through ``makeSkillsSource(context:)``.
+  ///   - agentRegistry: The loaded agent registry the session already
+  ///     resolved its session agent from, so the `agents` tool and the
+  ///     session agent read one catalog. With `nil`, the agents
+  ///     composition makes and loads its own.
   /// - Returns: The composed surface.
   /// - Throws: Whatever the registry build, the session-tool
   ///   construction, the skills assembly, or the agents composition
   ///   throws. An MCP server that fails to connect does not throw: its
   ///   outcome is `.failed`.
   public static func sessionSurface(
-    context: CatalogContext, skills: SkillsSource? = nil
+    context: CatalogContext, skills: SkillsSource? = nil, agentRegistry: AgentRegistry? = nil
   ) async throws -> SessionSurface {
     let built = try await makeRegistry(context: context)
     let selection = makeSearchSelection(profile: context.profile)
@@ -424,7 +432,7 @@ public enum ToolCatalog {
       }
     let runCallJoins = RunCallJoinTable()
     let agents = try await AgentsComposition.compose(
-      context: context, skills: skillsSource,
+      context: context, skills: skillsSource, agentRegistry: agentRegistry,
       runTools: AgentsComposition.makeRunTools(
         registry: built.registry, selection: selection, embedder: embedder,
         mounted: mounted.tools),
@@ -802,31 +810,73 @@ public enum ToolCatalog {
   /// layer. It reads `SKILLS_DEFAULTS_DIR` from the environment of the
   /// settings folders.
   ///
+  /// This call has no session agent, thus the template values are those
+  /// of the configuration. A session with a session agent makes its source
+  /// through ``makeSkillsSource(context:marketplaces:sessionAgent:)``.
+  ///
   /// - Parameter context: The session whose working directory roots the
   ///   stack's project layer.
   /// - Returns: The skills source.
   public static func makeSkillsSource(context: CatalogContext) async -> SkillsSource {
+    makeSkillsSource(
+      context: context, marketplaces: await startSkillsMarketplaces(context: context),
+      sessionAgent: nil)
+  }
+
+  /// Makes and starts the marketplace store of the `tools.skills.marketplaces`
+  /// list of the session (see ``makeSkillsSource(context:)``).
+  ///
+  /// A session starts the store before it resolves its session agent,
+  /// because the agent registry reads the marketplace layers of the store.
+  ///
+  /// - Parameter context: The session whose configuration gives the list.
+  /// - Returns: The started store, or `nil` when the list is empty.
+  static func startSkillsMarketplaces(context: CatalogContext) async -> MarketplaceStore? {
     let options = context.configuration.tools.skills
-    let stack = context.settingsFolders.stack(
-      for: .skills, workingDirectory: context.workingDirectory)
-    let templateContext = skillsTemplateContext(
-      context.configuration.tools, mode: context.toolMode)
     guard !options.marketplaces.isEmpty else {
-      return SkillsSource(
-        registry: SkillsRegistry(
-          stack: stack, mode: context.toolMode, watch: true, templateContext: templateContext),
-        marketplaces: nil)
+      return nil
     }
     let store = MarketplaceStore(
       sources: options.marketplaces, layout: SkillMarketplaceLayout.skills,
       cacheDirectory: context.settingsFolders.home.skillsMarketplaceCacheDirectory,
       policy: MarketplacePolicy(), transport: LibGit2Transport(), environment: context.environment)
     await store.start()
+    return store
+  }
+
+  /// Builds the skills registry of the session over the dotfolder stack
+  /// and over `marketplaces` (see ``makeSkillsSource(context:)``).
+  ///
+  /// The registry fixes its template values when it is made. Thus the
+  /// session resolves its session agent first, and the values follow the
+  /// `tools:` and `disallowedTools:` keys of that agent
+  /// (``skillsTemplateContext(_:mode:sessionAgent:)``).
+  ///
+  /// - Parameters:
+  ///   - context: The session whose working directory roots the stack's
+  ///     project layer.
+  ///   - marketplaces: The started marketplace store
+  ///     (``startSkillsMarketplaces(context:)``), or `nil` for none.
+  ///   - sessionAgent: The session agent, or `nil` for the builtin floor.
+  /// - Returns: The skills source.
+  static func makeSkillsSource(
+    context: CatalogContext, marketplaces: MarketplaceStore?, sessionAgent: AgentDefinition?
+  ) -> SkillsSource {
+    let stack = context.settingsFolders.stack(
+      for: .skills, workingDirectory: context.workingDirectory)
+    let templateContext = skillsTemplateContext(
+      context.configuration.tools, mode: context.toolMode, sessionAgent: sessionAgent)
+    guard let marketplaces else {
+      return SkillsSource(
+        registry: SkillsRegistry(
+          stack: stack, mode: context.toolMode, watch: true, templateContext: templateContext),
+        marketplaces: nil)
+    }
     return SkillsSource(
       registry: SkillsRegistry(
-        marketplaces: store, stack: stack, mode: context.toolMode, watch: true,
+        marketplaces: marketplaces, stack: stack, mode: context.toolMode, watch: true,
         templateContext: templateContext),
-      marketplaces: store)
+      marketplaces: marketplaces)
   }
 
   /// The template values that each skill render of the session gets: for
@@ -841,12 +891,19 @@ public enum ToolCatalog {
   /// (``childProcessOptions(of:in:)``), thus their values are `false` in
   /// that mode, whatever the configuration tells.
   ///
+  /// The `tools:` and `disallowedTools:` keys of the session agent then
+  /// turn off each group that the agent removes from the root session
+  /// (``SessionToolSelection/templateGroups(_:of:mcpServerNames:)``), thus a
+  /// skill sees the tools that the model has. A key never turns a group on.
+  ///
   /// - Parameters:
   ///   - tools: The tool groups of the configuration.
   ///   - mode: The tool mode of the session (``CatalogContext/toolMode``).
+  ///   - sessionAgent: The session agent, or `nil` for the builtin floor,
+  ///     which keeps the values of the configuration.
   /// - Returns: The values, under the key `tools`.
   static func skillsTemplateContext(
-    _ tools: ToolsConfiguration, mode: ToolMode
+    _ tools: ToolsConfiguration, mode: ToolMode, sessionAgent: AgentDefinition? = nil
   ) -> [String: TemplateValue] {
     func isOn<Options>(_ section: ToolSection<Options>) -> Bool {
       if case .enabled = section { true } else { false }
@@ -854,13 +911,21 @@ public enum ToolCatalog {
     func isChildProcessGroupOn<Options>(_ section: ToolSection<Options>) -> Bool {
       mode == .open && isOn(section)
     }
-    let mcpIsOn = if case .enabled = tools.mcp { true } else { false }
-    let groups: [String: Bool] = [
-      "files": isOn(tools.files), "shell": isChildProcessGroupOn(tools.shell), "skills": true,
-      "agents": true, "codeContext": isChildProcessGroupOn(tools.codeContext),
+    let mcpServers: [MCPServerConfiguration]? =
+      if case .enabled(let servers) = tools.mcp { servers } else { nil }
+    let configured: [String: Bool] = [
+      filesGroupName: isOn(tools.files), "shell": isChildProcessGroupOn(tools.shell),
+      SkillOutputProtection.skillsToolName: true, agentsToolName: true,
+      "codeContext": isChildProcessGroupOn(tools.codeContext),
       "web": isOn(tools.web), "git": isOn(tools.git),
-      "environment": isOn(tools.environment), "kanban": isOn(tools.kanban), "mcp": mcpIsOn,
+      "environment": isOn(tools.environment), "kanban": isOn(tools.kanban),
+      mcpGroupName: mcpServers != nil,
     ]
+    let groups =
+      sessionAgent.map { definition in
+        SessionToolSelection.templateGroups(
+          configured, of: definition, mcpServerNames: mcpServers?.map(\.name) ?? [])
+      } ?? configured
     return [
       "tools": .dictionary(groups.mapValues { .dictionary(["enabled": .bool($0)]) })
     ]

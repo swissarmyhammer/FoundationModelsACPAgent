@@ -50,6 +50,49 @@ struct SessionToolSelection: Sendable, Equatable {
       + (kept.isEmpty ? [] : [Self.keptWarning(agent: definition.id, kept: kept)])
   }
 
+  /// The skills template groups of a root session with the keys of
+  /// `definition` applied (``ToolCatalog/skillsTemplateContext(_:mode:sessionAgent:)``).
+  ///
+  /// The selection reads each group name as a tool name, the match that
+  /// ``SessionSurface/applying(agent:)`` uses. Thus a group that the agent
+  /// removes is `false`, and the groups in ``ToolCatalog/alwaysOnToolNames``
+  /// and the `agents` group keep their values. The `mcp` group reads one
+  /// probe name `mcp__<server>__` for each configured server, or the probe
+  /// `mcp__` when the configuration names no server. It stays `true` when
+  /// the selection keeps one probe. A selection never turns a group on.
+  ///
+  /// - Parameters:
+  ///   - groups: The value of each group from the configuration and the
+  ///     tool mode, by its name.
+  ///   - definition: The session agent.
+  ///   - mcpServerNames: The names of the configured MCP servers.
+  /// - Returns: The value of each group, by its name.
+  static func templateGroups(
+    _ groups: [String: Bool], of definition: AgentDefinition, mcpServerNames: [String]
+  ) -> [String: Bool] {
+    let mcpProbes =
+      mcpServerNames.isEmpty
+      ? [RegistrySelection.mcpPrefix]
+      : mcpServerNames.map { server in
+        RegistrySelection.mcpPrefix + server + RegistrySelection.mcpSeparator
+      }
+    let toolNames = groups.keys.filter {
+      $0 != ToolCatalog.agentsToolName && $0 != ToolCatalog.mcpGroupName
+    }
+    let kept = SessionToolSelection(definition: definition, names: toolNames + mcpProbes).keptNames
+    return Dictionary(
+      uniqueKeysWithValues: groups.map { name, isOn in
+        switch name {
+        case ToolCatalog.agentsToolName:
+          (name, isOn)
+        case ToolCatalog.mcpGroupName:
+          (name, isOn && !kept.isDisjoint(with: mcpProbes))
+        default:
+          (name, isOn && kept.contains(name))
+        }
+      })
+  }
+
   /// The warning for the always-on tools that the agent tried to remove.
   ///
   /// - Parameters:
@@ -125,10 +168,10 @@ struct RegistrySelection: Sendable {
   }
 
   /// The start of the name of an MCP tool in the selection.
-  private static let mcpPrefix = "mcp__"
+  static let mcpPrefix = "mcp__"
 
   /// The text between the server and the tool in the name of an MCP tool.
-  private static let mcpSeparator = "__"
+  static let mcpSeparator = "__"
 }
 
 /// The staging of the root `runCode` of a session: it applies the selection
