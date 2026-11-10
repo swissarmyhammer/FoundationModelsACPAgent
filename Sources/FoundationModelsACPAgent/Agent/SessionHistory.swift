@@ -270,11 +270,34 @@ extension RoutedACPAgent {
     sessions[sessionId]?.retainedHistory.apply(update)
   }
 
+  /// Merges one update into the retained history of a session, and reads
+  /// where the update goes, in one step of the actor.
+  ///
+  /// A hot resume takes the session and copies the history for its replay
+  /// in one step of the actor too. So an update that this step records
+  /// before the take is in the replay, and it goes to the old owner. An
+  /// update that it records after the take is not in the replay, and it
+  /// goes to the new owner, through the hold of the resume. No update goes
+  /// to the new owner both in the replay and live.
+  ///
+  /// - Parameters:
+  ///   - update: The update that the agent sends.
+  ///   - sessionId: The session the update belongs to.
+  /// - Returns: The route of the update, or `nil` when the session has no
+  ///   owner.
+  func recordAndRoute(_ update: SessionUpdate, of sessionId: SessionId) -> SessionUpdateRoute? {
+    recordInHistory(update, of: sessionId)
+    return connections.route(forSession: sessionId)
+  }
+
   /// The sink of the updates of one session.
   /// It merges each update into the retained history of the session.
   /// Then it sends the update through the connection of the session.
-  /// It reads the connection from the table when the update goes out
-  /// (``ConnectionTable/path(forSession:)``).
+  /// It reads the route of the update when it records the update
+  /// (``recordAndRoute(_:of:)``): the owner of the session then, and the
+  /// hold of a hot resume, if one is there. The send reads the connection
+  /// of that owner from the table when the update goes out
+  /// (``ConnectionTable/path(of:)``).
   /// Each `session/update` that the agent sends for a session goes through one such sink.
   /// There are two exceptions.
   /// One is the replay of the history itself.
@@ -309,19 +332,20 @@ extension RoutedACPAgent {
   nonisolated func historySink(for sessionId: SessionId, gate: SessionAnnouncementGate? = nil)
     -> SessionUpdateSink
   {
-    let posting = unrecordedSink(for: sessionId, gate: gate)
-    return { [weak self] update in
+    { [weak self] update in
       guard let self else {
         return
       }
-      await recordInHistory(update, of: sessionId)
-      await posting(update)
+      let route = await recordAndRoute(update, of: sessionId)
+      await post(update, of: sessionId, through: gate) { route }
     }
   }
 
   /// The sink of a snapshot. It sends through the connection like ``historySink(for:gate:)``,
   /// with the same gate. It records nothing in the retained history. A snapshot of the current
-  /// state is no event of the session, so it must not replace the retained state.
+  /// state is no event of the session, so it must not replace the retained state. The replay
+  /// never holds such an update, so the sink reads its route when the send runs
+  /// (``ConnectionTable/route(forSession:)``).
   ///
   /// - Parameters:
   ///   - sessionId: The session the updates belong to.
@@ -332,7 +356,13 @@ extension RoutedACPAgent {
     -> SessionUpdateSink
   {
     { [weak self] update in
-      await self?.post(update, of: sessionId, through: gate)
+      guard let self else {
+        return
+      }
+      let connections = connections
+      await post(update, of: sessionId, through: gate) {
+        connections.route(forSession: sessionId)
+      }
     }
   }
 
@@ -343,17 +373,44 @@ extension RoutedACPAgent {
   ///   - update: The update.
   ///   - sessionId: The session the update belongs to.
   ///   - gate: The gate of the session, or `nil` for a session that the client knows already.
+  ///   - route: Gives the route of the update when the send runs.
   private nonisolated func post(
-    _ update: SessionUpdate, of sessionId: SessionId, through gate: SessionAnnouncementGate?
+    _ update: SessionUpdate, of sessionId: SessionId, through gate: SessionAnnouncementGate?,
+    along route: @escaping @Sendable () -> SessionUpdateRoute?
   ) async {
     let send: SessionAnnouncementGate.Send = { [weak self] in
-      await self?.connections.path(forSession: sessionId)?.connection.post(update, in: sessionId)
+      await self?.deliver(update, in: sessionId, along: route())
     }
     guard let gate else {
       await send()
       return
     }
     await gate.submit(send)
+  }
+
+  /// Sends one update to the owner of its route. A route with the hold of a hot resume gives the
+  /// send to the hold, which keeps it until the resume is done.
+  ///
+  /// - Parameters:
+  ///   - update: The update.
+  ///   - sessionId: The session the update belongs to.
+  ///   - route: The route of the update, or `nil` for a session with no owner. The update then
+  ///     goes to no client.
+  private nonisolated func deliver(
+    _ update: SessionUpdate, in sessionId: SessionId, along route: SessionUpdateRoute?
+  ) async {
+    guard let route else {
+      return
+    }
+    let connections = connections
+    let send: SessionResumeHold.Send = {
+      await connections.path(of: route.owner)?.connection.post(update, in: sessionId)
+    }
+    guard let hold = route.hold else {
+      await send()
+      return
+    }
+    await hold.submit(send)
   }
 
   /// Inserts the prompt of `params` as the user message of its session

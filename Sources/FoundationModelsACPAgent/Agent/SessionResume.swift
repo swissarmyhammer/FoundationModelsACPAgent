@@ -280,17 +280,21 @@ extension RoutedACPAgent {
   }
 
   /// Takes a session for the connection of a resume (D120 c): the
-  /// connection becomes the owner (``ConnectionTable/take(_:by:)``). A
+  /// connection becomes the owner (``ConnectionTable/take(_:by:holding:)``). A
   /// `userDevice` connection takes each session; an `external` connection
   /// takes only a session with no owner, or one that it owns.
   ///
   /// - Parameters:
   ///   - sessionId: The session to take.
   ///   - caller: The connection of the resume.
+  ///   - hold: The hold of the live updates of the tree, or `nil` for none
+  ///     (``ConnectionTable/take(_:by:holding:)``).
   /// - Throws: ``RequestError/sessionHasOwner(id:)`` when the rule refuses
   ///   the take.
-  func takeSession(_ sessionId: SessionId, for caller: ConnectionId) throws {
-    guard connections.take(sessionId, by: caller) else {
+  func takeSession(
+    _ sessionId: SessionId, for caller: ConnectionId, holding hold: SessionResumeHold? = nil
+  ) throws {
+    guard connections.take(sessionId, by: caller, holding: hold) else {
       warnRefusedResume(
         "An external connection tried to take a session that has an owner. The agent refuses the resume.",
         sessionId: sessionId)
@@ -536,11 +540,26 @@ extension RoutedACPAgent {
     guard let cursor else {
       return
     }
+    try await replay(replayedTree(of: sessionId, history: history), from: cursor, sessionId: sessionId)
+  }
+
+  /// Replays a session tree that the caller copied already: first the announcements, then the
+  /// history of each session (``replayHistory(_:from:sessionId:)``). A hot resume copies the tree
+  /// in the step of its take, so the replay holds each update that the agent recorded before the
+  /// take, and no later update.
+  ///
+  /// - Parameters:
+  ///   - tree: The copy of the session tree.
+  ///   - cursor: Where the replay begins.
+  ///   - sessionId: The resumed session.
+  /// - Throws: An internal error when the session has no connection with an outbound path.
+  func replay(_ tree: ReplayedSession, from cursor: ReplayCursor, sessionId: SessionId)
+    async throws
+  {
     guard let connection = connections.path(forSession: sessionId)?.connection else {
       throw RequestError.internalError(
         detail: "the agent has no connection to notify through")
     }
-    let tree = replayedTree(of: sessionId, history: history)
     for announcement in tree.announcements {
       await connection.post(announcement.update, in: announcement.sessionId)
     }
@@ -568,22 +587,56 @@ extension RoutedACPAgent {
   /// without a replay the sync sends the current update of each listed item first
   /// (``syncListedWork(of:in:)``).
   ///
+  /// A hot resume holds the live updates of the tree until after the response
+  /// (``SessionResumeHold``). Its sync must go out before the response, so it gives the
+  /// connection of the resume: each update of the sync goes to that connection at once, and the
+  /// current state is the snapshot of the ledger (``SessionStateLedger/currentSnapshot()``). A
+  /// live change of the ledger waits in the hold, and goes out after the response.
+  ///
   /// - Parameters:
   ///   - sessionId: The resumed session.
   ///   - replayed: Whether the resume replayed the history.
-  func syncCurrentState(of sessionId: SessionId, replayed: Bool = false) async {
+  ///   - connection: The connection that each update of the sync goes to at once, or `nil` for
+  ///     the sinks of the session.
+  func syncCurrentState(
+    of sessionId: SessionId, replayed: Bool = false, through connection: AgentSideConnection? = nil
+  ) async {
     guard let entry = sessions[sessionId] else {
       return
     }
+    let send = syncSink(of: sessionId, in: entry, through: connection)
     if !replayed {
-      await syncListedWork(of: sessionId, in: entry)
+      await syncListedWork(in: entry, to: send)
     }
-    await entry.stateLedger.announceCurrentState()
+    if connection == nil {
+      await entry.stateLedger.announceCurrentState()
+    } else {
+      await send(.stateUpdate(await entry.stateLedger.currentSnapshot()))
+    }
     let info = entry.history.sessionInfoSyncUpdate(recordedTitle: entry.session.facts.title)
     guard info != SessionInfoUpdate() else {
       return
     }
-    await unrecordedSink(for: sessionId, gate: entry.announcement)(.sessionInfoUpdate(info))
+    await send(.sessionInfoUpdate(info))
+  }
+
+  /// The sink of the updates of a current-state sync (``syncCurrentState(of:replayed:through:)``).
+  ///
+  /// - Parameters:
+  ///   - sessionId: The resumed session.
+  ///   - entry: The entry of the session.
+  ///   - connection: The connection that each update goes to at once, or `nil` for the snapshot
+  ///     sink of the session (``unrecordedSink(for:gate:)``).
+  /// - Returns: The sink.
+  private func syncSink(
+    of sessionId: SessionId, in entry: ActiveSession, through connection: AgentSideConnection?
+  ) -> SessionUpdateSink {
+    guard let connection else {
+      return unrecordedSink(for: sessionId, gate: entry.announcement)
+    }
+    return { update in
+      await connection.post(update, in: sessionId)
+    }
   }
 
   /// Sends the current update of each piece of work that the session lists. The history holds
@@ -591,10 +644,9 @@ extension RoutedACPAgent {
   /// copy as it is.
   ///
   /// - Parameters:
-  ///   - sessionId: The resumed session.
   ///   - entry: The entry of the session.
-  private func syncListedWork(of sessionId: SessionId, in entry: ActiveSession) async {
-    let send = unrecordedSink(for: sessionId, gate: entry.announcement)
+  ///   - send: The sink of the updates.
+  private func syncListedWork(in entry: ActiveSession, to send: SessionUpdateSink) async {
     let history = entry.history
     for work in await entry.stateLedger.backgroundList {
       if let update = history.currentUpdate(of: work) {

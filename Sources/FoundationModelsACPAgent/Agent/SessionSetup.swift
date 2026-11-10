@@ -784,7 +784,7 @@ extension RoutedACPAgent {
   /// It sends the status report of the MCP servers.
   ///
   /// The caller sets the owner of the session before the mount
-  /// (``ConnectionTable/recordStart(of:by:)`` or ``ConnectionTable/take(_:by:)``).
+  /// (``ConnectionTable/recordStart(of:by:)`` or ``ConnectionTable/take(_:by:holding:)``).
   /// So each update of the mount goes to the owner.
   ///
   /// - Parameters:

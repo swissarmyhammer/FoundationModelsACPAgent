@@ -173,6 +173,11 @@ final class ConnectionTable: Sendable {
     /// The visibility rule of an `external` viewer reads it (ACPA-13).
     /// A take does not change it.
     var starters: [SessionId: ConnectionId] = [:]
+
+    /// The hold of a hot resume, keyed by the session of the owner record
+    /// that the take changed (``SessionResumeHold``). A later take of the
+    /// session, and the close of its owner, end it.
+    var holds: [SessionId: SessionResumeHold] = [:]
   }
 
   /// The table, under its lock.
@@ -218,9 +223,14 @@ final class ConnectionTable: Sendable {
   ///
   /// - Parameter id: The id of the connection.
   func remove(_ id: ConnectionId) {
-    state.withLock { state in
+    let ended = state.withLock { state -> [SessionResumeHold] in
       state.rows.removeValue(forKey: id)
+      let freed = state.owners.filter { $0.value == id }.keys
       state.owners = state.owners.filter { $0.value != id }
+      return freed.compactMap { state.holds.removeValue(forKey: $0) }
+    }
+    for hold in ended {
+      hold.discard()
     }
   }
 
@@ -301,20 +311,46 @@ final class ConnectionTable: Sendable {
   /// another connection owns; a `userDevice` connection can. The check and
   /// the change are one locked step, so two takes cannot both win.
   ///
+  /// A take can hold the live updates of the session and of the sessions
+  /// nested in it (``SessionResumeHold``). The take ends the hold of an
+  /// earlier take, because the new owner gets its own replay.
+  ///
   /// - Parameters:
   ///   - sessionId: The session to take.
   ///   - id: The id of the connection that takes it.
-  /// - Returns: `false` when the rule refuses the take; the owner then does
-  ///   not change.
-  func take(_ sessionId: SessionId, by id: ConnectionId) -> Bool {
-    state.withLock { state in
+  ///   - hold: The hold of the live updates of the tree, or `nil` for none.
+  /// - Returns: `false` when the rule refuses the take; the owner and the
+  ///   hold then do not change.
+  func take(_ sessionId: SessionId, by id: ConnectionId, holding hold: SessionResumeHold? = nil)
+    -> Bool
+  {
+    let outcome = state.withLock { state -> (taken: Bool, ended: SessionResumeHold?) in
       let owner = state.owners[sessionId]
       let trust = state.rows[id]?.trust ?? .external
       guard owner == nil || owner == id || trust == .userDevice else {
-        return false
+        return (false, nil)
       }
       state.owners[sessionId] = id
-      return true
+      let ended = state.holds.removeValue(forKey: sessionId)
+      state.holds[sessionId] = hold
+      return (true, ended)
+    }
+    outcome.ended?.discard()
+    return outcome.taken
+  }
+
+  /// Ends the record of a hold that its resume released. A hold that a
+  /// later take replaced is not in the table, so nothing changes then.
+  ///
+  /// - Parameters:
+  ///   - hold: The released hold.
+  ///   - sessionId: The session that the take of the hold changed.
+  func removeHold(_ hold: SessionResumeHold, of sessionId: SessionId) {
+    state.withLock { state in
+      guard state.holds[sessionId] === hold else {
+        return
+      }
+      state.holds.removeValue(forKey: sessionId)
     }
   }
 
@@ -364,7 +400,7 @@ final class ConnectionTable: Sendable {
   /// started. One locked read gives all of them, so the sets agree.
   ///
   /// A connection with no row (it closed) reads as `external`, as
-  /// ``take(_:by:)`` reads it.
+  /// ``take(_:by:holding:)`` reads it.
   ///
   /// - Parameter id: The id of the connection of the call.
   /// - Returns: The viewer.
@@ -401,6 +437,24 @@ final class ConnectionTable: Sendable {
     let lineage = lineage(of: sessionId)
     return state.withLock { state in
       Self.owner(in: state, along: lineage).flatMap { Self.path(of: $0, in: state) }
+    }
+  }
+
+  /// Where the live updates of a session go: its owner, and the hold of a
+  /// hot resume of the owner record that gives the owner. The owner and
+  /// the hold come from one locked read, so they agree.
+  ///
+  /// - Parameter sessionId: The session.
+  /// - Returns: The route, or `nil` when the session has no owner.
+  func route(forSession sessionId: SessionId) -> SessionUpdateRoute? {
+    let lineage = lineage(of: sessionId)
+    return state.withLock { state in
+      guard let record = lineage.first(where: { state.owners[$0] != nil }),
+        let owner = state.owners[record]
+      else {
+        return nil
+      }
+      return SessionUpdateRoute(owner: owner, hold: state.holds[record])
     }
   }
 

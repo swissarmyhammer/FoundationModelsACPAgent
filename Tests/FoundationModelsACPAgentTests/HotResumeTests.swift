@@ -46,6 +46,31 @@ import Testing
   /// The number of requests that one question makes at the client.
   private static let requestsOfOneQuestion = 1
 
+  /// The text of the first live update that the child sends while the resume waits.
+  private static let windowFirstText = "HOT-RESUME-WINDOW-FIRST"
+
+  /// The text of the second live update that the child sends while the resume waits.
+  private static let windowSecondText = "HOT-RESUME-WINDOW-SECOND"
+
+  /// The text that marks the first frame of the replay: the announcement of the child.
+  private static let announcementMarker = "subagent_update"
+
+  /// The most polls of the wait until the agent recorded a live update of the window.
+  private static let recordPollLimit = 1000
+
+  /// The time between two polls of the wait until the agent recorded a live update.
+  private static let recordPollInterval = Duration.milliseconds(10)
+
+  /// The number of times that each live update of the window reaches the new connection.
+  private static let deliveriesOfOneUpdate = 1
+
+  /// The text of an update of the root that the agent records before the take, and sends after
+  /// it.
+  private static let recordedBeforeTheTakeText = "HOT-RESUME-RECORDED-BEFORE-THE-TAKE"
+
+  /// The number of sends that wait in the gate of the test before the take.
+  private static let sendsBeforeTheTake = 1
+
   /// The live tree of one test: a root with an open prompt and a running child.
   private struct LiveTree {
     /// The first agent and its first connection.
@@ -71,28 +96,63 @@ import Testing
     }
   }
 
+  /// A live tree whose child sends two live updates when the test releases a second hold: the
+  /// window between the take of a resume and the end of its replay.
+  private struct WindowTree {
+    /// The live tree. Its hold keeps the child running after the two updates.
+    let tree: LiveTree
+
+    /// The hold that keeps back the two live updates of the child.
+    let window: ScriptedHold
+  }
+
   // MARK: - Fixtures
+
+  /// Makes the fixture of a root whose prompt starts the child, with the given steps of the
+  /// child.
+  ///
+  /// - Parameter childSteps: The steps that the child plays.
+  /// - Returns: The fixture.
+  /// - Throws: Whatever the fixture throws.
+  private static func makeTreeFixture(
+    childSteps: [ScriptedPassStep]
+  ) async throws -> ScriptedPromptFixture {
+    let cwd = makeResolvedDirectory(label: "\(label)-repo")
+    try AgentsToolTests.writeAgent(named: childAgent, in: cwd)
+    let script: [ScriptedPassStep] = [
+      .onPrompt(containing: childMarker, play: childSteps),
+      .onPrompt(
+        containing: rootMarker,
+        play: [AgentsToolTests.startAgentCall(agent: childAgent, prompt: childMarker), .endPass]),
+      .endPass,
+    ]
+    return try await ScriptedPromptFixture.make(script: script, label: label, workingDirectory: cwd)
+  }
 
   /// Starts a root with an open prompt and a child that runs and waits on a hold.
   ///
   /// - Returns: The live tree.
   /// - Throws: Whatever the fixture or a wait throws.
   private static func startLiveTree() async throws -> LiveTree {
-    let cwd = makeResolvedDirectory(label: "\(label)-repo")
-    try AgentsToolTests.writeAgent(named: childAgent, in: cwd)
     let hold = ScriptedHold()
-    let script: [ScriptedPassStep] = [
-      .onPrompt(
-        containing: childMarker,
-        play: [.textDelta(childText), .holdUntilReleased(hold), .endPass]),
-      .onPrompt(
-        containing: rootMarker,
-        play: [AgentsToolTests.startAgentCall(agent: childAgent, prompt: childMarker), .endPass]),
-      .endPass,
-    ]
-    let fixture = try await ScriptedPromptFixture.make(
-      script: script, label: label, workingDirectory: cwd)
+    let fixture = try await makeTreeFixture(
+      childSteps: [.textDelta(childText), .holdUntilReleased(hold), .endPass])
     return try await openPrompt(of: fixture, hold: hold)
+  }
+
+  /// Starts a root with an open prompt and a child that waits on the window hold, then sends two
+  /// live updates, and then waits on the hold of the tree.
+  ///
+  /// - Returns: The tree and its window hold.
+  /// - Throws: Whatever the fixture or a wait throws.
+  private static func startWindowTree() async throws -> WindowTree {
+    let window = ScriptedHold()
+    let hold = ScriptedHold()
+    let fixture = try await makeTreeFixture(childSteps: [
+      .textDelta(childText), .holdUntilReleased(window), .textDelta(windowFirstText),
+      .textDelta(windowSecondText), .holdUntilReleased(hold), .endPass,
+    ])
+    return WindowTree(tree: try await openPrompt(of: fixture, hold: hold), window: window)
   }
 
   /// Starts a root with an open prompt and a child that asks one question.
@@ -100,19 +160,8 @@ import Testing
   /// - Returns: The live tree. Its hold is not used.
   /// - Throws: Whatever the fixture or a wait throws.
   private static func startAskingTree() async throws -> LiveTree {
-    let cwd = makeResolvedDirectory(label: "\(label)-repo")
-    try AgentsToolTests.writeAgent(named: childAgent, in: cwd)
-    let script: [ScriptedPassStep] = [
-      .onPrompt(
-        containing: childMarker,
-        play: [.elicit(message: question), .textDelta(childTextAfter), .endPass]),
-      .onPrompt(
-        containing: rootMarker,
-        play: [AgentsToolTests.startAgentCall(agent: childAgent, prompt: childMarker), .endPass]),
-      .endPass,
-    ]
-    let fixture = try await ScriptedPromptFixture.make(
-      script: script, label: label, workingDirectory: cwd)
+    let fixture = try await makeTreeFixture(
+      childSteps: [.elicit(message: question), .textDelta(childTextAfter), .endPass])
     let tree = try await openPrompt(of: fixture, hold: ScriptedHold())
     let recorder = try #require(fixture.harness.elicitations)
     _ = try await recorder.waitForCreates(count: requestsOfOneQuestion)
@@ -143,11 +192,16 @@ import Testing
 
   /// Opens a second connection to the agent of the tree, and completes its `initialize`.
   ///
-  /// - Parameter tree: The live tree.
+  /// - Parameters:
+  ///   - tree: The live tree.
+  ///   - wire: The wire of the second connection.
   /// - Returns: The harness of the second connection.
   /// - Throws: Whatever the handshake throws.
-  private static func openSecondConnection(to tree: LiveTree) async throws -> AgentClientHarness {
-    let second = await AgentClientHarness.makeRecording(agent: tree.fixture.harness.agent)
+  private static func openSecondConnection(
+    to tree: LiveTree, over wire: HarnessWire = .makeInMemory()
+  ) async throws -> AgentClientHarness {
+    let second = await AgentClientHarness.makeRecording(
+      agent: tree.fixture.harness.agent, wire: wire)
     _ = try await second.client.initialize(
       AgentClientHarness.makeInitializeRequest(capabilities: ACPClient.advertisedCapabilities))
     return second
@@ -183,6 +237,91 @@ import Testing
     let trace = await reader.value
     timeout.cancel()
     return trace
+  }
+
+  /// Resumes the root on a second connection, and lets the child send its two live updates after
+  /// the take and before the replay is out. The first frame of the replay waits in the transport
+  /// of the second connection. While it waits, the test releases the window hold of the child, and
+  /// waits until the agent recorded the second update. The projector of the child sends one update
+  /// at a time, so the send of the first update is done then. Then the frame goes. No clock
+  /// decides the order. The read of the wire ends at the `state_update` of the child after the
+  /// response.
+  ///
+  /// - Parameter windowTree: The tree and its window hold.
+  /// - Returns: The trace in wire order, and the harness of the second connection.
+  /// - Throws: Whatever the request or a wait throws.
+  private static func resumeTraceAcrossTheWindow(
+    of windowTree: WindowTree
+  ) async throws -> (trace: [WireTraceEvent], second: AgentClientHarness) {
+    let tree = windowTree.tree
+    let wire = HarnessWire.makeInMemory()
+    let holder = FrameHoldingTransport(
+      wrapping: wire.agentEnd, holdingFirstFrameContaining: announcementMarker)
+    let second = try await openSecondConnection(to: tree, over: wire.replacingAgentEnd(with: holder))
+    let child = tree.childId
+    let agent = tree.fixture.harness.agent
+    let trace = try await second.connection.subscribeToAllSessions().readResumeTrace(
+      startingWith: [WireTraceEvent.resumeRequest(id: .number(1), sessionId: tree.rootId)],
+      settledBy: { event in
+        if case .update(let stream, let update) = event {
+          return stream == child && update.isStateUpdate
+        }
+        return false
+      },
+      timeout: .seconds(syncWaitSeconds)
+    ) {
+      defer { holder.release() }
+      let resume = Task { try await second.connection.resumeSession(tree.replayRequest) }
+      await holder.waitUntilHolding()
+      windowTree.window.release()
+      try await waitUntilRecorded(windowSecondText, of: child, in: agent)
+      holder.release()
+      _ = try await resume.value
+    }
+    return (trace, second)
+  }
+
+  /// Waits until the retained history of a session holds a text.
+  ///
+  /// - Parameters:
+  ///   - text: The text.
+  ///   - sessionId: The session.
+  ///   - agent: The agent of the session.
+  /// - Throws: An issue when the history does not hold the text at the end of the wait.
+  private static func waitUntilRecorded(
+    _ text: String, of sessionId: SessionId, in agent: RoutedACPAgent
+  ) async throws {
+    try await pollUntil(limit: recordPollLimit, interval: recordPollInterval) {
+      await recordedText(of: sessionId, in: agent).contains(text)
+    }
+    try #require(await recordedText(of: sessionId, in: agent).contains(text))
+  }
+
+  /// The agent text in the retained history of a session.
+  ///
+  /// - Parameters:
+  ///   - sessionId: The session.
+  ///   - agent: The agent of the session.
+  /// - Returns: The text of the agent messages, joined.
+  private static func recordedText(of sessionId: SessionId, in agent: RoutedACPAgent) async
+    -> String
+  {
+    let history = await agent.sessions[sessionId]?.history
+    return ReplayedMessage.replayed(in: history?.replayUpdates(from: .start) ?? []).map(\.text)
+      .joined()
+  }
+
+  /// The positions in a trace of the text chunks on the stream of a session that hold a text.
+  ///
+  /// - Parameters:
+  ///   - text: The text.
+  ///   - session: The session.
+  ///   - trace: The trace.
+  /// - Returns: The positions, in wire order.
+  private static func positions(
+    of text: String, on session: SessionId, in trace: [WireTraceEvent]
+  ) -> [Int] {
+    trace.indices.filter { trace[$0].isAgentText(containing: text, on: session) }
   }
 
   /// Releases the child, and waits until the open prompt of the root ends.
@@ -284,6 +423,109 @@ import Testing
     #expect(SubagentWireTraceValidator().validate(trace) == [])
     _ = try await Self.finish(tree, observedBy: try #require(second.collector))
     await tree.fixture.close()
+  }
+
+  // MARK: - The window between the take and the replay
+
+  /// A live update that the child sends after the take, while the replay is not out, reaches the
+  /// new connection only after the announcement of the child.
+  @Test func aLiveUpdateOfTheChildDuringTheReplayComesAfterItsAnnouncement() async throws {
+    let windowTree = try await Self.startWindowTree()
+    let child = windowTree.tree.childId
+
+    let (trace, second) = try await Self.resumeTraceAcrossTheWindow(of: windowTree)
+
+    let announcedAt = try #require(trace.firstIndex { $0.isAnnouncement(of: child) })
+    let liveAt = try #require(Self.positions(of: Self.windowFirstText, on: child, in: trace).first)
+    #expect(announcedAt < liveAt)
+    _ = try await Self.finish(windowTree.tree, observedBy: try #require(second.collector))
+    await windowTree.tree.fixture.close()
+  }
+
+  /// Each live update that the child sends between the take and the end of the replay reaches
+  /// the new connection one time, after the response, in the order of the child. The replay does
+  /// not hold these updates, so they go with the live traffic.
+  @Test func eachLiveUpdateOfTheWindowComesOnceAfterTheResponseInOrder() async throws {
+    let windowTree = try await Self.startWindowTree()
+    let child = windowTree.tree.childId
+
+    let (trace, second) = try await Self.resumeTraceAcrossTheWindow(of: windowTree)
+
+    let response = try #require(trace.firstIndex { $0.isResumeResponse })
+    let first = Self.positions(of: Self.windowFirstText, on: child, in: trace)
+    let next = Self.positions(of: Self.windowSecondText, on: child, in: trace)
+    let order = [response] + first + next
+    #expect(
+      first.count == Self.deliveriesOfOneUpdate && next.count == Self.deliveriesOfOneUpdate
+        && order == order.sorted())
+    _ = try await Self.finish(windowTree.tree, observedBy: try #require(second.collector))
+    await windowTree.tree.fixture.close()
+  }
+
+  /// The wire of a hot resume with live updates in the window follows the rules of the sub-agent
+  /// trace validator.
+  @Test func theWireOfAHotResumeAcrossTheWindowFollowsTheRulesOfTheValidator() async throws {
+    let windowTree = try await Self.startWindowTree()
+
+    let (trace, second) = try await Self.resumeTraceAcrossTheWindow(of: windowTree)
+
+    #expect(SubagentWireTraceValidator().validate(trace) == [])
+    _ = try await Self.finish(windowTree.tree, observedBy: try #require(second.collector))
+    await windowTree.tree.fixture.close()
+  }
+
+  /// An update that the agent records before the take, and that goes out after the take, goes
+  /// to the old connection. The replay of the new connection holds it already, so the new
+  /// connection does not get it live a second time. A closed gate of the test keeps the send
+  /// from the record until after the take.
+  @Test func anUpdateRecordedBeforeTheTakeGoesToTheOldConnection() async throws {
+    let tree = try await Self.startLiveTree()
+    let agent = tree.fixture.harness.agent
+    let gate = SessionAnnouncementGate(isOpen: false)
+    let sink = agent.historySink(for: tree.rootId, gate: gate)
+    let chunk = ContentChunk(
+      content: .text(TextContent(text: Self.recordedBeforeTheTakeText)),
+      messageId: ACPEventTranslator.makeMessageId())
+    let recorded = Task { await sink(.agentMessageChunk(chunk)) }
+    try await pollUntil(limit: Self.recordPollLimit, interval: Self.recordPollInterval) {
+      gate.pendingCount == Self.sendsBeforeTheTake
+    }
+    let second = try await Self.openSecondConnection(to: tree)
+    _ = try await Self.resumeTrace(of: tree, on: second)
+
+    await gate.open()
+    await recorded.value
+    let updates = try await Self.waitForText(
+      Self.recordedBeforeTheTakeText, on: tree.rootId, in: tree.fixture.collector)
+
+    #expect(!updates.isEmpty)
+    _ = try await Self.finish(tree, observedBy: try #require(second.collector))
+    await tree.fixture.close()
+  }
+
+  /// Waits until a collector holds a text chunk of a session. The wait ends after
+  /// ``syncWaitSeconds``, and then it throws.
+  ///
+  /// - Parameters:
+  ///   - text: The text.
+  ///   - sessionId: The session.
+  ///   - collector: The collector of a connection.
+  /// - Returns: The notifications of the collector at the end of the wait.
+  /// - Throws: ``ConditionWaitCancelled`` when the text does not come in time.
+  private static func waitForText(
+    _ text: String, on sessionId: SessionId, in collector: UpdateCollector
+  ) async throws -> [UpdateSessionNotification] {
+    let delivered = Task {
+      try await collector.wait(for: "the text \(text)") { updates in
+        updates.contains { $0.sessionId == sessionId && $0.update.agentMessageText.contains(text) }
+      }
+    }
+    let limit = Task {
+      try? await Task.sleep(for: .seconds(syncWaitSeconds))
+      delivered.cancel()
+    }
+    defer { limit.cancel() }
+    return try await delivered.value
   }
 
   // MARK: - The owner

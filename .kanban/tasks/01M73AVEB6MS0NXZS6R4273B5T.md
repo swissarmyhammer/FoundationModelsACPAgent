@@ -15,8 +15,43 @@ comments:
   id: 01m73axfm3a6y9tvejxb0bmc1f
   text: The ACPClient task that prints the full wire trace on a validator failure, and the last frames of each connection on a hang, is 01M73AX861R80NS7CQV9T52T9Y (FoundationModelsACPClient board). foundationmodelsacpclient-76 runs the suite several times when this card sends its fix.
   timestamp: 2026-11-10T18:18:23.235410+00:00
-position_column: todo
-position_ordinal: 8d80
+- actor: claude-code
+  id: 01m73bx1qbhey1rn77spw09f7m
+  text: |-
+    Cause confirmed (2026-11-10), deterministic test, no clock decides the order.
+    - Test: `HotResumeTests.aLiveUpdateOfTheChildDuringTheReplayComesAfterItsAnnouncement`. The second connection runs over `FrameHoldingTransport` (test Support). It keeps the first frame with `subagent_update` (the first replay announcement). So the resume waits after the take, before the replay is out. The test then releases a window hold of the child script. The child sends two text chunks. The test waits until the agent recorded the second chunk (the projector sends one update at a time, so the first send is done). Then the frame goes.
+    - Result before the fix: both live chunks of the child reach the new connection before the announcement of the child. Wire order: initialize response, chunk FIRST (child), chunk SECOND (child), then the held announcement. `announcedAt < liveAt` fails.
+    - Why: the sink reads the path of the session when the send runs (`ConnectionTable.path(forSession:)`). After `takeSession`, that path is the new connection. The gate of the child is open from the old connection. Nothing holds the live send until the replay is out.
+    - Second gap found in the code: the replay tree is a copy of the history that `replayHistory` takes after the awaits of the withdrawal. An update recorded before that copy, whose send runs after the take, goes to the new connection live AND in the replay (sent two times). The sink must bind the route of a recorded update when it records the update.
+    - Also: the live `state_update` of the root and of the children must not go out before the response (rule `noHistoricalStateAsCurrent`), and the ledger of the root sends its current state in the same order as its live changes. So a hold that blocks its caller would block the current state of the root before the response (deadlock). The hold must keep the sends in one FIFO for the whole tree and return to the caller at once.
+  timestamp: 2026-11-10T18:35:37.579634+00:00
+- actor: claude-code
+  id: 01m73cksw0nbbdx1td69p1qbp2
+  text: |-
+    Implementation landed (2026-11-10).
+    - New `SessionResumeHold` (Agent/SessionResumeHold.swift): one FIFO for the live sends of the whole tree. A submit while it holds returns at once (a blocking hold would block the root ledger and so the current state before the response). `release()` sends the kept sends in order, then opens in one locked step. `discard()` drops them.
+    - `ConnectionTable`: `take(_:by:holding:)` keeps the hold with the owner record of the root. A later take, or `remove` of the owner, discards it. New `route(forSession:)` gives owner + hold in one locked read. New `removeHold(_:of:)`.
+    - `historySink` now records and reads the route in one actor step (`recordAndRoute`). The resume takes the session and copies the replay tree in one actor step too. So an update recorded before the take is in the replay and goes to the OLD owner; an update recorded after the take goes into the hold. No update goes to the new connection both in the replay and live. `unrecordedSink` reads the route when the send runs.
+    - `resumeLiveSession`: take with a hold, copy the tree, withdraw, replay (`replay(_:from:sessionId:)`), current state direct to the connection (`syncCurrentState(...through:)`, so it is not held), response. After the response: `syncChildren` (direct snapshots), then the release of the hold, then the re-ask of the questions. `onDiscard` of the deferred work discards the hold.
+    - ARCHITECTURE.md: the hot resume bullet names `SessionResumeHold`.
+    - Tests: HotResumeTests (4 new: order after the announcement, each window update once after the response in order, validator clean across the window, an update recorded before the take goes to the old connection). The 4 fail on the old Sources (checked with a stash) and pass now. SessionResumeHoldTests (8 unit tests of the hold and of the table routes).
+    - The two hangs: NOT the hot resume. Both tests do a COLD resume in a new process. Probable cause (about 70 percent, not reproduced): the restored scripted run gets the "process stopped" continue prompt, the new stub backend selects passes only from the current prompt, so the grandchild echoes and goes idle at once, and the ACPClient wait for the short `running` state has no fail condition. The "session/update send failed" warnings are sends to the closed old connection, which throw at once and do not block. Not small, and partly in the client test. Separate card: ^bywxxvm.
+    - Gap found: a NEW question of a child in the window goes to the new connection before the replay (requests do not use the hold). Separate card: ^w3nmwmw.
+  timestamp: 2026-11-10T18:48:03.200117+00:00
+- actor: claude-code
+  id: 01m73ckxyqgsemzs2hnebjcstv
+  text: |-
+    ### implement — changed
+    - evidence: `swift test` exit 0, 1910 tests in 211 suites passed (1 known issue: the existing withKnownIssue in HarnessSmokeTests), zero compiler warnings (only the SwiftPM "missing creator for mutated node" mlx bundle message of the build system). Files: Sources/FoundationModelsACPAgent/Agent/SessionResumeHold.swift (new), ConnectionTable.swift, SessionHistory.swift, SessionResume.swift, SessionResumeHot.swift, SessionSetup.swift (doc link), Telemetry/RequestTracing.swift, ARCHITECTURE.md, Tests/FoundationModelsACPAgentTestSupport/HarnessWire.swift, Tests/FoundationModelsACPAgentTests/HotResumeTests.swift, SessionResumeHoldTests.swift (new), Support/FrameHoldingTransport.swift (new).
+    - open: acceptance item "ACPClient `aHotResumeKeepsTheRunningChildRunning` passes repeatedly" needs foundationmodelsacpclient-76 to confirm. Hangs moved to ^bywxxvm; question gap to ^w3nmwmw.
+    - next: /review
+  timestamp: 2026-11-10T18:48:07.383960+00:00
+- actor: claude-code
+  id: 01m73cm6nk5j53pwgge2wj4ewm
+  text: 'Note for review: the card says "Keep the history sink unchanged." The record part of `historySink` is unchanged: each update still merges into the retained history before its send, and the gate path is the same. The send part changed: the sink now reads the route in the same actor step as the record (`recordAndRoute`), not when the send runs. Without this, an update recorded before the take and sent after it reaches the new connection two times (replay and live), and the acceptance item "not sent twice" fails; the test `anUpdateRecordedBeforeTheTakeGoesToTheOldConnection` shows it. If the card meant "no change at all to historySink", a person must decide.'
+  timestamp: 2026-11-10T18:48:16.307476+00:00
+position_column: doing
+position_ordinal: '80'
 title: 'Hot resume: a live child update can reach the new connection before the replay announces the child'
 ---
 ## What

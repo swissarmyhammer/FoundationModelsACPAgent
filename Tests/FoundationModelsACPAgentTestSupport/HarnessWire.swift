@@ -116,6 +116,15 @@ public struct HarnessWire: Sendable {
     }
   }
 
+  /// This wire with another agent end, for example a transport that wraps the agent end of this
+  /// wire. The release stays the same, so ``close()`` still ends both ends of this wire.
+  ///
+  /// - Parameter agentEnd: The end that the agent serves now.
+  /// - Returns: The wire with the new agent end.
+  public func replacingAgentEnd(with agentEnd: any ACPTransport) -> HarnessWire {
+    HarnessWire(clientEnd: clientEnd, agentEnd: agentEnd, release: release)
+  }
+
   /// Wires the two ends and the release both of them need.
   ///
   /// - Parameters:

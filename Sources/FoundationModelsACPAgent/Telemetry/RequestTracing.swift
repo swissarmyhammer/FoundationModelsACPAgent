@@ -282,14 +282,24 @@ extension AgentSideConnection {
   /// it. This method keeps that context, thus a span that the work opens,
   /// such as a Router submission span, is a child of the request span.
   ///
-  /// - Parameter work: The deferred work.
-  func afterRespondingInCurrentInstrumentationContext(_ work: @escaping @Sendable () async -> Void)
-  {
+  /// The connection calls `onDiscard` one time when `work` will never run,
+  /// for example when the connection closed before it wrote the response
+  /// (`afterRespondingToCurrentRequest(_:onDiscard:)`).
+  ///
+  /// - Parameters:
+  ///   - work: The deferred work.
+  ///   - onDiscard: Called one time when `work` will never run.
+  func afterRespondingInCurrentInstrumentationContext(
+    _ work: @escaping @Sendable () async -> Void,
+    onDiscard: @escaping @Sendable () -> Void = {}
+  ) {
     let instrumentationContext = InstrumentationContext.current
-    afterRespondingToCurrentRequest {
-      await InstrumentationContext.withValue(instrumentationContext) {
-        await work()
-      }
-    }
+    afterRespondingToCurrentRequest(
+      {
+        await InstrumentationContext.withValue(instrumentationContext) {
+          await work()
+        }
+      },
+      onDiscard: onDiscard)
   }
 }

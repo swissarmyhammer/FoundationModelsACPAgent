@@ -26,8 +26,17 @@ extension RoutedACPAgent {
   ///
   /// The order is: the check that the replay has a connection to go through, the take of the
   /// session (D120 c), the withdrawal of the open questions from the old connection, the replay of
-  /// the tree, the current state, and the response. The current snapshots of the children, and
-  /// the questions that wait for the user, follow the response (``scheduleHotSync(of:through:)``).
+  /// the tree, the current state, and the response. The current snapshots of the children, the
+  /// live updates that the tree made meanwhile, and the questions that wait for the user follow
+  /// the response (``scheduleHotSync(of:through:releasing:)``).
+  ///
+  /// The tree runs on during the resume. The take holds each live update of the tree that the
+  /// agent records from the take on (``SessionResumeHold``), so no live update comes before the
+  /// announcement of its session, or before the response. The copy of the tree for the replay is
+  /// made in the same step of the actor as the take. So an update recorded before the take is in
+  /// the replay and goes to the old connection, and an update recorded after the take goes live
+  /// to the new connection after the response (``recordAndRoute(_:of:)``). Each live update
+  /// reaches the new connection one time.
   ///
   /// - Parameters:
   ///   - params: The resume request.
@@ -46,17 +55,27 @@ extension RoutedACPAgent {
     guard replayCursor == nil || connections.path(of: caller)?.connection != nil else {
       throw RequestError.internalError(detail: "the agent has no connection to notify through")
     }
-    try takeSession(sessionId, for: caller)
+    let hold = SessionResumeHold(rootSessionId: sessionId)
+    try takeSession(sessionId, for: caller, holding: hold)
+    // The same step of the actor as the take: no update is recorded between the two.
+    let tree = replayCursor.map { _ in replayedTree(of: sessionId, history: entry.history) }
     for id in treeSessionIds(of: sessionId) {
       await sessions[id]?.projector.relay?.withdrawOpenQuestions()
     }
-    try await replayHistory(entry.history, from: replayCursor, sessionId: sessionId)
-    await syncCurrentState(of: sessionId, replayed: replayCursor != nil)
+    let connection = connections.path(forSession: sessionId)?.connection
+    if connection == nil {
+      // No client sees the updates of the tree, so nothing waits for the response.
+      await endHold(hold, of: sessionId)
+    }
+    if let tree, let replayCursor {
+      try await replay(tree, from: replayCursor, sessionId: sessionId)
+    }
+    await syncCurrentState(of: sessionId, replayed: replayCursor != nil, through: connection)
     let response = ResumeSessionResponse(
       availableCommands: CommandRegistry.availableCommands(for: await entry.commands.commands),
       configOptions: entry.announcedConfigOptions)
-    if let connection = connections.path(forSession: sessionId)?.connection {
-      scheduleHotSync(of: sessionId, through: connection)
+    if let connection {
+      scheduleHotSync(of: sessionId, through: connection, releasing: hold)
     }
     return response
   }
@@ -70,28 +89,52 @@ extension RoutedACPAgent {
   }
 
   /// Schedules the work that follows the response of a hot resume: the current snapshot of each
-  /// child, and then the open questions of the tree, asked again on the new owner. A question
-  /// goes out after the snapshot of its child, so the client knows the child before the request
-  /// names it.
+  /// child, then the live updates that the hold kept, and then the open questions of the tree,
+  /// asked again on the new owner. The kept updates of a child go out after its snapshot, so the
+  /// client knows the child before them. A question goes out after the snapshot of its child, so
+  /// the client knows the child before the request names it.
   ///
-  /// Call it synchronously in the handler of the request, so the work follows the response.
+  /// Call it synchronously in the handler of the request, so the work follows the response. When
+  /// the connection closes before the response, the work does not run, and the hold ends.
   ///
   /// - Parameters:
   ///   - sessionId: The resumed root session.
   ///   - connection: The connection of the request.
-  private func scheduleHotSync(of sessionId: SessionId, through connection: AgentSideConnection) {
-    connection.afterRespondingInCurrentInstrumentationContext { [weak self] in
-      await self?.finishHotSync(of: sessionId)
-    }
+  ///   - hold: The hold of the take of the resume.
+  private func scheduleHotSync(
+    of sessionId: SessionId, through connection: AgentSideConnection,
+    releasing hold: SessionResumeHold
+  ) {
+    connection.afterRespondingInCurrentInstrumentationContext(
+      { [weak self] in
+        await self?.finishHotSync(of: sessionId, releasing: hold)
+      },
+      onDiscard: { [connections] in
+        hold.discard()
+        connections.removeHold(hold, of: sessionId)
+      })
   }
 
-  /// The work of ``scheduleHotSync(of:through:)``.
+  /// The work of ``scheduleHotSync(of:through:releasing:)``.
   ///
-  /// - Parameter sessionId: The resumed root session.
-  private func finishHotSync(of sessionId: SessionId) async {
+  /// - Parameters:
+  ///   - sessionId: The resumed root session.
+  ///   - hold: The hold of the take of the resume.
+  private func finishHotSync(of sessionId: SessionId, releasing hold: SessionResumeHold) async {
     await syncChildren(of: sessionId)
+    await endHold(hold, of: sessionId)
     for id in treeSessionIds(of: sessionId) {
       await sessions[id]?.projector.relay?.reaskWithdrawnQuestions()
     }
+  }
+
+  /// Sends the live updates that a hold kept, opens it, and ends its record in the table.
+  ///
+  /// - Parameters:
+  ///   - hold: The hold of the take of the resume.
+  ///   - sessionId: The resumed root session.
+  private func endHold(_ hold: SessionResumeHold, of sessionId: SessionId) async {
+    await hold.release()
+    connections.removeHold(hold, of: sessionId)
   }
 }
