@@ -14,10 +14,17 @@ comments:
     - notes: SessionResume.composeResumedSession calls composeSession, so the one change in composeSession serves the new and the resumed session. SessionResume.swift did not need an edit. A replay-only resume keeps the recorded instructions, as before. The ToolModeTests resume test does new, close, resume with direct calls on the composed agent; it needs no prompt.
     - next: review
   timestamp: 2026-11-10T20:00:34.411569+00:00
+- actor: claude-code
+  id: 01m73h47rgaqtd93z2ammq47yr
+  text: |-
+    ### review — findings
+    - evidence: review sha 329793c~1..329793c — 2 findings (2 confirmed, 0 refuted): Tests/FoundationModelsACPAgentTests/InstructionsAssemblerTests.swift:275, Tests/FoundationModelsACPAgentTests/ToolModeTests.swift:106. Five code-hygiene tool rules could not read Sources/FoundationModelsACPAgent/Instructions/OpenTestudoInstructions.swift, because the MCP server runs in the main working tree and the file is only in the worktree.
+    - next: declare `openTestudoDownloadURL` one time in Tests/FoundationModelsACPAgentTestSupport and use it from the two test files; then review again.
+  timestamp: 2026-11-10T20:06:56.016436+00:00
 depends_on:
 - 01M73040J7Q5AB7PRADXFEAMNV
 - 01M7303F2AJEEVCV4EB76XDPW1
-position_column: doing
+position_column: review
 position_ordinal: '8180'
 title: 'ACPA-19c: In sandboxed mode, the session instructions send work that needs a child process to OpenTestudo'
 ---
@@ -42,3 +49,28 @@ Decision D128 (i): "In Testudo, the agent says that the work needs OpenTestudo a
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #step1
+
+## Review Findings (2026-11-10 14:01)
+
+> Scope: `review sha 329793c~1..329793c` — reviewed the diffs only — lines this change added or modified. 8 file(s) reviewed, 1 not reviewed.
+
+> 1 file(s) not reviewed — no validator matched:
+> - `README.md` — no validator matches this file
+
+> ⚠️ tool rule 'code-hygiene/disallowed-constructs-swift' declined an item — it judged the rest of the code, and this it could not judge:
+> disallowed-constructs-swift found no file at Sources/FoundationModelsACPAgent/Instructions/OpenTestudoInstructions.swift, so its constructs are unread
+
+> ⚠️ tool rule 'code-hygiene/function-length-swift' declined an item — it judged the rest of the code, and this it could not judge:
+> function-length-swift found no file at Sources/FoundationModelsACPAgent/Instructions/OpenTestudoInstructions.swift, so its bodies are unread
+
+> ⚠️ tool rule 'code-hygiene/idioms-swift' declined an item — it judged the rest of the code, and this it could not judge:
+> idioms-swift found no file at Sources/FoundationModelsACPAgent/Instructions/OpenTestudoInstructions.swift, so its declarations are unread
+
+> ⚠️ tool rule 'code-hygiene/magic-numbers-swift' declined an item — it judged the rest of the code, and this it could not judge:
+> magic-numbers-swift found no file at Sources/FoundationModelsACPAgent/Instructions/OpenTestudoInstructions.swift, so its literals are unread
+
+> ⚠️ tool rule 'code-hygiene/missing-docs-swift' declined an item — it judged the rest of the code, and this it could not judge:
+> missing-docs-swift found no file at Sources/FoundationModelsACPAgent/Instructions/OpenTestudoInstructions.swift, so its declarations are unread
+
+- [ ] `Tests/FoundationModelsACPAgentTests/InstructionsAssemblerTests.swift:275` `reuse/reuse` — The test constant `openTestudoDownloadURL` repeats the URL literal that ToolModeTests already defines. The same value lives in two places. Move the constant to shared test support, as in the finding for ToolModeTests.swift:106, and use the shared constant in this file.
+- [ ] `Tests/FoundationModelsACPAgentTests/ToolModeTests.swift:106` `reuse/reuse` — The test constant `openTestudoDownloadURL` repeats the same URL literal that another test file already defines. Two copies can drift apart, so a test of one file may not match the other. Declare the URL once in the shared test support, for example beside `composeStubAgent` in Tests/FoundationModelsACPAgentTestSupport/StubComposition.swift, and reference it from both test files. Remove the private copy in ToolModeTests.swift.
