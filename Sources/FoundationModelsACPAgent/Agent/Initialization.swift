@@ -105,29 +105,56 @@ extension RoutedACPAgent {
   /// serves the stable ACP v2 method set and no earlier version.
   public static let supportedProtocolVersions: Set<ProtocolVersion> = [latestProtocolVersion]
 
-  /// The capabilities this agent advertises in `initialize`.
+  /// The capabilities this agent advertises in `initialize` in one tool
+  /// mode.
   ///
   /// Each marker is an object, never a boolean: `{}` means supported, and
   /// an omitted member means not supported. `capabilities.session` carries
   /// `prompt` — the one `PromptContent` advertisement, next to the
-  /// consumption code it describes — `mcp` with both `stdio` and `http`
-  /// (the two stable MCP transports), `delete` (a real delete, not a
-  /// tombstone), and `additionalDirectories` (multi-root confinement).
-  /// There is no `auth` member, because a local agent has no
-  /// authentication. There is no permission capability: the agent asks
+  /// consumption code it describes — `mcp` with the MCP transports of the
+  /// mode (``advertisedMCPCapabilities(in:)``), `delete` (a real delete,
+  /// not a tombstone), and `additionalDirectories` (multi-root
+  /// confinement). There is no `auth` member, because a local agent has
+  /// no authentication. There is no permission capability: the agent asks
   /// for no permission before a command.
-  public static let advertisedCapabilities = AgentCapabilities(
-    session: SessionCapabilities(
-      additionalDirectories: SessionAdditionalDirectoriesCapabilities(),
-      delete: SessionDeleteCapabilities(),
-      mcp: MCPCapabilities(http: MCPHTTPCapabilities(), stdio: MCPStdioCapabilities()),
-      prompt: PromptContent.advertisedCapabilities))
+  ///
+  /// - Parameter mode: The tool mode of the agent (``toolMode``).
+  /// - Returns: The capabilities of the `initialize` response.
+  public static func advertisedCapabilities(in mode: ToolMode) -> AgentCapabilities {
+    AgentCapabilities(
+      session: SessionCapabilities(
+        additionalDirectories: SessionAdditionalDirectoriesCapabilities(),
+        delete: SessionDeleteCapabilities(),
+        mcp: advertisedMCPCapabilities(in: mode),
+        prompt: PromptContent.advertisedCapabilities))
+  }
+
+  /// The MCP transports this agent advertises in `initialize` in one tool
+  /// mode: only the transports whose servers the mode can start.
+  ///
+  /// - `open` advertises `stdio` and `http`, the two stable MCP transports.
+  /// - `sandboxed` advertises `http` only. A sandboxed process cannot start
+  ///   a child process, thus the composition refuses each stdio server
+  ///   (`MCPComposition.Refusal.stdioInSandboxedMode`), and the agent does
+  ///   not ask a client for one.
+  ///
+  /// - Parameter mode: The tool mode of the agent (``toolMode``).
+  /// - Returns: The `mcp` member of `capabilities.session`.
+  static func advertisedMCPCapabilities(in mode: ToolMode) -> MCPCapabilities {
+    switch mode {
+    case .open:
+      MCPCapabilities(http: MCPHTTPCapabilities(), stdio: MCPStdioCapabilities())
+    case .sandboxed:
+      MCPCapabilities(http: MCPHTTPCapabilities())
+    }
+  }
 
   /// Negotiates the protocol version and the capabilities.
   ///
   /// The response carries ``implementation``, the negotiated version,
-  /// ``advertisedCapabilities``, and in `_meta.sah` the SAH extensions with
-  /// the endpoints of the GraphQL tunnel. It omits `authMethods`, because the agent
+  /// the capabilities of the tool mode (``advertisedCapabilities(in:)``),
+  /// and in `_meta.sah` the SAH extensions with the endpoints of the
+  /// GraphQL tunnel. It omits `authMethods`, because the agent
   /// has no authentication. The
   /// client's capabilities are read into the row of the
   /// ``ConnectionId/direct`` caller (``clientCapabilities(of:)``), which
@@ -186,7 +213,7 @@ extension RoutedACPAgent {
     return InitializeResponse(
       info: Self.implementation,
       protocolVersion: protocolVersion,
-      capabilities: Self.advertisedCapabilities,
+      capabilities: Self.advertisedCapabilities(in: toolMode),
       meta: advertisedSAHMeta())
   }
 

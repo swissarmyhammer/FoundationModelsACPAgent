@@ -2,6 +2,7 @@ import Foundation
 import FoundationModels
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
+import FoundationModelsExtras
 import FoundationModelsMultitool
 import MCP
 import Testing
@@ -233,10 +234,12 @@ import Testing
     #expect(PromptContent.advertisedCapabilities.audio == nil)
   }
 
-  /// The `initialize` advertisement is the one `PromptContent`
-  /// advertisement, so the wire cannot drift from the consumption.
-  @Test func theInitializeAdvertisementIsThePromptContentAdvertisement() throws {
-    let session = try #require(RoutedACPAgent.advertisedCapabilities.session)
+  /// The `initialize` advertisement of each tool mode is the one
+  /// `PromptContent` advertisement, so the wire cannot drift from the
+  /// consumption.
+  @Test(arguments: ToolMode.allCases)
+  func theInitializeAdvertisementIsThePromptContentAdvertisement(_ mode: ToolMode) throws {
+    let session = try #require(RoutedACPAgent.advertisedCapabilities(in: mode).session)
     #expect(session.prompt == PromptContent.advertisedCapabilities)
   }
 

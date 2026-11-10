@@ -102,7 +102,7 @@ import Testing
     #expect(!response.info.version.isEmpty)
     #expect(response.info.title != nil)
     #expect(response.authMethods == nil)
-    #expect(response.capabilities == RoutedACPAgent.advertisedCapabilities)
+    #expect(response.capabilities == RoutedACPAgent.advertisedCapabilities(in: .open))
   }
 
   /// A client that sends `1` gets `2` back in a normal, successful
@@ -308,5 +308,31 @@ import Testing
     let advertised = try #require(
       ExtensionMeta.payload(AdvertisedMode.self, in: response.meta, member: SAH.metaKey))
     #expect(advertised.mode == mode)
+  }
+
+  /// The `mcp` capability that each tool mode advertises on the wire. An
+  /// `open` agent advertises both stable transports. A `sandboxed` agent
+  /// advertises `http` only, because it refuses each stdio server
+  /// (`MCPComposition.Refusal.stdioInSandboxedMode`).
+  static let advertisedMCPTransports: [(ToolMode, JSONValue)] = [
+    (.open, .object(["stdio": .object([:]), "http": .object([:])])),
+    (.sandboxed, .object(["http": .object([:])])),
+  ]
+
+  /// The `initialize` response advertises in `capabilities.session.mcp`
+  /// only the MCP transports that the tool mode of the agent can start.
+  @Test(arguments: advertisedMCPTransports)
+  func initializeAdvertisesTheMCPTransportsOfTheToolMode(
+    _ mode: ToolMode, expected: JSONValue
+  ) async throws {
+    let agent = try await makeStubAgent(
+      name: AgentClientHarness.dotfolderName,
+      cacheDirectory: makeResolvedDirectory(label: "InitializationTests-mcp-cache"),
+      mode: mode)
+
+    let response = try await agent.initialize(AgentClientHarness.makeInitializeRequest())
+
+    let session = try #require(response.capabilities.session)
+    #expect(try Self.jsonTree(of: session.mcp) == expected)
   }
 }
