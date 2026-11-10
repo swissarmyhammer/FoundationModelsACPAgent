@@ -6,6 +6,14 @@ comments:
   id: 01m73fk03gydssb77yjh2ya0st
   text: 'Research: The resume path (`SessionResume.swift` `composeResumedSession`) calls `composeSession(..., resuming:)` in `SessionSetup.swift`. Thus one change in `composeSession` gives the section to a new session and to a resumed session. A replay-only resume assembles no instructions; it keeps the recorded text. The plan: a new `OpenTestudoInstructions` enum in `Instructions/` holds the section text. `InstructionsAssembler.init` gets `toolMode` and `openTestudoDownloadURL` (both with defaults). `assemble` puts the section after `StyleInstructions.text` and before the base prompt, in `sandboxed` mode only. `RoutedACPAgent` keeps `openTestudoDownloadURL` beside `toolMode`.'
   timestamp: 2026-11-10T19:40:02.544588+00:00
+- actor: claude-code
+  id: 01m73grk3bjj4znc92fq4ys333
+  text: |-
+    ### implement — changed
+    - evidence: commit 329793c on branch par/9kngeww (worktree agent-a15e1549c830c8850). Files: Sources/FoundationModelsACPAgent/Instructions/OpenTestudoInstructions.swift (new), Instructions/InstructionsAssembler.swift, RoutedACPAgent.swift, ComposedAgent.swift, Agent/SessionSetup.swift, README.md, Tests/FoundationModelsACPAgentTests/InstructionsAssemblerTests.swift, Tests/FoundationModelsACPAgentTests/ToolModeTests.swift, Tests/FoundationModelsACPAgentTestSupport/StubComposition.swift. RED: the test build failed with "extra argument 'openTestudoDownloadURL'". Full `swift test`: 1927 tests in 211 suites passed, 1 known issue (the deliberate one in HarnessSmokeTests, there before this change), zero compiler warnings. After a format edit, `swift test --filter "InstructionsAssemblerTests|ToolModeTests"`: 64 tests passed.
+    - notes: SessionResume.composeResumedSession calls composeSession, so the one change in composeSession serves the new and the resumed session. SessionResume.swift did not need an edit. A replay-only resume keeps the recorded instructions, as before. The ToolModeTests resume test does new, close, resume with direct calls on the composed agent; it needs no prompt.
+    - next: review
+  timestamp: 2026-11-10T20:00:34.411569+00:00
 depends_on:
 - 01M73040J7Q5AB7PRADXFEAMNV
 - 01M7303F2AJEEVCV4EB76XDPW1

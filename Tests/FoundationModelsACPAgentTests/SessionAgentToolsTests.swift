@@ -38,14 +38,32 @@ import Testing
   /// The name of the files capability.
   private static let filesName = "files"
 
+  /// The name of the git capability.
+  private static let gitName = "git"
+
+  /// The name of the environment capability.
+  private static let environmentName = "environment"
+
+  /// The capabilities that `tools: [web]` keeps or removes: the files
+  /// endpoint, the web capability, and three capabilities that only a
+  /// configuration or the agent turns off.
+  private static let webCheckNames: Set<String> = [
+    filesName, webName, shellName, gitName, environmentName,
+  ]
+
+  /// The spellings of `model: flash` in other letter cases.
+  private static let flashSpellings = ["Flash", "FLASH"]
+
   /// The name of the `agents` tool.
   private static let agentsName = "agents"
 
   /// The names that always stay on the surface of a root session: the tools
-  /// that give an endpoint (D90 (c)), and `searchTools`, the discovery half
-  /// of `runCode`. The test keeps its own copy of the list.
+  /// that give an endpoint (D90 (c)), with `files` of `runCode`, and
+  /// `searchTools`, the discovery half of `runCode`. The test keeps its own
+  /// copy of the list.
   private static let alwaysOnNames: Set<String> = [
-    "agents", "skills", "sessions", "kanban", "rules", "settings", "runCode", "searchTools",
+    "agents", "skills", "sessions", "kanban", "rules", "settings", "runCode", "files",
+    "searchTools",
   ]
 
   /// The names of a surface for the unit tests of the selection, with no
@@ -165,6 +183,18 @@ import Testing
         == plain.intersection(Self.alwaysOnNames.union([Self.webName])))
   }
 
+  /// A session agent with `tools: [web]` gives the model `files` and `web`,
+  /// and no `shell`, `git` or `environment` (D90 (c): `files` is an
+  /// endpoint).
+  @Test func toolsWebGivesTheModelFilesAndWebOnly() throws {
+    let selection = SessionToolSelection(
+      definition: try Self.definition(keys: ["tools: [web]"]),
+      names: Self.surfaceNames + [Self.gitName, Self.environmentName])
+
+    #expect(
+      selection.keptNames.intersection(Self.webCheckNames) == [Self.filesName, Self.webName])
+  }
+
   /// A session agent with no `tools:` has the full surface, as a session
   /// with no session agent has.
   @Test func noToolsKeyKeepsTheFullSurface() async throws {
@@ -177,12 +207,16 @@ import Testing
 
   // MARK: - disallowedTools:
 
-  /// A session agent with `disallowedTools: [agents, shell]` has no `shell`.
+  /// A session agent with `disallowedTools: [agents, shell]` has no `shell`,
+  /// and each other capability of the full surface.
   @Test func disallowedShellIsRemoved() async throws {
     let sessions = try await Self.openSessions(
       keys: ["disallowedTools: [agents, shell]"], name: "noshell")
 
-    #expect(!(try Self.capabilities(of: sessions.agent.surface)).contains(Self.shellName))
+    let plain = try Self.capabilities(of: sessions.plain.surface)
+    #expect(
+      try Self.capabilities(of: sessions.agent.surface) == plain.subtracting([Self.shellName]),
+      "full surface: \(plain)")
   }
 
   /// A session agent with `disallowedTools: [agents, shell]` still has the
@@ -223,8 +257,8 @@ import Testing
     #expect(selection.warnings.isEmpty, "\(selection.warnings)")
   }
 
-  /// `tools: [Agent(coder)]` gives the root `agents` tool only the agent
-  /// `coder`.
+  /// `tools: [Agent(coder)]` gives the root `agents` tool the agent `coder`,
+  /// and no other agent.
   @Test func anAgentGrantLimitsTheRootAgentsTool() async throws {
     let routed = try await AgentClientHarness.makeInitializedAgent(label: Self.label)
     let cwd = makeResolvedDirectory(label: "\(Self.label)-grant")
@@ -237,6 +271,7 @@ import Testing
     let entry = try await Self.openSession(in: cwd, on: routed)
 
     let agentsTool = try #require(entry.surface.tools.first { $0.name == Self.agentsName })
+    #expect(agentsTool.description.contains(Self.grantedAgentID), "\(agentsTool.description)")
     #expect(!agentsTool.description.contains(Self.otherAgentID), "\(agentsTool.description)")
   }
 
@@ -266,6 +301,16 @@ import Testing
   /// A session agent with `model: flash` starts on the flash slot.
   @Test func modelFlashStartsOnTheFlashSlot() async throws {
     let sessions = try await Self.openSessions(keys: ["model: flash"], name: "flash")
+
+    #expect(sessions.agent.selectedSlot == .flash)
+  }
+
+  /// The letter case of the `model:` value does not matter: `Flash` and
+  /// `FLASH` start on the flash slot.
+  @Test(arguments: flashSpellings)
+  func modelFlashInAnyCaseStartsOnTheFlashSlot(spelling: String) async throws {
+    let sessions = try await Self.openSessions(
+      keys: ["model: \(spelling)"], name: "flash-\(spelling)")
 
     #expect(sessions.agent.selectedSlot == .flash)
   }

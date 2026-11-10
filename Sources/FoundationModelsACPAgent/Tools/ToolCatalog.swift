@@ -300,14 +300,18 @@ public enum ToolCatalog {
   /// The name of the `agents` tool of a session.
   static let agentsToolName = "agents"
 
+  /// The Multitool group of the files capability, the endpoint that
+  /// `runCode` gives (D90 (c)).
+  static let filesGroupName = "files"
+
   /// The tools that give an endpoint (D90 (c)). The `tools:` and
   /// `disallowedTools:` keys of a session agent cannot remove them
-  /// (``SessionToolSelection``). `settings` and `kanban` are nouns in the
-  /// registry of `runCode`; `sessions` and `rules` are not mounted yet
-  /// (ACPA-9).
+  /// (``SessionToolSelection``). `files`, `settings` and `kanban` are nouns
+  /// in the registry of `runCode`; `sessions` and `rules` are not mounted
+  /// yet (ACPA-9).
   static let endpointToolNames: Set<String> = [
     agentsToolName, SkillOutputProtection.skillsToolName, "sessions", "kanban", "rules",
-    SettingsGraph.endpointName, NoOpToolCall.runCodeToolName,
+    SettingsGraph.endpointName, NoOpToolCall.runCodeToolName, filesGroupName,
   ]
 
   /// The discovery half of `runCode`. The description of `runCode` tells the
