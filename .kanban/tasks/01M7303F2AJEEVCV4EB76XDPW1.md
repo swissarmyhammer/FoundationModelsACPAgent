@@ -56,10 +56,17 @@ comments:
     - Not changed: AgentsComposition, package pins, sibling repositories. Sub-agent runs are ACPA-20b.
     - next: /review.
   timestamp: 2026-11-10T19:11:12.244121+00:00
+- actor: claude-code
+  id: 01m73e26t3a50dqf5q03jx4pat
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (47fd420): 0 findings, 0 confirmed, 0 refuted; 7 validator runs attempted, 0 failed. 9 files reviewed. README.md had no matching validator. 12 .kanban files were excluded by .reviewignore. Scope is the main session only (see SCOPE CHANGE). Sub-agent runs are ACPA-20b.
+    - next: none. The task is in done.
+  timestamp: 2026-11-10T19:13:23.779790+00:00
 depends_on:
 - 01M7302TV19EE0H603MP21Q32S
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: ffffcc80
 title: 'ACPA-20: Built-in style instructions — short answers in Simplified Technical English, before AGENT.md and AGENTS.md'
 ---
 ## What
