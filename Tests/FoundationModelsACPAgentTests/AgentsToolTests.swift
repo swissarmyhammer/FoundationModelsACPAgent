@@ -124,13 +124,15 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   ///     A run gets the `agents` tool only with an explicit grant.
   ///   - disallowedTools: The value of the `disallowedTools` key of the agent, or `nil` for an
   ///     agent with no such key.
+  ///   - body: The body of the agent (``AgentFolderFixture/defaultBody`` by default).
   /// - Throws: The directory-creation or write error.
   static func writeAgent(
-    named name: String, in cwd: URL, tools: String? = nil, disallowedTools: String? = nil
+    named name: String, in cwd: URL, tools: String? = nil, disallowedTools: String? = nil,
+    body: String = AgentFolderFixture.defaultBody
   ) throws {
     let extraKeys = [tools.map { "tools: \($0)" }, disallowedTools.map { "disallowedTools: \($0)" }]
       .compactMap { $0 }
-    try AgentFolderFixture.writeProjectAgent(id: name, in: cwd, extraKeys: extraKeys)
+    try AgentFolderFixture.writeProjectAgent(id: name, in: cwd, extraKeys: extraKeys, body: body)
   }
 
   /// Makes a catalog context over a fresh working directory that holds

@@ -10,6 +10,9 @@ public enum AgentFolderFixture {
   /// The path of the project layer that holds agent folders, relative to a project folder.
   static let projectLayerPath = ".agents/agents"
 
+  /// The body of an agent document when the test gives no body.
+  public static let defaultBody = "Do the task."
+
   /// The text of one agent document: a frontmatter with the name, the description and the extra
   /// keys, then a body.
   ///
@@ -17,12 +20,13 @@ public enum AgentFolderFixture {
   ///   - id: The agent id, which is the `name` field.
   ///   - description: The `description` field.
   ///   - extraKeys: Further frontmatter lines, each one `key: value`, in order. Empty by default.
+  ///   - body: The body of the agent. ``defaultBody`` by default.
   /// - Returns: The document text.
-  public static func document(id: String, description: String, extraKeys: [String] = [])
-    -> String
-  {
+  public static func document(
+    id: String, description: String, extraKeys: [String] = [], body: String = defaultBody
+  ) -> String {
     let extraLines = extraKeys.map { "\($0)\n" }.joined()
-    return "---\nname: \(id)\ndescription: \(description)\n\(extraLines)---\n\nDo the task.\n"
+    return "---\nname: \(id)\ndescription: \(description)\n\(extraLines)---\n\n\(body)\n"
   }
 
   /// Writes the agent folder `<layer>/<id>/AGENT.md`.
@@ -32,12 +36,14 @@ public enum AgentFolderFixture {
   ///   - layer: The folder that holds the agent folder.
   ///   - description: The `description` field.
   ///   - extraKeys: Further frontmatter lines, each one `key: value`. Empty by default.
+  ///   - body: The body of the agent. ``defaultBody`` by default.
   /// - Throws: The directory-creation or write error.
   public static func write(
-    id: String, under layer: URL, description: String, extraKeys: [String] = []
+    id: String, under layer: URL, description: String, extraKeys: [String] = [],
+    body: String = defaultBody
   ) throws {
     try TestFileFixture.write(
-      document(id: id, description: description, extraKeys: extraKeys),
+      document(id: id, description: description, extraKeys: extraKeys, body: body),
       named: documentName, in: layer.appendingPathComponent(id, isDirectory: true))
   }
 
@@ -48,13 +54,15 @@ public enum AgentFolderFixture {
   ///   - project: The project folder, or the working directory of the session.
   ///   - description: The `description` field. Defaults to `The <id> test agent.`.
   ///   - extraKeys: Further frontmatter lines, each one `key: value`. Empty by default.
+  ///   - body: The body of the agent. ``defaultBody`` by default.
   /// - Throws: The directory-creation or write error.
   public static func writeProjectAgent(
-    id: String, in project: URL, description: String? = nil, extraKeys: [String] = []
+    id: String, in project: URL, description: String? = nil, extraKeys: [String] = [],
+    body: String = defaultBody
   ) throws {
     try write(
       id: id,
       under: project.appendingPathComponent(projectLayerPath, isDirectory: true),
-      description: description ?? "The \(id) test agent.", extraKeys: extraKeys)
+      description: description ?? "The \(id) test agent.", extraKeys: extraKeys, body: body)
   }
 }

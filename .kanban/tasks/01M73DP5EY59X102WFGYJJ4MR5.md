@@ -22,8 +22,29 @@ comments:
   id: 01m73hnfatc14s8bkcgcs528nn
   text: When this card is pushed, send its commit hash to testudoapp-75 AND to foundationmodelsacpclient-76. foundationmodelsacpclient-76 runs its integration package 10 times on it (the `aKilledAgentResumes…` test).
   timestamp: 2026-11-10T20:16:20.826014+00:00
-position_column: todo
-position_ordinal: '9380'
+- actor: claude-code
+  id: 01m73mspv42tbw3k62aytgvgsy
+  text: |-
+    Research (implement step):
+    - Package.resolved pins FoundationModelsAgents at 609c812. `git merge-base --is-ancestor e181a24 609c812` is true, so the pin includes the fix of ^vejnx2n. No pin change.
+    - ACPAgent sets the recording root: `AgentRunHost.linking(_:)` calls `environment.withRecordingRoot(recordingRoot)`. The public `restoreInterrupted(of:caller:directory:)` makes `RestoreSource(directory:recordingRoot: environment.recordingRoot)`, so the restore reads `task-prompt.md`.
+    - The window on disk: the Router writes its `promptStarted` marker only when the pump takes the mail. No seam holds the pump before the take (the Agents test says the same and hides the Router prompt in its source). `RestoreSource` is internal to Agents, so this package cannot hide it in the source. The end-to-end test thus holds the grandchild in its first pass (a named-pipe signal from a `writeFile` step, then `holdUntilReleased`, so no model output), kills the process (history written, sessions suspended, no close), and removes the `promptStarted` and `prompt` events from the transcript of the grandchild. That is the state on disk of a kill before the take.
+    - Observable "with its task prompt": the grandchild agent body holds `$ARGUMENTS`, so the instructions of the restored Router session hold the task prompt.
+  timestamp: 2026-11-10T21:11:05.316022+00:00
+- actor: claude-code
+  id: 01m73n6kawb43t2wq90wvejefr
+  text: |-
+    ### implement — changed
+    - What: a new end-to-end suite `TaskPromptRecordRestoreTests` (5 tests). The first agent records root -> child -> grandchild. The grandchild writes one byte to a named pipe (`writeFile` step) and then holds (`holdUntilReleased`), so it plays no model output. The test waits on the pipe (no clock), kills the process (history written, sessions suspended, no close), and removes the `promptStarted`/`prompt` events from the transcript of the grandchild. That is the state on disk of a kill before the pump takes the mail. A second agent sends `session/resume`.
+    - Results: `task-prompt.md` is on disk after the announcement (this confirms that ACPAgent gives `recordingRoot` through `AgentRunHost`). The grandchild comes back nested in the child. Its instructions hold the task prompt (the body is `$ARGUMENTS`). `nestedRestore.failed` is empty, so no `restoreFailure` is sent. Control test: with `task-prompt.md` removed, the restore fails the grandchild with `FailedChild.promptNotRecordedReason`.
+    - RED: a temporary removal of `task-prompt.md` in the fixture made the 3 restore tests fail (the grandchild was not restored, `failed` was not empty). GREEN after the removal was taken out.
+    - The Agents fix covers the ACPAgent path, so the `prompts:` fallback is not used. No pin change: Package.resolved is at 609c812, which includes e181a24.
+    - Test support: `AgentFolderFixture` and `AgentsToolTests.writeAgent` take an optional `body:` (the default is unchanged). `ResumeNestedSessionsTests` has `LeafPlay` and `recordInterruptedChain(leafPlay:beforeKill:)`. `recordInterruptedChain()` keeps its old behavior. `NamedPipeSignal` was added in Support/NamedPipe.swift.
+    - evidence: Tests/FoundationModelsACPAgentTests/TaskPromptRecordRestoreTests.swift (new), Tests/FoundationModelsACPAgentTests/ResumeNestedSessionsTests.swift, Tests/FoundationModelsACPAgentTests/Support/NamedPipe.swift, Tests/FoundationModelsACPAgentTests/AgentsToolTests.swift, Tests/FoundationModelsACPAgentTestSupport/AgentFolderFixture.swift. `swift test --filter TaskPromptRecordRestoreTests`: 5 passed. Full `swift test`: 1959 tests in 215 suites passed, 0 failures (1 known issue from the `withKnownIssue` that was there before in HarnessSmokeTests), 0 compiler warnings.
+    - next: /review. After the push, send the commit hash to testudoapp-75 and foundationmodelsacpclient-76. The IntegrationTests package was not run. The change to the fixture only adds a default parameter, so the source stays compatible.
+  timestamp: 2026-11-10T21:18:07.708393+00:00
+position_column: doing
+position_ordinal: '80'
 title: A run killed after its announcement but before its task prompt was recorded is never restored
 ---
 ## What

@@ -19,7 +19,7 @@ import Testing
   static let childAgent = "worker"
 
   /// The agent that the child starts.
-  private static let leafAgent = "leaf"
+  static let leafAgent = "leaf"
 
   /// The marker of the prompt of the root session.
   private static let rootPrompt = "ROOT-RESUME-MARKER"
@@ -27,8 +27,9 @@ import Testing
   /// The marker of the prompt of the child.
   private static let childPrompt = "CHILD-RESUME-MARKER"
 
-  /// The marker of the prompt of the grandchild.
-  private static let leafPrompt = "LEAF-RESUME-MARKER"
+  /// The marker of the prompt of the grandchild. It is the task prompt of the run of the
+  /// grandchild.
+  static let leafPrompt = "LEAF-RESUME-MARKER"
 
   /// The first text of the grandchild. The recording of the chain is complete when it is out.
   private static let leafStartedText = "LEAF-STARTED-TEXT"
@@ -44,6 +45,32 @@ import Testing
 
   /// The time between two polls of a ledger.
   private static let idlePollInterval = Duration.milliseconds(20)
+
+  /// What the grandchild plays in its first pass in the first agent, and the sign on the wire
+  /// that the recording of the chain is complete.
+  struct LeafPlay {
+    /// The steps of the first pass of the grandchild.
+    let steps: [ScriptedPassStep]
+
+    /// The name of the sign, for the error of a wait that does not end.
+    let sign: String
+
+    /// Tells whether the updates of the first agent show the sign. The second argument is the
+    /// root session.
+    let isRecorded: @Sendable ([UpdateSessionNotification], SessionId) -> Bool
+
+    /// The grandchild plays its first text, and then holds. The sign is that text: the
+    /// grandchild is announced, and its first pass played model output.
+    static var textThenHold: LeafPlay {
+      LeafPlay(
+        steps: [.textDelta(leafStartedText), .holdUntilReleased(ScriptedHold()), .endPass],
+        sign: "the first text of the grandchild"
+      ) { updates, root in
+        ScriptedPromptFixture.agentText(in: updates.filter { $0.sessionId != root })
+          .contains(leafStartedText)
+      }
+    }
+  }
 
   /// The chain that the first agent recorded.
   struct Recording {
@@ -82,10 +109,27 @@ import Testing
   /// marks no call as final. The sessions are suspended, so the journal refuses a terminal event
   /// and the runs stay orphans. The first agent is never closed, so nothing writes after the kill.
   ///
+  /// The grandchild plays ``LeafPlay/textThenHold``.
+  ///
   /// - Returns: The chain.
   /// - Throws: Whatever the fixture or a wait throws.
   static func recordInterruptedChain() async throws -> Recording {
-    try await recordChain(endsPrompt: false) { fixture in
+    try await recordInterruptedChain(leafPlay: .textThenHold) {}
+  }
+
+  /// Records the chain as ``recordInterruptedChain()`` does, with another play of the grandchild
+  /// and a step before the kill.
+  ///
+  /// - Parameters:
+  ///   - leafPlay: What the grandchild plays before the kill.
+  ///   - beforeKill: Runs after the sign of `leafPlay` and before the kill.
+  /// - Returns: The chain.
+  /// - Throws: Whatever the fixture, a wait or `beforeKill` throws.
+  static func recordInterruptedChain(
+    leafPlay: LeafPlay, beforeKill: () async throws -> Void
+  ) async throws -> Recording {
+    try await recordChain(endsPrompt: false, leafPlay: leafPlay) { fixture in
+      try await beforeKill()
       let agent = fixture.harness.agent
       for sessionId in await agent.sessions.keys {
         await agent.writeHistory(of: sessionId)
@@ -130,21 +174,20 @@ import Testing
   /// - Parameters:
   ///   - endsPrompt: Whether the prompt of the root ends with the stop. A killed process never
   ///     ends it, so the call does not wait for it.
+  ///   - leafPlay: What the grandchild plays. ``LeafPlay/textThenHold`` by default.
   ///   - stopping: Ends the first agent.
   /// - Returns: The chain.
-  /// - Throws: Whatever the fixture or a wait throws.
+  /// - Throws: Whatever the fixture, a wait or `stopping` throws.
   private static func recordChain(
-    endsPrompt: Bool = true, stopping: (ScriptedPromptFixture) async -> Void
+    endsPrompt: Bool = true, leafPlay: LeafPlay = .textThenHold,
+    stopping: (ScriptedPromptFixture) async throws -> Void
   ) async throws -> Recording {
     let cwd = makeResolvedDirectory(label: "\(label)-repo")
     try AgentsToolTests.writeAgent(
       named: childAgent, in: cwd, tools: AgentsToolTests.agentsToolName)
     try AgentsToolTests.writeAgent(named: leafAgent, in: cwd)
-    let hold = ScriptedHold()
     let script: [ScriptedPassStep] = [
-      .onPrompt(
-        containing: leafPrompt,
-        play: [.textDelta(leafStartedText), .holdUntilReleased(hold), .endPass]),
+      .onPrompt(containing: leafPrompt, play: leafPlay.steps),
       .onPrompt(
         containing: childPrompt,
         play: [AgentsToolTests.startAgentCall(agent: leafAgent, prompt: leafPrompt), .endPass]),
@@ -160,14 +203,12 @@ import Testing
       try await fixture.harness.connection.prompt(
         AgentClientHarness.makePromptRequest(sessionId: root, text: rootPrompt))
     }
-    let updates = try await fixture.collector.wait(for: "the first text of the grandchild") {
-      updates in
-      ScriptedPromptFixture.agentText(in: updates.filter { $0.sessionId != root })
-        .contains(leafStartedText)
+    let updates = try await fixture.collector.wait(for: leafPlay.sign) { updates in
+      leafPlay.isRecorded(updates, root)
     }
     let child = try #require(AnnouncedChild.first(in: updates, on: root))
     let leaf = try #require(AnnouncedChild.first(in: updates, on: child))
-    await stopping(fixture)
+    try await stopping(fixture)
     if endsPrompt {
       _ = try? await prompt.value
     }
