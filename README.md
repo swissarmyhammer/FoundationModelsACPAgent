@@ -640,6 +640,9 @@ answers in ASD-STE100 Simplified Technical English, the answer first, and a
 long answer only when the request needs it. The style text comes before the
 base prompt and before each `AGENTS.md`, for each agent. An `Instructions.md`
 does not replace it. It is one copy of the text, never mirrored here.
+Each sub-agent run, new or restored, also starts its instructions with the
+style text, then the `AGENTS.md` text of its working folder, then the body of
+its agent. The main session has the style text one time.
 
 In the `sandboxed` tool mode, a compiled-in section comes after the style
 text and before the base prompt:

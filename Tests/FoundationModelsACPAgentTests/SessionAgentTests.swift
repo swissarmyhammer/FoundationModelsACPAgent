@@ -163,6 +163,19 @@ import Testing
       "\(session.instructions.prefix(80))")
   }
 
+  /// The main session of a catalog agent has the style text one time. The
+  /// agent environment gives the style text to each agent run as its
+  /// preamble, but the instructions of a session agent do not hold that
+  /// preamble. Only the assembler adds the style text to the main session.
+  @Test func theMainSessionOfACatalogAgentHasTheStyleTextOneTime() async throws {
+    let cwd = makeResolvedDirectory(label: "\(Self.label)-style-once")
+    try Self.writeProjectAgent(id: Self.catalogAgentID, body: Self.catalogAgentBody, in: cwd)
+
+    let session = try await Self.openSession(in: cwd, agent: Self.catalogAgentID)
+
+    #expect(session.instructions.ranges(of: StyleInstructions.text).count == 1)
+  }
+
   /// The current value of the `agent` option is the selected agent.
   @Test func theCurrentValueOfTheAgentOptionIsTheSelectedAgent() async throws {
     let cwd = makeResolvedDirectory(label: "\(Self.label)-current")

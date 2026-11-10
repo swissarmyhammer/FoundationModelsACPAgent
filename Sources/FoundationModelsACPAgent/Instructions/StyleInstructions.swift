@@ -9,8 +9,10 @@
 /// `DocumentationSyncTests` asserts the link cannot rot. The README does
 /// not repeat the text.
 ///
-/// The type is public, so that a host can give the same text to the runs
-/// of the sub-agents.
+/// Each sub-agent run starts with the same text:
+/// `AgentsComposition.compose` gives it to the agent environment as the
+/// instructions preamble. The type is public, so that a host can give the
+/// same text to the runs of its own sub-agents.
 public enum StyleInstructions {
   /// The style text.
   public static let text = """

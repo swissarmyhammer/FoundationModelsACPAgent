@@ -56,23 +56,6 @@ import Testing
     }
   }
 
-  /// The joined text of a restored transcript's leading `.instructions`
-  /// entry, or `nil` when the transcript opens with another entry.
-  ///
-  /// - Parameter transcript: The transcript the restore handed over.
-  /// - Returns: The instructions text, or `nil`.
-  private static func leadingInstructionsText(of transcript: Transcript) -> String? {
-    guard case .instructions(let instructions)? = Array(transcript).first else {
-      return nil
-    }
-    return instructions.segments.compactMap { segment in
-      if case .text(let text) = segment {
-        return text.content
-      }
-      return nil
-    }.joined()
-  }
-
   /// The session's recorded `.divergence` events under `root`.
   ///
   /// - Parameters:
@@ -732,7 +715,7 @@ import Testing
     // The MODEL sees the changed instructions: the transcript the
     // restored backend received opens with them.
     let transcript = try #require(resume.container.restoredTranscripts.last)
-    let instructions = try #require(Self.leadingInstructionsText(of: transcript))
+    let instructions = try #require(transcript.leadingInstructionsText)
     #expect(instructions.contains(marker))
 
     // One divergence event, opening with the pinned phrase.

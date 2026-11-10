@@ -59,6 +59,14 @@ enum AgentsComposition {
   /// `agents` tool. The `agents` tool is always on, thus each composed
   /// session has this mount.
   ///
+  /// The instructions of each agent run, new or restored, start with the
+  /// style text (``StyleInstructions/text``), the preamble of the
+  /// environment. FoundationModelsAgents then adds the `AGENTS.md` text of
+  /// the working folder of the run and the body of its agent. The main
+  /// session gets the style text from ``InstructionsAssembler``, and
+  /// `AgentRunner.sessionAgentInstructions(for:)` does not add the preamble.
+  /// So the main session has the style text one time.
+  ///
   /// The agent registry reads the agent folders `<id>/AGENT.md` and
   /// `agents/<id>/AGENT.md` of each layer of the `agents` dotfolder stack
   /// (``ToolCatalog/agentsDotfolderName``). It also reads the agent folders
@@ -99,7 +107,8 @@ enum AgentsComposition {
       tools: runTools,
       inlineSettleGrace: context.inlineSettleGrace,
       runEventObserver: makeRunEventObserver(runCallJoins: runCallJoins, announcer: announcer),
-      callerMail: context.agentRunHost?.callerMail)
+      callerMail: context.agentRunHost?.callerMail,
+      instructionsPreamble: StyleInstructions.text)
     let environment = context.agentRunHost?.linking(made) ?? made
     let runner = AgentRunner(registry: registry, environment: environment)
     // The scheduled agents of each session are saved beside its recording,
