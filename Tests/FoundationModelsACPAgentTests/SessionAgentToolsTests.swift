@@ -95,6 +95,10 @@ import Testing
   /// The template group of the MCP tools.
   private static let mcpTemplateGroup = "mcp"
 
+  /// The template group of the code context tools. Its surface name is
+  /// ``ToolCatalog/codeContextGroupName``.
+  private static let codeContextTemplateGroup = "codeContext"
+
   /// The id of the preloaded skill that renders the shell value.
   private static let probeSkillID = "probe-tools"
 
@@ -309,17 +313,18 @@ import Testing
   /// agent `keys`, in `mode`, over the in-code configuration.
   ///
   /// - Parameters:
-  ///   - keys: The frontmatter lines of the session agent.
+  ///   - keys: The frontmatter lines of the session agent, or `nil` for no
+  ///     session agent: the values of the configuration alone.
   ///   - mode: The tool mode of the session.
   /// - Returns: The value of each group, by its name.
   /// - Throws: The write error, or when the session agent does not load.
-  private static func templateValues(keys: [String], mode: ToolMode = .open) throws
+  private static func templateValues(keys: [String]?, mode: ToolMode = .open) throws
     -> [String: Bool]
   {
     enabledValues(
       of: ToolCatalog.skillsTemplateContext(
         AgentConfiguration.withoutMarketplaces.tools, mode: mode,
-        sessionAgent: try definition(keys: keys)))
+        sessionAgent: try keys.map(definition(keys:))))
   }
 
   /// The `tools.<group>.enabled` values of a template context.
@@ -387,11 +392,16 @@ import Testing
   /// A session agent with no `tools:` and no `disallowedTools:` renders the
   /// values of the configuration alone.
   @Test func noToolsKeyKeepsTheTemplateValuesOfTheConfiguration() throws {
-    let configured = Self.enabledValues(
-      of: ToolCatalog.skillsTemplateContext(
-        AgentConfiguration.withoutMarketplaces.tools, mode: .open))
+    #expect(try Self.templateValues(keys: []) == Self.templateValues(keys: nil))
+  }
 
-    #expect(try Self.templateValues(keys: []) == configured)
+  /// A session agent with `tools: [code_context]` in the `open` mode renders
+  /// `tools.codeContext.enabled` as `true`: the selection reads the surface
+  /// name of the group, not its template key.
+  @Test func toolsCodeContextKeepsTheCodeContextTemplateValueOn() throws {
+    #expect(
+      try Self.templateValues(keys: ["tools: [\(ToolCatalog.codeContextGroupName)]"])[
+        Self.codeContextTemplateGroup] == true)
   }
 
   /// A composed session whose session agent has `disallowedTools: [shell]`

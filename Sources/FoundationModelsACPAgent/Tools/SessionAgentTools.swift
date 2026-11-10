@@ -53,8 +53,10 @@ struct SessionToolSelection: Sendable, Equatable {
   /// The skills template groups of a root session with the keys of
   /// `definition` applied (``ToolCatalog/skillsTemplateContext(_:mode:sessionAgent:)``).
   ///
-  /// The selection reads each group name as a tool name, the match that
-  /// ``SessionSurface/applying(agent:)`` uses. Thus a group that the agent
+  /// The selection reads the surface name of each group as a tool name, the
+  /// match that ``SessionSurface/applying(agent:)`` uses. The surface name is
+  /// the group name, or its entry in ``ToolCatalog/templateGroupSurfaceNames``,
+  /// for example `code_context` for `codeContext`. Thus a group that the agent
   /// removes is `false`, and the groups in ``ToolCatalog/alwaysOnToolNames``
   /// and the `agents` group keep their values. The `mcp` group reads one
   /// probe name `mcp__<server>__` for each configured server, or the probe
@@ -78,7 +80,7 @@ struct SessionToolSelection: Sendable, Equatable {
       }
     let toolNames = groups.keys.filter {
       $0 != ToolCatalog.agentsToolName && $0 != ToolCatalog.mcpGroupName
-    }
+    }.map(surfaceName(ofTemplateGroup:))
     let kept = SessionToolSelection(definition: definition, names: toolNames + mcpProbes).keptNames
     return Dictionary(
       uniqueKeysWithValues: groups.map { name, isOn in
@@ -88,9 +90,19 @@ struct SessionToolSelection: Sendable, Equatable {
         case ToolCatalog.mcpGroupName:
           (name, isOn && !kept.isDisjoint(with: mcpProbes))
         default:
-          (name, isOn && kept.contains(name))
+          (name, isOn && kept.contains(surfaceName(ofTemplateGroup: name)))
         }
       })
+  }
+
+  /// The name of one skills template group on the surface of a root session.
+  ///
+  /// - Parameter group: The template key of the group.
+  /// - Returns: The entry of `group` in
+  ///   ``ToolCatalog/templateGroupSurfaceNames``, or `group` when it has no
+  ///   entry.
+  private static func surfaceName(ofTemplateGroup group: String) -> String {
+    ToolCatalog.templateGroupSurfaceNames[group] ?? group
   }
 
   /// The warning for the always-on tools that the agent tried to remove.

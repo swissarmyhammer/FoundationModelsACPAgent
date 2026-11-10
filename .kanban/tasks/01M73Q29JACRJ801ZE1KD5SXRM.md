@@ -39,8 +39,15 @@ comments:
     - open: acceptance item "foundationmodelsacpclient-76 confirms 10 of 10" needs a commit and a client run.
     - next: /review
   timestamp: 2026-11-10T22:08:03.373302+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m73r696hfhds5h8erwfz87tq
+  text: |-
+    ### review — clean
+    - evidence: review sha 934c0b7~1..934c0b7 — 0 findings (0 confirmed, 0 refuted; 7 attempted, 0 failed). 4 files reviewed; 4 .kanban files excluded by .reviewignore.
+    - next: the task is in done. The acceptance item for 10 of 10 runs on foundationmodelsacpclient-76 stays open for the client to confirm.
+  timestamp: 2026-11-10T22:10:23.057805+00:00
+position_column: done
+position_ordinal: ffffd780
 title: 'Regression: a hot resume sends the state_update of a child before its announcement (2 of 10 ACPClient runs)'
 ---
 ## What

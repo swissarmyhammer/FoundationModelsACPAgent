@@ -34,8 +34,22 @@ comments:
     - evidence: review sha fcd75f1~1..fcd75f1; 2 findings (2 confirmed, 3 refuted) — Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift:919, Tests/FoundationModelsACPAgentTests/SessionAgentToolsTests.swift:390
     - next: implement the 2 open items in "Review Findings (2026-11-10 15:51)"; the task stays in review.
   timestamp: 2026-11-10T21:53:33.529635+00:00
-position_column: review
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m73r9vk838stjc83tce2q5gm
+  text: |-
+    Findings pass (implement):
+    - Research: I examined each template key against the surface. The Multitool nouns are `files`, `shell`, `web`, `git`, `environment` (the `noun` of each capability). `kanban` is an operation tool noun, and `skills` is a tool name. Only `codeContext` is different: its surface group is `code_context` (`ToolCatalog.codeContextGroupName`).
+    - Fix: new `ToolCatalog.codeContextTemplateGroup` ("codeContext") and `ToolCatalog.templateGroupSurfaceNames` (template key to surface name). `SessionToolSelection.templateGroups` now gives the selection the surface name of each group (`surfaceName(ofTemplateGroup:)`), and reads the kept set by that name.
+    - Test reuse: `templateValues(keys:mode:)` takes `keys: [String]?`; `nil` gives no session agent. `noToolsKeyKeepsTheTemplateValuesOfTheConfiguration` compares `templateValues(keys: [])` with `templateValues(keys: nil)`.
+    - RED seen: `toolsCodeContextKeepsTheCodeContextTemplateValueOn` failed before the fix (value false), and passed after it.
+    - Both findings are now `- [x]`.
+
+    ### implement — changed
+    - evidence: Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift, Sources/FoundationModelsACPAgent/Tools/SessionAgentTools.swift, Tests/FoundationModelsACPAgentTests/SessionAgentToolsTests.swift (1 new test). `swift test`: 1973 tests in 215 suites passed, 0 failures, 0 compiler warnings (1 known issue: the existing `withKnownIssue` in HarnessSmokeTests; the SwiftPM line "missing creator for mutated node" for the mlx bundle is a build-graph message, not a compiler warning).
+    - next: /review
+  timestamp: 2026-11-10T22:12:20.200761+00:00
+position_column: doing
+position_ordinal: '8280'
 title: The skills template values follow the tool selection of the session agent
 ---
 ## What
@@ -61,5 +75,5 @@ The values are made in `ToolCatalog.makeSkillsSource(context:)` and `AgentsCompo
 > 6 file(s) not reviewed — excluded by an ignore rule:
 > - `.kanban/ (from .reviewignore)` — 6 file(s)
 
-- [ ] `Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift:919` `completeness/invariant-propagation` — The new `templateGroups` match compares each template group key against the tool names the agent selects. The `codeContext` key is matched as a tool name, but the Multitool group that the surface mounts is `code_context` (`ToolCatalog.codeContextGroupName`). An agent that keeps `tools: [code_context]` still gets `tools.codeContext.enabled` = false, so skills tell the model that code context is off while the tool is present. The same rule is not applied to the name the runtime surface uses. Match each template group against its surface name, not its template key. Either map `codeContext` to `ToolCatalog.codeContextGroupName` before calling `templateGroups`, or add a case in `templateGroups` for that key. Add one test that `tools: [code_context]` keeps `tools.codeContext.enabled` at its configured value.
-- [ ] `Tests/FoundationModelsACPAgentTests/SessionAgentToolsTests.swift:390` `reuse/reuse` — The test `noToolsKeyKeepsTheTemplateValuesOfTheConfiguration` writes out the baseline expression `enabledValues(of: ToolCatalog.skillsTemplateContext(AgentConfiguration.withoutMarketplaces.tools, mode: .open))` by hand. The helper `templateValues(keys:mode:)` already builds the same call from the same configuration, and differs only in the session agent it passes. The near-match was not extended, so the test carries its own copy of the call. Give the helper an optional agent, for example `templateValues(keys: [String]?, mode:)`, or add a `configuredValues(mode:)` helper that both the baseline and `templateValues` call. Then the no-key test compares the two helper results and does not repeat the call.
+- [x] `Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift:919` `completeness/invariant-propagation` — The new `templateGroups` match compares each template group key against the tool names the agent selects. The `codeContext` key is matched as a tool name, but the Multitool group that the surface mounts is `code_context` (`ToolCatalog.codeContextGroupName`). An agent that keeps `tools: [code_context]` still gets `tools.codeContext.enabled` = false, so skills tell the model that code context is off while the tool is present. The same rule is not applied to the name the runtime surface uses. Match each template group against its surface name, not its template key. Either map `codeContext` to `ToolCatalog.codeContextGroupName` before calling `templateGroups`, or add a case in `templateGroups` for that key. Add one test that `tools: [code_context]` keeps `tools.codeContext.enabled` at its configured value.
+- [x] `Tests/FoundationModelsACPAgentTests/SessionAgentToolsTests.swift:390` `reuse/reuse` — The test `noToolsKeyKeepsTheTemplateValuesOfTheConfiguration` writes out the baseline expression `enabledValues(of: ToolCatalog.skillsTemplateContext(AgentConfiguration.withoutMarketplaces.tools, mode: .open))` by hand. The helper `templateValues(keys:mode:)` already builds the same call from the same configuration, and differs only in the session agent it passes. The near-match was not extended, so the test carries its own copy of the call. Give the helper an optional agent, for example `templateValues(keys: [String]?, mode:)`, or add a `configuredValues(mode:)` helper that both the baseline and `templateValues` call. Then the no-key test compares the two helper results and does not repeat the call.

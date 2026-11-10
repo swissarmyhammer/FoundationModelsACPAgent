@@ -297,6 +297,21 @@ public enum ToolCatalog {
   /// `tools.code_context.getSymbol`.
   static let codeContextGroupName = "code_context"
 
+  /// The group of the code context tools in the skills template values
+  /// (``skillsTemplateContext(_:mode:sessionAgent:)``). A template key is
+  /// camel case, thus it is not the surface name ``codeContextGroupName``.
+  static let codeContextTemplateGroup = "codeContext"
+
+  /// The surface name of each skills template group whose key is not its
+  /// surface name. The `tools:` and `disallowedTools:` keys of a session
+  /// agent name a group by its surface name
+  /// (``SessionToolSelection/templateGroups(_:of:mcpServerNames:)``). Each
+  /// other template key is the noun or the tool name of its group on the
+  /// surface.
+  static let templateGroupSurfaceNames: [String: String] = [
+    codeContextTemplateGroup: codeContextGroupName
+  ]
+
   /// The name of the `agents` tool of a session.
   static let agentsToolName = "agents"
 
@@ -916,7 +931,7 @@ public enum ToolCatalog {
     let configured: [String: Bool] = [
       filesGroupName: isOn(tools.files), "shell": isChildProcessGroupOn(tools.shell),
       SkillOutputProtection.skillsToolName: true, agentsToolName: true,
-      "codeContext": isChildProcessGroupOn(tools.codeContext),
+      codeContextTemplateGroup: isChildProcessGroupOn(tools.codeContext),
       "web": isOn(tools.web), "git": isOn(tools.git),
       "environment": isOn(tools.environment), "kanban": isOn(tools.kanban),
       mcpGroupName: mcpServers != nil,
