@@ -43,8 +43,15 @@ comments:
     - evidence: Tests/FoundationModelsACPAgentTests/TaskPromptRecordRestoreTests.swift (new), Tests/FoundationModelsACPAgentTests/ResumeNestedSessionsTests.swift, Tests/FoundationModelsACPAgentTests/Support/NamedPipe.swift, Tests/FoundationModelsACPAgentTests/AgentsToolTests.swift, Tests/FoundationModelsACPAgentTestSupport/AgentFolderFixture.swift. `swift test --filter TaskPromptRecordRestoreTests`: 5 passed. Full `swift test`: 1959 tests in 215 suites passed, 0 failures (1 known issue from the `withKnownIssue` that was there before in HarnessSmokeTests), 0 compiler warnings.
     - next: /review. After the push, send the commit hash to testudoapp-75 and foundationmodelsacpclient-76. The IntegrationTests package was not run. The change to the fixture only adds a default parameter, so the source stays compatible.
   timestamp: 2026-11-10T21:18:07.708393+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m73nc9sdq5zwmq3bwj0n39pk
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (23deba2); 0 findings, 0 confirmed, 4 refuted; 5 files reviewed, 2 .kanban files not reviewed (ignore rule).
+    - next: none. The task moved to done.
+  timestamp: 2026-11-10T21:21:14.541625+00:00
+position_column: done
+position_ordinal: ffffd580
 title: A run killed after its announcement but before its task prompt was recorded is never restored
 ---
 ## What
