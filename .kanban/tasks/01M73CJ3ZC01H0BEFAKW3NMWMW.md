@@ -50,8 +50,15 @@ comments:
     - evidence: 2 files — Sources/FoundationModelsACPAgent/Agent/ElicitationRelay.swift, Tests/FoundationModelsACPAgentTests/HotResumeTests.swift. `swift test --filter HotResumeTests`: 21 tests (25 cases) passed. Full `swift test`: 1938 tests in 212 suites passed, 0 failures, 1 known issue that was there before (HarnessSmokeTests). No compiler warning (the one build line is the build-system notice "missing creator for mutated node").
     - next: review.
   timestamp: 2026-11-10T20:21:13.520854+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m73j1kwebjne8wr1f18tt6dz
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (2931112) — 0 findings (confirmed 0, refuted 0, attempted 7, failed 0). The three findings of 2026-11-10 14:09 have a check mark.
+    - next: none. The task is in done.
+  timestamp: 2026-11-10T20:22:58.702830+00:00
+position_column: done
+position_ordinal: ffffd080
 title: 'Hot resume: a new question of a child in the window between the take and the response goes to the new connection before the replay'
 ---
 ## What
