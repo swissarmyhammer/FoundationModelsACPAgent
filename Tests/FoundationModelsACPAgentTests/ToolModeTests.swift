@@ -255,6 +255,29 @@ import Testing
     return workspace
   }
 
+  /// Makes a configuration with the shell and the code context off, thus a
+  /// session starts no child process of a tool group.
+  ///
+  /// - Returns: The configuration.
+  private static func makeChildlessConfiguration() -> AgentConfiguration {
+    var configuration = AgentConfiguration.withoutMarketplaces
+    configuration.tools.shell = .disabled
+    configuration.tools.codeContext = .disabled
+    return configuration
+  }
+
+  /// Makes a skills source whose registry is in the `open` mode, over a
+  /// workspace that holds the fixture skill. It has no marketplace.
+  ///
+  /// - Returns: The skills source.
+  /// - Throws: Whatever a file write throws.
+  private static func makeOpenSkillsSource() throws -> SkillsSource {
+    let skillsRoot = try makeSkillsWorkspace().appendingPathComponent(
+      ".\(ToolCatalog.skillsDotfolderName)", isDirectory: true)
+    return SkillsSource(
+      registry: SkillsRegistry(roots: [skillsRoot], mode: .open), marketplaces: nil)
+  }
+
   /// Makes the session surface in `mode` over a workspace that holds the
   /// fixture skill, and gives its `skills` tool. The shell and the code
   /// context are off, thus the open mode starts no child process of a
@@ -265,11 +288,9 @@ import Testing
   /// - Throws: Whatever the context, the surface, or the search for the
   ///   tool throws.
   private static func makeSessionSkillsTool(mode: ToolMode) async throws -> SkillsCatalogTool {
-    var configuration = AgentConfiguration.withoutMarketplaces
-    configuration.tools.shell = .disabled
-    configuration.tools.codeContext = .disabled
     let context = try await CatalogRegistryFixture.makeContext(
-      workingDirectory: makeSkillsWorkspace(), configuration: configuration, mode: mode)
+      workingDirectory: makeSkillsWorkspace(), configuration: makeChildlessConfiguration(),
+      mode: mode)
     let surface = try await ToolCatalog.sessionSurface(context: context)
     await surface.shutdown()
     let tool = surface.tools.first { $0.name == skillsToolName }
@@ -563,6 +584,31 @@ import Testing
     let context = try await Self.makeSessionContext(of: agent)
 
     #expect(context.toolMode == .sandboxed)
+  }
+
+  @Test func aNewSessionInTheSandboxedModeHasTheSkillsTool() async throws {
+    let composed = try await Self.composeSandboxedAgent()
+    let workspace = makeResolvedDirectory(label: "\(Self.label)-skills-session")
+
+    let sessionId = try await composed.agent.newSession(
+      AgentClientHarness.makeNewSessionRequest(cwd: workspace)
+    ).sessionId
+    let names = await composed.agent.sessions[sessionId]?.surface.tools.map(\.name)
+    await composed.closeOpenSessions()
+
+    #expect(names?.contains(Self.skillsToolName) == true)
+  }
+
+  @Test func theSessionSurfaceGivesTheSandboxProbeToTheAgentEnvironment() async throws {
+    let context = try await CatalogRegistryFixture.makeContext(
+      workingDirectory: makeResolvedDirectory(label: "\(Self.label)-probe"),
+      configuration: Self.makeChildlessConfiguration(), mode: .sandboxed,
+      sandboxProbe: .fixed(true))
+    let skills = try Self.makeOpenSkillsSource()
+
+    await #expect(throws: ToolModeError.openModeInSandbox) {
+      _ = try await ToolCatalog.sessionSurface(context: context, skills: skills)
+    }
   }
 
   @Test func eachSessionContextOfTheAgentHasTheSandboxProbeOfTheAgent() async throws {

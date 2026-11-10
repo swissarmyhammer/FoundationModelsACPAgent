@@ -46,10 +46,12 @@ enum CatalogRegistryFixture {
   ///   - workingDirectory: The session working directory.
   ///   - configuration: The configuration under test.
   ///   - mode: The tool mode of the session. `.open` by default.
+  ///   - sandboxProbe: The sandbox probe of the session. `.live` by default.
   /// - Returns: The catalog context.
   /// - Throws: Whatever the profile resolve or the settings folders throw.
   static func makeContext(
-    workingDirectory: URL, configuration: AgentConfiguration, mode: ToolMode = .open
+    workingDirectory: URL, configuration: AgentConfiguration, mode: ToolMode = .open,
+    sandboxProbe: SandboxProbe = .live
   ) async throws -> CatalogContext {
     CatalogContext(
       workingDirectory: workingDirectory,
@@ -58,6 +60,7 @@ enum CatalogRegistryFixture {
         cacheDirectory: makeResolvedDirectory(label: cacheLabel)),
       settingsFolders: try SettingsFoldersFixture.make(label: cacheLabel),
       mode: mode,
+      sandboxProbe: sandboxProbe,
       environment: [:])
   }
 

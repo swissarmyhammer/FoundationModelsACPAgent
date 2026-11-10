@@ -67,6 +67,10 @@ enum AgentsComposition {
   /// `AgentRunner.sessionAgentInstructions(for:)` does not add the preamble.
   /// So the main session has the style text one time.
   ///
+  /// The `skills` tool of the environment reads the sandbox probe of the
+  /// session (``CatalogContext/sandboxProbe``). So a skills registry in the
+  /// `open` mode in a sandboxed process fails the composition.
+  ///
   /// The agent registry reads the agent folders `<id>/AGENT.md` and
   /// `agents/<id>/AGENT.md` of each layer of the `agents` dotfolder stack
   /// (``ToolCatalog/agentsDotfolderName``). It also reads the agent folders
@@ -91,7 +95,10 @@ enum AgentsComposition {
   ///     as ended, and a later process restores a run that did not end.
   /// - Returns: The mount.
   /// - Throws: Whatever `AgentRegistry.load()`, `AgentEnvironment.make`
-  ///   or `AgentsTool.make(context:)` throws.
+  ///   or `AgentsTool.make(context:)` throws. `AgentEnvironment.make` throws
+  ///   `ToolModeError.openModeInSandbox` when the registry of `skills` is in
+  ///   the `open` mode and the probe of `context` tells that the process is
+  ///   sandboxed.
   static func compose(
     context: CatalogContext, skills: SkillsSource, runTools: FoundationModelsAgents::ToolCatalog,
     runCallJoins: RunCallJoinTable
@@ -108,7 +115,8 @@ enum AgentsComposition {
       inlineSettleGrace: context.inlineSettleGrace,
       runEventObserver: makeRunEventObserver(runCallJoins: runCallJoins, announcer: announcer),
       callerMail: context.agentRunHost?.callerMail,
-      instructionsPreamble: StyleInstructions.text)
+      instructionsPreamble: StyleInstructions.text,
+      sandboxProbe: context.sandboxProbe)
     let environment = context.agentRunHost?.linking(made) ?? made
     let runner = AgentRunner(registry: registry, environment: environment)
     // The scheduled agents of each session are saved beside its recording,
