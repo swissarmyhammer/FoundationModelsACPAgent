@@ -22,6 +22,43 @@ extension RoutedACPAgent {
     return entry
   }
 
+  /// Checks the resume of a live root session, and resumes it
+  /// (``resumeLiveSession(_:entry:replayCursor:from:)``).
+  ///
+  /// No suspension comes between the start of the request and the take of the session. The
+  /// checks are synchronous, and they read no configuration: the cwd check reads the recording
+  /// root of the live session, the parent of its transcript directory. A suspension before the
+  /// take lets the tree record a live update with the route of the owner before the take, and
+  /// no hold. When the connection of the request owns the tree already, that update goes out
+  /// on it after the request, before the replay announces its session and before the response.
+  /// A frame that the agent wrote before it read the request is not in its control.
+  ///
+  /// The live session keeps its additional roots. The roots of the request are only validated,
+  /// as for a resume of a recorded session.
+  ///
+  /// - Parameters:
+  ///   - params: The resume request.
+  ///   - rootId: The id of the root session.
+  ///   - entry: The live entry of the root.
+  ///   - workingDirectory: The validated cwd of the request.
+  ///   - replayCursor: Where the replay begins, or `nil` for no replay.
+  ///   - caller: The connection of the request.
+  /// - Returns: The response of ``resumeLiveSession(_:entry:replayCursor:from:)``.
+  /// - Throws: The cwd refusals of ``requireRecordedWorkingDirectory(of:sessionId:toMatch:transcriptRoot:)``,
+  ///   a refused additional root, or what ``resumeLiveSession(_:entry:replayCursor:from:)``
+  ///   throws.
+  func resumeLiveRoot(
+    _ params: ResumeSessionRequest, rootId: ULID, entry: ActiveSession, workingDirectory: URL,
+    replayCursor: ReplayCursor?, from caller: ConnectionId
+  ) async throws -> ResumeSessionResponse {
+    try requireRecordedWorkingDirectory(
+      of: rootId, sessionId: params.sessionId, toMatch: workingDirectory,
+      transcriptRoot: entry.transcriptDirectory.deletingLastPathComponent())
+    _ = try requestedAdditionalRoots(of: params)
+    return try await resumeLiveSession(
+      params, entry: entry, replayCursor: replayCursor, from: caller)
+  }
+
   /// Resumes a live root session for a new connection.
   ///
   /// The order is: the check that the replay has a connection to go through, the take of the

@@ -167,23 +167,21 @@ extension RoutedACPAgent {
     }
     let replayCursor = try replayCursor(of: params)
 
+    // A session that is live in this process is taken over as it is, and nothing is torn down.
+    // Its checks read no configuration, so no suspension comes before its take.
+    if let live = liveRoot(params.sessionId) {
+      return try await resumeLiveRoot(
+        params, rootId: rootId, entry: live, workingDirectory: workingDirectory,
+        replayCursor: replayCursor, from: caller)
+    }
+
     let context = try await loadSessionContext(workingDirectory: workingDirectory)
     try requireRecordedWorkingDirectory(
       of: rootId,
       sessionId: params.sessionId,
       toMatch: workingDirectory,
       transcriptRoot: context.transcriptRoot)
-
-    // A non-empty list is the complete new root set; omitted or empty
-    // means no additional roots. Former roots are never inherited.
-    let additionalRoots = try SessionSetup.additionalRoots(
-      fromPaths: (params.additionalDirectories ?? []).map(\.rawValue))
-
-    // A session that is live in this process is taken over as it is, and nothing is torn down.
-    if let live = liveRoot(params.sessionId) {
-      return try await resumeLiveSession(
-        params, entry: live, replayCursor: replayCursor, from: caller)
-    }
+    let additionalRoots = try requestedAdditionalRoots(of: params)
 
     // The resume takes the session for the connection of the request
     // (D120 c) before anything else changes: an `external` connection
@@ -324,6 +322,19 @@ extension RoutedACPAgent {
     }
   }
 
+  /// The additional roots of a resume request, validated. A non-empty
+  /// list is the complete new root set; omitted or empty means no
+  /// additional roots. Former roots are never inherited.
+  ///
+  /// - Parameter params: The resume request.
+  /// - Returns: The roots, in wire order.
+  /// - Throws: Whatever ``SessionSetup/additionalRoots(fromPaths:)`` throws
+  ///   for a path that is not valid.
+  func requestedAdditionalRoots(of params: ResumeSessionRequest) throws -> [URL] {
+    try SessionSetup.additionalRoots(
+      fromPaths: (params.additionalDirectories ?? []).map(\.rawValue))
+  }
+
   /// The cwd equality pre-check: reads the recorded
   /// working directory through the synchronous
   /// `recordedWorkingDirectory` — no backend, no session, no write —
@@ -337,7 +348,7 @@ extension RoutedACPAgent {
   /// - Throws: `RequestError.unknownSession` when the root holds no
   ///   session with this id, the cwd-mismatch refusal, or whatever the
   ///   tree load throws.
-  private func requireRecordedWorkingDirectory(
+  func requireRecordedWorkingDirectory(
     of rootId: ULID,
     sessionId: SessionId,
     toMatch workingDirectory: URL,

@@ -88,6 +88,26 @@ import Testing
   /// The number of decline records that the relay writes for one question that it declines.
   private static let declineRecordsOfOneQuestion = 1
 
+  /// The agent that the child starts: the grandchild.
+  private static let leafAgent = "leaf"
+
+  /// The marker of the prompt of the grandchild.
+  private static let leafMarker = "HOT-RESUME-LEAF"
+
+  /// The text that the grandchild plays before it waits.
+  private static let leafText = "HOT-RESUME-LEAF-TEXT"
+
+  /// The name of the secret reference that the project configuration of a gated tree holds.
+  private static let gatedReference = "hot-resume-gate"
+
+  /// The value that the gate of a gated tree gives for its reference.
+  private static let gatedSecret = "hot-resume-gate-value"
+
+  /// The project configuration of a gated tree: one secret reference, so each merge of the
+  /// configuration reads the gate (``SecretStoreGate``).
+  private static let gatedConfigYAML =
+    "tools:\n  web:\n    apiKeys:\n      tavily: keychain:\(gatedReference)\n"
+
   /// The live tree of one test: a root with an open prompt and a running child.
   private struct LiveTree {
     /// The first agent and its first connection.
@@ -121,6 +141,19 @@ import Testing
 
     /// The hold that keeps back the two live updates of the child.
     let window: ScriptedHold
+  }
+
+  /// A live tree whose child starts a grandchild when the test releases a window hold. The secret
+  /// store of the agent is a gate, so the test can stop a merge of the configuration.
+  private struct GatedTree {
+    /// The live tree. Its hold keeps the grandchild running.
+    let tree: LiveTree
+
+    /// The hold that keeps back the start of the grandchild.
+    let window: ScriptedHold
+
+    /// The secret store of the agent.
+    let gate: SecretStoreGate
   }
 
   /// The kind of a question that a child asks.
@@ -261,6 +294,48 @@ import Testing
     let recorder = try #require(fixture.harness.elicitations)
     _ = try await recorder.waitForCreates(count: requestsOfOneQuestion)
     return tree
+  }
+
+  /// Starts a root with an open prompt and a child that plays its text, waits on the window
+  /// hold, and then starts a grandchild. The grandchild plays its text and waits on the hold of
+  /// the tree. The project configuration holds a secret reference, and the secret store of the
+  /// agent is a gate. The call returns when the first connection holds the text of the child, so
+  /// no update of the tree is on its way then.
+  ///
+  /// - Returns: The tree, its window hold and its gate.
+  /// - Throws: Whatever the fixture or a wait throws.
+  private static func startGatedTree() async throws -> GatedTree {
+    let window = ScriptedHold()
+    let hold = ScriptedHold()
+    let gate = SecretStoreGate(giving: gatedSecret)
+    let cwd = makeResolvedDirectory(label: "\(label)-repo")
+    try AgentsToolTests.writeAgent(
+      named: childAgent, in: cwd, tools: AgentsToolTests.agentsToolName)
+    try AgentsToolTests.writeAgent(named: leafAgent, in: cwd)
+    let script: [ScriptedPassStep] = [
+      .onPrompt(
+        containing: leafMarker, play: [.textDelta(leafText), .holdUntilReleased(hold), .endPass]),
+      .onPrompt(
+        containing: childMarker,
+        play: [
+          .textDelta(childText), .holdUntilReleased(window),
+          AgentsToolTests.startAgentCall(agent: leafAgent, prompt: leafMarker), .endPass,
+        ]),
+      .onPrompt(
+        containing: rootMarker,
+        play: [AgentsToolTests.startAgentCall(agent: childAgent, prompt: childMarker), .endPass]),
+      .endPass,
+    ]
+    let fixture = try await ScriptedPromptFixture.make(
+      script: script, label: label, workingDirectory: cwd, projectConfigYAML: gatedConfigYAML,
+      secretStore: gate)
+    let tree = try await openPrompt(of: fixture, hold: hold)
+    let child = tree.childId
+    _ = try await fixture.collector.wait(for: "the text of the child") { updates in
+      ScriptedPromptFixture.agentText(in: updates.filter { $0.sessionId == child })
+        .contains(childText)
+    }
+    return GatedTree(tree: tree, window: window, gate: gate)
   }
 
   /// Sends the prompt of the root and waits until the client holds an update of the child.
@@ -431,6 +506,83 @@ import Testing
     return QuestionWindowWire(
       trace: window.trace + requests, requestsWhileTheReplayWaits: window.observed,
       second: window.second, root: window.root)
+  }
+
+  /// Resumes the root on the connection that owns it, and lets the child start the grandchild
+  /// while the agent serves the request.
+  ///
+  /// The gate stops the merge of the configuration of the resume, if the resume reads the
+  /// configuration before its response. While the merge waits, the helper releases the window
+  /// hold of the child, and waits until the agent recorded the text of the grandchild. The
+  /// grandchild records its `state_update` before its text, and the child records its own
+  /// `state_update` in the same step. Then the gate opens. A resume that does not read the
+  /// configuration gives its response first, and the child starts the grandchild after it. No
+  /// clock decides the order. The read of the wire ends at the own `state_update` of the
+  /// grandchild after the response.
+  ///
+  /// - Parameter gatedTree: The tree, its window hold and its gate.
+  /// - Returns: The trace, in wire order.
+  /// - Throws: Whatever the request or a wait throws, or an issue when the read ended before the
+  ///   own `state_update` of the grandchild.
+  private static func resumeOnTheSameConnection(
+    of gatedTree: GatedTree
+  ) async throws -> [WireTraceEvent] {
+    let tree = gatedTree.tree
+    let connection = tree.fixture.harness.connection
+    let root = tree.rootId
+    let child = tree.childId
+    let isGrandchildState: @Sendable (WireTraceEvent) -> Bool = { event in
+      if case .update(let stream, let update) = event {
+        return stream != root && stream != child && update.isStateUpdate
+      }
+      return false
+    }
+    // The validator does not read the id of the request.
+    let request = WireTraceEvent.resumeRequest(id: .number(1), sessionId: root)
+    let trace = try await connection.subscribeToAllSessions().readResumeTrace(
+      startingWith: [request], settledBy: isGrandchildState, timeout: .seconds(syncWaitSeconds)
+    ) {
+      let gate = gatedTree.gate
+      defer { gate.open() }
+      let (entries, entry) = AsyncStream.makeStream(of: Bool.self)
+      gate.arm { entry.yield(true) }
+      let resume = Task {
+        defer { entry.yield(false) }
+        return try await connection.resumeSession(tree.replayRequest)
+      }
+      defer { resume.cancel() }
+      var signals = entries.makeAsyncIterator()
+      if await signals.next() == true {
+        gatedTree.window.release()
+        try await waitUntilAGrandchildRecorded(
+          leafText, under: child, in: tree.fixture.harness.agent)
+      } else {
+        gate.open()
+        gatedTree.window.release()
+      }
+      gate.open()
+      _ = try await resume.value
+    }
+    try #require(trace.last.map(isGrandchildState) == true)
+    return trace
+  }
+
+  /// Waits until a session nested in `child` is in the table, and its retained history holds a
+  /// text.
+  ///
+  /// - Parameters:
+  ///   - text: The text.
+  ///   - child: The parent of the grandchild.
+  ///   - agent: The agent of the sessions.
+  /// - Throws: An issue when the wait ends with no grandchild, or with no text.
+  private static func waitUntilAGrandchildRecorded(
+    _ text: String, under child: SessionId, in agent: RoutedACPAgent
+  ) async throws {
+    try await pollUntil(limit: recordPollLimit, interval: recordPollInterval) {
+      await agent.sessions[child]?.children.first != nil
+    }
+    let grandchild = try #require(await agent.sessions[child]?.children.first)
+    try await waitUntilRecorded(text, of: grandchild, in: agent)
   }
 
   /// Waits until the retained history of a session holds a text.
@@ -627,6 +779,24 @@ import Testing
     #expect(SubagentWireTraceValidator().validate(trace) == [])
     _ = try await Self.finish(windowTree.tree, observedBy: try #require(second.collector))
     await windowTree.tree.fixture.close()
+  }
+
+  // MARK: - A resume on the connection that owns the tree
+
+  /// A hot resume on the connection that owns the tree, while the child starts a grandchild
+  /// during the request. No update of the child or of the grandchild, a `state_update` included,
+  /// reaches the wire before the replay announces its session, or before the response. The wire
+  /// follows the rules of the sub-agent trace validator.
+  @Test func aGrandchildThatStartsDuringAHotResumeOnTheSameConnectionWaitsForTheResponse()
+    async throws
+  {
+    let gatedTree = try await Self.startGatedTree()
+    defer { gatedTree.tree.prompt.cancel() }
+
+    let trace = try await Self.resumeOnTheSameConnection(of: gatedTree)
+
+    #expect(SubagentWireTraceValidator().validate(trace) == [])
+    await gatedTree.tree.fixture.close()
   }
 
   // MARK: - A question in the window between the take and the replay
