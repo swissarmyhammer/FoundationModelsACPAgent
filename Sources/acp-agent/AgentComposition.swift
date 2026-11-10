@@ -45,10 +45,6 @@ enum AgentComposition {
   /// The folder of the local root in the folder of ``homeVariable``.
   static let localFolderName = "local"
 
-  /// The projects folder in the synced root ``syncedFolderName`` of the
-  /// folder of ``homeVariable``: the folder that the CLI always used.
-  static let projectsFolderName = "projects"
-
   /// The version the CLI reports. One binary and one version: `--version`
   /// prints this, and `initialize` reports the same value as the build
   /// version of its `info`.
@@ -112,9 +108,9 @@ enum AgentComposition {
   ///
   /// - ``homeVariable`` names a folder: the custom home with the synced
   ///   root ``syncedFolderName`` and the local root ``localFolderName`` in
-  ///   that folder, and the projects folder ``projectsFolderName`` in the
-  ///   synced root. A relative path resolves against the process working
-  ///   directory.
+  ///   that folder, and the projects folder ``AgentHome/projectsFolderName``
+  ///   in the synced root. A relative path resolves against the process
+  ///   working directory.
   /// - With no ``homeVariable``, or an empty one: the XDG home of
   ///   ``dotfolderName``, which keeps the folders that the CLI always used.
   ///
@@ -131,7 +127,7 @@ enum AgentComposition {
     return .makeCustom(
       synced: synced,
       local: folder.appendingPathComponent(localFolderName, isDirectory: true),
-      projects: synced.appendingPathComponent(projectsFolderName, isDirectory: true))
+      projects: synced.appendingPathComponent(AgentHome.projectsFolderName, isDirectory: true))
   }
 
   /// Composes the agent of the CLI through the public library helper

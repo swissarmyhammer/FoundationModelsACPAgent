@@ -49,7 +49,7 @@ import Testing
     #expect(
       home.projectsDirectory
         == home.synced.appendingPathComponent(
-          AgentComposition.projectsFolderName, isDirectory: true))
+          AgentHome.projectsFolderName, isDirectory: true))
   }
 
   /// A relative `ACP_AGENT_HOME` resolves against the process working
@@ -128,6 +128,6 @@ import Testing
       synced: synced,
       local: folder.appendingPathComponent(AgentComposition.localFolderName, isDirectory: true),
       projects: synced.appendingPathComponent(
-        AgentComposition.projectsFolderName, isDirectory: true))
+        AgentHome.projectsFolderName, isDirectory: true))
   }
 }

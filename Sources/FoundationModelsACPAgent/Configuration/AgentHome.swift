@@ -45,8 +45,11 @@ public struct AgentHome: Sendable, Equatable {
   // MARK: - Constants
 
   /// The folder of the projects in ``synced`` for the XDG preset, and the
-  /// folder of the machine state of the projects in ``local``.
-  static let projectsFolderName = "projects"
+  /// folder of the machine state of the projects in ``local``. A caller
+  /// that builds a custom home with the same layout as the XDG preset uses
+  /// this name for the `projects:` folder of
+  /// ``makeCustom(synced:local:projects:)``.
+  public static let projectsFolderName = "projects"
 
   /// The folder of the hook data in ``local``.
   static let hooksFolderName = "hooks"
