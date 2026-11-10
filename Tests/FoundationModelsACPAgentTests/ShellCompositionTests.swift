@@ -1,5 +1,4 @@
 import Foundation
-import FoundationModels
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsMultitool
 import FoundationModelsRouter
@@ -79,35 +78,58 @@ import Testing
 
   // MARK: - No permission request
 
-  /// A scripted tool prompt that runs a shell command sends no
-  /// `session/request_permission` to the client: the collector holds no
-  /// notification, and no session has a pending permission request. The
-  /// agent never asks the client for a permission.
+  /// The marker of the prompt that runs the command.
+  private static let promptMarker = "Run the prompt command"
+
+  /// The name of the file that the command of the prompt writes.
+  private static let promptFileName = "prompt.txt"
+
+  /// The text that the command of the prompt writes.
+  private static let promptFileText = "prompt"
+
+  /// The script of the prompt: the prompt with the marker calls `runCode`,
+  /// and the snippet runs one shell command that writes
+  /// ``promptFileName`` in the session working directory. Each other pass
+  /// ends with no output.
+  ///
+  /// - Returns: The script.
+  /// - Throws: When the arguments of the `runCode` call cannot be encoded.
+  private static func makePromptScript() throws -> [ScriptedPassStep] {
+    let command = "printf \(promptFileText) > \(promptFileName)"
+    let snippet = #"return await tools.shell.execute({ command: "\#(command)" });"#
+    return try ScriptedPromptFixture.makeToolPromptScript(
+      code: snippet, onPromptContaining: promptMarker)
+  }
+
+  /// A scripted tool prompt that runs a shell command in the agent sends
+  /// no `session/request_permission` to the client.
+  ///
+  /// The fixture opens a session with `session/new` on the harness
+  /// connection, and the prompt goes through `session/prompt` on the same
+  /// connection. The file of the command is on disk afterwards, so the
+  /// prompt ran. The client recorded no permission request, and the open
+  /// session has no pending permission request. The session must be open,
+  /// so the zero count cannot come from an empty session list.
   @Test
   func aScriptedToolPromptSendsNoPermissionRequest() async throws {
-    let harness = try await AgentClientHarness.makeRecording()
-    let collector = try #require(harness.collector)
-    _ = try await harness.connection.initialize(
-      AgentClientHarness.makeInitializeRequest())
+    let fixture = try await ScriptedPromptFixture.make(
+      script: try Self.makePromptScript(), label: "ShellCompositionTests-prompt")
+    let recorder = try #require(fixture.harness.elicitations)
 
-    let root = Self.makeResolvedDirectory(named: "prompt")
-    let registry = try await Self.makeRegistry(workingDirectory: root)
-    let tool = try #require(registry.tools[ShellVerbSupport.executeVerbPath])
-    let argumentsJSON = try ShellVerbSupport.executeArgumentsJSON(
-      command: "printf prompt > prompt.txt", workingDirectory: root)
-    let backend = ScriptedLLMContainer(
-      script: [.toolCall(name: tool.name, argumentsJSON: argumentsJSON), .endPass]
-    ).makeSession(instructions: nil, tools: [tool])
+    try await ScriptedPromptFixture.runPrompt(on: fixture, text: Self.promptMarker)
 
-    _ = try await backend.respond(to: "run the command", maxTokens: nil)
-
-    let written = root.appendingPathComponent("prompt.txt")
-    #expect(try String(contentsOf: written, encoding: .utf8) == "prompt")
-    #expect(await collector.updates.isEmpty)
+    let permissionRequests = await recorder.permissions
     let pendingPermissionCounts = await MainActor.run {
-      harness.client.openSessions.map(\.pendingPermissions.count)
+      fixture.harness.client.openSessions
+        .filter { $0.sessionId == fixture.sessionId }
+        .map(\.pendingPermissions.count)
     }
-    #expect(pendingPermissionCounts.allSatisfy { $0 == 0 })
-    await harness.close()
+    await fixture.close()
+
+    let written = fixture.cwd.appendingPathComponent(Self.promptFileName)
+    let writtenText = try String(contentsOf: written, encoding: .utf8)
+    #expect(writtenText == Self.promptFileText)
+    #expect(permissionRequests.isEmpty)
+    #expect(pendingPermissionCounts == [0])
   }
 }

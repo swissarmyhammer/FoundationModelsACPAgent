@@ -37,6 +37,10 @@ comments:
   id: 01m7333f7m0xc8yv59q99ac89q
   text: 'Correction: the short id of the Multitool task that removes the builder mode default is ^amym5ns, not ^9amym5ns.'
   timestamp: 2026-11-10T16:01:50.836999+00:00
+- actor: claude-code
+  id: 01m733f7a346f21j3179c41kq0
+  text: 'FYI from testudoapp-75: FoundationModelsSkills c04d4cc (SK-6a, head 0c615bd) changes an API. `SkillsRegistry.onReload` is now a non-optional `AsyncStream`. `SkillsToolAssembly` always makes the notice follower, so `commandUpdates` stays optional but is never nil. Check of this package (2026-11-10): no source uses `onReload`. `CommandRegistry.swift:336-337` reads `registry.commandUpdates` with `guard let`. It still compiles, but the `nil` branch is dead code. At the Skills bump, remove the dead branch, and change the doc text at `ToolCatalog.swift:678` and `SessionSetup.swift:1062` that says "`watch: true` makes `commandUpdates` non-nil".'
+  timestamp: 2026-11-10T16:08:15.939238+00:00
 depends_on:
 - 01M73026P78T3QV61E24Z44FHR
 position_column: todo

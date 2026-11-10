@@ -91,20 +91,29 @@ public enum ConfigurationYAML {
   /// The Objective-C type encoding of a single-precision float.
   private static let objCFloatType = "f"
 
-  /// The top-level sections, in the order the document emits them.
-  private static let sectionOrder = [
-    "profile", "tools", "recording", "transcripts", "compaction", "repetition", "theme",
-  ]
+  /// The top-level sections, in the order the document emits them: the
+  /// order of the coding keys of ``AgentConfiguration``. The coding keys
+  /// are the one list of the section names, so a new section has one
+  /// place to go.
+  private static let sectionOrder = AgentConfiguration.CodingKeys.allCases.map(\.stringValue)
 
-  /// The comment printed above each top-level section.
+  /// The comment printed above each top-level section, keyed by the
+  /// YAML spelling of the section's coding key.
   private static let sectionComments: [String: String] = [
-    "profile": "The model profile: the standard, flash and embedding slots.",
-    "tools": "The tool roster: each capability is on unless set to false.",
-    "recording": "How much of each session is recorded: full or off.",
-    "transcripts": "Where transcripts are written: project, home or an absolute path.",
-    "compaction": "The token-budget thresholds of the self-folding session.",
-    "repetition": "The detector that stops a generate call that repeats itself.",
-    "theme": "The appearance that a host applies: system, light or dark.",
+    AgentConfiguration.CodingKeys.profile.stringValue:
+      "The model profile: the standard, flash and embedding slots.",
+    AgentConfiguration.CodingKeys.tools.stringValue:
+      "The tool roster: each capability is on unless set to false.",
+    AgentConfiguration.CodingKeys.recording.stringValue:
+      "How much of each session is recorded: full or off.",
+    AgentConfiguration.CodingKeys.transcripts.stringValue:
+      "Where transcripts are written: project, home or an absolute path.",
+    AgentConfiguration.CodingKeys.compaction.stringValue:
+      "The token-budget thresholds of the self-folding session.",
+    AgentConfiguration.CodingKeys.repetition.stringValue:
+      "The detector that stops a generate call that repeats itself.",
+    AgentConfiguration.CodingKeys.theme.stringValue:
+      "The appearance that a host applies: system, light or dark.",
   ]
 
   /// The comment printed at the top of the document.

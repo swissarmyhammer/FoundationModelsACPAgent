@@ -105,7 +105,9 @@ let package = Package(
 // FoundationModelsRouter links llama.cpp through C++ modules, and a Swift
 // target that imports a C++ module, directly or through a dependency, must
 // build with C++ interoperability. Every target here reaches Router, so each
-// non-plugin target takes the mode.
+// non-plugin target takes the mode. The root `Package.swift` holds the
+// same loop: a change to this rule changes both manifests together.
+// sah:allow duplication SwiftPM builds each manifest alone and a manifest cannot import a shared Swift file, so this loop is a known pair of the C++ interop loop of the root Package.swift
 for target in package.targets where target.type != .plugin {
     target.swiftSettings = (target.swiftSettings ?? []) + [.interoperabilityMode(.Cxx)]
 }
