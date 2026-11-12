@@ -159,7 +159,7 @@ import Testing
   /// - Parameter keys: The frontmatter lines after `name` and `description`.
   /// - Returns: The definition.
   /// - Throws: The write error, or when the document does not load.
-  private static func definition(keys: [String]) throws -> AgentDefinition {
+  static func definition(keys: [String]) throws -> AgentDefinition {
     let folder = makeResolvedDirectory(label: "\(label)-definition")
     try writeSessionAgent(keys: keys, in: folder)
     return try #require(AgentRegistry.rootAgent(in: folder, id: sessionAgentID).definition)

@@ -35,7 +35,9 @@ import Testing
   private static let leafStartedText = "LEAF-STARTED-TEXT"
 
   /// A tool of the default tool set that the test denies to the grandchild after the recording.
-  private static let deniedTool = "runCode"
+  /// `runCode` and `searchTools` are kept tools of each run, thus the keys cannot remove them; the
+  /// `skills` tool is a plain tool of the run catalog.
+  private static let deniedTool = AgentsToolTests.skillsToolName
 
   /// A tool that stays in the default tool set of the grandchild.
   private static let keptTool = "searchTools"

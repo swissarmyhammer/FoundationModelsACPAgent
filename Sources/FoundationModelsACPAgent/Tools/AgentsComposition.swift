@@ -54,9 +54,11 @@ struct AgentsMount: Sendable {
 /// catalog never registers `skills`: the environment adds it.
 ///
 /// **The tools of a run.** A run gets the Multitool session tools,
-/// `searchTools` and `runCode`, by name. They come from the registry of the
-/// root session. It also gets the `skills` tool. The `tools` and
-/// `disallowedTools` keys of an agent select from these names.
+/// `searchTools` and `runCode`, as kept tools. They come from the registry of
+/// the root session, with the `tools` and `disallowedTools` keys of the agent
+/// of the run applied to its capabilities, by the rule of the root session
+/// (``makeRunTools(registry:mcpServerNames:selection:embedder:mounted:)``).
+/// It also gets the `skills` tool.
 ///
 /// The `FoundationModelsAgents::` module selector names the tool catalog of
 /// FoundationModelsAgents. This module has a ``ToolCatalog`` of its own.
@@ -280,25 +282,41 @@ enum AgentsComposition {
     return registry
   }
 
-  /// Makes the tool catalog of the runs. It has one factory for each
-  /// Multitool session tool of the root session, by its name.
+  /// Makes the tool catalog of the runs. It has one kept tool for each
+  /// Multitool session tool of the root session, by its name
+  /// (`ToolCatalog.registerKept(_:vocabulary:_:)` of FoundationModelsAgents).
   ///
-  /// Each factory call makes a new pair of session tools over `registry`. So
-  /// each run gets its own `searchTools` and `runCode`. The call gives the
-  /// tool of the name. A `searchTools` and a `runCode` of one run come from
-  /// two pairs. Both read the same registry. A registry holder keeps no state
-  /// of a search. So the two answer as one pair does. The pair that the
-  /// session mounted proves that the call succeeds for this registry, and it
-  /// gives the names and the fallback tools. The call makes no pair of its
-  /// own, because each pair builds the search index of the registry, and that
-  /// is the largest cost of a new session. A later call over the same
-  /// registry and the same selection gives the same result. A later call
-  /// that fails is a defect, and
+  /// **Each run applies the keys of its own agent.** The resolve of a run,
+  /// new or restored, calls each kept factory with the definition of the
+  /// run. The factory applies the `tools:` and `disallowedTools:` keys of
+  /// that definition to `registry` with the rule of the root session
+  /// (``RegistrySelection/applied(to:)``): the endpoint nouns stay, and the
+  /// `mcp__<server>__<tool>` entries match the tools of the MCP servers. The
+  /// keys never remove `searchTools` or `runCode` from a run. The vocabulary
+  /// of the kept tools is the capability names of `registry`
+  /// (``RegistrySelection/capabilityNames(of:mcpServerNames:)``), thus an
+  /// entry such as `web` or `shell` is a known name and gives no warning.
+  /// The names of the kept tools reach the template values of the run
+  /// (``ToolCatalog/runTemplateContext(_:mode:)``), which apply the same
+  /// keys with the same rule.
+  ///
+  /// Each factory call makes a new pair of session tools over the filtered
+  /// registry. So each run gets its own `searchTools` and `runCode`. The
+  /// call gives the tool of the name. A `searchTools` and a `runCode` of one
+  /// run come from two pairs. Both read a registry with the same filter. A
+  /// registry holder keeps no state of a search. So the two answer as one
+  /// pair does. The pair that the session mounted proves that the call
+  /// succeeds for this registry, and it gives the names and the fallback
+  /// tools. The call makes no pair of its own, because each pair builds the
+  /// search index of the registry, and that is the largest cost of a new
+  /// session. A later call that fails is a defect, and
   /// ``freshSessionTool(named:registry:selection:embedder:fallback:)``
   /// records it.
   ///
   /// - Parameters:
   ///   - registry: The built Multitool registry of the root session.
+  ///   - mcpServerNames: The names of the connected MCP servers: the nouns
+  ///     of their tools in `registry`.
   ///   - selection: The selection tier of `searchTools`.
   ///   - embedder: The embedder that `searchTools` and `runCode` rank with.
   ///   - mounted: The pair of session tools that the session mounted from
@@ -306,16 +324,23 @@ enum AgentsComposition {
   /// - Returns: The tool catalog of the runs.
   static func makeRunTools(
     registry: MultiTool.Registry,
+    mcpServerNames: Set<String>,
     selection: @escaping SearchToolsTool.SelectionFactory,
     embedder: any PooledEmbedding,
     mounted: [any Tool]
   ) -> FoundationModelsAgents::ToolCatalog {
     var tools = FoundationModelsAgents::ToolCatalog()
+    let topLevelNames = mounted.map(\.name)
+    let vocabulary = RegistrySelection.capabilityNames(
+      of: registry, mcpServerNames: mcpServerNames)
     for probe in mounted {
       let name = probe.name
-      tools.register(name) {
-        freshSessionTool(
-          named: name, registry: registry, selection: selection, embedder: embedder,
+      tools.registerKept(name, vocabulary: { vocabulary }) { definition in
+        let selected = RegistrySelection(
+          definition: definition, topLevelNames: topLevelNames, mcpServerNames: mcpServerNames
+        ).applied(to: registry)
+        return freshSessionTool(
+          named: name, registry: selected, selection: selection, embedder: embedder,
           fallback: probe)
       }
     }
@@ -325,15 +350,19 @@ enum AgentsComposition {
   /// Makes a new pair of session tools over `registry`, and gives the tool
   /// of the name `name` from that pair.
   ///
-  /// The mounted pair of ``makeRunTools(registry:selection:embedder:mounted:)`` proves
-  /// that the call succeeds for this registry and gives a tool of this name.
+  /// The mounted pair of ``makeRunTools(registry:mcpServerNames:selection:embedder:mounted:)``
+  /// proves that the call succeeds for the registry of the root session and
+  /// gives a tool of this name. A registry with the keys of a run applied
+  /// keeps the endpoint nouns of that registry.
   /// Thus a failure here is unexpected. A debug build stops at the assertion.
   /// A release build logs the failure and gives `fallback`, the tool of the
-  /// mounted pair. The tool catalog of a run takes a factory that cannot throw.
+  /// mounted pair, which reads the full registry of the root session. The
+  /// tool catalog of a run takes a factory that cannot throw.
   ///
   /// - Parameters:
   ///   - name: The name of the session tool, `searchTools` or `runCode`.
-  ///   - registry: The built Multitool registry of the root session.
+  ///   - registry: The registry of the run: the built Multitool registry of
+  ///     the root session with the keys of the agent of the run applied.
   ///   - selection: The selection tier of `searchTools`.
   ///   - embedder: The embedder that `searchTools` and `runCode` rank with.
   ///   - fallback: The tool of the same name from the mounted pair.

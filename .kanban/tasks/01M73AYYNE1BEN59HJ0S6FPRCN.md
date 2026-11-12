@@ -19,8 +19,15 @@ comments:
     - limit: the test covers the no-marketplace branch of `makeSkillsSource(context:marketplaces:sessionAgent:)`, because the context uses `AgentConfiguration.withoutMarketplaces`. The marketplace branch also gives `watch: true`, but a test of it needs a marketplace store.
     - next: review
   timestamp: 2026-11-12T18:54:01.811537+00:00
-position_column: doing
-position_ordinal: '8280'
+- actor: claude-code
+  id: 01m78hxqqffbne33z4v6y71rav
+  text: |-
+    ### review — clean
+    - evidence: review sha ee63507~1..ee63507 — 0 findings (confirmed 0, refuted 1); 1 file reviewed (Tests/FoundationModelsACPAgentTests/ToolCatalogTests.swift), 6 .kanban files excluded by .reviewignore.
+    - next: none. The task is in done.
+  timestamp: 2026-11-12T18:57:03.727246+00:00
+position_column: done
+position_ordinal: ffffde80
 title: 'ToolCatalogTests: theSkillsRegistryWatchesForCommandUpdates asserts a value that is always true'
 ---
 Found during ^bwgmkc0. Skills (SK-6a) makes `SkillsRegistry.commandUpdates` never nil, whatever `watch` is. Thus `#expect(registry.commandUpdates != nil)` in `Tests/FoundationModelsACPAgentTests/ToolCatalogTests.swift` (`theSkillsRegistryWatchesForCommandUpdates`) cannot fail, and it does not prove that `ToolCatalog.makeSkillsSource` gives `watch: true`.

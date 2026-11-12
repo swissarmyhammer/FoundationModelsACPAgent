@@ -450,11 +450,12 @@ public enum ToolCatalog {
         await makeSkillsSource(context: context)
       }
     let runCallJoins = RunCallJoinTable()
+    let mcpServerNames = await RegistrySelection.serverNames(of: built.mcpServers)
     let agents = try await AgentsComposition.compose(
       context: context, skills: skillsSource, agentRegistry: agentRegistry,
       runTools: AgentsComposition.makeRunTools(
-        registry: built.registry, selection: selection, embedder: embedder,
-        mounted: mounted.tools),
+        registry: built.registry, mcpServerNames: mcpServerNames, selection: selection,
+        embedder: embedder, mounted: mounted.tools),
       runCallJoins: runCallJoins)
     let tools = mounted.tools + makeStandaloneTools(agents: agents)
     // The refresher stages through the staging of the surface, so a
@@ -944,9 +945,12 @@ public enum ToolCatalog {
   /// context are off in the `sandboxed` mode, the selection names the code
   /// context group `code_context`, and an MCP name keeps the `mcp` group on.
   /// The selection also reads the names of the resolved tools of the run. In
-  /// this host they are `searchTools`, `runCode`, `skills` and `agents`
-  /// (``AgentsComposition/makeRunTools(registry:selection:embedder:mounted:)``);
-  /// each tool group is a noun of the registry of `runCode`. The keys of the
+  /// this host they are the kept tools `searchTools` and `runCode`, then
+  /// `skills` and `agents`
+  /// (``AgentsComposition/makeRunTools(registry:mcpServerNames:selection:embedder:mounted:)``);
+  /// each tool group is a noun of the registry of `runCode`, and the kept
+  /// `runCode` of the run applies the same keys with the same rule to that
+  /// registry, thus a value tells what the run can do. The keys of the
   /// session agent do not apply to a run. FoundationModelsAgents turns the
   /// `agents` group off for an agent that denies the `agents` tool.
   ///

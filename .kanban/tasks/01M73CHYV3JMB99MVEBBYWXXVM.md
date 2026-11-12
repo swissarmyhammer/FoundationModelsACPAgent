@@ -11,6 +11,17 @@ comments:
     - Router also calls replacingTranscript for discovery priming before each answer and for the repetition-watch rebuild. With the fix these continue the script, where before they started the script again.
     - Plan: the playbook sibling takes the seeded entries. When they hold a `.prompt` entry, the first prompt chooses the session, and the next pass is the count of ended passes. With no prompt entry (fresh, blank compaction transcript), the sibling chooses by its own first prompt as before.
   timestamp: 2026-11-12T18:52:57.511160+00:00
+- actor: claude-code
+  id: 01m78jn58ngt7kv23ma4ryvebj
+  text: |-
+    ### implement — changed
+    - evidence: commit eef408e on branch par/bywxxvm (worktree par-bywx). Files: Sources/FoundationModelsACPAgent/Configuration/ScriptedPlaybook.swift, Sources/FoundationModelsACPAgent/Configuration/ScriptedSessionBackend.swift, Tests/FoundationModelsACPAgentTests/ScriptedStubModelTests.swift.
+    - fix: ScriptedPlaybook.makeSibling(continuing:) takes the seeded entries. The first `.prompt` entry chooses the session. The next pass is the count of `.response` entries that have segments. A pass with no response, or with the empty response that Router records for a pass that did not answer, plays again. Entries with no `.prompt` entry choose by the first prompt, as before.
+    - test: aRestoredSessionPlaysThePassThatStoppedAtTheGateAgain(closedByRouter:) (two cases: the transcript of a kill, and of an orderly stop). RED before the fix (both cases: the pass echoed the continue prompt), GREEN after.
+    - full run: `swift test --scratch-path <worktree>/.build`: 2015 tests in 220 suites passed, 1 known issue (HarnessSmokeTests, it was there before), 0 compiler warnings in Swift sources. IntegrationTests `swift build --build-tests`: exit 0, warnings only in the C/C++ code of checkouts (mlx-swift, libgit2).
+    - open: work item 3 (tell FoundationModelsACPClient that its waits for a transient `running` must also fail on the idle state) and acceptance item 2 (10 runs of the two ACPClient tests) need the sibling repository. The dispatch said not to edit sibling repositories, so this step did not write a card there.
+    - next: review.
+  timestamp: 2026-11-12T19:09:51.253329+00:00
 position_column: doing
 position_ordinal: '8180'
 title: 'Cold resume of a scripted stub run: the restored run does not play its script again, so the ACPClient nested-run tests can hang'

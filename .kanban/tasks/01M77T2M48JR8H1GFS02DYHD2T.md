@@ -76,6 +76,33 @@ comments:
     Behavior: each run (new and restored) calls each kept factory one time with its definition. Kept tools come after the catalog tools and before the agents tool. tools: and disallowedTools: never remove a kept tool. The kept name and each vocabulary name are known names, also for the mcp__ patterns; such a name makes no tool. The kept names are in the toolNames of runTemplateContext. A kept name must not also be a plain name (precondition). The vocabulary closure is called at each resolve.
     Next run: bump only the Agents pin to 02d5f0f or later; in AgentsComposition.makeRunTools register runCode and searchTools with registerKept (not register); the runCode factory filters the registry with `definition.toolSelection(over:hasAgentsTool:)` and the root session rule (^b013mv9; always-kept files, runCode, searchTools and the endpoint tools); the vocabulary gives the capability names and the mcp__ names. Write the four tests first.
   timestamp: 2026-11-12T18:51:38.493030+00:00
+- actor: claude-code
+  id: 01m78j50t5m8k6xa77d812h7av
+  text: |-
+    Research (implement, Agents pin 02d5f0f):
+    - `swift package update FoundationModelsAgents` in the root and in IntegrationTests moved only FoundationModelsAgents (a8a2153 -> 02d5f0f). Skills stays at 55aa12c. Package.resolved is in .gitignore, thus the pins are local.
+    - `ToolResolver.resolve` calls `catalog.makeKeptTools(for: definition)` after the plain tools. A new run and a restored run both come through `AgentSessionMaker.resolveSetup`, thus one kept factory serves both.
+    - The root rule is `RegistrySelection(definition:topLevelNames:mcpServerNames:).applied(to:)` (SessionAgentTools.swift). Its `capabilityNames(of:)` gives the nouns and the `mcp__<server>__<tool>` names; that is the vocabulary. The MCP server names come from the actors of the servers (async), thus `sessionSurface` reads them before it makes the run catalog.
+    - The runCode description in discovery mode does not list the nouns. A test reads the nouns from `MultiTool.currentRegistry`. The restored child session is a `RoutedSessionActor` (testable Router) whose `tools` holds its runCode; `ResumeNestedSessionsTests.recordShutDownChain()` gives the recorded chain.
+    - The existing test `theRunToolsBuildNoPairOfSessionToolsAtTheMount` reads `runTools.names`; with kept tools the names move to `keptNames`.
+  timestamp: 2026-11-12T19:01:02.405820+00:00
+- actor: claude-code
+  id: 01m78k2dxgvjrngxy0ggkjc9ks
+  text: |-
+    Implementation notes:
+    - `AgentsComposition.makeRunTools` now has the argument `mcpServerNames` and registers `searchTools` and `runCode` with `registerKept`. Each factory applies `RegistrySelection(definition:topLevelNames:mcpServerNames:).applied(to:)` (the root rule, thus `toolSelection(over:hasAgentsTool:)` and the always-on names) and then builds the pair over the filtered registry. The vocabulary is `RegistrySelection.capabilityNames(of:mcpServerNames:)`, a new static form of the existing method. `RegistrySelection.serverNames(of:)` reads the server names; `SessionSurface.mcpServerNames()` and `sessionSurface` both call it.
+    - The fallback of `freshSessionTool` (a failed pair build, a defect that asserts and logs) is still the mounted tool, which reads the full registry. The doc tells this.
+    - Two existing tests changed because runCode is now a kept tool: `theRunsGetTheSkillsToolOfTheOneRegistryAndTheSessionTools` reads `keptNames + names`, and `aRestoredChildFollowsTheCurrentDisallowedTools` denies `skills` in place of `runCode` (the keys cannot remove a kept tool). `theRunToolsBuildNoPairOfSessionToolsAtTheMount` reads `keptNames`.
+    - A restored child session wraps its tools; the test reads `RoutedSessionActor.originalTools` to find the MultiTool. `tools` gives the wrapped tools, which are not `MultiTool`.
+    - RED evidence: before the change, 6 of 7 new tests failed (no runCode for `tools: [web]`; shell present for `disallowedTools: [shell]`). The restore test also failed with a factory that ignored the definition (shell present), then passed with the filter.
+  timestamp: 2026-11-12T19:17:06.096977+00:00
+- actor: claude-code
+  id: 01m78k2j4g3x4zk70cebqt5z3k
+  text: |-
+    ### implement — changed
+    - evidence: 7 files — Sources/FoundationModelsACPAgent/Tools/AgentsComposition.swift, Sources/FoundationModelsACPAgent/Tools/SessionAgentTools.swift, Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift, Tests/FoundationModelsACPAgentTests/RunToolSelectionTests.swift (new, 7 tests), Tests/FoundationModelsACPAgentTests/AgentsToolTests.swift, Tests/FoundationModelsACPAgentTests/ResumeNestedSessionsTests.swift, Tests/FoundationModelsACPAgentTests/SessionAgentToolsTests.swift. `swift build --build-tests`: no compiler warnings. `swift test`: 2021 tests in 221 suites pass, 0 failures, 1 known issue (the existing withKnownIssue smoke test). `swift build --build-tests --package-path IntegrationTests`: complete. Pins: FoundationModelsAgents 02d5f0f (root and IntegrationTests), FoundationModelsSkills 55aa12c (no change). No commit.
+    - next: /review.
+  timestamp: 2026-11-12T19:17:10.416136+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'An agent run with a tools: key gets the registry selection of its agent'

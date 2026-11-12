@@ -169,23 +169,68 @@ struct RegistrySelection: Sendable {
   /// - Parameter registry: The registry.
   /// - Returns: The names, in sorted order.
   func capabilityNames(of registry: MultiTool.Registry) -> [String] {
-    Set(registry.surface.entries.map(capabilityName(of:))).sorted()
+    Self.capabilityNames(of: registry, mcpServerNames: mcpServerNames)
+  }
+
+  /// The distinct capability names of the entries of `registry`, with no
+  /// session agent: the names that a `tools:` or `disallowedTools:` entry can
+  /// name in the registry. The run catalog gives them as the vocabulary of
+  /// its kept tools (``AgentsComposition/makeRunTools(registry:mcpServerNames:selection:embedder:mounted:)``).
+  ///
+  /// - Parameters:
+  ///   - registry: The registry.
+  ///   - mcpServerNames: The names of the MCP servers: the nouns of their
+  ///     tools in the registry.
+  /// - Returns: The names, in sorted order.
+  static func capabilityNames(
+    of registry: MultiTool.Registry, mcpServerNames: Set<String>
+  ) -> [String] {
+    Set(registry.surface.entries.map { capabilityName(of: $0, mcpServerNames: mcpServerNames) })
+      .sorted()
   }
 
   /// The name of the capability of one entry: `mcp__<server>__<tool>` for a
   /// tool of an MCP server, the noun of a grouped entry, or the path of a
   /// standalone entry.
   ///
-  /// - Parameter entry: The entry of the registry.
+  /// - Parameters:
+  ///   - entry: The entry of the registry.
+  ///   - mcpServerNames: The names of the MCP servers.
   /// - Returns: The name.
-  func capabilityName(of entry: APISurface.Entry) -> String {
+  private static func capabilityName(
+    of entry: APISurface.Entry, mcpServerNames: Set<String>
+  ) -> String {
     guard let group = entry.group else {
       return entry.path
     }
     guard mcpServerNames.contains(group) else {
       return group
     }
-    return "\(Self.mcpPrefix)\(group)\(Self.mcpSeparator)\(entry.descriptor.name)"
+    return "\(mcpPrefix)\(group)\(mcpSeparator)\(entry.descriptor.name)"
+  }
+
+  /// The name of the capability of one entry
+  /// (``capabilityName(of:mcpServerNames:)`` with the MCP servers of this
+  /// selection).
+  ///
+  /// - Parameter entry: The entry of the registry.
+  /// - Returns: The name.
+  func capabilityName(of entry: APISurface.Entry) -> String {
+    Self.capabilityName(of: entry, mcpServerNames: mcpServerNames)
+  }
+
+  /// The names of `servers`: the nouns of their tools in the registry.
+  /// `Array.map` cannot wait, and the name is a property of the server
+  /// actor, thus a loop reads each one.
+  ///
+  /// - Parameter servers: The connected MCP servers.
+  /// - Returns: The names.
+  static func serverNames(of servers: [FoundationModelsMultitool.MCPServer]) async -> Set<String> {
+    var names: Set<String> = []
+    for server in servers {
+      names.insert(await server.name)
+    }
+    return names
   }
 
   /// The start of the name of an MCP tool in the selection.
@@ -259,8 +304,10 @@ extension SessionSurface {
   /// capabilities, the top-level tools keep only the selected tools, and a
   /// grant `Agent(a, b)` makes a root `agents` tool that can start only
   /// those agents. The tools in ``ToolCatalog/alwaysOnToolNames`` always
-  /// stay. Each warning of the selection goes to the log. The agent runs
-  /// keep the tools of the full registry.
+  /// stay. Each warning of the selection goes to the log. The keys of the
+  /// session agent do not apply to the agent runs: each run applies the keys
+  /// of its own agent to the full registry, with the same rule
+  /// (``AgentsComposition/makeRunTools(registry:mcpServerNames:selection:embedder:mounted:)``).
   ///
   /// - Parameter definition: The session agent, or `nil` for the builtin
   ///   floor, which keeps the full surface.
@@ -292,16 +339,11 @@ extension SessionSurface {
   }
 
   /// The names of the MCP servers of this surface: the nouns of their tools
-  /// in the registry. `Array.map` cannot wait, and the name is a property of
-  /// the server actor, thus a loop reads each one.
+  /// in the registry (``RegistrySelection/serverNames(of:)``).
   ///
   /// - Returns: The names.
   private func mcpServerNames() async -> Set<String> {
-    var names: Set<String> = []
-    for server in mcpServers {
-      names.insert(await server.name)
-    }
-    return names
+    await RegistrySelection.serverNames(of: mcpServers)
   }
 }
 

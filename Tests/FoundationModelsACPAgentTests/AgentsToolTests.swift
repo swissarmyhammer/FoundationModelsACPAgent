@@ -312,8 +312,8 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   }
 
   /// The runs read the skills registry that the session gives the
-  /// surface. They get the Multitool session tools by name. They get the
-  /// `skills` tool of the agent environment by name.
+  /// surface. They get the Multitool session tools as kept tools. They get
+  /// the `skills` tool of the agent environment by name.
   @Test func theRunsGetTheSkillsToolOfTheOneRegistryAndTheSessionTools() async throws {
     let context = try await Self.makeContext(label: "skills")
     let skills = await SurfaceCatalog.makeSkillsSource(context: context)
@@ -322,7 +322,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
 
     let agents = try #require(surface.agents)
     #expect(
-      agents.environment.tools.names == [
+      agents.environment.tools.keptNames + agents.environment.tools.names == [
         Self.runCodeName, Self.searchToolsName, Self.skillsToolName,
       ])
     #expect(surface.tools.filter { $0.name == Self.skillsToolName }.count == 1)
@@ -370,10 +370,11 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     ).tools
 
     let runTools = AgentsComposition.makeRunTools(
-      registry: built.registry, selection: counting, embedder: embedder, mounted: mounted)
+      registry: built.registry, mcpServerNames: [], selection: counting, embedder: embedder,
+      mounted: mounted)
 
     #expect(pairs.count == 1)
-    #expect(runTools.names == [Self.runCodeName, Self.searchToolsName])
+    #expect(runTools.keptNames == [Self.runCodeName, Self.searchToolsName])
   }
 
   // MARK: - The release of the mount
