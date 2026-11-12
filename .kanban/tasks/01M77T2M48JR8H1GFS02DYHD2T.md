@@ -179,8 +179,15 @@ comments:
     - evidence: 4 test files — Tests/FoundationModelsACPAgentTests/Support/AgentToolKeys.swift (new), RunToolSelectionTests.swift, SubagentInstructionsTests.swift, SessionAgentToolsTests.swift. swift test: 2032 tests in 221 suites passed, 0 failures, 1 known issue (the planned withKnownIssue in HarnessSmokeTests), 0 compiler warnings. The log has one build-system line (missing creator for mutated node, mlx bundle); it is not from a compiler. The finding at SubagentInstructionsTests.swift:106 is checked.
     - next: review
   timestamp: 2026-11-12T22:00:21.537288+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m78wfmv7kpkzkygetnavcsg2
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (7054d12): 0 findings, 0 confirmed, 0 refuted; 4 files reviewed. All prior findings are checked.
+    - next: The task is in done.
+  timestamp: 2026-11-12T22:01:36.359643+00:00
+position_column: done
+position_ordinal: ffffe080
 title: 'An agent run with a tools: key gets the registry selection of its agent'
 ---
 ## What
