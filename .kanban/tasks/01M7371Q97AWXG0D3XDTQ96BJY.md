@@ -1,8 +1,21 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: 8a80
+comments:
+- actor: claude-code
+  id: 01m73sf3ygy19x4xz9p6ed5jk4
+  text: |-
+    Research (implement step):
+    - `SessionMergeEngine.apply` keeps `.unknown("_mail_delivery_paused")` as a transcript entry. `replayUpdates(from:)` sends `transcriptUpdates`, thus today each replay (hot and cold) sends each recorded pause again, also a pause that a later prompt lifted.
+    - `syncCurrentState` sends no pause.
+    - Router has no public read of the pause state. `mailOnlyAnswersInARow` is a private counter of the live Router session.
+    - Cold restore: Router does not restore the pause. `SessionTreeRestoration` gives each queued mail with no terminal record the terminal event `lost` (`reportLostMail`), and the mail does not go back to the queue. The restored session starts with `mailOnlyAnswersInARow = 0`. Thus a restored session holds no mail and is not paused. The cold restore must send no pause.
+    - An action command (`CommandDispatch`, `.action`) inserts a user message but sends no mail to Router. Thus "a user message after the pause" is not a correct lift test. The lift is a model prompt (`scheduleModelPrompt`), which mails the prompt to Router.
+    - Plan: keep the pause in force in the session entry (`ActiveSession.mailDeliveryPause`). Set it in `recordInHistory` in the same actor step as the history record. Clear it in `scheduleModelPrompt`. The hot resume reads it in the step of the take, as it copies the tree, so a pause after the take goes live through the hold and is not sent two times. The replay leaves out each `_mail_delivery_paused` entry.
+    - The client (FoundationModelsACPClient `MailDeliveryPauseExtension`) clears the pause at the start of a replay with history and at each user message. Thus a pause that the sync sends before the response stays at the client.
+  timestamp: 2026-11-10T22:32:41.168765+00:00
+position_column: doing
+position_ordinal: '8180'
 title: 'session/resume gives the current mail delivery pause: re-send it when paused, never when lifted'
 ---
 ## What

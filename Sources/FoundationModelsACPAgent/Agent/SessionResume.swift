@@ -584,9 +584,9 @@ extension RoutedACPAgent {
   /// Sends the current state of the resumed session (ACP v2 Session Setup,
   /// "Ordering"). It runs after the replay, if any, and before the resume
   /// response. It sends one current update for each listed piece of work that the replay did not
-  /// send. Then it sends one current `state_update`, and then the current `session_info_update`
-  /// when there is info. It runs for each resume, with or without `replayFrom`, and it sends no
-  /// history.
+  /// send. Then it sends one current `state_update`, then the current `session_info_update`
+  /// when there is info, and then the pause of the mail delivery in force, when there is one. It
+  /// runs for each resume, with or without `replayFrom`, and it sends no history.
   ///
   /// The `state_update` comes from the ledger of the session. The ledger
   /// sends it in order with the live changes, and it does not record it
@@ -611,8 +611,13 @@ extension RoutedACPAgent {
   ///   - replayed: Whether the resume replayed the history.
   ///   - connection: The connection that each update of the sync goes to at once, or `nil` for
   ///     the sinks of the session.
+  ///   - mailDeliveryPause: The `_mail_delivery_paused` update of the pause in force, or `nil`
+  ///     when the session is not paused (``ActiveSession/mailDeliveryPause``). A hot resume reads
+  ///     it in the step of its take. A cold restore gives `nil`: Router does not restore a pause
+  ///     (``MailDeliveryPauseReport``).
   func syncCurrentState(
-    of sessionId: SessionId, replayed: Bool = false, through connection: AgentSideConnection? = nil
+    of sessionId: SessionId, replayed: Bool = false, through connection: AgentSideConnection? = nil,
+    mailDeliveryPause: SessionUpdate? = nil
   ) async {
     guard let entry = sessions[sessionId] else {
       return
@@ -627,13 +632,16 @@ extension RoutedACPAgent {
       await send(.stateUpdate(await entry.stateLedger.currentSnapshot()))
     }
     let info = entry.history.sessionInfoSyncUpdate(recordedTitle: entry.session.facts.title)
-    guard info != SessionInfoUpdate() else {
-      return
+    if info != SessionInfoUpdate() {
+      await send(.sessionInfoUpdate(info))
     }
-    await send(.sessionInfoUpdate(info))
+    if let mailDeliveryPause {
+      await send(mailDeliveryPause)
+    }
   }
 
-  /// The sink of the updates of a current-state sync (``syncCurrentState(of:replayed:through:)``).
+  /// The sink of the updates of a current-state sync
+  /// (``syncCurrentState(of:replayed:through:mailDeliveryPause:)``).
   ///
   /// - Parameters:
   ///   - sessionId: The resumed session.

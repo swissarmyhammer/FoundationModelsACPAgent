@@ -185,6 +185,9 @@ extension SessionMergeEngine {
   /// ledger of the session (``SessionStateLedger/announceCurrentState()``).
   /// The retained `session_info_update` is not in the replay either. The current one follows
   /// the current state, and a replayed one would come before it.
+  /// A recorded `_mail_delivery_paused` is not in the replay either. It records a past pause,
+  /// and a later prompt can have lifted it. The pause in force goes out after the replay
+  /// (``MailDeliveryPauseReport``).
   ///
   /// The replay goes out before the resume response.
   /// Thus the command list and the configuration options of the response come last.
@@ -195,7 +198,8 @@ extension SessionMergeEngine {
   func replayUpdates(from cursor: ReplayCursor) -> [SessionUpdate] {
     switch cursor {
     case .start:
-      return transcriptUpdates + stateUpdates.filter { $0.isReplayedState }
+      return transcriptUpdates.filter { !$0.isMailDeliveryPause }
+        + stateUpdates.filter { $0.isReplayedState }
     }
   }
 }
@@ -259,15 +263,15 @@ extension SessionUpdate {
 }
 
 extension RoutedACPAgent {
-  /// Merges one update into the retained history of a session. A session
-  /// that the table does not hold any more (a `session/delete` removed
-  /// it) keeps no history.
+  /// Merges one update into the retained history of a session, and keeps the pause in force of
+  /// the session (``ActiveSession/record(_:)``). A session that the table does not hold any
+  /// more (a `session/delete` removed it) keeps no history.
   ///
   /// - Parameters:
   ///   - update: The update that the agent sends.
   ///   - sessionId: The session the update belongs to.
   func recordInHistory(_ update: SessionUpdate, of sessionId: SessionId) {
-    sessions[sessionId]?.retainedHistory.apply(update)
+    sessions[sessionId]?.record(update)
   }
 
   /// Merges one update into the retained history of a session, and reads

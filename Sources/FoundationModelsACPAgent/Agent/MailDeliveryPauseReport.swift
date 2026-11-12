@@ -26,7 +26,15 @@ import struct FoundationModelsRouter.MailDeliveryPause
 ///
 /// Unlike `_mcp_server_status`, the update is part of the conversation: the
 /// held results belong to the session. Thus it goes through the history sink,
-/// the retained history keeps it, and a replay sends it again.
+/// and the retained history keeps it.
+///
+/// The pause is current state, as the `state_update` is (task ^tq96bjy). A
+/// replay sends no recorded pause (``SessionMergeEngine/replayUpdates(from:)``):
+/// a later prompt can have lifted it. The session entry keeps the pause in
+/// force (``ActiveSession/mailDeliveryPause``), and a hot resume sends it after
+/// the replay. A cold restore sends no pause: Router does not restore it. The
+/// restore gives each queued mail with no terminal record the terminal event
+/// `lost`, and the restored session holds no mail.
 enum MailDeliveryPauseReport {
   /// The `sessionUpdate` value of the update.
   static let updateKind = "_mail_delivery_paused"
@@ -75,5 +83,16 @@ enum MailDeliveryPauseReport {
         MemberName.heldMail: .array(heldMail),
         MemberName.message: .string(pause.description),
       ]))
+  }
+}
+
+extension SessionUpdate {
+  /// Whether this update is a `_mail_delivery_paused` update
+  /// (``MailDeliveryPauseReport``).
+  var isMailDeliveryPause: Bool {
+    guard case .unknown(let kind, _) = self else {
+      return false
+    }
+    return kind == MailDeliveryPauseReport.updateKind
   }
 }

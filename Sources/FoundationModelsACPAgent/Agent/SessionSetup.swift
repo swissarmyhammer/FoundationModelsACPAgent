@@ -201,6 +201,28 @@ struct ActiveSession: Sendable {
     retainedHistory.snapshot
   }
 
+  /// The `_mail_delivery_paused` update of the pause in force, or `nil` when the mail delivery
+  /// of the session is not paused (task ^tq96bjy). The record of a pause sets it
+  /// (``record(_:)``). The next model prompt of the client mails Router the message that lifts
+  /// the pause, so that prompt clears it
+  /// (``RoutedACPAgent/scheduleModelPrompt(overridePrompt:params:entry:connection:owner:send:)``).
+  /// A hot resume sends it after the replay (``MailDeliveryPauseReport``). A nested session
+  /// keeps no pause: a message of its caller, not a client prompt, lifts its pause.
+  var mailDeliveryPause: SessionUpdate?
+
+  /// Merges one update into the retained history, and keeps the pause of a
+  /// `_mail_delivery_paused` update of a root session as the pause in force
+  /// (``mailDeliveryPause``).
+  ///
+  /// - Parameter update: The update that the agent sends.
+  mutating func record(_ update: SessionUpdate) {
+    retainedHistory.apply(update)
+    guard update.isMailDeliveryPause, parentSessionId == nil else {
+      return
+    }
+    mailDeliveryPause = update
+  }
+
   /// Whether the session has a prompt in flight. Derived, so the
   /// stored prompt list stays the one source of the busy state.
   var availability: SessionAvailability {

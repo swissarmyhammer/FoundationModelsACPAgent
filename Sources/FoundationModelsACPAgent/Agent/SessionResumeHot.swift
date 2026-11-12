@@ -63,9 +63,10 @@ extension RoutedACPAgent {
   ///
   /// The order is: the check that the replay has a connection to go through, the take of the
   /// session (D120 c), the withdrawal of the open questions from the old connection, the replay of
-  /// the tree, the current state, and the response. The current snapshots of the children, the
-  /// live updates that the tree made meanwhile, and the questions that wait for the user follow
-  /// the response (``scheduleHotSync(of:through:releasing:)``).
+  /// the tree, the current state with the pause of the mail delivery in force at the take, and
+  /// the response. The current snapshots of the children, the live updates that the tree made
+  /// meanwhile, and the questions that wait for the user follow the response
+  /// (``scheduleHotSync(of:through:releasing:)``).
   ///
   /// The tree runs on during the resume. The take holds each live update of the tree that the
   /// agent records from the take on (``SessionResumeHold``), so no live update comes before the
@@ -96,8 +97,10 @@ extension RoutedACPAgent {
     }
     let hold = SessionResumeHold(rootSessionId: sessionId)
     try takeSession(sessionId, for: caller, holding: hold)
-    // The same step of the actor as the take: no update is recorded between the two.
+    // The same step of the actor as the take: no update is recorded between the two. So a pause
+    // recorded after the take is not the pause of the sync, and it goes live through the hold.
     let tree = replayCursor.map { _ in replayedTree(of: sessionId, history: entry.history) }
+    let pause = sessions[sessionId]?.mailDeliveryPause
     for id in treeSessionIds(of: sessionId) {
       await sessions[id]?.projector.relay?.withdrawOpenQuestions()
     }
@@ -109,7 +112,8 @@ extension RoutedACPAgent {
     if let tree, let replayCursor {
       try await replay(tree, from: replayCursor, sessionId: sessionId)
     }
-    await syncCurrentState(of: sessionId, replayed: replayCursor != nil, through: connection)
+    await syncCurrentState(
+      of: sessionId, replayed: replayCursor != nil, through: connection, mailDeliveryPause: pause)
     let response = ResumeSessionResponse(
       availableCommands: CommandRegistry.availableCommands(for: await entry.commands.commands),
       configOptions: entry.announcedConfigOptions)
