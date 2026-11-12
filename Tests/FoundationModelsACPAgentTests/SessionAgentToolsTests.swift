@@ -286,7 +286,7 @@ import Testing
   @Test func disallowedSkillsStaysInTheRootSession() async throws {
     let skills = SkillOutputProtection.skillsToolName
     let sessions = try await Self.openSessions(
-      keys: ["disallowedTools: [\(skills)]"], name: "skills")
+      keys: [AgentToolKeys.noSkills], name: "skills")
 
     #expect(sessions.agent.surface.tools.map(\.name).contains(skills))
   }

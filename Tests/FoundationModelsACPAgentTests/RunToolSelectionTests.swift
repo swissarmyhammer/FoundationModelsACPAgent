@@ -108,9 +108,6 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
       nouns: try runCodeNouns(in: resolved.tools), diagnostics: resolved.diagnostics)
   }
 
-  /// The `disallowedTools:` key that denies the `skills` tool.
-  private static let noSkillsKey = "disallowedTools: [\(SkillOutputProtection.skillsToolName)]"
-
   /// The `tools:` key that keeps the web capability and grants the `agents`
   /// tool.
   private static let webAndAgentsKey = "tools: [web, agents]"
@@ -241,7 +238,8 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   /// A run of an agent with `disallowedTools: [skills]` gives no
   /// unknown-tool warning: `skills` is a tool of the run catalog.
   @Test func aRunWithDisallowedSkillsGivesNoUnknownToolWarning() async throws {
-    let run = try await Self.environmentRun(keys: [Self.noSkillsKey], name: "no-skills-warning")
+    let run = try await Self.environmentRun(
+      keys: [AgentToolKeys.noSkills], name: "no-skills-warning")
 
     #expect(!run.diagnostics.contains { $0.code == .unknownTool }, "\(run.diagnostics)")
   }
@@ -249,7 +247,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   /// A run of an agent with `disallowedTools: [skills]` has no `skills`
   /// tool: the resolve of the run removes a plain catalog tool.
   @Test func aRunWithDisallowedSkillsHasNoSkillsTool() async throws {
-    let run = try await Self.environmentRun(keys: [Self.noSkillsKey], name: "no-skills-tool")
+    let run = try await Self.environmentRun(keys: [AgentToolKeys.noSkills], name: "no-skills-tool")
 
     #expect(!run.toolNames.contains(SkillOutputProtection.skillsToolName), "\(run.toolNames)")
   }
@@ -257,7 +255,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   /// A run of an agent with `disallowedTools: [skills]` keeps the shell
   /// noun in its `runCode`.
   @Test func aRunWithDisallowedSkillsKeepsTheShellInRunCode() async throws {
-    let run = try await Self.environmentRun(keys: [Self.noSkillsKey], name: "no-skills-shell")
+    let run = try await Self.environmentRun(keys: [AgentToolKeys.noSkills], name: "no-skills-shell")
 
     #expect(run.nouns.contains(Self.shellNoun), "\(run.nouns)")
   }
@@ -267,7 +265,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   /// unknown-tool warning in that rule.
   @Test func theRunCodeRuleKnowsTheSkillsName() async throws {
     let diagnostics = try await Self.runRuleDiagnostics(
-      keys: [Self.noSkillsKey], name: "rule-skills")
+      keys: [AgentToolKeys.noSkills], name: "rule-skills")
 
     #expect(!diagnostics.contains { $0.code == .unknownTool }, "\(diagnostics)")
   }

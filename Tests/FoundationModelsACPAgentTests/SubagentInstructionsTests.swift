@@ -102,9 +102,6 @@ import Testing
       under: cwd.appendingPathComponent(".\(ToolCatalog.skillsDotfolderName)", isDirectory: true))
   }
 
-  /// The `disallowedTools:` key that denies the `skills` tool.
-  private static let noSkillsKey = "disallowedTools: [\(SkillOutputProtection.skillsToolName)]"
-
   /// The markers of ``webRunMarkers`` that `instructions` does not hold.
   ///
   /// - Parameter instructions: The instructions of a run.
@@ -213,7 +210,7 @@ import Testing
   @Test
   func aNewRunOfAnAgentWithDisallowedSkillsRendersItsPreloadedSkill() async throws {
     let cwd = makeResolvedDirectory(label: "\(Self.label)-no-skills-repo")
-    try Self.writeProbeAgent(keys: [Self.noSkillsKey], in: cwd)
+    try Self.writeProbeAgent(keys: [AgentToolKeys.noSkills], in: cwd)
 
     let instructions = try await Self.newRunInstructions(in: cwd, label: "\(Self.label)-no-skills")
 

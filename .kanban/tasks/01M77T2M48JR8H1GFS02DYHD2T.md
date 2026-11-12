@@ -161,7 +161,25 @@ comments:
     - evidence: 5 files — README.md, Sources/FoundationModelsACPAgent/Tools/AgentsComposition.swift (doc comment only), Tests/FoundationModelsACPAgentTests/RunToolSelectionTests.swift, Tests/FoundationModelsACPAgentTests/SessionAgentToolsTests.swift (1 new test), Tests/FoundationModelsACPAgentTests/SubagentInstructionsTests.swift (1 new test). `swift build --build-tests`: no compiler warnings. `swift test`: 2032 tests in 221 suites pass, 0 failures, 1 known issue (the existing withKnownIssue smoke test); DocumentationSyncTests pass. No pin change. No commit. The card stays in review. The two findings of 2026-11-12 16:48 are checked.
     - next: /review (review working).
   timestamp: 2026-11-12T21:55:47.372466+00:00
-position_column: review
+- actor: claude-code
+  id: 01m78w8m3t6y76kb32178r8v2z
+  text: |-
+    ### review — findings
+    - evidence: review sha 230c184~1..230c184 — 1 finding (1 confirmed, 1 refuted). Tests/FoundationModelsACPAgentTests/SubagentInstructionsTests.swift:106. All prior findings are checked.
+    - next: implement the open finding of 2026-11-12 16:56 (one shared definition of noSkillsKey), then review again.
+  timestamp: 2026-11-12T21:57:46.234494+00:00
+- actor: claude-code
+  id: 01m78wb0csme5q6pr198kv4ehf
+  text: 'Research for the finding at SubagentInstructionsTests.swift:106 (reuse/reuse). The same key text "disallowedTools: [skills]" was in three test files: RunToolSelectionTests (private noSkillsKey), SubagentInstructionsTests (private noSkillsKey), and SessionAgentToolsTests (an inline literal "disallowedTools: [\(skills)]"). No other test file writes this key. Fix: a new shared file Tests/FoundationModelsACPAgentTests/Support/AgentToolKeys.swift (in the pattern of MountOrder) defines AgentToolKeys.noSkills, built on SkillOutputProtection.skillsToolName. The three files now use this one definition. The two private copies are deleted. Only test files changed.'
+  timestamp: 2026-11-12T21:59:04.345338+00:00
+- actor: wballard
+  id: 01m78wdbs1vqn8rb96jc67v8rs
+  text: |-
+    ### implement — changed
+    - evidence: 4 test files — Tests/FoundationModelsACPAgentTests/Support/AgentToolKeys.swift (new), RunToolSelectionTests.swift, SubagentInstructionsTests.swift, SessionAgentToolsTests.swift. swift test: 2032 tests in 221 suites passed, 0 failures, 1 known issue (the planned withKnownIssue in HarnessSmokeTests), 0 compiler warnings. The log has one build-system line (missing creator for mutated node, mlx bundle); it is not from a compiler. The finding at SubagentInstructionsTests.swift:106 is checked.
+    - next: review
+  timestamp: 2026-11-12T22:00:21.537288+00:00
+position_column: doing
 position_ordinal: '80'
 title: 'An agent run with a tools: key gets the registry selection of its agent'
 ---
@@ -210,3 +228,15 @@ Since ^vshf002, the template values of a run follow the keys of its agent with t
 
 - [x] `Tests/FoundationModelsACPAgentTests/RunToolSelectionTests.swift:91` `reuse/reuse` — The test defines its own constant skillsName = "skills". Production already defines the same name as SkillOutputProtection.skillsToolName, which the production code uses for the run rule. A second literal can drift from the production name. Delete the private skillsName constant and use SkillOutputProtection.skillsToolName at line 233, the same as the production rule. The test file already imports FoundationModelsACPAgent through @testable.
 - [x] `Tests/FoundationModelsACPAgentTests/RunToolSelectionTests.swift:155` `reuse/reuse` — runRuleDiagnostics repeats the setup of resolvedRun. It builds the context, the registry, the search selection, the embedder, and the mounted pair in the same order. Each new test helper that needs this setup copies it again, so a change to the setup must be made in several places. Extract a shared helper that returns the built registry, the mounted pair, and the embedder for a test context. Have resolvedRun and runRuleDiagnostics both call it, and keep only their differing final steps in each.
+
+## Review Findings (2026-11-12 16:56)
+
+> Scope: `review sha 230c184~1..230c184` — reviewed the diffs only — lines this change added or modified. 4 file(s) reviewed, 3 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `README.md` — no validator matches this file
+
+- [x] `Tests/FoundationModelsACPAgentTests/SubagentInstructionsTests.swift:106` `reuse/reuse` — The new private constant noSkillsKey is a copy of the constant with the same name and value in RunToolSelectionTests. Two copies of one test key can drift apart. A change to one copy does not change the other. Keep one definition of the key and reuse it from both files. For example, move it to a shared test helper, or to the type that already owns the skills tool name, and refer to that one definition from both suites.
