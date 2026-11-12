@@ -172,17 +172,45 @@ import Testing
   private static func skillsRegistryAfterANewSkill(closingASessionOf fixture: WatchFixture)
     async throws -> SkillsRegistry
   {
-    let controlRegistry = try #require(
-      await fixture.agent.sessions[fixture.sessionId]?.surface.agents?.environment.skills)
+    try await registryOfAClosedSession(
+      of: fixture, reading: { $0.agents?.environment.skills },
+      thenWriting: {
+        let controlRegistry = try #require(
+          await fixture.agent.sessions[fixture.sessionId]?.surface.agents?.environment.skills)
+        let layer = fixture.workingDirectory.appendingPathComponent(
+          skillsProjectLayerName, isDirectory: true)
+        try await writeSkill(newSkillID, in: layer, waitingFor: controlRegistry)
+        try await writeSkill(laterSkillID, in: layer, waitingFor: controlRegistry)
+      })
+  }
+
+  /// Opens a second session on the agent of `fixture`, reads one registry of
+  /// that session, and closes the session. Then it runs `write`, which writes
+  /// two items in a layer and waits for the control session of `fixture`,
+  /// which stays open, to get each item. A watcher of the closed session that
+  /// still runs gets the first change before the control session gets the
+  /// second change.
+  ///
+  /// - Parameters:
+  ///   - fixture: The agent and the control session of the test.
+  ///   - read: Reads the registry from the surface of the second session.
+  ///   - write: Writes the two items after the close, and waits for the
+  ///     control session to get each of them.
+  /// - Returns: The registry that `read` gave for the closed session.
+  /// - Throws: Whatever the wire or `write` throws; an
+  ///   `ExpectationFailedError` when the second session is not open, or when
+  ///   `read` gives no registry.
+  private static func registryOfAClosedSession<Registry>(
+    of fixture: WatchFixture,
+    reading read: (SessionSurface) async -> Registry?,
+    thenWriting write: () async throws -> Void
+  ) async throws -> Registry {
     let closedSession = try await fixture.openSession()
-    let registry = try #require(
-      await fixture.agent.sessions[closedSession]?.surface.agents?.environment.skills)
+    let surface = try #require(await fixture.agent.sessions[closedSession]?.surface)
+    let registry = try #require(await read(surface))
     _ = try await fixture.harness.connection.closeSession(
       CloseSessionRequest(sessionId: closedSession))
-    let layer = fixture.workingDirectory.appendingPathComponent(
-      skillsProjectLayerName, isDirectory: true)
-    try await writeSkill(newSkillID, in: layer, waitingFor: controlRegistry)
-    try await writeSkill(laterSkillID, in: layer, waitingFor: controlRegistry)
+    try await write()
     return registry
   }
 
@@ -228,15 +256,13 @@ import Testing
   private static func registryAfterANewAgent(closingASessionOf fixture: WatchFixture)
     async throws -> AgentRegistry
   {
-    let closedSession = try await fixture.openSession()
-    let runner = try #require(await fixture.agent.sessions[closedSession]?.surface.agents?.runner)
-    let registry = await runner.registry
-    _ = try await fixture.harness.connection.closeSession(
-      CloseSessionRequest(sessionId: closedSession))
-    _ = try await addedIDs(on: fixture, writingIn: fixture.rootSettingsFolder)
-    _ = try await addedIDs(
-      afterWriting: laterAgentID, in: fixture.rootSettingsFolder, on: fixture)
-    return registry
+    try await registryOfAClosedSession(
+      of: fixture, reading: { await $0.agents?.runner.registry },
+      thenWriting: {
+        _ = try await addedIDs(on: fixture, writingIn: fixture.rootSettingsFolder)
+        _ = try await addedIDs(
+          afterWriting: laterAgentID, in: fixture.rootSettingsFolder, on: fixture)
+      })
   }
 
   /// Reads the cursor of the `agents` endpoint, subscribes to the changes

@@ -1,6 +1,11 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m77t52g2gzvqd1r178empd8c
+  text: 'Decision of testudoapp-75 (2026-11-12): step1. A run must get the same filter as the root session (^b013mv9): its runCode registry has only the capabilities that its agent''s `tools:` / `disallowedTools:` allow, so what its body says matches what it can do. Prefer the ACPAgent-only change (give each run a filtered registry). Ask foundationmodelsagents-d7 for a hook only if the run''s selection is not reachable from ACPAgent; then stop and report the exact hook. Tests: a run with `disallowedTools: [shell]` has no shell in runCode; a run with no limits keeps it. The always-kept tools stay (files, runCode, searchTools, the endpoint tools). Order: after the push of ^enh25yn and ^vshf002.'
+  timestamp: 2026-11-12T12:01:38.306858+00:00
 position_column: todo
 position_ordinal: '9080'
 title: 'An agent run with a tools: key gets the registry selection of its agent'
@@ -24,4 +29,4 @@ Since ^vshf002, the template values of a run follow the keys of its agent with t
 - [ ] `swift test` passes with no warnings.
 
 ## Workflow
-- Use `/tdd`.
+- Use `/tdd`. #step1

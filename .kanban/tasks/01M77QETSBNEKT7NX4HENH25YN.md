@@ -34,7 +34,16 @@ comments:
     - evidence: review sha 95e3345~1..95e3345; 1 finding (1 confirmed, 0 refuted) — Tests/FoundationModelsACPAgentTests/AgentCatalogWatchTests.swift:172 (reuse/reuse)
     - next: implement the open finding in the 2026-11-12 06:50 Review Findings section, then review again.
   timestamp: 2026-11-12T11:51:40.068667+00:00
-position_column: review
+- actor: claude-code
+  id: 01m77t98h2g89zk5eesk4qjsgc
+  text: |-
+    Finding of the 2026-11-12 06:50 review is done. A new generic helper `registryOfAClosedSession(of:reading:thenWriting:)` in AgentCatalogWatchTests.swift opens a second session, reads one registry from its `SessionSurface` (the `reading` closure), closes the session, and runs the `thenWriting` closure. `registryAfterANewAgent` gives `{ await $0.agents?.runner.registry }` and the two agent writes. `skillsRegistryAfterANewSkill` gives `{ $0.agents?.environment.skills }` and the two skill writes; it reads the control registry inside the write step (the control session stays open, so the order change has no effect). Only the test file changed. No source file changed, no pin moved.
+
+    ### implement — changed
+    - evidence: Tests/FoundationModelsACPAgentTests/AgentCatalogWatchTests.swift. `swift build --build-tests`: complete, 0 compiler warnings (one SwiftPM build-system line, `missing creator for mutated node` for the mlx-swift_Cmlx bundle, not from this change). `swift test`: 2014 tests in 220 suites passed, 0 failures, 1 known issue (the planned `withKnownIssue` in HarnessSmokeTests). The four close tests of AgentCatalogWatchTests passed. No commit.
+    - next: review
+  timestamp: 2026-11-12T12:03:55.554004+00:00
+position_column: doing
 position_ordinal: '80'
 title: The skills registry of a closed session stops its watcher
 ---
@@ -64,4 +73,4 @@ Evidence: a probe test (not kept) opened a control session and a second session 
 > 6 file(s) not reviewed — excluded by an ignore rule:
 > - `.kanban/ (from .reviewignore)` — 6 file(s)
 
-- [ ] `Tests/FoundationModelsACPAgentTests/AgentCatalogWatchTests.swift:172` `reuse/reuse` — The new helper `skillsRegistryAfterANewSkill` repeats the sequence of the existing helper `registryAfterANewAgent`: it opens a session, reads its registry, closes the session, writes two items in a layer, and returns the registry. Only the kind of item and the registry accessor differ. A second copy of this flow lets the two tests drift apart. The shared flow should take the item kind as a parameter. Extract the shared open, close, and two-write flow into one helper. Pass the registry read and the write step as parameters, then have both `registryAfterANewAgent` and `skillsRegistryAfterANewSkill` call it.
+- [x] `Tests/FoundationModelsACPAgentTests/AgentCatalogWatchTests.swift:172` `reuse/reuse` — The new helper `skillsRegistryAfterANewSkill` repeats the sequence of the existing helper `registryAfterANewAgent`: it opens a session, reads its registry, closes the session, writes two items in a layer, and returns the registry. Only the kind of item and the registry accessor differ. A second copy of this flow lets the two tests drift apart. The shared flow should take the item kind as a parameter. Extract the shared open, close, and two-write flow into one helper. Pass the registry read and the write step as parameters, then have both `registryAfterANewAgent` and `skillsRegistryAfterANewSkill` call it.
