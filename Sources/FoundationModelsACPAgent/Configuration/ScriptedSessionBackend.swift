@@ -223,9 +223,10 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
       observer: observer)
   }
 
-  /// Makes a backend over a sibling of `playbook`. This is the one place
-  /// that builds a sibling backend, for a fork, a replaced transcript and
-  /// a container session.
+  /// Makes a backend over a sibling of `playbook` that continues the
+  /// script of `seededEntries`. This is the one place that builds a sibling
+  /// backend, for a fork, a replaced transcript and a container session,
+  /// fresh or restored.
   ///
   /// - Parameters:
   ///   - playbook: The playbook to take a sibling of.
@@ -243,7 +244,7 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     observer: (any ScriptedBackendObserver)?
   ) -> ScriptedSessionBackend {
     ScriptedSessionBackend(
-      playbook: playbook.makeSibling(),
+      playbook: playbook.makeSibling(continuing: seededEntries),
       tools: tools,
       instructions: instructions,
       seededEntries: seededEntries,

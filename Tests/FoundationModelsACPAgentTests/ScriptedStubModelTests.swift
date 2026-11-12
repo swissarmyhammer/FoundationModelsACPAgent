@@ -299,4 +299,87 @@ import Testing
     pass.cancel()
     await #expect(throws: CancellationError.self) { try await pass.value }
   }
+
+  // MARK: - The restore
+
+  /// The first message of a restored run. The Agents package writes it, and
+  /// it holds no marker of the script.
+  private static let restoredRunContinue = """
+    The process stopped while you worked. Read your transcript, and go on with your task \
+    from the last step.
+    """
+
+  /// A script of one session: a first pass that ends, and a second pass
+  /// that stops at a gate on `path`.
+  private static func gatedSecondPassScript(path: String) -> ScriptedStubScript {
+    ScriptedStubScript(sessions: [
+      .init(
+        promptContains: "go",
+        passes: [
+          [.textDelta("one")],
+          [.reasoning("at the gate"), .gate(path: path), .textDelta("done")],
+        ])
+    ])
+  }
+
+  /// Records a session of `container` that stops at the gate of its second
+  /// pass, as a process that stops while the pass waits.
+  ///
+  /// - Parameters:
+  ///   - container: The container of the recorded session.
+  ///   - closedByRouter: `true` to add the empty `.response` entry that
+  ///     Router records for a pass that did not answer, as an orderly
+  ///     shutdown leaves the transcript. `false` for the transcript that a
+  ///     kill leaves.
+  /// - Returns: The recorded entries.
+  private static func recordStopAtGate(
+    of container: ScriptedLLMContainer, closedByRouter: Bool
+  ) async throws -> [Transcript.Entry] {
+    let backend = try #require(
+      container.makeSession(instructions: nil) as? ScriptedSessionBackend)
+    _ = try await backend.respond(to: "go now", maxTokens: nil)
+    let pass = Task { try await backend.respond(to: "go on", maxTokens: nil) }
+    await Self.waitForReasoning(of: backend)
+    pass.cancel()
+    _ = await pass.result
+    let close: [Transcript.Entry] =
+      closedByRouter ? [.response(Transcript.Response(segments: []))] : []
+    return backend.transcriptEntries() + close
+  }
+
+  /// Waits until the pass in flight of `backend` makes a `.reasoning` or a
+  /// `.response` entry after the first `seededCount` entries.
+  ///
+  /// - Returns: `true` when the first new entry is the reasoning before the
+  ///   gate, and `false` when the pass answered first.
+  private static func reachesTheGate(
+    _ backend: ScriptedSessionBackend, seededCount: Int
+  ) async -> Bool {
+    for await entries in backend.transcriptUpdates() {
+      for entry in entries.dropFirst(seededCount) {
+        switch entry {
+        case .reasoning: return true
+        case .response: return false
+        default: continue
+        }
+      }
+    }
+    return false
+  }
+
+  @Test(arguments: [false, true])
+  func aRestoredSessionPlaysThePassThatStoppedAtTheGateAgain(closedByRouter: Bool) async throws {
+    let path = try Self.gatePath()
+    let container = ScriptedLLMContainer(playbook: .sessions(Self.gatedSecondPassScript(path: path)))
+    let recorded = try await Self.recordStopAtGate(of: container, closedByRouter: closedByRouter)
+    let restored = try #require(
+      container.makeSession(transcript: Transcript(entries: recorded)) as? ScriptedSessionBackend)
+    let pass = Task { try await restored.respond(to: Self.restoredRunContinue, maxTokens: nil) }
+
+    let atGate = await Self.reachesTheGate(restored, seededCount: recorded.count)
+
+    try Data().write(to: URL(fileURLWithPath: path))
+    _ = await pass.result
+    #expect(atGate)
+  }
 }

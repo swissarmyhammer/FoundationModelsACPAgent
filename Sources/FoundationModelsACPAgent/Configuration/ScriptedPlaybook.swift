@@ -37,6 +37,44 @@ public final class ScriptedPlaybook: Sendable {
 
     /// The index of the next pass to play.
     var nextPass = 0
+
+    /// The progress of a new backend: no session is chosen yet.
+    init() {}
+
+    /// The progress of a playbook of sessions that continues `entries`.
+    ///
+    /// - Parameters:
+    ///   - entries: The transcript that a new backend starts from.
+    ///   - script: The script that holds the sessions.
+    init(continuing entries: [Transcript.Entry], of script: ScriptedStubScript) {
+      guard let firstPrompt = entries.first(where: Self.isPrompt) else { return }
+      let promptText = CharacterCountTokenCounter.content(of: firstPrompt)
+      passes = script.passes(forFirstPrompt: promptText) ?? []
+      nextPass = entries.count(where: Self.isEndedPass)
+    }
+
+    /// Whether `entry` is a `.prompt` entry.
+    ///
+    /// - Parameter entry: The entry.
+    /// - Returns: `true` for a `.prompt` entry.
+    private static func isPrompt(_ entry: Transcript.Entry) -> Bool {
+      if case .prompt = entry { return true }
+      return false
+    }
+
+    /// Whether `entry` is the `.response` entry of a pass that ended.
+    ///
+    /// A scripted pass that ends writes a `.response` entry with one text
+    /// segment. Router records a `.response` entry with no segments for a
+    /// pass that did not answer, for example a pass that the stop of the
+    /// process interrupted. That pass did not end.
+    ///
+    /// - Parameter entry: The entry.
+    /// - Returns: `true` for a `.response` entry that has segments.
+    private static func isEndedPass(_ entry: Transcript.Entry) -> Bool {
+      if case .response(let response) = entry { return !response.segments.isEmpty }
+      return false
+    }
   }
 
   /// The plan.
@@ -44,13 +82,17 @@ public final class ScriptedPlaybook: Sendable {
 
   /// The progress, under one lock. A playbook of one script never reads
   /// it.
-  private let progress = Mutex(Progress())
+  private let progress: Mutex<Progress>
 
   /// Makes a playbook of a plan.
   ///
-  /// - Parameter plan: The plan.
-  private init(plan: Plan) {
+  /// - Parameters:
+  ///   - plan: The plan.
+  ///   - progress: The progress to start from. The default is the
+  ///     progress of a new backend.
+  private init(plan: Plan, progress: Progress = Progress()) {
     self.plan = plan
+    self.progress = Mutex(progress)
   }
 
   /// Makes a playbook that plays `steps` from the start at every call.
@@ -72,18 +114,27 @@ public final class ScriptedPlaybook: Sendable {
     ScriptedPlaybook(plan: .sessions(script))
   }
 
-  /// Makes the playbook of a backend that forks from this one, or that
-  /// continues from a replaced transcript. It plays as a new backend
-  /// would: a playbook of sessions starts again and chooses by its own
-  /// first prompt.
+  /// Makes the playbook of a new backend: a fresh one, a fork of this one,
+  /// one that continues from a replaced transcript, or one that a restore
+  /// makes after the process stopped.
   ///
+  /// A playbook of sessions continues the script of `seededEntries`. The
+  /// first `.prompt` entry chooses the session, and the passes that ended
+  /// in the entries do not play again. A pass that did not end, for
+  /// example a pass that the stop of the process interrupted at a gate,
+  /// plays again from its start. Entries with no `.prompt` entry, and no
+  /// entries, give a playbook that chooses by its own first prompt.
+  ///
+  /// - Parameter seededEntries: The transcript the new backend starts
+  ///   from, or empty for a fresh backend.
   /// - Returns: The playbook of the new backend.
-  func makeSibling() -> ScriptedPlaybook {
+  func makeSibling(continuing seededEntries: [Transcript.Entry]) -> ScriptedPlaybook {
     switch plan {
     case .everyPass:
       self
     case .sessions(let script):
-      ScriptedPlaybook(plan: .sessions(script))
+      ScriptedPlaybook(
+        plan: .sessions(script), progress: Progress(continuing: seededEntries, of: script))
     }
   }
 
