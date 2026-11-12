@@ -1165,7 +1165,10 @@ extension RoutedACPAgent {
     let surface: SessionSurface
     do {
       agent = try await composeSessionAgent(
-        resolvedAgent, catalog: catalog, runner: fullSurface.agents?.runner)
+        resolvedAgent, catalog: catalog, runner: fullSurface.agents?.runner,
+        templateContext: ToolCatalog.skillsTemplateContext(
+          catalogContext.configuration.tools, mode: catalogContext.toolMode,
+          sessionAgent: resolvedAgent.definition))
       surface = try await fullSurface.applying(agent: agent.definition)
       instructions = try await InstructionsAssembler(
         stack: context.loader.stack, workingDirectory: workingDirectory, toolMode: toolMode,

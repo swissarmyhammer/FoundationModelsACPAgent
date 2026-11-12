@@ -95,6 +95,9 @@ import Testing
   /// The template group of the MCP tools.
   private static let mcpTemplateGroup = "mcp"
 
+  /// The name of one tool of an MCP server, as a run resolves it.
+  private static let mcpToolName = "mcp__probe__ping"
+
   /// The template group of the code context tools. Its surface name is
   /// ``ToolCatalog/codeContextGroupName``.
   private static let codeContextTemplateGroup = "codeContext"
@@ -117,6 +120,19 @@ import Testing
     {% if tools.shell.enabled %}PROBE-SHELL-ON{% else %}\(shellOffMarker){% endif %}
     """
 
+  /// The text that the body of the session agent renders when the shell
+  /// value is `true`.
+  private static let bodyShellOnMarker = "BODY-SHELL-ON"
+
+  /// The text that the body of the session agent renders when the shell
+  /// value is `false`.
+  private static let bodyShellOffMarker = "BODY-SHELL-OFF"
+
+  /// A body of the session agent that tells the value of
+  /// `tools.shell.enabled`.
+  private static let shellGatedBody =
+    "{% if tools.shell.enabled %}\(bodyShellOnMarker){% else %}\(bodyShellOffMarker){% endif %}"
+
   // MARK: - Helpers
 
   /// Writes the session agent `<cwd>/AGENT.md` with `keys` in its
@@ -124,11 +140,15 @@ import Testing
   ///
   /// - Parameters:
   ///   - keys: The frontmatter lines after `name` and `description`.
+  ///   - body: The body of the agent. `AgentFolderFixture.defaultBody` by
+  ///     default.
   ///   - cwd: The working directory.
   /// - Throws: The write error.
-  private static func writeSessionAgent(keys: [String], in cwd: URL) throws {
+  private static func writeSessionAgent(
+    keys: [String], body: String = AgentFolderFixture.defaultBody, in cwd: URL
+  ) throws {
     try AgentFolderFixture.document(
-      id: sessionAgentID, description: "The probe session agent.", extraKeys: keys
+      id: sessionAgentID, description: "The probe session agent.", extraKeys: keys, body: body
     ).write(
       to: cwd.appendingPathComponent(AgentFolderFixture.documentName), atomically: true,
       encoding: .utf8)
@@ -432,6 +452,49 @@ import Testing
     #expect(try Self.templateValues(keys: ["disallowedTools: [files]"])[Self.filesName] == true)
   }
 
+  /// The `tools.<group>.enabled` values that the run closure of the agent
+  /// environment gives for a run agent with `keys` and the resolved tool
+  /// names `toolNames`.
+  ///
+  /// - Parameters:
+  ///   - keys: The frontmatter lines of the run agent.
+  ///   - toolNames: The names of the resolved tools of the run.
+  /// - Returns: The value of each group, by its name.
+  /// - Throws: The write error, or when the agent does not load.
+  private static func runTemplateValues(keys: [String], toolNames: [String]) throws
+    -> [String: Bool]
+  {
+    let closure = ToolCatalog.runTemplateContext(
+      AgentConfiguration.withoutMarketplaces.tools, mode: .open)
+    return enabledValues(of: closure(try definition(keys: keys), toolNames))
+  }
+
+  /// A run agent with `tools: [web]` gets `tools.shell.enabled` as `false`.
+  @Test func aRunWithToolsWebGetsTheShellTemplateValueOff() throws {
+    #expect(try Self.runTemplateValues(keys: ["tools: [web]"], toolNames: [])[Self.shellName] == false)
+  }
+
+  /// A run agent with `tools: [web]` gets `tools.web.enabled` as `true`.
+  @Test func aRunWithToolsWebGetsTheWebTemplateValueOn() throws {
+    #expect(try Self.runTemplateValues(keys: ["tools: [web]"], toolNames: [])[Self.webName] == true)
+  }
+
+  /// A run agent with no `tools:` key gets the values of the configuration.
+  @Test func aRunWithNoToolsKeyGetsTheTemplateValuesOfTheConfiguration() throws {
+    #expect(
+      try Self.runTemplateValues(keys: [], toolNames: Self.surfaceNames)
+        == Self.templateValues(keys: nil))
+  }
+
+  /// A run whose resolved tools hold one MCP tool gets `tools.mcp.enabled`
+  /// as `true`.
+  @Test func aRunWithAResolvedMCPToolGetsTheMCPTemplateValueOn() throws {
+    #expect(
+      try Self.runTemplateValues(
+        keys: ["tools: [\(Self.mcpToolName)]"], toolNames: [Self.mcpToolName])[
+          Self.mcpTemplateGroup] == true)
+  }
+
   /// A composed session whose session agent has `disallowedTools: [shell]`
   /// renders a preloaded skill with `tools.shell.enabled` as `false`.
   @Test func aComposedSessionRendersASkillWithTheSelectionOfTheSessionAgent() async throws {
@@ -450,6 +513,47 @@ import Testing
     await composition.surface.shutdown()
 
     #expect(composition.instructions.contains(Self.shellOffMarker), "\(composition.instructions)")
+  }
+
+  /// Composes one session in a fresh working directory whose session agent
+  /// has `keys` and the body ``shellGatedBody``.
+  ///
+  /// - Parameters:
+  ///   - keys: The frontmatter lines of the session agent.
+  ///   - name: The name of the test, for the folders.
+  /// - Returns: The instructions of the composed session.
+  /// - Throws: What the agent or the composition throws.
+  private static func instructionsOfShellGatedSessionAgent(keys: [String], name: String)
+    async throws -> String
+  {
+    let routed = try await AgentClientHarness.makeInitializedAgent(label: label)
+    let cwd = makeResolvedDirectory(label: "\(label)-\(name)")
+    try writeSessionAgent(keys: keys, body: shellGatedBody, in: cwd)
+    let loaded = try await LoadedSessionContext.load(
+      workingDirectory: cwd, from: routed.settingsStore)
+    let composition = try await routed.composeSession(
+      from: loaded, workingDirectory: cwd, additionalRoots: [], clientMCPServers: [],
+      userPresence: .headless)
+    await composition.surface.shutdown()
+    return composition.instructions
+  }
+
+  /// A session agent with `disallowedTools: [shell]` renders its own body
+  /// with `tools.shell.enabled` as `false`.
+  @Test func disallowedShellRendersTheBodyOfTheSessionAgentWithTheShellOff() async throws {
+    let instructions = try await Self.instructionsOfShellGatedSessionAgent(
+      keys: ["disallowedTools: [shell]"], name: "body-disallowed")
+
+    #expect(instructions.contains(Self.bodyShellOffMarker), "\(instructions)")
+  }
+
+  /// A session agent with no `tools:` key renders its own body with the
+  /// values of the configuration: the shell is on in the `open` mode.
+  @Test func noToolsKeyRendersTheBodyOfTheSessionAgentWithTheConfiguredShell() async throws {
+    let instructions = try await Self.instructionsOfShellGatedSessionAgent(
+      keys: [], name: "body-plain")
+
+    #expect(instructions.contains(Self.bodyShellOnMarker), "\(instructions)")
   }
 
   // MARK: - The refresh of the registry

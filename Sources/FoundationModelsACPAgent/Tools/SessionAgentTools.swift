@@ -61,16 +61,23 @@ struct SessionToolSelection: Sendable, Equatable {
   /// and the `agents` group keep their values. The `mcp` group reads one
   /// probe name `mcp__<server>__` for each configured server, or the probe
   /// `mcp__` when the configuration names no server. It stays `true` when
-  /// the selection keeps one probe. A selection never turns a group on.
+  /// the selection keeps one name that starts with `mcp__`: a probe, or an
+  /// MCP tool of `toolNames`. A selection never turns a group on.
+  ///
+  /// An agent run gives the names of its resolved tools as `toolNames`
+  /// (``ToolCatalog/runTemplateContext(_:mode:)``). The selection reads them
+  /// beside the surface names of the groups.
   ///
   /// - Parameters:
   ///   - groups: The value of each group from the configuration and the
   ///     tool mode, by its name.
-  ///   - definition: The session agent.
+  ///   - definition: The session agent, or the agent of a run.
   ///   - mcpServerNames: The names of the configured MCP servers.
+  ///   - toolNames: Further tool names for the selection. Empty by default.
   /// - Returns: The value of each group, by its name.
   static func templateGroups(
-    _ groups: [String: Bool], of definition: AgentDefinition, mcpServerNames: [String]
+    _ groups: [String: Bool], of definition: AgentDefinition, mcpServerNames: [String],
+    toolNames: [String] = []
   ) -> [String: Bool] {
     let mcpProbes =
       mcpServerNames.isEmpty
@@ -78,17 +85,19 @@ struct SessionToolSelection: Sendable, Equatable {
       : mcpServerNames.map { server in
         RegistrySelection.mcpPrefix + server + RegistrySelection.mcpSeparator
       }
-    let toolNames = groups.keys.filter {
+    let groupNames = groups.keys.filter {
       $0 != ToolCatalog.agentsToolName && $0 != ToolCatalog.mcpGroupName
     }.map(surfaceName(ofTemplateGroup:))
-    let kept = SessionToolSelection(definition: definition, names: toolNames + mcpProbes).keptNames
+    let names = Set(groupNames + mcpProbes + toolNames).subtracting([ToolCatalog.agentsToolName])
+    let kept = SessionToolSelection(definition: definition, names: names.sorted()).keptNames
+    let keepsMCP = kept.contains { $0.hasPrefix(RegistrySelection.mcpPrefix) }
     return Dictionary(
       uniqueKeysWithValues: groups.map { name, isOn in
         switch name {
         case ToolCatalog.agentsToolName:
           (name, isOn)
         case ToolCatalog.mcpGroupName:
-          (name, isOn && !kept.isDisjoint(with: mcpProbes))
+          (name, isOn && keepsMCP)
         default:
           (name, isOn && kept.contains(surfaceName(ofTemplateGroup: name)))
         }

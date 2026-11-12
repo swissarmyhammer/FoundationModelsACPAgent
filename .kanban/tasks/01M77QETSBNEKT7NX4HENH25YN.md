@@ -27,8 +27,15 @@ comments:
     - evidence: Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift, Sources/FoundationModelsACPAgent/Tools/AgentsComposition.swift, Tests/FoundationModelsACPAgentTests/AgentCatalogWatchTests.swift. `swift build --build-tests`: complete, 0 compiler warnings (all own sources touched first). `swift test`: 2006 tests in 220 suites passed, 0 failures, 1 known issue (the planned `withKnownIssue` in HarnessSmokeTests). `swift build --build-tests --package-path IntegrationTests`: complete, 0 compiler warnings. SwiftPM gives one build-system line, `missing creator for mutated node` for the mlx-swift_Cmlx bundle; it is not a compiler warning and does not come from this change. Pins (root and IntegrationTests): FoundationModelsSkills 1421de4 -> 55aa12c (08f54fa is an ancestor), FoundationModelsAgents b5fbe7b -> a8a2153. No other package moved. Package.resolved is in .gitignore, thus the pin change is local and has no git diff. No commit.
     - next: review
   timestamp: 2026-11-12T11:49:30.503783+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m77sjt94rp3wmhe1ne2z91vh
+  text: |-
+    ### review — findings
+    - evidence: review sha 95e3345~1..95e3345; 1 finding (1 confirmed, 0 refuted) — Tests/FoundationModelsACPAgentTests/AgentCatalogWatchTests.swift:172 (reuse/reuse)
+    - next: implement the open finding in the 2026-11-12 06:50 Review Findings section, then review again.
+  timestamp: 2026-11-12T11:51:40.068667+00:00
+position_column: review
+position_ordinal: '80'
 title: The skills registry of a closed session stops its watcher
 ---
 ## What
@@ -49,3 +56,12 @@ Evidence: a probe test (not kept) opened a control session and a second session 
 ## Tests
 - [x] A close test in `Tests/FoundationModelsACPAgentTests/` like the close tests of `AgentCatalogWatchTests.swift`.
 - [x] `swift test` passes with no warnings. #step1
+
+## Review Findings (2026-11-12 06:50)
+
+> Scope: `review sha 95e3345~1..95e3345` — reviewed the diffs only — lines this change added or modified. 3 file(s) reviewed, 6 not reviewed.
+
+> 6 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 6 file(s)
+
+- [ ] `Tests/FoundationModelsACPAgentTests/AgentCatalogWatchTests.swift:172` `reuse/reuse` — The new helper `skillsRegistryAfterANewSkill` repeats the sequence of the existing helper `registryAfterANewAgent`: it opens a session, reads its registry, closes the session, writes two items in a layer, and returns the registry. Only the kind of item and the registry accessor differ. A second copy of this flow lets the two tests drift apart. The shared flow should take the item kind as a parameter. Extract the shared open, close, and two-write flow into one helper. Pass the registry read and the write step as parameters, then have both `registryAfterANewAgent` and `skillsRegistryAfterANewSkill` call it.

@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModelsACP
 import FoundationModelsAgents
+import FoundationModelsExtras
 import FoundationModelsRouter
 
 /// The agent part of one session composition: the agent, the rendered text
@@ -71,23 +72,32 @@ extension RoutedACPAgent {
 
   /// Renders the instructions of the resolved agent of one session.
   ///
+  /// The body of the agent renders with `templateContext`, the values of
+  /// the tool groups of the session with the `tools:` and
+  /// `disallowedTools:` keys of the agent applied
+  /// (``ToolCatalog/skillsTemplateContext(_:mode:sessionAgent:)``). Thus the
+  /// body and the skills of the session read the same values.
+  ///
   /// - Parameters:
   ///   - resolved: The agent that ``resolveSessionAgent(in:requested:resuming:workingDirectory:transcriptRoot:)``
   ///     gave.
   ///   - catalog: The agent catalog that `resolved` came from.
   ///   - runner: The agent runner of the session surface, over the same
   ///     catalog. A surface that the catalog composes always has one.
+  ///   - templateContext: The template values of the body.
   /// - Returns: The agent and its instructions.
   /// - Throws: The render failure of the agent.
   func composeSessionAgent(
-    _ resolved: ResolvedSessionAgent, catalog: AgentCatalog, runner: AgentRunner?
+    _ resolved: ResolvedSessionAgent, catalog: AgentCatalog, runner: AgentRunner?,
+    templateContext: [String: TemplateValue]
   ) async throws -> SessionAgentPrompt {
     SessionAgentPrompt(
       agent: ComposedSessionAgent(
         choice: resolved.choice,
         option: ConfigOptions.AgentOption(catalog: catalog, agent: resolved),
         slot: startSlot(of: resolved.definition)),
-      text: try await renderedInstructions(of: resolved.definition, runner: runner),
+      text: try await renderedInstructions(
+        of: resolved.definition, runner: runner, templateContext: templateContext),
       definition: resolved.definition,
       workingDirectoryAgent: resolved.workingDirectoryAgent)
   }
@@ -115,11 +125,13 @@ extension RoutedACPAgent {
   ///     surface with no agents mount. The catalog always composes the
   ///     mount, thus `nil` is a defect: the session then gets the builtin
   ///     floor and the log tells it.
+  ///   - templateContext: The template values of the body.
   /// - Returns: The text, or `nil` for the builtin floor.
   /// - Throws: The render failure of the agent.
-  private func renderedInstructions(of definition: AgentDefinition?, runner: AgentRunner?)
-    async throws -> String?
-  {
+  private func renderedInstructions(
+    of definition: AgentDefinition?, runner: AgentRunner?,
+    templateContext: [String: TemplateValue]
+  ) async throws -> String? {
     guard let definition else {
       return nil
     }
@@ -129,7 +141,8 @@ extension RoutedACPAgent {
         "The session surface has no agent runner. The session gets the builtin instructions.")
       return nil
     }
-    let instructions = try await runner.sessionAgentInstructions(for: definition)
+    let instructions = try await runner.sessionAgentInstructions(
+      for: definition, templateContext: templateContext)
     for diagnostic in instructions.diagnostics {
       ACPAgentTelemetry.logger(.session).warning(
         "The session agent has a skill that it cannot preload: \(diagnostic)")

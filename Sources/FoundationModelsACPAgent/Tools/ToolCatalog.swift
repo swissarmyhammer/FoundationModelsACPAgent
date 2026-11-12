@@ -309,7 +309,7 @@ public enum ToolCatalog {
   /// The surface name of each skills template group whose key is not its
   /// surface name. The `tools:` and `disallowedTools:` keys of a session
   /// agent name a group by its surface name
-  /// (``SessionToolSelection/templateGroups(_:of:mcpServerNames:)``). Each
+  /// (``SessionToolSelection/templateGroups(_:of:mcpServerNames:toolNames:)``). Each
   /// other template key is the noun or the tool name of its group on the
   /// surface.
   static let templateGroupSurfaceNames: [String: String] = [
@@ -912,7 +912,7 @@ public enum ToolCatalog {
   ///
   /// The `tools:` and `disallowedTools:` keys of the session agent then
   /// turn off each group that the agent removes from the root session
-  /// (``SessionToolSelection/templateGroups(_:of:mcpServerNames:)``), thus a
+  /// (``SessionToolSelection/templateGroups(_:of:mcpServerNames:toolNames:)``), thus a
   /// skill sees the tools that the model has. A key never turns a group on.
   ///
   /// - Parameters:
@@ -924,30 +924,54 @@ public enum ToolCatalog {
   static func skillsTemplateContext(
     _ tools: ToolsConfiguration, mode: ToolMode, sessionAgent: AgentDefinition? = nil
   ) -> [String: TemplateValue] {
-    func isOn<Options>(_ section: ToolSection<Options>) -> Bool {
-      if case .enabled = section { true } else { false }
-    }
-    func isChildProcessGroupOn<Options>(_ section: ToolSection<Options>) -> Bool {
-      mode == .open && isOn(section)
-    }
-    let mcpServers: [MCPServerConfiguration]? =
-      if case .enabled(let servers) = tools.mcp { servers } else { nil }
-    let configured: [String: Bool] = [
-      filesGroupName: isOn(tools.files), "shell": isChildProcessGroupOn(tools.shell),
-      SkillOutputProtection.skillsToolName: true, agentsToolName: true,
-      codeContextTemplateGroup: isChildProcessGroupOn(tools.codeContext),
-      "web": isOn(tools.web), "git": isOn(tools.git),
-      "environment": isOn(tools.environment), "kanban": isOn(tools.kanban),
-      mcpGroupName: mcpServers != nil,
-    ]
+    let configured = ConfiguredTemplateGroups(tools, mode: mode)
     let groups =
       sessionAgent.map { definition in
         SessionToolSelection.templateGroups(
-          configured, of: definition, mcpServerNames: mcpServers?.map(\.name) ?? [])
-      } ?? configured
-    return [
-      "tools": .dictionary(groups.mapValues { .dictionary(["enabled": .bool($0)]) })
-    ]
+          configured.groups, of: definition, mcpServerNames: configured.mcpServerNames)
+      } ?? configured.groups
+    return templateContext(of: groups)
+  }
+
+  /// The template values of the body, the `skills:` preload and the
+  /// `skills` tool of each agent run, new or restored
+  /// (`AgentEnvironment.runTemplateContext`).
+  ///
+  /// The values of a run follow the `tools:` and `disallowedTools:` keys of
+  /// its own agent, with the rules of the root session
+  /// (``SessionToolSelection/templateGroups(_:of:mcpServerNames:toolNames:)``):
+  /// the groups in ``alwaysOnToolNames`` stay on, the shell and the code
+  /// context are off in the `sandboxed` mode, the selection names the code
+  /// context group `code_context`, and an MCP name keeps the `mcp` group on.
+  /// The selection also reads the names of the resolved tools of the run. In
+  /// this host they are `searchTools`, `runCode`, `skills` and `agents`
+  /// (``AgentsComposition/makeRunTools(registry:selection:embedder:mounted:)``);
+  /// each tool group is a noun of the registry of `runCode`. The keys of the
+  /// session agent do not apply to a run. FoundationModelsAgents turns the
+  /// `agents` group off for an agent that denies the `agents` tool.
+  ///
+  /// - Parameters:
+  ///   - tools: The tool groups of the configuration.
+  ///   - mode: The tool mode of the session (``CatalogContext/toolMode``).
+  /// - Returns: The closure for `AgentEnvironment.make(runTemplateContext:)`.
+  static func runTemplateContext(_ tools: ToolsConfiguration, mode: ToolMode)
+    -> AgentEnvironment.RunTemplateContext
+  {
+    let configured = ConfiguredTemplateGroups(tools, mode: mode)
+    return { definition, toolNames in
+      templateContext(
+        of: SessionToolSelection.templateGroups(
+          configured.groups, of: definition, mcpServerNames: configured.mcpServerNames,
+          toolNames: toolNames))
+    }
+  }
+
+  /// The template values for the value of each tool group.
+  ///
+  /// - Parameter groups: The value of each group, by its name.
+  /// - Returns: The values, under the key `tools`: `tools.<group>.enabled`.
+  private static func templateContext(of groups: [String: Bool]) -> [String: TemplateValue] {
+    ["tools": .dictionary(groups.mapValues { .dictionary(["enabled": .bool($0)]) })]
   }
 
   /// Makes the selection tier of `searchTools`: for each catalog, a
@@ -974,5 +998,47 @@ public enum ToolCatalog {
   {
     let model = RoutedSelectionModel(profile: profile)
     return { _ in SelectionConfig(model: model) }
+  }
+}
+
+/// The value of each skills template group from the configuration and the
+/// tool mode, before a `tools:` or `disallowedTools:` key applies
+/// (``ToolCatalog/skillsTemplateContext(_:mode:sessionAgent:)``).
+///
+/// The skills and agents groups are always on. The shell and the code
+/// context start child processes. In the `sandboxed` mode the session has
+/// neither of them (``ToolCatalog/childProcessOptions(of:in:)``), thus their
+/// values are `false` in that mode, whatever the configuration tells.
+struct ConfiguredTemplateGroups: Sendable {
+  /// The value of each group, by its template key.
+  let groups: [String: Bool]
+
+  /// The names of the configured MCP servers. Empty when the MCP section is
+  /// off.
+  let mcpServerNames: [String]
+
+  /// Reads the groups of `tools` in `mode`.
+  ///
+  /// - Parameters:
+  ///   - tools: The tool groups of the configuration.
+  ///   - mode: The tool mode of the session.
+  init(_ tools: ToolsConfiguration, mode: ToolMode) {
+    func isOn<Options>(_ section: ToolSection<Options>) -> Bool {
+      if case .enabled = section { true } else { false }
+    }
+    func isChildProcessGroupOn<Options>(_ section: ToolSection<Options>) -> Bool {
+      mode == .open && isOn(section)
+    }
+    let mcpServers: [MCPServerConfiguration]? =
+      if case .enabled(let servers) = tools.mcp { servers } else { nil }
+    groups = [
+      ToolCatalog.filesGroupName: isOn(tools.files), "shell": isChildProcessGroupOn(tools.shell),
+      SkillOutputProtection.skillsToolName: true, ToolCatalog.agentsToolName: true,
+      ToolCatalog.codeContextTemplateGroup: isChildProcessGroupOn(tools.codeContext),
+      "web": isOn(tools.web), "git": isOn(tools.git),
+      "environment": isOn(tools.environment), "kanban": isOn(tools.kanban),
+      ToolCatalog.mcpGroupName: mcpServers != nil,
+    ]
+    mcpServerNames = mcpServers?.map(\.name) ?? []
   }
 }

@@ -72,8 +72,13 @@ enum AgentsComposition {
   /// environment. FoundationModelsAgents then adds the `AGENTS.md` text of
   /// the working folder of the run and the body of its agent. The main
   /// session gets the style text from ``InstructionsAssembler``, and
-  /// `AgentRunner.sessionAgentInstructions(for:)` does not add the preamble.
-  /// So the main session has the style text one time.
+  /// `AgentRunner.sessionAgentInstructions(for:templateContext:)` does not
+  /// add the preamble. So the main session has the style text one time.
+  ///
+  /// The body, the `skills:` preload and the `skills` tool of each run
+  /// render with the template values of the tools of that run
+  /// (``ToolCatalog/runTemplateContext(_:mode:)``). The `skills` tool of the
+  /// main session keeps the values of the session agent.
   ///
   /// The `skills` tool of the environment reads the sandbox probe of the
   /// session (``CatalogContext/sandboxProbe``). So a skills registry in the
@@ -133,6 +138,8 @@ enum AgentsComposition {
       runEventObserver: makeRunEventObserver(runCallJoins: runCallJoins, announcer: announcer),
       callerMail: context.agentRunHost?.callerMail,
       instructionsPreamble: StyleInstructions.text,
+      runTemplateContext: ToolCatalog.runTemplateContext(
+        context.configuration.tools, mode: context.toolMode),
       sandboxProbe: context.sandboxProbe)
     let environment = context.agentRunHost?.linking(made) ?? made
     let runner = AgentRunner(registry: registry, environment: environment)
