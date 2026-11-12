@@ -31,8 +31,11 @@ import struct FoundationModelsRouter.MailDeliveryPause
 /// The pause is current state, as the `state_update` is (task ^tq96bjy). A
 /// replay sends no recorded pause (``SessionMergeEngine/replayUpdates(from:)``):
 /// a later prompt can have lifted it. The session entry keeps the pause in
-/// force (``ActiveSession/mailDeliveryPause``), and a hot resume sends it after
-/// the replay. A cold restore sends no pause: Router does not restore it. The
+/// force (``ActiveSession/mailDeliveryPause``), for a root session and for a
+/// child session (task ^c4hafqw). The first mail that the session takes after
+/// the pause lifts it. A hot resume sends the pause of the root after the
+/// replay, and the pause of each live child after the own `state_update` of the
+/// child. A cold restore sends no pause: Router does not restore it. The
 /// restore gives each queued mail with no terminal record the terminal event
 /// `lost`, and the restored session holds no mail.
 enum MailDeliveryPauseReport {

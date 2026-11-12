@@ -233,7 +233,8 @@ extension RoutedACPAgent {
         resumeHold: { table.route(forSession: sessionId)?.hold },
         outboundPath: { table.path(forSession: sessionId) }),
       runCallJoins: build.runCallJoins,
-      stateLedger: stateLedger)
+      stateLedger: stateLedger,
+      liftMailDeliveryPause: { [weak self] in await self?.liftMailDeliveryPause(of: sessionId) })
     if let events {
       await projector.attach(
         events, from: SessionProjector.Source(id: session.id, session: session))

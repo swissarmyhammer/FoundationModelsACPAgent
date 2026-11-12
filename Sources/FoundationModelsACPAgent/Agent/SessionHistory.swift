@@ -274,6 +274,17 @@ extension RoutedACPAgent {
     sessions[sessionId]?.record(update)
   }
 
+  /// Clears the pause of the mail delivery in force of a session (``ActiveSession/mailDeliveryPause``).
+  /// Router holds run mail only until the next user-type mail carries it. So the first mail that
+  /// the session takes after a pause lifts the pause (``SessionProjector``), and a model prompt
+  /// of the client lifts the pause of a root session when the agent accepts it. A session that
+  /// the table does not hold any more keeps no pause.
+  ///
+  /// - Parameter sessionId: The session whose pause lifted.
+  func liftMailDeliveryPause(of sessionId: SessionId) {
+    sessions[sessionId]?.mailDeliveryPause = nil
+  }
+
   /// Merges one update into the retained history of a session, and reads
   /// where the update goes, in one step of the actor.
   ///

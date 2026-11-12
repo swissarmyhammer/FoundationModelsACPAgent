@@ -202,22 +202,23 @@ struct ActiveSession: Sendable {
   }
 
   /// The `_mail_delivery_paused` update of the pause in force, or `nil` when the mail delivery
-  /// of the session is not paused (task ^tq96bjy). The record of a pause sets it
-  /// (``record(_:)``). The next model prompt of the client mails Router the message that lifts
-  /// the pause, so that prompt clears it
+  /// of the session is not paused (tasks ^tq96bjy and ^c4hafqw). The record of a pause sets it
+  /// (``record(_:)``), for a root session and for a nested session. The first mail that the
+  /// session takes after the pause clears it (``RoutedACPAgent/liftMailDeliveryPause(of:)``): for
+  /// a nested session, that mail is a message of its caller. The next model prompt of a root
+  /// session mails Router the message that lifts the pause, so that prompt clears it too
   /// (``RoutedACPAgent/scheduleModelPrompt(overridePrompt:params:entry:connection:owner:send:)``).
-  /// A hot resume sends it after the replay (``MailDeliveryPauseReport``). A nested session
-  /// keeps no pause: a message of its caller, not a client prompt, lifts its pause.
+  /// A hot resume sends the pause in force of the root after the replay, and the pause in force
+  /// of each live child after the own `state_update` of the child (``MailDeliveryPauseReport``).
   var mailDeliveryPause: SessionUpdate?
 
   /// Merges one update into the retained history, and keeps the pause of a
-  /// `_mail_delivery_paused` update of a root session as the pause in force
-  /// (``mailDeliveryPause``).
+  /// `_mail_delivery_paused` update as the pause in force (``mailDeliveryPause``).
   ///
   /// - Parameter update: The update that the agent sends.
   mutating func record(_ update: SessionUpdate) {
     retainedHistory.apply(update)
-    guard update.isMailDeliveryPause, parentSessionId == nil else {
+    guard update.isMailDeliveryPause else {
       return
     }
     mailDeliveryPause = update

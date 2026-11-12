@@ -31,7 +31,8 @@ extension RoutedACPAgent {
   /// response. For a child that restored: its `subagent_update` on the stream of its parent, with
   /// the state that its ledger reports now (a cold-restored child is `idle`, a child that works
   /// shows `running`), the capabilities and the working directory. Then its own `state_update`
-  /// on its own stream. For a child that did not restore: one `subagent_update` with no state, no
+  /// on its own stream, and then its pause of the mail delivery in force, when it has one. For a
+  /// child that did not restore: one `subagent_update` with no state, no
   /// capabilities and the reason (``SAH/RestoreFailure``).
   ///
   /// - Parameter sessionId: The resumed root session.
@@ -67,7 +68,8 @@ extension RoutedACPAgent {
     }
   }
 
-  /// Sends the snapshot of a child that restored, then its own state.
+  /// Sends the snapshot of a child that restored, then its own state, and then its pause of the
+  /// mail delivery in force, when it has one.
   ///
   /// - Parameters:
   ///   - child: The child.
@@ -88,6 +90,25 @@ extension RoutedACPAgent {
     // The client knows the child now: what the child made meanwhile goes out after the snapshot.
     await entry.announcement.open()
     await entry.stateLedger.announceCurrentState()
+    await syncMailDeliveryPause(of: child, gate: entry.announcement)
+  }
+
+  /// Sends the pause of the mail delivery in force of a child after its own `state_update`, when
+  /// the child is paused now (``ActiveSession/mailDeliveryPause``). The pause goes through the
+  /// snapshot sink of the child, as its `state_update` does, so it keeps its place after that
+  /// update. The sync reads the pause when it runs, as the ledger reads the state: a live update
+  /// of the child that the hold of a hot resume kept goes out before it, so the last pause on the
+  /// stream of the child is the pause in force. A cold-restored child has no pause in force:
+  /// Router does not restore a pause (``MailDeliveryPauseReport``).
+  ///
+  /// - Parameters:
+  ///   - child: The child.
+  ///   - gate: The announcement gate of the child.
+  private func syncMailDeliveryPause(of child: SessionId, gate: SessionAnnouncementGate) async {
+    guard let pause = sessions[child]?.mailDeliveryPause else {
+      return
+    }
+    await unrecordedSink(for: child, gate: gate)(pause)
   }
 
   /// Announces a child that did not restore: no state, no capabilities, and the reason.

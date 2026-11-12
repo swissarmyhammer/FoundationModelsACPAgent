@@ -144,6 +144,11 @@ actor SessionProjector {
   ///   - runCallJoins: The join table of the session.
   ///   - stateLedger: The state ledger of the session, which takes the
   ///     work events of each Router session, or `nil` for none.
+  ///   - liftMailDeliveryPause: Lifts the pause of the mail delivery in force of the session. The
+  ///     projector calls it at each `mailDelivered` event, after the translation of the event.
+  ///     Router holds run mail only until the next user-type mail carries it, so a session that
+  ///     takes a mail is not paused (``RoutedACPAgent/liftMailDeliveryPause(of:)``). Nothing by
+  ///     default.
   init(
     sessionId: SessionId,
     parentSessionId: SessionId? = nil,
@@ -152,7 +157,8 @@ actor SessionProjector {
     shellSnapshot: @escaping ShellSnapshotProvider = { _ in nil },
     relay: ElicitationRelay?,
     runCallJoins: RunCallJoinTable,
-    stateLedger: SessionStateLedger? = nil
+    stateLedger: SessionStateLedger? = nil,
+    liftMailDeliveryPause: @escaping @Sendable () async -> Void = {}
   ) {
     self.relay = relay
     self.runCallJoins = runCallJoins
@@ -185,7 +191,8 @@ actor SessionProjector {
         relay: relay,
         stateLedger: stateLedger,
         background: background,
-        settlements: settlements)
+        settlements: settlements,
+        liftMailDeliveryPause: liftMailDeliveryPause)
       if let relay {
         let endElicitation: ElicitationEndHandler = { end in await relay.end(end) }
         state.translator.endElicitation = endElicitation
@@ -441,6 +448,9 @@ private struct ProjectionState {
   /// Tells the host that a settlement was handled.
   let settlements: SettlementWatch
 
+  /// Lifts the pause of the mail delivery in force of the session, at each `mailDelivered` event.
+  let liftMailDeliveryPause: @Sendable () async -> Void
+
   /// The open prompts, in the order that they opened. A stream message
   /// goes alone in its submission, so an event holds the `MailID` of at
   /// most one prompt.
@@ -548,12 +558,16 @@ private struct ProjectionState {
     }
     // The work state of the session (elicitation-plan task 2): the ledger
     // sends `running` and `idle` from it. A prompt that ended at an
-    // earlier event already gave the ledger its stop reason.
+    // earlier event already gave the ledger its stop reason. A delivered mail lifts the pause of
+    // the mail delivery.
     switch event {
     case .workStarted:
       await stateLedger?.workStarted(on: source.id)
     case .workEnded:
       await stateLedger?.workEnded(on: source.id)
+    case .mailDelivered:
+      // The session took a mail, so Router does not hold its run mail now.
+      await liftMailDeliveryPause()
     default:
       break
     }

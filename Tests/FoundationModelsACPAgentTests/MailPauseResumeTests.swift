@@ -5,7 +5,7 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-import struct FoundationModelsRouter.MailDeliveryPause
+import FoundationModelsRouter
 
 /// A `session/resume` gives the current pause of the mail delivery (task ^tq96bjy).
 ///
@@ -15,7 +15,22 @@ import struct FoundationModelsRouter.MailDeliveryPause
 /// session whose pause a prompt lifted sends none. A cold restore sends none: Router does not
 /// restore the pause. It gives each queued mail with no terminal record the terminal event
 /// `lost`, and the restored session holds no mail.
-@Suite(.closesHarnesses) struct MailPauseResumeTests {
+///
+/// A child session keeps its pause in force too (task ^c4hafqw). A mail that the child takes
+/// lifts it. A hot resume sends the pause in force of a live child after the own `state_update` of
+/// the child, and a cold restore sends none for a child.
+@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct MailPauseResumeTests {
+  // MARK: - Constants
+
+  /// The id of the session of the projector that the lift test drives.
+  private static let liftSessionId = "MailPauseResumeTests-lift"
+
+  /// The model name of the projector that the lift test drives, for its logs.
+  private static let liftModelName = "scripted"
+
+  /// The number of lifts that one `mailDelivered` event makes.
+  private static let liftsOfOneDelivery = 1
+
   // MARK: - Helpers
 
   /// Resumes the session of `fixture` on its own connection, and returns the updates that the
@@ -148,5 +163,68 @@ import struct FoundationModelsRouter.MailDeliveryPause
     await paused.fixture.close()
 
     #expect(MailDeliveryPauseFixture.pauses(in: updates).isEmpty)
+  }
+
+  // MARK: - The lift
+
+  /// A mail that the session takes lifts the pause in force: the projector calls the lift of
+  /// the session one time for each `mailDelivered` event.
+  @Test
+  func aDeliveredMailLiftsThePauseOfTheSession() async {
+    let (lifts, lifted) = AsyncStream.makeStream(of: Void.self)
+    let projector = SessionProjector(
+      sessionId: SessionId(rawValue: Self.liftSessionId), modelName: Self.liftModelName,
+      send: { _ in }, relay: nil, runCallJoins: RunCallJoinTable(),
+      liftMailDeliveryPause: { lifted.yield() })
+    let (outputs, input) = AsyncStream.makeStream(of: SessionOutput.self)
+    let source = SessionProjector.Source(id: ULID.generate(), session: nil)
+    await projector.attach(outputs, from: source)
+    input.yield(SessionOutput(origin: .system, event: .mailDelivered(MailID())))
+    input.finish()
+    await projector.stop(after: [source.id])
+    lifted.finish()
+    let count = await lifts.reduce(0) { count, _ in count + 1 }
+
+    #expect(count == Self.liftsOfOneDelivery)
+  }
+
+  // MARK: - The child session
+
+  /// A hot resume of a tree with a paused child sends one pause on the stream of the child, after
+  /// the own `state_update` of the child.
+  @Test
+  func aHotResumeOfAPausedChildSendsOnePauseAfterItsState() async throws {
+    let tree = try await PausedChildTree.start(label: "MailPauseResumeTests-child-hot-paused")
+    let updates = try await tree.resumeOnASecondConnection()
+    await tree.fixture.close()
+    let state = updates.firstIndex { $0.isStateUpdate } ?? updates.count
+
+    #expect(
+      MailDeliveryPauseFixture.pauses(in: updates).count == 1
+        && MailDeliveryPauseFixture.pauses(in: Array(updates[state...])).count == 1)
+  }
+
+  /// A hot resume of a tree whose child got a mail after its pause sends no pause for the child.
+  @Test
+  func aHotResumeOfALiftedChildSendsNoPause() async throws {
+    let tree = try await PausedChildTree.start(label: "MailPauseResumeTests-child-hot-lifted")
+    await tree.liftThePause()
+    let updates = try await tree.resumeOnASecondConnection()
+    await tree.fixture.close()
+
+    #expect(MailDeliveryPauseFixture.pauses(in: updates).isEmpty)
+  }
+
+  /// A cold restore of a tree with a paused child sends no pause for the child, and the restored
+  /// child has no pause in force: Router does not restore a pause.
+  @Test
+  func aColdRestoreOfAPausedChildSendsNoPause() async throws {
+    let tree = try await PausedChildTree.start(label: "MailPauseResumeTests-child-cold")
+    let restored = try await tree.restoreInASecondAgent(
+      label: "MailPauseResumeTests-child-cold-second")
+    let inForce = await restored.agent.harness.agent.sessions[tree.childId]?.mailDeliveryPause
+    await restored.agent.close()
+
+    #expect(MailDeliveryPauseFixture.pauses(in: restored.childUpdates).isEmpty && inForce == nil)
   }
 }

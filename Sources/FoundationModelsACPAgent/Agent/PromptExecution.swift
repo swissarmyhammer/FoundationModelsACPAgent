@@ -921,7 +921,7 @@ extension RoutedACPAgent {
     let messageId = insertUserMessage(
       params, messageId: MessageId(rawValue: mailId.description), through: connection)
     // The mail of the prompt carries the held mail, so it lifts the pause of the mail delivery.
-    sessions[sessionId]?.mailDeliveryPause = nil
+    liftMailDeliveryPause(of: sessionId)
     // The session of the selected slot when the prompt is accepted: a
     // later model slot switch does not move this prompt.
     let session = entry.session

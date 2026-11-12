@@ -420,7 +420,8 @@ struct ACPEventTranslator {
       await projectReply(of: answer)
     case .mailDeliveryPaused(let pause):
       // Router holds run mail and starts no answer for it. The client
-      // sees the pause, and its next message lifts it (task ^t03jd5h).
+      // sees the pause, and the next message of the caller lifts it (tasks
+      // ^t03jd5h and ^c4hafqw).
       ACPAgentTelemetry.logger(.promptExecution).notice(
         "Router paused the mail delivery. The client gets the pause.",
         metadata: eventMetadata(event))
