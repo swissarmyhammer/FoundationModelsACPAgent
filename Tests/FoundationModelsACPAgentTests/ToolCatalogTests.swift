@@ -93,6 +93,22 @@ import Testing
   private static let sessionTriggerMutation =
     "mutation { updateSetting(input: {keyPath: [\"compaction\", \"trigger\"], value: \(sessionTrigger), level: SESSION}) { level } }"
 
+  /// The id of the skill that the skills watch test writes after the build.
+  private static let lateSkillID = "late-skill"
+
+  /// The `SKILL.md` text of ``lateSkillID``.
+  private static let lateSkillMarkdown = """
+    ---
+    name: \(lateSkillID)
+    description: A skill that came after the build.
+    ---
+    Do it.
+    """
+
+  /// The name of the project layer folder of the skills stack in the working
+  /// directory.
+  private static let skillsProjectLayerName = ".\(ToolCatalog.skillsDotfolderName)"
+
   // MARK: Harness
 
   /// Makes a fresh throwaway directory and returns its URL.
@@ -707,12 +723,30 @@ import Testing
 
   // MARK: The skills registry
 
-  @Test func theSkillsRegistryWatchesForCommandUpdates() async throws {
+  /// The skills source of a session watches its layers: a `SKILL.md` that
+  /// is written in the project layer after the build reaches
+  /// `commandUpdates` as a new slash command. A registry with
+  /// `watch: false` publishes no command set for the write, thus the wait
+  /// does not end and the time limit fails the test.
+  @Test(.timeLimit(.minutes(1)))
+  func theSkillsSourcePublishesTheCommandOfANewSkill() async throws {
     let context = try await Self.makeContext()
-
     let registry = await ToolCatalog.makeSkillsSource(context: context).registry
+    // The subscription comes before the write, so no command set of the
+    // write is lost.
+    let updates = try #require(registry.commandUpdates)
 
-    #expect(registry.commandUpdates != nil)
+    try writeSkillFixture(
+      id: Self.lateSkillID, markdown: Self.lateSkillMarkdown,
+      under: context.workingDirectory.appendingPathComponent(
+        Self.skillsProjectLayerName, isDirectory: true))
+    var commandSets = updates.makeAsyncIterator()
+    var names: [String] = []
+    while !names.contains(Self.lateSkillID), let next = await commandSets.next() {
+      names = next.map(\.name)
+    }
+
+    #expect(names.contains(Self.lateSkillID))
   }
 
   // MARK: The language server install
