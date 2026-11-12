@@ -282,7 +282,7 @@ enum ACPAgentTelemetry {
     /// The fraction of the context that the compaction goes down to.
     static let compactionTargetFraction = "compaction.target_fraction"
 
-    /// The `SignalID` of the `cancelForeground()` signal that a `session/cancel`
+    /// The `SignalID` of the `cancelAll()` signal that a `session/cancel`
     /// sent.
     static let cancelSignalId = "cancel.signal_id"
 

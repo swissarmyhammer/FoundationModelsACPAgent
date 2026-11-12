@@ -277,7 +277,7 @@ struct PromptExecution: Sendable {
         awaitAnswer: { id in try await session.awaitAnswer(of: id) },
         owner: promptState, modelName: modelName, onEnd: onEnd))
     // A `session/cancel` or a close before this point already sent
-    // `cancelForeground()` or `cancelAll()`, which cannot reach a mail that is not queued yet.
+    // `cancelAll()`, which cannot reach a mail that is not queued yet.
     guard await !promptState.cancelRequested else {
       projector.cancelUnsentMail(mail.id)
       return
@@ -945,12 +945,15 @@ extension RoutedACPAgent {
     return PromptResponse(messageId: messageId)
   }
 
-  /// Stops the work of one session: records the request on each open
+  /// Stops all the work of one session, at once: a cancel is a command,
+  /// close to a kill (task ^n8pcmtd). It records the request on each open
   /// prompt, answers every pending elicitation with `cancel` — the
   /// suspended tool must resume — then cancels the work of the Router
-  /// session with `cancelForeground()`: the queued mail, the model work in
-  /// flight, and the inline runs with their pending requests. A run in the
-  /// background goes on, because the prompt did not wait for it. A submission that waits for the
+  /// session with `cancelAll()`: the queued mail, the model work in flight,
+  /// and each run, inline or in the background, with its pending requests.
+  /// It then cancels each agent run that the session started, and each run
+  /// that such a run started. A scheduled agent of the session stays, with
+  /// its saved copy and its timer. A submission that waits for the
   /// model while it generates for another session is in flight too, and
   /// the cancel reaches it: the wait ends at once, so the `idle(cancelled)`
   /// terminator does not wait for the submission of another session. A
@@ -973,12 +976,14 @@ extension RoutedACPAgent {
 
   /// Cancels the work of one session and its open prompts: the work of
   /// ``sessionCancel(_:)``. Each open prompt ends with the `cancelled` stop
-  /// reason no later than the `signalDone` of the `cancelForeground()` signal, and
+  /// reason no later than the `signalDone` of the `cancelAll()` signal, and
   /// its response says `cancelled` at once. The `idle` with `cancelled`
-  /// comes at the `workEnded` of Router (``SessionStateLedger``). You can
-  /// only stop what you stop: model work that ignores cancellation runs to
-  /// its end, so that `idle` can come later than the response, and the
-  /// client can send input before that `idle`.
+  /// comes at the `workEnded` of Router (``SessionStateLedger``): the
+  /// background runs and the agent runs of the session got their cancel,
+  /// so it comes when their cancels end, not when their work ends by
+  /// itself. You can only stop what you stop: model work that ignores
+  /// cancellation runs to its end, so that `idle` can come later than the
+  /// response, and the client can send input before that `idle`.
   ///
   /// - Parameter params: The cancellation notification.
   private func cancelRunningPrompt(_ params: CancelSessionNotification) async {
@@ -994,17 +999,27 @@ extension RoutedACPAgent {
     for owner in entry.openPrompts {
       await owner.noteCancelRequested()
     }
-    // `cancelForeground()` stops the foreground work of the session, also with no
-    // prompt open: queued mail, the answer in flight, and the inline runs with their
-    // pending requests (elicitation-plan task 3). It spares the runs in the
-    // background, because the prompt did not wait for them. Router ends each open question
-    // with `elicitationEnded`, and the relay ends its client request
-    // (gap ^crjmk34). With no prompt open, no state
-    // update goes out (task ^9xs24pn, decisions Q2 and G6).
-    let signal = entry.session.cancelForeground()
+    // The next `idle` of the session says `cancelled`, also when no prompt is open and only
+    // the background work goes on, and so does the next `idle` of each nested session that
+    // works. A session with no work gets no new `idle`: with no prompt open and no work, no
+    // state update goes out (task ^9xs24pn, decisions Q2 and G6). An open prompt ends
+    // `cancelled` through its own owner.
+    await noteCancelledWork(
+      of: entry.openPrompts.isEmpty ? [params.sessionId] : entry.children)
+    // `cancelAll()` stops all the work of the session, also with no prompt open:
+    // queued mail, the answer in flight, and each run, inline or in the background,
+    // with its pending requests (elicitation-plan task 3, task ^n8pcmtd). Router ends
+    // each open question with `elicitationEnded`, and the relay ends its client request
+    // (gap ^crjmk34).
+    let signal = entry.session.cancelAll()
     if !entry.openPrompts.isEmpty {
       entry.projector.cancelSent(signal)
     }
+    // Router does not know the runs that a `start agent` call started, so the runner
+    // cancels each run whose caller is this session, a nested one too. Each cancelled run
+    // cancels the work of its own session and the runs that it started. The scheduled
+    // agents of the session stay, with their saved copies; only a close ends them.
+    await entry.surface.agents?.runner.cancelActiveRuns(caller: entry.session.id)
     var metadata = ACPAgentTelemetry.sessionMetadata(
       params.sessionId, parent: entry.parentSessionId)
     metadata[ACPAgentTelemetry.LogMetadataKey.cancelSignalId] = "\(signal)"

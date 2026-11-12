@@ -83,7 +83,7 @@ actor SessionProjector {
     /// the session.
     case mailCancelled(MailID)
 
-    /// `session/cancel` sent the `cancelForeground()` signal with this id.
+    /// `session/cancel` sent the `cancelAll()` signal with this id.
     case cancelSent(SignalID)
 
     /// One update of a slash command, which sends no Router event, and
@@ -285,14 +285,14 @@ actor SessionProjector {
     inbox.yield(.mailCancelled(mailId))
   }
 
-  /// Tells the projector the id of the `cancelForeground()` signal of a
+  /// Tells the projector the id of the `cancelAll()` signal of a
   /// `session/cancel`.
   /// Each open prompt that the cancel reached ends as `cancelled`.
   /// It ends no later than the `signalDone` event of that signal.
   /// So the `idle` with the `cancelled` stop reason ends the cancel (an ACP
   /// rule; task ^9xs24pn, decision G6).
   ///
-  /// - Parameter signal: The id of the `cancelForeground()` signal.
+  /// - Parameter signal: The id of the `cancelAll()` signal.
   nonisolated func cancelSent(_ signal: SignalID) {
     inbox.yield(.cancelSent(signal))
   }
@@ -453,7 +453,7 @@ private struct ProjectionState {
   /// a child never adds the counts of its parent.
   var runTally = PromptTally()
 
-  /// The `cancelForeground()` signals of `session/cancel` whose `signalDone` did
+  /// The `cancelAll()` signals of `session/cancel` whose `signalDone` did
   /// not come yet.
   var pendingCancels: Set<SignalID> = []
 
@@ -600,7 +600,7 @@ private struct ProjectionState {
   }
 
   /// Ends each prompt that a `session/cancel` reached when the `signalDone`
-  /// of its `cancelForeground()` signal comes.
+  /// of its `cancelAll()` signal comes.
   /// It keeps the id of each other signal for a
   /// ``SessionProjector/Input/cancelSent(_:)`` that comes later.
   ///

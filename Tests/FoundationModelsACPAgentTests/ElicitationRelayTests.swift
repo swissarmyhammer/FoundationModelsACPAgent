@@ -837,7 +837,7 @@ import Testing
   // MARK: - Cancellation
 
   /// `session/cancel` during a pending elicitation ends the prompt with
-  /// `idle(cancelled)` and ends the question. The `cancelForeground()` signal of
+  /// `idle(cancelled)` and ends the question. The `cancelAll()` signal of
   /// Router first sends the terminal event of the prompt's mail, and then
   /// ends the question with `cancel` and the reason "run cancelled", and
   /// the relay ends the client request. The states are `running`,

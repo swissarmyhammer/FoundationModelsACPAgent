@@ -133,10 +133,10 @@ enum ConfigOptions {
       return profile.standard
     case .flash:
       return profile.flash
-    case .embedding:
-      // ``slot(for:)`` never yields `embedding`; reaching here is
-      // programmer error, not a recoverable input.
-      preconditionFailure("embedding is not a chat slot and has no generation handle")
+    case .embedding, .decision:
+      // ``slot(for:)`` never yields `embedding` or `decision`; reaching here
+      // is programmer error, not a recoverable input.
+      preconditionFailure("\(slot.rawValue) is not a chat slot and has no generation handle")
     }
   }
 

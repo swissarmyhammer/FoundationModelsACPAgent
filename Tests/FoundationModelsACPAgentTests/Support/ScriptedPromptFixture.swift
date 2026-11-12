@@ -159,6 +159,9 @@ struct ScriptedPromptFixture {
   ///     in-memory store.
   ///   - hostTools: The tools that the agent mounts in each session after
   ///     its own tools, registered before `session/new`.
+  ///   - inlineSettleGrace: How long a tool call waits for its run inline
+  ///     before the run goes to the background. A test of a background run
+  ///     gives `0`, so each run goes to the background at once.
   /// - Returns: The fixture.
   /// - Throws: Whatever the construction or the handshake throws.
   static func make(
@@ -177,7 +180,8 @@ struct ScriptedPromptFixture {
     recorder: PromptRecorder? = nil,
     hookVisitors: [any HookVisitor] = [],
     secretStore: any SecretStore = InMemorySecretStore(),
-    hostTools: [any FoundationModels.Tool] = []
+    hostTools: [any FoundationModels.Tool] = [],
+    inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace
   ) async throws -> ScriptedPromptFixture {
     try await make(
       loader: makeScriptedModelLoader(script: script, recorder: recorder),
@@ -194,7 +198,8 @@ struct ScriptedPromptFixture {
       mailOnlyAnswerLimit: mailOnlyAnswerLimit,
       hookVisitors: hookVisitors,
       secretStore: secretStore,
-      hostTools: hostTools)
+      hostTools: hostTools,
+      inlineSettleGrace: inlineSettleGrace)
   }
 
   /// Wires an agent over `loader`, completes `initialize`, and opens
@@ -240,6 +245,9 @@ struct ScriptedPromptFixture {
   ///     in-memory store.
   ///   - hostTools: The tools that the agent mounts in each session after
   ///     its own tools, registered before `session/new`.
+  ///   - inlineSettleGrace: How long a tool call waits for its run inline
+  ///     before the run goes to the background. A test of a background run
+  ///     gives `0`, so each run goes to the background at once.
   /// - Returns: The fixture.
   /// - Throws: Whatever the construction or the handshake throws.
   static func make(
@@ -258,7 +266,8 @@ struct ScriptedPromptFixture {
     mailOnlyAnswerLimit: Int? = nil,
     hookVisitors: [any HookVisitor] = [],
     secretStore: any SecretStore = InMemorySecretStore(),
-    hostTools: [any FoundationModels.Tool] = []
+    hostTools: [any FoundationModels.Tool] = [],
+    inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace
   ) async throws -> ScriptedPromptFixture {
     let userDirectory = makeResolvedDirectory(label: "\(label)-user")
     let cwd = workingDirectory ?? makeResolvedDirectory(label: "\(label)-repo")
@@ -272,6 +281,7 @@ struct ScriptedPromptFixture {
       userDirectory: userDirectory,
       loader: loader,
       tracer: tracer,
+      inlineSettleGrace: inlineSettleGrace,
       secretStore: secretStore
     ) { router in
       if let runClock {

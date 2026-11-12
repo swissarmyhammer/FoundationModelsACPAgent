@@ -402,12 +402,14 @@ permit it is ignored.
 
 ### Cancel and close
 
-- `session/cancel` on the id of a child cancels the foreground work of that child only: its
-  model work, its queued mail, and the runs that it waits for inline. The client sees `idle`
-  with the stop reason `cancelled` for the child, and for each run that it waited for. The
-  parent and the sibling sessions go on.
-- `session/cancel` on a parent stops the foreground work of the parent. A child that the
-  prompt waits for inline is cancelled. A child that the `background` list names goes on.
+- `session/cancel` on the id of a child cancels all the work of that child only: its model
+  work, its queued mail, its runs inline or in the background, and the runs of the children
+  that it started. The client sees `idle` with the stop reason `cancelled` for the child, and
+  for each run that it started. The parent and the sibling sessions go on.
+- `session/cancel` on a parent stops all the work that the parent started, at once: a cancel
+  is a command, close to a kill. Each child is cancelled, inline or named in the `background`
+  list, with its own children. A scheduled agent of the parent stays, and fires again at its
+  next time.
 - `session/close` on a root session cancels all the runs below it, nested ones too. Each
   working sub-agent sends `idle` with the stop reason `cancelled`, and the open `agents` call
   of the root gets the final status `cancelled`. `session/close` on a child is refused.
@@ -715,14 +717,16 @@ code gives the local detail.
   sub-agent is listed while its session is not `idle`, or while its own list
   is not empty. A `session/resume` with no replay sends the current update of
   each listed item before the state.
-- **`session/cancel` is a signal.** It sends `cancelForeground()` to the Router
-  session. It stops the queued mail, the model work, and the inline runs that
-  the prompt waits for. A run in the background goes on, and so does each
-  sub-agent that the `background` list names. Each open prompt ends
-  `cancelled` at once, and its response says so. A `session/cancel` on the id
-  of a sub-agent cancels only the run of that sub-agent and the runs that it
-  waits for. Its client sees `idle` with the stop reason `cancelled`, and the
-  parent and the siblings go on. A `session/close` of a parent cancels all the
+- **`session/cancel` is a signal, close to a kill.** It sends `cancelAll()` to
+  the Router session, and it cancels each agent run that the session started.
+  It stops the queued mail, the model work, each run inline or in the
+  background, and each sub-agent with its own sub-agents. Only a scheduled
+  agent of the session stays, with its saved copy and its timer. Each open
+  prompt ends `cancelled` at once, and its response says so. The next `idle`
+  says `cancelled` too when only background work was left. A
+  `session/cancel` on the id of a sub-agent cancels only the run of that
+  sub-agent and the runs that it started. Its client sees `idle` with the
+  stop reason `cancelled`, and the parent and the siblings go on. A `session/close` of a parent cancels all the
   runs below it, nested ones too, and each working sub-agent sends `idle` with
   the stop reason `cancelled`. The `idle` comes when the work of the session ends. You can only stop
   what you stop: model work that ignores cancellation runs to its end, so

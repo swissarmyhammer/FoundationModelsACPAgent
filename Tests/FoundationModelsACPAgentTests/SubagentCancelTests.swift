@@ -9,9 +9,9 @@ import Testing
 @testable import FoundationModelsRouter
 
 /// The cancel rules of the sessions of a family. `session/cancel` on the id of a child ends only
-/// the run of that child and the runs that it waits for. `session/cancel` on the parent stops the
-/// foreground work only, and a listed background child goes on. `session/close` on the parent
-/// cancels all the runs below it, nested ones too.
+/// the run of that child and the runs that it started. `session/cancel` on the parent stops all
+/// the work that it started: a listed background child stops too (task ^n8pcmtd).
+/// `session/close` on the parent cancels all the runs below it, nested ones too.
 ///
 /// Each family here has a root session and real agent runs of its runner. The announcer registers
 /// the session of each run as a nested session of the root.
@@ -260,7 +260,7 @@ import Testing
   // MARK: - A cancel of the parent
 
   @Test
-  func aCancelOfTheParentLeavesABackgroundChildRunning() async throws {
+  func aCancelOfTheParentCancelsABackgroundChild() async throws {
     let hold = ScriptedHold()
     let cwd = makeResolvedDirectory(label: "\(Self.label)-background-repo")
     try AgentsToolTests.writeAgent(named: AgentsToolTests.slowAgent, in: cwd)
@@ -280,9 +280,9 @@ import Testing
     let run = await Self.firstRun(of: runner)
 
     await agent.sessionCancel(CancelSessionNotification(sessionId: response.sessionId))
-    try await Task.sleep(for: Self.quietWindow)
+    _ = try? await run.result()
 
-    #expect(run.state == .running)
+    #expect(run.state == .cancelled)
     hold.release()
     await agent.shutdown()
   }

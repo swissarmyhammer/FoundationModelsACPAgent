@@ -344,7 +344,7 @@ extension RoutedACPAgent {
       await cancelOpenPrompts(of: entry)
       // A user close cancels the work of each nested session. The client sees `idle` with the
       // stop reason cancelled for each one that works, when its run ends below.
-      await noteClosingCancelsWork(of: entry.children)
+      await noteCancelledWork(of: entry.children)
     }
     // The agent runs stop first: the Router does not know the runs that
     // a `start agent` call started, thus the session sweep below cannot
@@ -425,18 +425,19 @@ extension RoutedACPAgent {
   }
 
   /// Records, for each session of `sessionIds` that works, and for the sessions nested in them,
-  /// that the close of its parent cancels that work. The stop reason of the next `idle` of such
-  /// a session is cancelled. A session that is idle gets no new `idle`.
+  /// that a cancel stops that work: the close of a parent, or a `session/cancel` of the session
+  /// or of a parent. The stop reason of the next `idle` of such a session is cancelled. A
+  /// session that is idle gets no new `idle`.
   ///
-  /// - Parameter sessionIds: The sessions nested in the session that closes.
-  private func noteClosingCancelsWork(of sessionIds: [SessionId]) async {
+  /// - Parameter sessionIds: The sessions whose work the cancel stops.
+  func noteCancelledWork(of sessionIds: [SessionId]) async {
     for sessionId in sessionIds {
       guard let nested = sessions[sessionId] else { continue }
       if !(await nested.stateLedger.isIdle) {
         await nested.stateLedger.promptEnded(
           IdleStateUpdate(stopReason: .cancelled), started: false)
       }
-      await noteClosingCancelsWork(of: nested.children)
+      await noteCancelledWork(of: nested.children)
     }
   }
 
