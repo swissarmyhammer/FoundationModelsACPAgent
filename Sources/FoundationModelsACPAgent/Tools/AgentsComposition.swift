@@ -330,14 +330,14 @@ enum AgentsComposition {
     mounted: [any Tool]
   ) -> FoundationModelsAgents::ToolCatalog {
     var tools = FoundationModelsAgents::ToolCatalog()
-    let topLevelNames = mounted.map(\.name)
+    let mountedNames = mounted.map(\.name)
     let vocabulary = RegistrySelection.capabilityNames(
       of: registry, mcpServerNames: mcpServerNames)
     for probe in mounted {
       let name = probe.name
       tools.registerKept(name, vocabulary: { vocabulary }) { definition in
-        let selected = RegistrySelection(
-          definition: definition, topLevelNames: topLevelNames, mcpServerNames: mcpServerNames
+        let selected = runRegistrySelection(
+          of: definition, mountedNames: mountedNames, mcpServerNames: mcpServerNames
         ).applied(to: registry)
         return freshSessionTool(
           named: name, registry: selected, selection: selection, embedder: embedder,
@@ -345,6 +345,32 @@ enum AgentsComposition {
       }
     }
     return tools
+  }
+
+  /// The selection of the agent of one run over the registry of its
+  /// `runCode`: the rule of the root session (``RegistrySelection``).
+  ///
+  /// The top-level names are the names of the tools of a run, with no
+  /// `agents`, as ``SessionSurface/applying(agent:)`` gives the names of the
+  /// tools of the root session with no `agents`. They are the mounted pair
+  /// and the `skills` tool, which the agent environment adds to each run.
+  /// The selection knows the name `agents` through its `agents` tool flag.
+  /// Thus an entry that names `skills` or `agents` gives no unknown-tool
+  /// warning in the rule of a run, as it gives none in the rule of the root
+  /// session.
+  ///
+  /// - Parameters:
+  ///   - definition: The agent of the run.
+  ///   - mountedNames: The names of the Multitool session tools that the
+  ///     session mounted, `searchTools` and `runCode`.
+  ///   - mcpServerNames: The names of the connected MCP servers.
+  /// - Returns: The selection.
+  static func runRegistrySelection(
+    of definition: AgentDefinition, mountedNames: [String], mcpServerNames: Set<String>
+  ) -> RegistrySelection {
+    RegistrySelection(
+      definition: definition, topLevelNames: mountedNames + [SkillOutputProtection.skillsToolName],
+      mcpServerNames: mcpServerNames)
   }
 
   /// Makes a new pair of session tools over `registry`, and gives the tool

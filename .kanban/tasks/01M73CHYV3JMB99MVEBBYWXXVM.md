@@ -40,6 +40,13 @@ comments:
     - evidence: 1 file — Tests/FoundationModelsACPAgentTests/ScriptedStubModelTests.swift (not committed). `swift test`: 2022 tests in 221 suites passed, 1 known issue (HarnessSmokeTests, it was there before), 0 Swift compiler warnings (the only `warning:` line is from the build system for the mlx-swift_Cmlx bundle).
     - next: review.
   timestamp: 2026-11-12T21:40:58.160855+00:00
+- actor: claude-code
+  id: 01m78vc3r74pcf72nmbzb74tbk
+  text: |-
+    ### review — clean
+    - evidence: review sha 9e1f87f~1..9e1f87f — 0 findings (0 confirmed, 0 refuted, 7 validators attempted, 0 failed). 1 file reviewed (Tests/FoundationModelsACPAgentTests/ScriptedStubModelTests.swift). 4 .kanban files not reviewed (.reviewignore). The description has no prior Review Findings section with an open item.
+    - next: The task stays in done. Acceptance item 2 (10 runs of the ACPClient tests with no hang) is for FoundationModelsACPClient to confirm. It is out of scope for this repository.
+  timestamp: 2026-11-12T21:42:11.975654+00:00
 position_column: done
 position_ordinal: ffffdf80
 title: 'Cold resume of a scripted stub run: the restored run does not play its script again, so the ACPClient nested-run tests can hang'

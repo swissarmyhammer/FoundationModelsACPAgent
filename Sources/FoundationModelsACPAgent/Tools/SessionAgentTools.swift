@@ -152,9 +152,8 @@ struct RegistrySelection: Sendable {
   /// - Parameter registry: The full registry.
   /// - Returns: The filtered registry.
   func applied(to registry: MultiTool.Registry) -> MultiTool.Registry {
-    let kept = SessionToolSelection(
-      definition: definition, names: topLevelNames + capabilityNames(of: registry)
-    ).keptNames
+    let kept = SessionToolSelection(definition: definition, names: selectionNames(of: registry))
+      .keptNames
     let entries = registry.surface.entries.filter { kept.contains(capabilityName(of: $0)) }
     let paths = Set(entries.map(\.path))
     return MultiTool.Registry(
@@ -162,6 +161,15 @@ struct RegistrySelection: Sendable {
       tools: registry.tools.filter { paths.contains($0.key) },
       isDirectMode: registry.isDirectMode,
       graphQLEndpoints: registry.graphQLEndpoints)
+  }
+
+  /// The names that the selection reads over `registry`: the top-level
+  /// names, then the capability names of its entries.
+  ///
+  /// - Parameter registry: The registry.
+  /// - Returns: The names.
+  func selectionNames(of registry: MultiTool.Registry) -> [String] {
+    topLevelNames + capabilityNames(of: registry)
   }
 
   /// The distinct capability names of the entries of `registry`.
@@ -322,9 +330,10 @@ extension SessionSurface {
     let registrySelection = RegistrySelection(
       definition: definition, topLevelNames: tools.map(\.name).filter { $0 != agentsName },
       mcpServerNames: await mcpServerNames())
-    let registryNames = runCode.map { registrySelection.capabilityNames(of: $0.currentRegistry) }
-    let selection = SessionToolSelection(
-      definition: definition, names: registrySelection.topLevelNames + (registryNames ?? []))
+    let names =
+      runCode.map { registrySelection.selectionNames(of: $0.currentRegistry) }
+      ?? registrySelection.topLevelNames
+    let selection = SessionToolSelection(definition: definition, names: names)
     for warning in selection.warnings {
       ACPAgentTelemetry.logger(.session).warning("\(warning)")
     }

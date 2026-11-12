@@ -3,6 +3,7 @@ import FoundationModels
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsMultitool
+import Synchronization
 import Testing
 
 @testable import FoundationModelsACPAgent
@@ -79,6 +80,91 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
       nouns: try runCodeNouns(in: resolved.tools), diagnostics: resolved.diagnostics)
   }
 
+  /// The `disallowedTools:` key that denies the `skills` tool.
+  private static let noSkillsKey = "disallowedTools: [skills]"
+
+  /// The `tools:` key that keeps the web capability and grants the `agents`
+  /// tool.
+  private static let webAndAgentsKey = "tools: [web, agents]"
+
+  /// The name of the `skills` tool that the agent environment adds.
+  private static let skillsName = "skills"
+
+  /// The resolved tools of one run over the run catalog of the agent
+  /// environment of a session: the catalog that a real run reads.
+  private struct EnvironmentRun {
+    /// The names of the resolved tools.
+    let toolNames: [String]
+
+    /// The nouns of the registry of the `runCode` of the run.
+    let nouns: Set<String>
+
+    /// The diagnostics of the resolve.
+    let diagnostics: [AgentDiagnostic]
+
+    /// The grant that the resolve gave the `agents` tool factory, or `nil`.
+    let agentsGrant: AgentsGrant?
+  }
+
+  /// The grant that the `agents` tool factory of one resolve gets.
+  private final class GrantRecord: Sendable {
+    /// The recorded grant, or `nil` when the factory got none.
+    let grant = Mutex<AgentsGrant?>(nil)
+  }
+
+  /// Resolves the tools of a run of an agent with the frontmatter `keys`
+  /// over the run catalog of the agent environment of a new session. The
+  /// catalog holds the `skills` tool, and the resolve has an `agents` tool
+  /// factory, as a real run has.
+  ///
+  /// - Parameters:
+  ///   - keys: The frontmatter lines of the agent of the run.
+  ///   - name: The name of the test, for the folders.
+  /// - Returns: The resolved run.
+  /// - Throws: What the surface build or the resolve throws, or an issue
+  ///   when the run has no `runCode`.
+  private static func environmentRun(keys: [String], name: String) async throws -> EnvironmentRun {
+    let context = try await AgentsToolTests.makeContext(label: "\(label)-\(name)")
+    let surface = try await SurfaceCatalog.sessionSurface(context: context)
+    let agents = try #require(surface.agents, "the surface has no agents mount")
+    let definition = try SessionAgentToolsTests.definition(keys: keys)
+    let record = GrantRecord()
+    let resolved = try await ToolResolver(agent: definition.id, provenance: definition.provenance)
+      .resolve(definition, catalog: agents.environment.tools) { grant in
+        record.grant.withLock { $0 = grant }
+        return nil
+      }
+    await surface.shutdown()
+    return EnvironmentRun(
+      toolNames: resolved.tools.map(\.name), nouns: try runCodeNouns(in: resolved.tools),
+      diagnostics: resolved.diagnostics, agentsGrant: record.grant.withLock { $0 })
+  }
+
+  /// The diagnostics of the rule that the `runCode` of a run applies to the
+  /// registry for an agent with the frontmatter `keys`
+  /// (``AgentsComposition/runRegistrySelection(of:mountedNames:mcpServerNames:)``).
+  ///
+  /// - Parameters:
+  ///   - keys: The frontmatter lines of the agent of the run.
+  ///   - name: The name of the test, for the folders.
+  /// - Returns: The diagnostics.
+  /// - Throws: What the registry build throws.
+  private static func runRuleDiagnostics(
+    keys: [String], name: String
+  ) async throws -> [AgentDiagnostic] {
+    let context = try await AgentsToolTests.makeContext(label: "\(label)-\(name)")
+    let built = try await SurfaceCatalog.makeRegistry(context: context)
+    let selection = SurfaceCatalog.makeSearchSelection(profile: context.profile)
+    let embedder = ProfileEmbedding(embedder: context.profile.embedding)
+    let mounted = try built.registry.makeSessionTools(selection: selection, embedder: embedder)
+    let definition = try SessionAgentToolsTests.definition(keys: keys)
+    let rule = AgentsComposition.runRegistrySelection(
+      of: definition, mountedNames: mounted.map(\.name), mcpServerNames: [])
+    return definition.toolSelection(
+      over: rule.selectionNames(of: built.registry), hasAgentsTool: true
+    ).diagnostics
+  }
+
   // MARK: - A new run
 
   /// A run of an agent with `disallowedTools: [shell]` has no shell noun in
@@ -127,6 +213,77 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     let run = try await Self.resolvedRun(keys: [Self.webOnlyKey], name: "web-warning")
 
     #expect(!run.diagnostics.contains { $0.code == .unknownTool }, "\(run.diagnostics)")
+  }
+
+  // MARK: - The skills and agents names
+
+  /// A run of an agent with `disallowedTools: [skills]` gives no
+  /// unknown-tool warning: `skills` is a tool of the run catalog.
+  @Test func aRunWithDisallowedSkillsGivesNoUnknownToolWarning() async throws {
+    let run = try await Self.environmentRun(keys: [Self.noSkillsKey], name: "no-skills-warning")
+
+    #expect(!run.diagnostics.contains { $0.code == .unknownTool }, "\(run.diagnostics)")
+  }
+
+  /// A run of an agent with `disallowedTools: [skills]` has no `skills`
+  /// tool: the resolve of the run removes a plain catalog tool.
+  @Test func aRunWithDisallowedSkillsHasNoSkillsTool() async throws {
+    let run = try await Self.environmentRun(keys: [Self.noSkillsKey], name: "no-skills-tool")
+
+    #expect(!run.toolNames.contains(Self.skillsName), "\(run.toolNames)")
+  }
+
+  /// A run of an agent with `disallowedTools: [skills]` keeps the shell
+  /// noun in its `runCode`.
+  @Test func aRunWithDisallowedSkillsKeepsTheShellInRunCode() async throws {
+    let run = try await Self.environmentRun(keys: [Self.noSkillsKey], name: "no-skills-shell")
+
+    #expect(run.nouns.contains(Self.shellNoun), "\(run.nouns)")
+  }
+
+  /// The rule of the `runCode` of a run knows the name `skills`, as the
+  /// rule of the root session does: `disallowedTools: [skills]` gives no
+  /// unknown-tool warning in that rule.
+  @Test func theRunCodeRuleKnowsTheSkillsName() async throws {
+    let diagnostics = try await Self.runRuleDiagnostics(
+      keys: [Self.noSkillsKey], name: "rule-skills")
+
+    #expect(!diagnostics.contains { $0.code == .unknownTool }, "\(diagnostics)")
+  }
+
+  /// A run of an agent with `tools: [web, agents]` gives no unknown-tool
+  /// warning: `agents` names the `agents` tool of the run.
+  @Test func aRunWithToolsWebAndAgentsGivesNoUnknownToolWarning() async throws {
+    let run = try await Self.environmentRun(keys: [Self.webAndAgentsKey], name: "agents-warning")
+
+    #expect(!run.diagnostics.contains { $0.code == .unknownTool }, "\(run.diagnostics)")
+  }
+
+  /// A run of an agent with `tools: [web, agents]` grants its `agents` tool
+  /// each agent.
+  @Test func aRunWithToolsWebAndAgentsGrantsEachAgent() async throws {
+    let run = try await Self.environmentRun(keys: [Self.webAndAgentsKey], name: "agents-grant")
+
+    #expect(run.agentsGrant == .all)
+  }
+
+  /// A run of an agent with `tools: [web, agents]` has the web noun and no
+  /// shell noun in its `runCode`.
+  @Test func aRunWithToolsWebAndAgentsHasOnlyTheWebOfTheTwo() async throws {
+    let run = try await Self.environmentRun(keys: [Self.webAndAgentsKey], name: "agents-nouns")
+
+    #expect(
+      run.nouns.intersection([Self.webNoun, Self.shellNoun]) == [Self.webNoun], "\(run.nouns)")
+  }
+
+  /// The rule of the `runCode` of a run knows the name `agents`, as the
+  /// rule of the root session does: `tools: [web, agents]` gives no
+  /// unknown-tool warning in that rule.
+  @Test func theRunCodeRuleKnowsTheAgentsName() async throws {
+    let diagnostics = try await Self.runRuleDiagnostics(
+      keys: [Self.webAndAgentsKey], name: "rule-agents")
+
+    #expect(!diagnostics.contains { $0.code == .unknownTool }, "\(diagnostics)")
   }
 
   // MARK: - A restored run

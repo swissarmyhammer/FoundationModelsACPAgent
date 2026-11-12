@@ -121,8 +121,24 @@ comments:
     - evidence: `review sha 5effe61~1..5effe61` — 1 finding (1 confirmed, 1 refuted). Sources/FoundationModelsACPAgent/Tools/AgentsComposition.swift:333 `completeness/invariant-propagation`. The earlier finding (2026-11-12 14:20, ScriptedStubModelTests.swift:355) is checked.
     - next: Make the run-level topLevelNames agree with the session rule for `skills` and `agents`, and add a run test with disallowedTools that names skills or agents. Then review again.
   timestamp: 2026-11-12T21:41:04.438800+00:00
-position_column: review
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m78vm9gzaax7qsf2be15cz68
+  text: |-
+    Research and fix for the finding of 2026-11-12 16:38 (AgentsComposition.swift:333):
+    - The run resolver (Agents 02d5f0f) reads `agents.environment.tools`. In that catalog `skills` is a plain name (the environment adds it), and the run has an `agents` tool factory. Thus `disallowedTools: [skills]` gives no unknown-tool warning and removes the `skills` tool, and `tools: [web, agents]` gives no warning and grants `.all`. Tests confirm this over the real environment catalog.
+    - The rule inside the kept `runCode` factory (RegistrySelection) is different: its top-level names were only `searchTools` and `runCode`. There `skills` was an unknown name. `agents` was already known through `hasAgentsTool: true` of `SessionToolSelection`, as at session level. The registry result did not change (neither name is a capability), but the rule did not match the session rule. The test `theRunCodeRuleKnowsTheSkillsName` failed before the fix; `theRunCodeRuleKnowsTheAgentsName` passed before the fix.
+    - Fix: new `AgentsComposition.runRegistrySelection(of:mountedNames:mcpServerNames:)`. Its top-level names are the mounted pair and `skills`, with no `agents`, as the session gives all its tool names with no `agents`. The `agents` name is not added: the session rule does not add it, and `ToolVocabulary` removes it when the flag is on. New `RegistrySelection.selectionNames(of:)` gives top-level names plus capability names. `applied(to:)` and `SessionSurface.applying(agent:)` use it.
+    - Discovery (not changed, outside ACPAgent): the session rule keeps `skills` when an agent denies it (`skills` is in `endpointToolNames`, with a "cannot remove" warning). The run resolver of FoundationModelsAgents removes the `skills` tool for `disallowedTools: [skills]`, because `skills` is a plain catalog name, not a kept tool. Thus the tool sets differ between session and run for this key. A person decides if that is intended.
+  timestamp: 2026-11-12T21:46:40.031049+00:00
+- actor: claude-code
+  id: 01m78vnqmyjtvwsy99ct5xx0dp
+  text: |-
+    ### implement — changed
+    - evidence: 3 files — Sources/FoundationModelsACPAgent/Tools/AgentsComposition.swift, Sources/FoundationModelsACPAgent/Tools/SessionAgentTools.swift, Tests/FoundationModelsACPAgentTests/RunToolSelectionTests.swift (8 new tests). RED: theRunCodeRuleKnowsTheSkillsName failed before the fix. `swift build --build-tests`: no compiler warnings. `swift test`: 2030 tests in 221 suites pass, 0 failures, 1 known issue (the existing withKnownIssue smoke test). No pin change. ScriptedStubModelTests.swift not changed. No commit. The finding of 2026-11-12 16:38 is checked.
+    - next: /review (review sha of the new commit, or review working).
+  timestamp: 2026-11-12T21:47:27.262485+00:00
+position_column: doing
+position_ordinal: '80'
 title: 'An agent run with a tools: key gets the registry selection of its agent'
 ---
 ## What
@@ -159,4 +175,4 @@ Since ^vshf002, the template values of a run follow the keys of its agent with t
 > 6 file(s) not reviewed — excluded by an ignore rule:
 > - `.kanban/ (from .reviewignore)` — 6 file(s)
 
-- [ ] `Sources/FoundationModelsACPAgent/Tools/AgentsComposition.swift:333` `completeness/invariant-propagation` — The run-level topLevelNames is built only from the mounted pair (searchTools, runCode). The session-level rule in SessionSurface.applying builds topLevelNames from all session tools except the agents tool, so it includes skills. The same token `skills` is therefore a known name at session level and an unknown name for a run, so run keys that name skills may get a different result than the same keys at session level, contrary to the doc's claim of the same rule. Confirm how the run resolver treats `skills` and `agents` in tools:/disallowedTools:. If they should match the session rule, pass the skills and agents names into the run's topLevelNames. Add a run test with disallowedTools naming skills or agents that checks there is no unknown-tool warning and the expected result.
+- [x] `Sources/FoundationModelsACPAgent/Tools/AgentsComposition.swift:333` `completeness/invariant-propagation` — The run-level topLevelNames is built only from the mounted pair (searchTools, runCode). The session-level rule in SessionSurface.applying builds topLevelNames from all session tools except the agents tool, so it includes skills. The same token `skills` is therefore a known name at session level and an unknown name for a run, so run keys that name skills may get a different result than the same keys at session level, contrary to the doc's claim of the same rule. Confirm how the run resolver treats `skills` and `agents` in tools:/disallowedTools:. If they should match the session rule, pass the skills and agents names into the run's topLevelNames. Add a run test with disallowedTools naming skills or agents that checks there is no unknown-tool warning and the expected result.
