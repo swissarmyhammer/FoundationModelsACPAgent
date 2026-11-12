@@ -14,8 +14,15 @@ comments:
     - Plan: keep the pause in force in the session entry (`ActiveSession.mailDeliveryPause`). Set it in `recordInHistory` in the same actor step as the history record. Clear it in `scheduleModelPrompt`. The hot resume reads it in the step of the take, as it copies the tree, so a pause after the take goes live through the hold and is not sent two times. The replay leaves out each `_mail_delivery_paused` entry.
     - The client (FoundationModelsACPClient `MailDeliveryPauseExtension`) clears the pause at the start of a replay with history and at each user message. Thus a pause that the sync sends before the response stays at the client.
   timestamp: 2026-11-10T22:32:41.168765+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m77q0gyr1dd592zgeazyhbhe
+  text: |-
+    ### review — clean
+    - evidence: review sha 52eb00c~1..52eb00c gives 0 findings (0 confirmed, 1 refuted, 7 attempted, 0 failed). The .kanban/ files are excluded by .reviewignore.
+    - next: none. The task is in done. The pause of a child session continues in 01M73SQXB1HB5HFV6YVC4HAFQW.
+  timestamp: 2026-11-12T11:06:43.544374+00:00
+position_column: done
+position_ordinal: ffffd980
 title: 'session/resume gives the current mail delivery pause: re-send it when paused, never when lifted'
 ---
 ## What

@@ -17,6 +17,12 @@ struct AgentsMount: Sendable {
   /// a session.
   let runner: AgentRunner
 
+  /// The agent registry of the session: the catalog that the runner and the
+  /// `agents` GraphQL endpoint read. It watches its layers.
+  /// ``SessionSurface/shutdown()`` stops that watch, thus a closed session
+  /// leaves no running watcher.
+  let registry: AgentRegistry
+
   /// The environment of each agent run. It has the one skills registry and
   /// the settle period. It also has the `skills` tool of the root session and
   /// of the runs, and the tools of the runs.
@@ -75,9 +81,12 @@ enum AgentsComposition {
   /// `agents/<id>/AGENT.md` of each layer of the `agents` dotfolder stack
   /// (``ToolCatalog/agentsDotfolderName``). It also reads the agent folders
   /// `agents/<id>/AGENT.md` of each marketplace layer of the skills store
-  /// (see ``makeAgentRegistry(context:marketplaces:)``). It does not watch.
-  /// The schema of the tool is fixed when the tool is made. So an agent that
-  /// a later edit adds reaches the next session.
+  /// (see ``makeAgentRegistry(context:marketplaces:)``). The registry
+  /// watches its layers. So the catalog of the `agents` GraphQL endpoint
+  /// changes when an agent file changes, and the endpoint sends a change
+  /// event. The schema of the `agents` tool for the model is fixed when the
+  /// tool is made, and it stays fixed for the session. So an agent that a
+  /// later edit adds reaches the model in the next session.
   ///
   /// - Parameters:
   ///   - context: The session whose configuration, profile, working
@@ -133,7 +142,9 @@ enum AgentsComposition {
     }
     let tool = try await AgentsTool.make(context: AgentsToolContext(runner: runner))
     bindHolds(of: runCallJoins, tool: tool, runner: runner, announcer: announcer)
-    return AgentsMount(tool: tool, runner: runner, environment: environment, announcer: announcer)
+    return AgentsMount(
+      tool: tool, runner: runner, registry: registry, environment: environment,
+      announcer: announcer)
   }
 
   /// Tells the holds of the surface which tool starts a child, and how to find the run of a call.
@@ -209,6 +220,17 @@ enum AgentsComposition {
   /// not a valid agent id is not an agent. It gives no diagnostic. So the
   /// settings folders `_skills/` and `_rules/` of the root are not agents.
   ///
+  /// The registry watches (`watch: true`). After its first build, a
+  /// `DotfolderWatcher` watches the root of each local layer, the root
+  /// settings folder and the project layer, and each watchable marketplace
+  /// layer. A change reloads the catalog, and the `agents` endpoint reads
+  /// the new catalog and sends its change. A project layer that is not there
+  /// yet is watched from its nearest folder that is there. An iCloud
+  /// download writes the file into the folder, so the watcher sees it.
+  /// ``SessionSurface/shutdown()`` stops the watcher with
+  /// `AgentRegistry.stopWatching()`, thus a closed session leaves no running
+  /// watcher. The registry keeps its last catalog.
+  ///
   /// - Parameters:
   ///   - context: The session whose working directory roots the project layer
   ///     of the stack. Its settings folders give the defaults layer and the
@@ -223,10 +245,10 @@ enum AgentsComposition {
     let templateContext = ToolCatalog.skillsTemplateContext(
       context.configuration.tools, mode: context.toolMode)
     guard let marketplaces else {
-      return AgentRegistry(stack: stack, templateContext: templateContext)
+      return AgentRegistry(stack: stack, templateContext: templateContext, watch: true)
     }
     return AgentRegistry(
-      marketplaces: marketplaces, stack: stack, templateContext: templateContext)
+      marketplaces: marketplaces, stack: stack, templateContext: templateContext, watch: true)
   }
 
   /// Makes the agent registry of the session

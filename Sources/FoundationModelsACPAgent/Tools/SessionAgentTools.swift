@@ -310,6 +310,6 @@ extension AgentsMount {
     return AgentsMount(
       tool: try await AgentsTool.make(
         context: AgentsToolContext(runner: runner, allowedNames: allowedNames)),
-      runner: runner, environment: environment, announcer: announcer)
+      runner: runner, registry: registry, environment: environment, announcer: announcer)
   }
 }
