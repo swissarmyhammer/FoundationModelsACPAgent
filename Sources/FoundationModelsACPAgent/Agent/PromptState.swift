@@ -225,6 +225,44 @@ actor SessionStateLedger {
     await sendChange()
   }
 
+  /// Records that the Router session `source` has work that the cold restore of a tree holds: a
+  /// restored run that the agent drives again, or a caller that waits for one. Router started the
+  /// lease of this work before the ledger listened, so no work event tells it. The end of the
+  /// work comes as a work event (``workEnded(on:)``).
+  ///
+  /// The ledger sends no change here. The gate of a restored child is closed until its snapshot
+  /// went out, and a send would wait for that gate. The current-state sync of the resume reports
+  /// the new state (``currentSnapshot()``, ``announceCurrentState()``). The parent learns the
+  /// activity of this session as for any change.
+  ///
+  /// - Parameter source: The id of the Router session.
+  func restoredWorkHeld(on source: ULID) async {
+    workingSources.insert(source)
+    await takeUnsentChange()
+  }
+
+  /// Takes back the hold of ``restoredWorkHeld(on:)`` when the agent does not drive the restored
+  /// runs again: no client is there to see the work. The ledger sends no change, because no
+  /// client saw the hold.
+  ///
+  /// - Parameter source: The id of the Router session.
+  func restoredWorkReleased(on source: ULID) async {
+    workingSources.remove(source)
+    await takeUnsentChange()
+  }
+
+  /// Notes the current state as the reported state with no send, and tells the observer when the
+  /// session became active or idle. A session that leaves `idle` drops the `idle` of its last
+  /// prompt, as a sent change does (``forgetPromptEnd(after:)``).
+  private func takeUnsentChange() async {
+    let next = current
+    if next != .idle {
+      forgetPromptEnd(after: reported)
+    }
+    reported = next
+    await tellObserver(noteActivity())
+  }
+
   /// Records that the question `question` waits for the user now. It sends `requires_action` when
   /// the session did not report it yet.
   ///
@@ -370,6 +408,13 @@ actor SessionStateLedger {
   private func sendChange() async {
     let activity = noteActivity()
     await deliverChange()
+    await tellObserver(activity)
+  }
+
+  /// Tells the observer a new activity of this session.
+  ///
+  /// - Parameter activity: The new activity, or `nil` when it did not change.
+  private func tellObserver(_ activity: (isActive: Bool, version: Int)?) async {
     if let activity {
       await activityObserver?(activity.isActive, activity.version)
     }

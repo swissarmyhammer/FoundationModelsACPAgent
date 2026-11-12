@@ -379,9 +379,10 @@ import Testing
     await wire.fixture.close()
   }
 
-  /// A child that came back from the disk is idle. Nothing starts it here.
+  /// A child that came back from the disk and that the agent drives again is `running` in its
+  /// snapshot, with or without a replay (decision of testudoapp-75).
   @Test(arguments: [true, false])
-  func aColdRestoredChildIsIdleInItsSnapshot(replays: Bool) async throws {
+  func aColdRestoredChildThatRunsAgainIsRunningInItsSnapshot(replays: Bool) async throws {
     let wire = try await Self.resumeChain(replays: replays)
 
     let states = [wire.recording.child, wire.recording.leaf].map {
@@ -390,7 +391,7 @@ import Testing
 
     #expect(
       states.allSatisfy { state in
-        if case .value(.idle)? = state {
+        if case .value(.running)? = state {
           return true
         }
         return false
@@ -586,21 +587,26 @@ import Testing
   }
 
   /// The prompt of the root was interrupted, and no prompt of it is completed. The state snapshot
-  /// of the root goes out before the response. It is `idle` with no stop reason: it reports
-  /// neither `end_turn` nor `cancelled`.
+  /// of the root goes out before the response. The root waits for its restored child, so the
+  /// snapshot is `running`: it reports neither `end_turn` nor `cancelled`, and no idle with
+  /// noWork (decision of testudoapp-75).
   @Test
   func theRootAfterAShutdownReportsNoCompletedPrompt() async throws {
     let wire = try await Self.resumeShutDownChain()
 
-    let idles = wire.beforeResponse.compactMap { sent -> IdleStateUpdate? in
-      if sent.sessionId == wire.recording.root, case .stateUpdate(.idle(let idle)) = sent.update {
-        return idle
+    let states = wire.beforeResponse.compactMap { sent -> StateUpdate? in
+      if sent.sessionId == wire.recording.root, case .stateUpdate(let state) = sent.update {
+        return state
       }
       return nil
     }
-    try #require(idles.count == 1)
+    try #require(states.count == 1)
+    var isRunning = false
+    if case .running? = states.first {
+      isRunning = true
+    }
 
-    #expect(idles.first?.stopReason == nil)
+    #expect(isRunning)
     await wire.fixture.close()
   }
 

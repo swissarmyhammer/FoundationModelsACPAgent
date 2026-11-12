@@ -27,8 +27,9 @@ extension RoutedACPAgent {
   }
 
   /// Restores the interrupted nested sessions of a resumed root, and registers each one as a
-  /// session nested in its caller, the caller before the child. The restored sessions are idle:
-  /// the runner holds the start of each run, and a later task starts them.
+  /// session nested in its caller, the caller before the child. The runner holds the start of
+  /// each run, and a later task starts them (``redriveInterruptedRuns(of:)``). Before the current
+  /// state of the root goes out, the ledgers show the held work (``holdRestoredWork(of:)``).
   ///
   /// The root restores first, with the hook key of its project, so each child finds its root open
   /// and takes the same key. The registration of each restored session records that key for the

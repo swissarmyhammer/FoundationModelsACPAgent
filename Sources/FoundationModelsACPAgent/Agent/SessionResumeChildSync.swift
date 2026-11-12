@@ -29,8 +29,9 @@ extension RoutedACPAgent {
   /// child. A child whose `agents` call has a final status in the history is not a live child: it
   /// gets nothing here, and neither do its descendants. Its history only replays, before the
   /// response. For a child that restored: its `subagent_update` on the stream of its parent, with
-  /// the state that its ledger reports now (a cold-restored child is `idle`, a child that works
-  /// shows `running`), the capabilities and the working directory. Then its own `state_update`
+  /// the state that its ledger reports now (a cold-restored child that the agent drives again
+  /// shows `running`, as a child that works does, and a child with no work is `idle`), the
+  /// capabilities and the working directory. Then its own `state_update`
   /// on its own stream, and then its pause of the mail delivery in force, when it has one. For a
   /// child that did not restore: one `subagent_update` with no state, no
   /// capabilities and the reason (``SAH/RestoreFailure``).

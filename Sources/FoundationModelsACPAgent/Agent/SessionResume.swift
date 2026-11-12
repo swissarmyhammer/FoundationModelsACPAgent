@@ -245,6 +245,9 @@ extension RoutedACPAgent {
     // The restore of the nested sessions can add the open calls of the root to its history.
     try await replayHistory(
       sessions[params.sessionId]?.history ?? history, from: replayCursor, sessionId: params.sessionId)
+    // A restored run that the agent drives again is work, and so is each caller that waits for
+    // it. The current state of the root and the snapshots of the children say so.
+    await holdRestoredWork(of: params.sessionId)
     await syncCurrentState(of: params.sessionId, replayed: replayCursor != nil)
 
     let response = ResumeSessionResponse(
@@ -258,6 +261,9 @@ extension RoutedACPAgent {
     // The current snapshots of the children follow the response, with or without a replay.
     if let connection = connections.path(forSession: params.sessionId)?.connection {
       scheduleChildSync(of: params.sessionId, through: connection)
+    } else {
+      // No re-drive follows, so the restored runs do not work.
+      await releaseRestoredWork(of: params.sessionId)
     }
     return response
   }

@@ -454,11 +454,12 @@ is the case after a restart of the process.
    under its own id. A replayed announcement has no `capabilities`. A replay sends no
    `state_update` of a child and no request to the client.
 3. The agent sends the current `state_update` of the root with its `background` list, the
-   `session_info_update`, and then the response.
+   `session_info_update`, and then the response. A root that waits for a restored child is
+   `running`, not `idle` with `noWork`.
 4. After the response, the agent sends the current snapshot of each child, the parent before
    the child: a `subagent_update` with the state, the `capabilities` and the working
-   directory, and then the `state_update` of the child. A restored child is `idle` in its
-   snapshot. A child that did not restore gets one `subagent_update` with no state, no
+   directory, and then the `state_update` of the child. A restored child that the agent starts
+   again is `running` in its snapshot, and no `idle` comes before that `running`. A child that did not restore gets one `subagent_update` with no state, no
    capabilities, and the reason in `_meta.sah.restoreFailure`. The same holds for its
    descendants.
 5. After the snapshots, the agent starts the restored runs again (the re-drive), the children
