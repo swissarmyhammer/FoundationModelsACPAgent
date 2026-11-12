@@ -25,7 +25,9 @@ struct AgentsMount: Sendable {
 
   /// The environment of each agent run. It has the one skills registry and
   /// the settle period. It also has the `skills` tool of the root session and
-  /// of the runs, and the tools of the runs.
+  /// of the runs, and the tools of the runs. The skills registry watches its
+  /// layers. ``SessionSurface/shutdown()`` stops that watch, thus a closed
+  /// session leaves no running skills watcher.
   let environment: AgentEnvironment
 
   /// The queue that announces each run of the session to the client with a

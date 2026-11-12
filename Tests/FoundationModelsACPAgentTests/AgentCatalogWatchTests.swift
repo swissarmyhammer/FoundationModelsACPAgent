@@ -5,6 +5,7 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 @testable import FoundationModelsAgents
+@testable import FoundationModelsSkills
 
 /// The agent registry of a session watches its layers (task ^a84x0wm): a new
 /// `AGENT.md` that a person, Finder or iCloud writes after the session
@@ -17,6 +18,10 @@ import Testing
 ///
 /// A test does not wait for a fixed time. It waits for the change event of
 /// the subscription. The time limit of each test bounds that wait.
+///
+/// The close tests of the skills registry (task ^enh25yn) use the same
+/// fixture. They wait for the reload of the skills registry of the control
+/// session, not for a fixed time.
 @Suite(.closesHarnesses) struct AgentCatalogWatchTests {
   /// The id of the agent that each test writes after the session started.
   private static let newAgentID = "late-helper"
@@ -24,6 +29,17 @@ import Testing
   /// The id of the agent that a close test writes after the change event of
   /// ``newAgentID``.
   private static let laterAgentID = "later-helper"
+
+  /// The id of the skill that a skills close test writes after the close.
+  private static let newSkillID = "late-skill"
+
+  /// The id of the skill that a skills close test writes after the control
+  /// session got ``newSkillID``.
+  private static let laterSkillID = "later-skill"
+
+  /// The name of the project layer folder of the skills stack in the working
+  /// directory.
+  private static let skillsProjectLayerName = ".\(ToolCatalog.skillsDotfolderName)"
 
   /// The `cursor` query of the `agents` endpoint.
   private static let cursorQuery = "{ cursor }"
@@ -113,7 +129,89 @@ import Testing
     #expect(closedRegistry.catalog().definition(named: Self.newAgentID) == nil)
   }
 
+  // MARK: - The skills registry at the close of a session
+
+  /// After `session/close`, the skills registry of the closed session has no
+  /// running watcher. A control session stays open and shows that the new
+  /// skill reached the watchers.
+  @Test(.timeLimit(.minutes(1)))
+  func aClosedSessionLeavesNoRunningSkillsWatcher() async throws {
+    let fixture = try await WatchFixture.make(label: "AgentCatalogWatchTests-close-skills-watcher")
+
+    let closedRegistry = try await Self.skillsRegistryAfterANewSkill(closingASessionOf: fixture)
+
+    #expect(!closedRegistry.isFollowingChanges)
+  }
+
+  /// After `session/close`, a new `SKILL.md` gives no reload of the skills
+  /// registry of the closed session, while the control session that stays
+  /// open gets the new skill.
+  @Test(.timeLimit(.minutes(1)))
+  func aNewSkillAfterTheCloseGivesNoChangeToTheClosedSession() async throws {
+    let fixture = try await WatchFixture.make(label: "AgentCatalogWatchTests-close-skills")
+
+    let closedRegistry = try await Self.skillsRegistryAfterANewSkill(closingASessionOf: fixture)
+
+    #expect(!closedRegistry.metadata().contains { $0.id == Self.newSkillID })
+  }
+
   // MARK: - Helpers
+
+  /// Opens a second session on the agent of `fixture`, and closes it. Then
+  /// it writes the new skill in the project layer of the skills stack and
+  /// waits for the reload of the skills registry of the control session of
+  /// `fixture`, which stays open. Then it does the same with a later skill.
+  /// A watcher of the closed session that still runs gets the first change
+  /// before the control session gets the second change.
+  ///
+  /// - Parameter fixture: The agent and the control session of the test.
+  /// - Returns: The skills registry of the closed session.
+  /// - Throws: Whatever the wire or the write throws; an
+  ///   `ExpectationFailedError` when a session has no `agents` mount, or when
+  ///   the control registry stops its reloads before it has a new skill.
+  private static func skillsRegistryAfterANewSkill(closingASessionOf fixture: WatchFixture)
+    async throws -> SkillsRegistry
+  {
+    let controlRegistry = try #require(
+      await fixture.agent.sessions[fixture.sessionId]?.surface.agents?.environment.skills)
+    let closedSession = try await fixture.openSession()
+    let registry = try #require(
+      await fixture.agent.sessions[closedSession]?.surface.agents?.environment.skills)
+    _ = try await fixture.harness.connection.closeSession(
+      CloseSessionRequest(sessionId: closedSession))
+    let layer = fixture.workingDirectory.appendingPathComponent(
+      skillsProjectLayerName, isDirectory: true)
+    try await writeSkill(newSkillID, in: layer, waitingFor: controlRegistry)
+    try await writeSkill(laterSkillID, in: layer, waitingFor: controlRegistry)
+    return registry
+  }
+
+  /// Writes the skill `id` in `layer`, and waits for the reload of `registry`
+  /// that has it.
+  ///
+  /// - Parameters:
+  ///   - id: The id of the skill to write, which is also its `name` field.
+  ///   - layer: The layer folder that gets `<layer>/<id>/SKILL.md`.
+  ///   - registry: The skills registry that must get the skill.
+  /// - Throws: Whatever the write throws; an `ExpectationFailedError` when the
+  ///   reloads of `registry` stop before one of them has the skill.
+  private static func writeSkill(
+    _ id: String, in layer: URL, waitingFor registry: SkillsRegistry
+  ) async throws {
+    // The subscription comes before the write, so no reload of the write is
+    // lost.
+    let reloads = registry.onReload
+    try writeSkillFixture(
+      id: id,
+      markdown: "---\nname: \(id)\ndescription: A skill that came after the close.\n---\nDo it.\n",
+      under: layer)
+    var catalogs = reloads.makeAsyncIterator()
+    var catalog = registry.metadata()
+    while !catalog.contains(where: { $0.id == id }), let next = await catalogs.next() {
+      catalog = next
+    }
+    try #require(catalog.contains { $0.id == id })
+  }
 
   /// Opens a second session on the agent of `fixture`, and closes it. Then
   /// it writes the new agent in the root settings folder and waits for the

@@ -242,17 +242,19 @@ public struct SessionSurface: Sendable {
   }
 
   /// Releases what the surface holds outside the session: it stops the
-  /// agent runs and the watch of the agent registry, then gives back its
-  /// leases on the code context and on the shell store, then it shuts the
-  /// server pool down. The agent registry keeps its last catalog. The code context
-  /// stops, and the registry drops the shell store, when this was its last
-  /// lease; another session of the same working directory keeps each one.
+  /// agent runs, the watch of the agent registry and the watch of the skills
+  /// registry, then gives back its leases on the code context and on the
+  /// shell store, then it shuts the server pool down. The agent registry and
+  /// the skills registry keep their last catalogs. The code context stops,
+  /// and the shell store registry drops the shell store, when this was its
+  /// last lease; another session of the same working directory keeps each one.
   /// The session lifecycle calls this after the session sweep: a pool
   /// shutdown before the sweep drops the transports that the settling runs
   /// still need.
   public func shutdown() async {
     await stopAgentRuns()
     await agents?.registry.stopWatching()
+    await agents?.environment.skills.stopWatching()
     await codeContextLease?.release()
     await shellStoreLease?.release()
     await serverPool.shutdownAll()

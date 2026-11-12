@@ -26,8 +26,15 @@ comments:
     - evidence: Sources/FoundationModelsACPAgent/Agent/{SessionSetup,SessionHistory,SessionProjector,SessionBuild,SessionResumeChildSync,PromptExecution,MailDeliveryPauseReport,ACPEventTranslator}.swift; Tests/FoundationModelsACPAgentTests/MailPauseResumeTests.swift; Tests/FoundationModelsACPAgentTests/Support/PausedChildTreeFixture.swift (new). `swift test`: 2004 tests in 220 suites passed, 0 failures, 0 compiler warnings (1 known issue that HarnessSmokeTests records on purpose, from before this change).
     - next: /review
   timestamp: 2026-11-12T11:41:59.531965+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m77s58zcteqw8wm013wxbq3x
+  text: |-
+    ### review — clean
+    - evidence: review sha 64cd038~1..64cd038 — 0 findings (0 confirmed, 1 refuted, 7 attempted, 0 failed); 10 files reviewed, 6 .kanban files ignored by .reviewignore.
+    - next: none. The task is in done.
+  timestamp: 2026-11-12T11:44:16.364500+00:00
+position_column: done
+position_ordinal: ffffdb80
 title: session/resume gives the current mail delivery pause of each live child session
 ---
 ## What
