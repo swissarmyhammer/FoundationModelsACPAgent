@@ -43,8 +43,15 @@ comments:
     - evidence: Tests/FoundationModelsACPAgentTests/AgentCatalogWatchTests.swift. `swift build --build-tests`: complete, 0 compiler warnings (one SwiftPM build-system line, `missing creator for mutated node` for the mlx-swift_Cmlx bundle, not from this change). `swift test`: 2014 tests in 220 suites passed, 0 failures, 1 known issue (the planned `withKnownIssue` in HarnessSmokeTests). The four close tests of AgentCatalogWatchTests passed. No commit.
     - next: review
   timestamp: 2026-11-12T12:03:55.554004+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m77tb9eppnq3shfbjr2tyn4b
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (d51a453) — 0 findings (attempted 7, failed 0). The prior finding at AgentCatalogWatchTests.swift:172 (reuse/reuse) is checked, and the change gives one shared close flow.
+    - next: none. The task is in done.
+  timestamp: 2026-11-12T12:05:02.038463+00:00
+position_column: done
+position_ordinal: ffffdd80
 title: The skills registry of a closed session stops its watcher
 ---
 ## What
