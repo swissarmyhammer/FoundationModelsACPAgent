@@ -55,6 +55,38 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     return Set(runCode.currentRegistry.surface.entries.compactMap(\.group))
   }
 
+  /// The registry of a fresh session, and the pair of session tools that the
+  /// session mounts from it.
+  private struct MountedRegistry {
+    /// The built Multitool registry of the session.
+    let registry: MultiTool.Registry
+
+    /// The selection tier of `searchTools`.
+    let selection: SearchToolsTool.SelectionFactory
+
+    /// The embedder that `searchTools` and `runCode` rank with.
+    let embedder: FoundationModelsACPAgent.ProfileEmbedding
+
+    /// The pair of session tools that the session mounts from `registry`.
+    let mounted: [any Tool]
+  }
+
+  /// Builds the registry of a fresh session, and mounts its pair of session
+  /// tools, as a root session does.
+  ///
+  /// - Parameter name: The name of the test, for the folders.
+  /// - Returns: The registry and the mounted pair.
+  /// - Throws: What the context, the registry build or the mount throws.
+  private static func mountedRegistry(name: String) async throws -> MountedRegistry {
+    let context = try await AgentsToolTests.makeContext(label: "\(label)-\(name)")
+    let built = try await SurfaceCatalog.makeRegistry(context: context)
+    let selection = SurfaceCatalog.makeSearchSelection(profile: context.profile)
+    let embedder = ProfileEmbedding(embedder: context.profile.embedding)
+    let mounted = try built.registry.makeSessionTools(selection: selection, embedder: embedder)
+    return MountedRegistry(
+      registry: built.registry, selection: selection, embedder: embedder, mounted: mounted)
+  }
+
   /// Resolves the tools of a run of an agent with the frontmatter `keys`
   /// over the run catalog of a fresh session registry.
   ///
@@ -65,14 +97,10 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   /// - Throws: What the registry build or the resolve throws, or an issue
   ///   when the run has no `runCode`.
   private static func resolvedRun(keys: [String], name: String) async throws -> ResolvedRun {
-    let context = try await AgentsToolTests.makeContext(label: "\(label)-\(name)")
-    let built = try await SurfaceCatalog.makeRegistry(context: context)
-    let selection = SurfaceCatalog.makeSearchSelection(profile: context.profile)
-    let embedder = ProfileEmbedding(embedder: context.profile.embedding)
-    let mounted = try built.registry.makeSessionTools(selection: selection, embedder: embedder)
+    let session = try await mountedRegistry(name: name)
     let runTools = AgentsComposition.makeRunTools(
-      registry: built.registry, mcpServerNames: [], selection: selection, embedder: embedder,
-      mounted: mounted)
+      registry: session.registry, mcpServerNames: [], selection: session.selection,
+      embedder: session.embedder, mounted: session.mounted)
     let definition = try SessionAgentToolsTests.definition(keys: keys)
     let resolved = try await ToolResolver(agent: definition.id, provenance: definition.provenance)
       .resolve(definition, catalog: runTools, agentsTool: nil)
@@ -81,14 +109,11 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   }
 
   /// The `disallowedTools:` key that denies the `skills` tool.
-  private static let noSkillsKey = "disallowedTools: [skills]"
+  private static let noSkillsKey = "disallowedTools: [\(SkillOutputProtection.skillsToolName)]"
 
   /// The `tools:` key that keeps the web capability and grants the `agents`
   /// tool.
   private static let webAndAgentsKey = "tools: [web, agents]"
-
-  /// The name of the `skills` tool that the agent environment adds.
-  private static let skillsName = "skills"
 
   /// The resolved tools of one run over the run catalog of the agent
   /// environment of a session: the catalog that a real run reads.
@@ -152,16 +177,12 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   private static func runRuleDiagnostics(
     keys: [String], name: String
   ) async throws -> [AgentDiagnostic] {
-    let context = try await AgentsToolTests.makeContext(label: "\(label)-\(name)")
-    let built = try await SurfaceCatalog.makeRegistry(context: context)
-    let selection = SurfaceCatalog.makeSearchSelection(profile: context.profile)
-    let embedder = ProfileEmbedding(embedder: context.profile.embedding)
-    let mounted = try built.registry.makeSessionTools(selection: selection, embedder: embedder)
+    let session = try await mountedRegistry(name: name)
     let definition = try SessionAgentToolsTests.definition(keys: keys)
     let rule = AgentsComposition.runRegistrySelection(
-      of: definition, mountedNames: mounted.map(\.name), mcpServerNames: [])
+      of: definition, mountedNames: session.mounted.map(\.name), mcpServerNames: [])
     return definition.toolSelection(
-      over: rule.selectionNames(of: built.registry), hasAgentsTool: true
+      over: rule.selectionNames(of: session.registry), hasAgentsTool: true
     ).diagnostics
   }
 
@@ -230,7 +251,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   @Test func aRunWithDisallowedSkillsHasNoSkillsTool() async throws {
     let run = try await Self.environmentRun(keys: [Self.noSkillsKey], name: "no-skills-tool")
 
-    #expect(!run.toolNames.contains(Self.skillsName), "\(run.toolNames)")
+    #expect(!run.toolNames.contains(SkillOutputProtection.skillsToolName), "\(run.toolNames)")
   }
 
   /// A run of an agent with `disallowedTools: [skills]` keeps the shell

@@ -323,6 +323,16 @@ working again. Each run gets the `searchTools`,
 `runCode` and `skills` tools, and the root session and the runs read one skills
 registry. When the session closes, its agent runs stop first.
 
+The `tools:` and `disallowedTools:` keys in the front matter of an `AGENT.md`
+filter the `runCode` of a run with the rule of the root session. The keys
+never remove `searchTools` or `runCode` from a run. The rule for the `skills`
+tool is different in a run. The root session keeps its `skills` tool when its
+agent has `disallowedTools: [skills]`, because the `skills` tool gives an
+endpoint of the UI. The session logs that it cannot remove the tool. A run has
+no endpoint of the UI, thus a run obeys `disallowedTools: [skills]`: the run
+has no `skills` tool and no skill search. The `skills:` preload of the agent
+of that run still puts the skill bodies into the instructions of the run.
+
 **Know the shell limit.** The shell has no sandbox and no gate: there is no
 permission prompt, and the agent never sends `session/request_permission` (the
 `permission` step of the stub script in tests is the only exception). A shell

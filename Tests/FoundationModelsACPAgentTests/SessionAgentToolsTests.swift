@@ -280,6 +280,17 @@ import Testing
     #expect(sessions.agent.surface.tools.map(\.name).contains(Self.agentsName))
   }
 
+  /// A session agent with `disallowedTools: [skills]` still has the `skills`
+  /// tool: `skills` gives an endpoint (D90 (c)), thus the selection of a root
+  /// session cannot remove it. A run has no endpoint, and loses the tool.
+  @Test func disallowedSkillsStaysInTheRootSession() async throws {
+    let skills = SkillOutputProtection.skillsToolName
+    let sessions = try await Self.openSessions(
+      keys: ["disallowedTools: [\(skills)]"], name: "skills")
+
+    #expect(sessions.agent.surface.tools.map(\.name).contains(skills))
+  }
+
   /// `disallowedTools: [agents, shell]` gives one warning: the `agents` tool
   /// stays.
   @Test func disallowedAgentsGivesOneWarning() throws {

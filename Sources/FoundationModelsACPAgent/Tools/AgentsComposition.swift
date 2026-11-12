@@ -359,6 +359,14 @@ enum AgentsComposition {
   /// warning in the rule of a run, as it gives none in the rule of the root
   /// session.
   ///
+  /// **`disallowedTools: [skills]` removes the `skills` tool of a run.** The
+  /// root session keeps its `skills` tool for this key, because the tool
+  /// gives an endpoint of the UI (D90 (c)), and the session logs that it
+  /// cannot remove it. A run has no endpoint of the UI, thus the resolver of
+  /// the run removes the `skills` tool, and with it the skill search. The
+  /// `skills:` preload of the agent still renders into the instructions of
+  /// the run. The `skills` name changes no noun of the registry here.
+  ///
   /// - Parameters:
   ///   - definition: The agent of the run.
   ///   - mountedNames: The names of the Multitool session tools that the

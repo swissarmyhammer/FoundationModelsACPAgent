@@ -137,7 +137,31 @@ comments:
     - evidence: 3 files — Sources/FoundationModelsACPAgent/Tools/AgentsComposition.swift, Sources/FoundationModelsACPAgent/Tools/SessionAgentTools.swift, Tests/FoundationModelsACPAgentTests/RunToolSelectionTests.swift (8 new tests). RED: theRunCodeRuleKnowsTheSkillsName failed before the fix. `swift build --build-tests`: no compiler warnings. `swift test`: 2030 tests in 221 suites pass, 0 failures, 1 known issue (the existing withKnownIssue smoke test). No pin change. ScriptedStubModelTests.swift not changed. No commit. The finding of 2026-11-12 16:38 is checked.
     - next: /review (review sha of the new commit, or review working).
   timestamp: 2026-11-12T21:47:27.262485+00:00
-position_column: doing
+- actor: claude-code
+  id: 01m78vsj1d0vwx8g6mn1yjz7dv
+  text: |-
+    ### review — findings
+    - evidence: review sha 3c335a3~1..3c335a3 — 2 findings (2 confirmed, 0 refuted): Tests/FoundationModelsACPAgentTests/RunToolSelectionTests.swift:91, Tests/FoundationModelsACPAgentTests/RunToolSelectionTests.swift:155. The prior finding AgentsComposition.swift:333 is checked.
+    - next: implement the two findings of 2026-11-12 16:48. The task stays in review.
+  timestamp: 2026-11-12T21:49:32.589595+00:00
+- actor: claude-code
+  id: 01m78w4vmnvs7qx9x16h5v7vta
+  text: |-
+    Rule of testudoapp-75 (2026-11-12), recorded and tested:
+    - The root session keeps `skills` for `disallowedTools: [skills]` (D90 (c), an endpoint of the UI; the session logs "cannot remove"). A run has no endpoint of the UI, thus a run obeys the key: no `skills` tool and no skill search. Its `skills:` preload still renders.
+    - Docs: README.md (the `agents` paragraph of the Tools section; the README has no other section about the `tools:` / `disallowedTools:` keys of an AGENT.md, thus the rule goes there). The doc comment of `AgentsComposition.runRegistrySelection(of:mountedNames:mcpServerNames:)`. ARCHITECTURE.md does not describe the run tool selection, thus no change there.
+    - Tests: `RunToolSelectionTests.aRunWithDisallowedSkillsHasNoSkillsTool` was already there (run loses skills). The root part had no test: new `SessionAgentToolsTests.disallowedSkillsStaysInTheRootSession`. The preload part had no test: new `SubagentInstructionsTests.aNewRunOfAnAgentWithDisallowedSkillsRendersItsPreloadedSkill`. Both pinned existing behavior, thus both passed on the first run. A mutation check (remove the `skills:` key of the probe agent) made the preload test fail, then the file was put back.
+    - To prevent a copy of the new-run setup, `SubagentInstructionsTests.newRunInstructions(in:label:)` now serves the web test and the preload test, and `writeProbeAgent(keys:in:)` serves `writeWebAgent(tools:in:)`.
+    - Findings of 2026-11-12 16:48: `skillsName` deleted, and `SkillOutputProtection.skillsToolName` is used, also in `noSkillsKey` (the same drift cause). New `mountedRegistry(name:)` with the `MountedRegistry` struct serves `resolvedRun` and `runRuleDiagnostics`. The struct names `FoundationModelsACPAgent.ProfileEmbedding` because FoundationModelsAgents has an internal type with the same name (ambiguous through @testable).
+  timestamp: 2026-11-12T21:55:42.869886+00:00
+- actor: claude-code
+  id: 01m78w501c90110ayvst878hmf
+  text: |-
+    ### implement — changed
+    - evidence: 5 files — README.md, Sources/FoundationModelsACPAgent/Tools/AgentsComposition.swift (doc comment only), Tests/FoundationModelsACPAgentTests/RunToolSelectionTests.swift, Tests/FoundationModelsACPAgentTests/SessionAgentToolsTests.swift (1 new test), Tests/FoundationModelsACPAgentTests/SubagentInstructionsTests.swift (1 new test). `swift build --build-tests`: no compiler warnings. `swift test`: 2032 tests in 221 suites pass, 0 failures, 1 known issue (the existing withKnownIssue smoke test); DocumentationSyncTests pass. No pin change. No commit. The card stays in review. The two findings of 2026-11-12 16:48 are checked.
+    - next: /review (review working).
+  timestamp: 2026-11-12T21:55:47.372466+00:00
+position_column: review
 position_ordinal: '80'
 title: 'An agent run with a tools: key gets the registry selection of its agent'
 ---
@@ -176,3 +200,13 @@ Since ^vshf002, the template values of a run follow the keys of its agent with t
 > - `.kanban/ (from .reviewignore)` — 6 file(s)
 
 - [x] `Sources/FoundationModelsACPAgent/Tools/AgentsComposition.swift:333` `completeness/invariant-propagation` — The run-level topLevelNames is built only from the mounted pair (searchTools, runCode). The session-level rule in SessionSurface.applying builds topLevelNames from all session tools except the agents tool, so it includes skills. The same token `skills` is therefore a known name at session level and an unknown name for a run, so run keys that name skills may get a different result than the same keys at session level, contrary to the doc's claim of the same rule. Confirm how the run resolver treats `skills` and `agents` in tools:/disallowedTools:. If they should match the session rule, pass the skills and agents names into the run's topLevelNames. Add a run test with disallowedTools naming skills or agents that checks there is no unknown-tool warning and the expected result.
+
+## Review Findings (2026-11-12 16:48)
+
+> Scope: `review sha 3c335a3~1..3c335a3` — reviewed the diffs only — lines this change added or modified. 3 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTests/RunToolSelectionTests.swift:91` `reuse/reuse` — The test defines its own constant skillsName = "skills". Production already defines the same name as SkillOutputProtection.skillsToolName, which the production code uses for the run rule. A second literal can drift from the production name. Delete the private skillsName constant and use SkillOutputProtection.skillsToolName at line 233, the same as the production rule. The test file already imports FoundationModelsACPAgent through @testable.
+- [x] `Tests/FoundationModelsACPAgentTests/RunToolSelectionTests.swift:155` `reuse/reuse` — runRuleDiagnostics repeats the setup of resolvedRun. It builds the context, the registry, the search selection, the embedder, and the mounted pair in the same order. Each new test helper that needs this setup copies it again, so a change to the setup must be made in several places. Extract a shared helper that returns the built registry, the mounted pair, and the embedder for a test context. Have resolvedRun and runRuleDiagnostics both call it, and keep only their differing final steps in each.

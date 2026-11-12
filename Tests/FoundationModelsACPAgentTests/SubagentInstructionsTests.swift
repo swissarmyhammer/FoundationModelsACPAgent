@@ -81,13 +81,29 @@ import Testing
   ///   - cwd: The working directory.
   /// - Throws: The write error.
   private static func writeWebAgent(tools: String, in cwd: URL) throws {
+    try writeProbeAgent(keys: ["tools: \(tools)"], in: cwd)
+  }
+
+  /// Writes ``childAgent`` with the frontmatter `keys`, the `skills:` preload
+  /// of the probe skill, and a body that tells the shell value and the web
+  /// value. It also writes the probe skill into the project skills layer of
+  /// `cwd`.
+  ///
+  /// - Parameters:
+  ///   - keys: The frontmatter lines of the agent, before its `skills:` key.
+  ///   - cwd: The working directory.
+  /// - Throws: The write error.
+  private static func writeProbeAgent(keys: [String], in cwd: URL) throws {
     try AgentFolderFixture.writeProjectAgent(
-      id: childAgent, in: cwd, extraKeys: ["tools: \(tools)", "skills: [\(probeSkillID)]"],
+      id: childAgent, in: cwd, extraKeys: keys + ["skills: [\(probeSkillID)]"],
       body: toolGatedText(prefix: bodyMarkerPrefix))
     try writeSkillFixture(
       id: probeSkillID, markdown: probeSkillMarkdown,
       under: cwd.appendingPathComponent(".\(ToolCatalog.skillsDotfolderName)", isDirectory: true))
   }
+
+  /// The `disallowedTools:` key that denies the `skills` tool.
+  private static let noSkillsKey = "disallowedTools: [\(SkillOutputProtection.skillsToolName)]"
 
   /// The markers of ``webRunMarkers`` that `instructions` does not hold.
   ///
@@ -185,6 +201,35 @@ import Testing
   func aNewRunOfAWebAgentRendersItsBodyAndItsSkillWithTheShellOffAndTheWebOn() async throws {
     let cwd = makeResolvedDirectory(label: "\(Self.label)-web-repo")
     try Self.writeWebAgent(tools: "[web]", in: cwd)
+
+    let instructions = try await Self.newRunInstructions(in: cwd, label: "\(Self.label)-web")
+
+    #expect(Self.missingWebRunMarkers(in: instructions).isEmpty, "\(instructions)")
+  }
+
+  /// A new run of an agent with `disallowedTools: [skills]` still renders the body of its
+  /// `skills:` preload. A run has no endpoint, thus the key removes the `skills` tool of the run
+  /// (decision of 2026-11-12). The key does not remove the preload.
+  @Test
+  func aNewRunOfAnAgentWithDisallowedSkillsRendersItsPreloadedSkill() async throws {
+    let cwd = makeResolvedDirectory(label: "\(Self.label)-no-skills-repo")
+    try Self.writeProbeAgent(keys: [Self.noSkillsKey], in: cwd)
+
+    let instructions = try await Self.newRunInstructions(in: cwd, label: "\(Self.label)-no-skills")
+
+    #expect(instructions.contains(Self.skillMarkerPrefix), "\(instructions)")
+  }
+
+  /// Starts a run of ``childAgent`` from a root session in `cwd`, and gives the leading
+  /// instructions of the session of the run. The run holds until it has its instructions.
+  ///
+  /// - Parameters:
+  ///   - cwd: The working directory that holds the agent.
+  ///   - label: The directory label of the agent.
+  /// - Returns: The instructions text of the run.
+  /// - Throws: An issue when the root session announces no child, or the child has no
+  ///   instructions.
+  private static func newRunInstructions(in cwd: URL, label: String) async throws -> String {
     let hold = ScriptedHold()
     let script: [ScriptedPassStep] = [
       .onPrompt(
@@ -199,7 +244,7 @@ import Testing
       .endPass,
     ]
     let fixture = try await ScriptedPromptFixture.make(
-      script: script, label: "\(Self.label)-web", workingDirectory: cwd)
+      script: script, label: label, workingDirectory: cwd)
     let root = fixture.sessionId
     let prompt = Task {
       try await fixture.harness.connection.prompt(
@@ -210,13 +255,11 @@ import Testing
         .contains(Self.childStartedText)
     }
     let child = try #require(AnnouncedChild.first(in: updates, on: root))
-
     let instructions = try await Self.instructions(of: child, on: fixture)
-
-    #expect(Self.missingWebRunMarkers(in: instructions).isEmpty, "\(instructions)")
     hold.release()
     _ = try? await prompt.value
     await fixture.close()
+    return instructions
   }
 
   /// A restored run of an agent with `tools: [agents, web]` renders its body and its preloaded
