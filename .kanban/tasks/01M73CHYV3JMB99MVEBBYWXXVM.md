@@ -22,8 +22,26 @@ comments:
     - open: work item 3 (tell FoundationModelsACPClient that its waits for a transient `running` must also fail on the idle state) and acceptance item 2 (10 runs of the two ACPClient tests) need the sibling repository. The dispatch said not to edit sibling repositories, so this step did not write a card there.
     - next: review.
   timestamp: 2026-11-12T19:09:51.253329+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m78v45vdwwg0cw1b8yqbr0my
+  text: |-
+    ### review — clean
+    - evidence: review sha 62a5dc7~1..62a5dc7 — 0 findings (0 confirmed, 0 refuted, 7 validators attempted, 0 failed), 3 files reviewed.
+    - next: The task is in done. Acceptance item 2 (10 runs of the ACPClient tests with no hang) is for FoundationModelsACPClient to confirm. It is out of scope for this repository.
+  timestamp: 2026-11-12T21:37:51.981798+00:00
+- actor: claude-code
+  id: 01m78v9vngwaskn96y246pfjmj
+  text: |-
+    ### implement — changed
+    - finding: the review of 14:20 on ^2dyhd2t recorded it by mistake there. It belongs to commit 62a5dc7 of this card: `Tests/FoundationModelsACPAgentTests/ScriptedStubModelTests.swift:355` `reuse/reuse` — `reachesTheGate` repeats the loop of the existing `waitForReasoning(of:)` helper.
+    - fix: `waitForReasoning(of:seededCount:)` now has `seededCount` (default 0). It ignores the first `seededCount` entries, and it returns `true` when a `.reasoning` entry comes first and `false` when a `.response` entry comes first (`@discardableResult`). `reachesTheGate` is removed. Its caller `aRestoredSessionPlaysThePassThatStoppedAtTheGateAgain` uses the helper with `seededCount: recorded.count`.
+    - discovery: `recordStopAtGate` must give `seededCount` too. Its first pass writes a `.response` entry before the second pass makes its reasoning, so with `seededCount: 0` the wait returns `false` at once and the pass is not at the gate. It now gives the entry count after the first pass.
+    - the finding is `- [x]` on ^2dyhd2t. Neither card moved.
+    - evidence: 1 file — Tests/FoundationModelsACPAgentTests/ScriptedStubModelTests.swift (not committed). `swift test`: 2022 tests in 221 suites passed, 1 known issue (HarnessSmokeTests, it was there before), 0 Swift compiler warnings (the only `warning:` line is from the build system for the mlx-swift_Cmlx bundle).
+    - next: review.
+  timestamp: 2026-11-12T21:40:58.160855+00:00
+position_column: done
+position_ordinal: ffffdf80
 title: 'Cold resume of a scripted stub run: the restored run does not play its script again, so the ACPClient nested-run tests can hang'
 ---
 ## What

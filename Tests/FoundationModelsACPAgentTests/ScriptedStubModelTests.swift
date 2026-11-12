@@ -251,16 +251,30 @@ import Testing
     return (try await pass.value, answeredBeforeOpen)
   }
 
-  /// Waits until the pass of `backend` made its reasoning entry, which
-  /// comes just before the gate.
-  private static func waitForReasoning(of backend: ScriptedSessionBackend) async {
+  /// Waits until the pass in flight of `backend` makes a `.reasoning` or a
+  /// `.response` entry after the first `seededCount` entries. The reasoning
+  /// entry comes just before the gate.
+  ///
+  /// - Parameters:
+  ///   - backend: The backend of the pass in flight.
+  ///   - seededCount: The number of entries at the start of the transcript
+  ///     that the wait ignores, because they are before the pass.
+  /// - Returns: `true` when the first new entry is the reasoning before the
+  ///   gate, and `false` when the pass answered first.
+  @discardableResult
+  private static func waitForReasoning(
+    of backend: ScriptedSessionBackend, seededCount: Int = 0
+  ) async -> Bool {
     for await entries in backend.transcriptUpdates() {
-      let hasReasoning = entries.contains { entry in
-        if case .reasoning = entry { return true }
-        return false
+      for entry in entries.dropFirst(seededCount) {
+        switch entry {
+        case .reasoning: return true
+        case .response: return false
+        default: continue
+        }
       }
-      if hasReasoning { return }
     }
+    return false
   }
 
   @Test func aGateWaitsUntilTheFileExists() async throws {
@@ -338,33 +352,14 @@ import Testing
     let backend = try #require(
       container.makeSession(instructions: nil) as? ScriptedSessionBackend)
     _ = try await backend.respond(to: "go now", maxTokens: nil)
+    let firstPassCount = backend.transcriptEntries().count
     let pass = Task { try await backend.respond(to: "go on", maxTokens: nil) }
-    await Self.waitForReasoning(of: backend)
+    await Self.waitForReasoning(of: backend, seededCount: firstPassCount)
     pass.cancel()
     _ = await pass.result
     let close: [Transcript.Entry] =
       closedByRouter ? [.response(Transcript.Response(segments: []))] : []
     return backend.transcriptEntries() + close
-  }
-
-  /// Waits until the pass in flight of `backend` makes a `.reasoning` or a
-  /// `.response` entry after the first `seededCount` entries.
-  ///
-  /// - Returns: `true` when the first new entry is the reasoning before the
-  ///   gate, and `false` when the pass answered first.
-  private static func reachesTheGate(
-    _ backend: ScriptedSessionBackend, seededCount: Int
-  ) async -> Bool {
-    for await entries in backend.transcriptUpdates() {
-      for entry in entries.dropFirst(seededCount) {
-        switch entry {
-        case .reasoning: return true
-        case .response: return false
-        default: continue
-        }
-      }
-    }
-    return false
   }
 
   @Test(arguments: [false, true])
@@ -376,7 +371,7 @@ import Testing
       container.makeSession(transcript: Transcript(entries: recorded)) as? ScriptedSessionBackend)
     let pass = Task { try await restored.respond(to: Self.restoredRunContinue, maxTokens: nil) }
 
-    let atGate = await Self.reachesTheGate(restored, seededCount: recorded.count)
+    let atGate = await Self.waitForReasoning(of: restored, seededCount: recorded.count)
 
     try Data().write(to: URL(fileURLWithPath: path))
     _ = await pass.result

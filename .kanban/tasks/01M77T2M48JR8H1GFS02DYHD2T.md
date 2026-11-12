@@ -103,8 +103,26 @@ comments:
     - evidence: 7 files — Sources/FoundationModelsACPAgent/Tools/AgentsComposition.swift, Sources/FoundationModelsACPAgent/Tools/SessionAgentTools.swift, Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift, Tests/FoundationModelsACPAgentTests/RunToolSelectionTests.swift (new, 7 tests), Tests/FoundationModelsACPAgentTests/AgentsToolTests.swift, Tests/FoundationModelsACPAgentTests/ResumeNestedSessionsTests.swift, Tests/FoundationModelsACPAgentTests/SessionAgentToolsTests.swift. `swift build --build-tests`: no compiler warnings. `swift test`: 2021 tests in 221 suites pass, 0 failures, 1 known issue (the existing withKnownIssue smoke test). `swift build --build-tests --package-path IntegrationTests`: complete. Pins: FoundationModelsAgents 02d5f0f (root and IntegrationTests), FoundationModelsSkills 55aa12c (no change). No commit.
     - next: /review.
   timestamp: 2026-11-12T19:17:10.416136+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m78ke8yr5sa1n4we4g266xjx
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (5effe61), 1 finding (1 confirmed, 0 refuted) — Tests/FoundationModelsACPAgentTests/ScriptedStubModelTests.swift:355 reuse/reuse
+    - next: implement the finding (generalize `waitForReasoning(of:)` and make `reachesTheGate` use it), then review again.
+  timestamp: 2026-11-12T19:23:34.232705+00:00
+- actor: claude-code
+  id: 01m78v58f1w7w1ay16rqgdkg2p
+  text: 'Orchestrator (2026-11-12): the review of 14:20 on this card reviewed the wrong commit. It used HEAD~1..HEAD while the orchestrator put 62a5dc7 (^bywxxvm) on main, so it reviewed ScriptedStubModelTests.swift of ^bywxxvm, not 5effe61. The review agent then stopped with an API error. The finding at ScriptedStubModelTests.swift:355 is valid, but it belongs to ^bywxxvm; it is fixed there. A new review of this card reviews the exact commit 5effe61.'
+  timestamp: 2026-11-12T21:38:27.425185+00:00
+- actor: claude-code
+  id: 01m78va1sp150sk0vyf1r2j0ta
+  text: |-
+    ### review — findings
+    - evidence: `review sha 5effe61~1..5effe61` — 1 finding (1 confirmed, 1 refuted). Sources/FoundationModelsACPAgent/Tools/AgentsComposition.swift:333 `completeness/invariant-propagation`. The earlier finding (2026-11-12 14:20, ScriptedStubModelTests.swift:355) is checked.
+    - next: Make the run-level topLevelNames agree with the session rule for `skills` and `agents`, and add a run test with disallowedTools that names skills or agents. Then review again.
+  timestamp: 2026-11-12T21:41:04.438800+00:00
+position_column: review
+position_ordinal: '8180'
 title: 'An agent run with a tools: key gets the registry selection of its agent'
 ---
 ## What
@@ -127,3 +145,18 @@ Since ^vshf002, the template values of a run follow the keys of its agent with t
 
 ## Workflow
 - Use `/tdd`. #step1
+
+## Review Findings (2026-11-12 14:20)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 3 file(s) reviewed, 0 not reviewed.
+
+- [x] `Tests/FoundationModelsACPAgentTests/ScriptedStubModelTests.swift:355` `reuse/reuse` — `reachesTheGate` repeats the loop of the existing `waitForReasoning(of:)` helper: both iterate `backend.transcriptUpdates()` and look for a `.reasoning` entry. The new helper only adds a `seededCount` offset and a early `false` on `.response`. That is a near-match that was not extended, so the test file now holds two copies of one wait loop that will diverge. Generalize `waitForReasoning(of:)` to take a `seededCount` (default 0) and return a Bool that reports whether a `.reasoning` entry arrived before any `.response`. Then have the existing callers use it, or keep `reachesTheGate` as a thin wrapper over the generalized helper.
+
+## Review Findings (2026-11-12 16:38)
+
+> Scope: `review sha 5effe61~1..5effe61` — reviewed the diffs only — lines this change added or modified. 7 file(s) reviewed, 6 not reviewed.
+
+> 6 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 6 file(s)
+
+- [ ] `Sources/FoundationModelsACPAgent/Tools/AgentsComposition.swift:333` `completeness/invariant-propagation` — The run-level topLevelNames is built only from the mounted pair (searchTools, runCode). The session-level rule in SessionSurface.applying builds topLevelNames from all session tools except the agents tool, so it includes skills. The same token `skills` is therefore a known name at session level and an unknown name for a run, so run keys that name skills may get a different result than the same keys at session level, contrary to the doc's claim of the same rule. Confirm how the run resolver treats `skills` and `agents` in tools:/disallowedTools:. If they should match the session rule, pass the skills and agents names into the run's topLevelNames. Add a run test with disallowedTools naming skills or agents that checks there is no unknown-tool warning and the expected result.
