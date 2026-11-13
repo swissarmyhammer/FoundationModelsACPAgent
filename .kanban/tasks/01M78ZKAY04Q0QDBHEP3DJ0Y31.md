@@ -39,8 +39,15 @@ comments:
     - evidence: review sha HEAD~1..HEAD, 1 finding (1 confirmed, 7 refuted) — Sources/FoundationModelsACPAgent/Agent/PromptState.swift:257
     - next: implement the open finding, then review again.
   timestamp: 2026-11-12T23:13:56.196646+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m799ayxza8tfp2tr540cts5w
+  text: |-
+    ### review — clean
+    - evidence: review sha 6bcc3b1~1..6bcc3b1, 0 findings (0 confirmed, 0 refuted, 7 attempted). Commit 6bcc3b1 adds noteReported(_:), and deliverChange() and takeUnsentChange() both call it. The guard is one time in forgetPromptEnd(leaving:entering:). Thus the finding of 2026-11-12 18:11 at PromptState.swift:257 is fixed and is now checked.
+    - next: none. The task is in done. The acceptance criterion for the confirmation from foundationmodelsacpclient-76 stays open.
+  timestamp: 2026-11-13T01:46:14.335843+00:00
+position_column: done
+position_ordinal: ffffe180
 title: A restored run that will continue is announced idle with noWork after a cold resume
 ---
 ## What
@@ -74,4 +81,4 @@ Report of foundationmodelsacpclient-76 (2026-11-12), on ACPAgent 0c1aeaf. After 
 > 1 file(s) not reviewed — no validator matched:
 > - `README.md` — no validator matches this file
 
-- [ ] `Sources/FoundationModelsACPAgent/Agent/PromptState.swift:257` `reuse/reuse` — `takeUnsentChange()` repeats the reported-state bookkeeping of `deliverChange()` and `update(entering:from:)`: it leaves idle, drops the last prompt end through `forgetPromptEnd(after:)`, and sets `reported`. The logic is written a second time instead of being shared, so a later change to the idle bookkeeping has to be made in two places. Pull the shared step (`forgetPromptEnd(after: reported)` followed by `reported = next`) into one helper that both `deliverChange()` and `takeUnsentChange()` call. Keep the send-only part in `deliverChange()`. If the guard is needed, put it inside `forgetPromptEnd` once, since it already checks `previous == .idle`.
+- [x] `Sources/FoundationModelsACPAgent/Agent/PromptState.swift:257` `reuse/reuse` — `takeUnsentChange()` repeats the reported-state bookkeeping of `deliverChange()` and `update(entering:from:)`: it leaves idle, drops the last prompt end through `forgetPromptEnd(after:)`, and sets `reported`. The logic is written a second time instead of being shared, so a later change to the idle bookkeeping has to be made in two places. Pull the shared step (`forgetPromptEnd(after: reported)` followed by `reported = next`) into one helper that both `deliverChange()` and `takeUnsentChange()` call. Keep the send-only part in `deliverChange()`. If the guard is needed, put it inside `forgetPromptEnd` once, since it already checks `previous == .idle`.
