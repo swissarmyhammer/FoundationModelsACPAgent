@@ -65,7 +65,10 @@ user level and the session level of each working directory. Each level has its o
 The endpoint does not read the files. The store does.
 
 - **A change of the store.** A `set` or a `clear` changes the tree of a level, checks the merged
-  result, writes the file, and sends and logs a change with the key path.
+  result, writes the file, and sends and logs a change with the key path. When the file of the
+  level or the changed text does not parse, the store refuses the change. The message of that
+  refusal is the message of the parser with no line of the parsed text, as for a load error,
+  because a rendered line can hold a secret value.
 - **An outside write.** The store watches each file that it read. When a file changes from
   outside, the store reads it again, and sends and logs a change with no key path.
 - **A bad outside write.** When the new text does not read, render or parse, the level keeps its

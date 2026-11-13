@@ -125,9 +125,13 @@ public enum SettingsStoreError: Error, Equatable, Sendable, CustomStringConverti
 /// A ``set(_:at:level:)`` or a ``clear(at:level:)`` changes the source tree
 /// of its level (``SettingsSourceText``), renders the changed text, checks
 /// the merged result as ``ConfigurationLoader/load()`` checks it, and refuses
-/// a change that does not decode. Then it writes the changed source text to
-/// the `config.yaml` of the level with an atomic write. The flush writes the
-/// source tree, and not the text that the file had: comments of the file go.
+/// a change that does not decode. When the file of the level or the changed
+/// text does not parse, the refusal gives the message of the parser with no
+/// line of the parsed text, as a load error does, because a rendered line can
+/// hold a secret value. When the change passes, the store writes the changed
+/// source text to the `config.yaml` of the level with an atomic write. The
+/// flush writes the source tree, and not the text that the file had: comments
+/// of the file go.
 /// Each template expression `{{ ... }}` stays an expression, thus no flush
 /// writes a rendered value, such as a secret from the environment (D101). A
 /// change that would lose a template construct (a block tag, a comment tag,
@@ -489,8 +493,13 @@ public actor SettingsStore {
   ///   take; ``SettingsTemplateError/unkeptTemplate(keyPath:)`` for a
   ///   change that a write cannot make with each template construct of
   ///   the file kept; `ConfigurationError` or `YAMLValueDecodingError` for
-  ///   a result that does not pass the schema or does not decode; a file
-  ///   error. After an error, the level and its file do not change.
+  ///   a result that does not pass the schema or does not decode;
+  ///   `LayeredYAMLDocumentError` for a file of the level or a changed text
+  ///   that does not render or parse; a file error. The message of a parse
+  ///   error is the message of the parser with no line of the parsed text
+  ///   (``SettingsLoadError/parserMessage(_:hidingLinesOf:)``), because a
+  ///   rendered line can hold a secret value. After an error, the level and
+  ///   its file do not change.
   public func set(_ value: YAMLValue, at keyPath: [String], level: SettingsLevel) async throws {
     let id = SettingsTreeDifference.id(of: keyPath)
     try await change(at: keyPath, level: level) { tree in
@@ -506,7 +515,8 @@ public actor SettingsStore {
   /// - Parameters:
   ///   - keyPath: The keys from the root. It must name a key.
   ///   - level: The level that loses the key.
-  /// - Throws: What ``set(_:at:level:)`` throws.
+  /// - Throws: What ``set(_:at:level:)`` throws. The message of a parse
+  ///   error also holds no line of the parsed text.
   public func clear(at keyPath: [String], level: SettingsLevel) async throws {
     let ids = ChangedIDs(removed: [SettingsTreeDifference.id(of: keyPath)])
     try await change(at: keyPath, level: level) { tree in

@@ -149,17 +149,9 @@ import Testing
   /// when no call read that level before.
   @Test(.timeLimit(.minutes(1))) func anOutsideFileChangeSendsAChange() async throws {
     let fixture = try SettingsGraphFixture(label: "subscription-outside")
-    let sessionRoot = try fixture.sessionRoot(of: fixture.firstDirectory)
-    try ConfigFileFixture.write(Self.sessionTriggerYAML, in: sessionRoot)
-    var changes = try await fixture.changes(cwd: fixture.firstDirectory)
 
-    try ConfigFileFixture.write(Self.outsideTriggerYAML, in: sessionRoot)
-
-    #expect(
-      try await ChangeEvent.next(of: &changes)
-        == ChangeEvent(
-          level: SettingsGraphFixture.sessionLevel, cwd: fixture.firstDirectory.path, keyPath: nil,
-          changed: [Self.triggerID]))
+    _ = try await Self.writeOutside(
+      Self.outsideTriggerYAML, in: fixture, changed: [Self.triggerID])
   }
 
   /// A subscription with no working directory gives the changes of the
@@ -236,25 +228,32 @@ import Testing
   // MARK: - Load errors
 
   /// Writes ``sessionTriggerYAML`` to the session file of the first
-  /// directory, starts the subscription of that directory, writes
-  /// ``badYAML`` to the file from outside, and reads the event of that
-  /// write. The event has no key path and no id, because no value changed.
+  /// directory, starts the subscription of that directory, writes `text` to
+  /// the file from outside, and reads the event of that write: one event
+  /// with no key path for the session level
+  /// (``OutsideSettingsWrite/write(_:over:in:expecting:sourceLocation:openChanges:nextChange:)``).
   ///
-  /// - Parameter fixture: The fixture of the test.
+  /// - Parameters:
+  ///   - text: The new text of the file.
+  ///   - fixture: The fixture of the test.
+  ///   - changed: The dotted key paths that the event must name as changed.
+  ///     A text that does not parse changes no value, thus the default is
+  ///     none.
   /// - Returns: The iterator of the subscription after the event.
   /// - Throws: What the writes and the subscription throw.
-  private static func writeBadSessionFile(in fixture: SettingsGraphFixture) async throws
-    -> AsyncThrowingStream<String, Error>.AsyncIterator
-  {
-    let sessionRoot = try fixture.sessionRoot(of: fixture.firstDirectory)
-    try ConfigFileFixture.write(Self.sessionTriggerYAML, in: sessionRoot)
-    var changes = try await fixture.changes(cwd: fixture.firstDirectory)
-    try ConfigFileFixture.write(Self.badYAML, in: sessionRoot)
-    #expect(
+  private static func writeOutside(
+    _ text: String, in fixture: SettingsGraphFixture, changed: [String] = []
+  ) async throws -> AsyncThrowingStream<String, Error>.AsyncIterator {
+    try await OutsideSettingsWrite.write(
+      text, over: Self.sessionTriggerYAML, in: try fixture.sessionRoot(of: fixture.firstDirectory),
+      expecting: ChangeEvent(
+        level: SettingsGraphFixture.sessionLevel, cwd: fixture.firstDirectory.path, keyPath: nil,
+        changed: changed)
+    ) {
+      try await fixture.changes(cwd: fixture.firstDirectory)
+    } nextChange: { changes in
       try await ChangeEvent.next(of: &changes)
-        == ChangeEvent(
-          level: SettingsGraphFixture.sessionLevel, cwd: fixture.firstDirectory.path, keyPath: nil))
-    return changes
+    }
   }
 
   /// A setting query after a bad outside write gives the last good value.
@@ -262,7 +261,7 @@ import Testing
     async throws
   {
     let fixture = try SettingsGraphFixture(label: "subscription-bad-value")
-    _ = try await Self.writeBadSessionFile(in: fixture)
+    _ = try await Self.writeOutside(Self.badYAML, in: fixture)
 
     let reply = try await fixture.setting(
       SettingsGraphFixture.triggerKeyPath, cwd: fixture.firstDirectory)
@@ -276,7 +275,7 @@ import Testing
     let fixture = try SettingsGraphFixture(label: "subscription-bad-problem")
     let file = ConfigCommandFixture.configURL(
       in: try fixture.sessionRoot(of: fixture.firstDirectory))
-    _ = try await Self.writeBadSessionFile(in: fixture)
+    _ = try await Self.writeOutside(Self.badYAML, in: fixture)
 
     let problems = try await fixture.problems(cwd: fixture.firstDirectory)
 
@@ -293,7 +292,7 @@ import Testing
   /// changed key, and the problems query then gives no load error.
   @Test(.timeLimit(.minutes(1))) func aGoodWriteClearsTheProblem() async throws {
     let fixture = try SettingsGraphFixture(label: "subscription-bad-clear")
-    var changes = try await Self.writeBadSessionFile(in: fixture)
+    var changes = try await Self.writeOutside(Self.badYAML, in: fixture)
 
     try ConfigFileFixture.write(
       Self.outsideTriggerYAML, in: try fixture.sessionRoot(of: fixture.firstDirectory))

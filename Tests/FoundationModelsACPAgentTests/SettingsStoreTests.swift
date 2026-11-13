@@ -94,6 +94,11 @@ import Testing
   /// A part of the message of the parser for ``badYAML``.
   private static let badYAMLProblem = "mapping values are not allowed"
 
+  /// The full message of the parser for ``badYAML`` with no line of the
+  /// parsed text, as a refused `set` and a load error give it.
+  private static let badYAMLMessage =
+    "2:33: error: scanner: mapping values are not allowed in this context:"
+
   /// A session `config.yaml` with a tag that the render refuses. The name
   /// of the tag is ``hiddenText``.
   private static let unrenderableYAML = "{% \(hiddenText) %}\ncompaction:\n  trigger: 0.5\n"
@@ -318,6 +323,28 @@ import Testing
     #expect(try await fixture.mergedTrigger(for: fixture.firstDirectory) == Self.userTrigger)
   }
 
+  /// A `set` of a level whose file does not parse is refused with the
+  /// parse error. The message of the error names the file and the line,
+  /// and gives the message of the parser with no line of the parsed text,
+  /// because a rendered line can hold a secret value.
+  @Test func aSetRefusedForAParseErrorGivesNoLineOfTheFile() async throws {
+    let fixture = try Fixture(label: "set-parse-error")
+    let sessionRoot = try fixture.sessionRoot(of: fixture.firstDirectory)
+    try ConfigFileFixture.write(Self.badYAML, in: sessionRoot)
+    let file = ConfigCommandFixture.configURL(in: sessionRoot)
+
+    let error = await #expect(throws: LayeredYAMLDocumentError.self) {
+      try await fixture.store.set(
+        .double(Self.sessionTrigger), at: Self.triggerKeyPath,
+        level: .session(fixture.firstDirectory))
+    }
+
+    let expected =
+      "layered YAML document: malformed YAML at \(file.path):\(Self.badYAMLLine): "
+      + Self.badYAMLMessage
+    #expect(error?.description == expected)
+  }
+
   // MARK: - value
 
   /// `value(at:cwd:)` gives the merged value of a key and the level that
@@ -369,30 +396,11 @@ import Testing
     #expect(await changes.next() == SettingsChange(level: .user, keyPath: Self.triggerKeyPath))
   }
 
-  /// An outside write to a `config.yaml` that the store read updates the
-  /// merged value and sends one change. The next change is the change of
-  /// a later `set`, thus the outside write sent no second change.
-  @Test(.timeLimit(.minutes(1))) func anOutsideWriteReloadsTheLevel() async throws {
-    let fixture = try Fixture(label: "outside")
-    let sessionRoot = try fixture.sessionRoot(of: fixture.firstDirectory)
-    try ConfigFileFixture.write(Self.sessionTriggerYAML, in: sessionRoot)
-    #expect(try await fixture.mergedTrigger(for: fixture.firstDirectory) == Self.sessionTrigger)
-    var changes = await fixture.store.changes().makeAsyncIterator()
-
-    try ConfigFileFixture.write(Self.outsideTriggerYAML, in: sessionRoot)
-
-    let session = SettingsLevel.session(fixture.firstDirectory)
-    #expect(await changes.next() == SettingsChange(level: session, keyPath: nil))
-    #expect(try await fixture.mergedTrigger(for: fixture.firstDirectory) == Self.outsideTrigger)
-    try await fixture.store.set(.double(Self.userTrigger), at: Self.triggerKeyPath, level: .user)
-    #expect(await changes.next() == SettingsChange(level: .user, keyPath: Self.triggerKeyPath))
-  }
-
-  // MARK: - Load errors
-
   /// Writes ``sessionTriggerYAML`` to the session file of the first
-  /// directory, reads it, starts a change stream, writes `text` to the file
-  /// from outside, and reads the change of that write.
+  /// directory, reads it, starts a change stream of the store, writes `text`
+  /// to the file from outside, and reads the change of that write: one
+  /// change with no key path for the session level
+  /// (``OutsideSettingsWrite/write(_:over:in:expecting:sourceLocation:openChanges:nextChange:)``).
   ///
   /// - Parameters:
   ///   - text: The new text of the file.
@@ -402,15 +410,31 @@ import Testing
   private static func writeOutside(_ text: String, in fixture: Fixture) async throws
     -> AsyncStream<SettingsChange>.AsyncIterator
   {
-    let sessionRoot = try fixture.sessionRoot(of: fixture.firstDirectory)
-    try ConfigFileFixture.write(Self.sessionTriggerYAML, in: sessionRoot)
-    _ = try await fixture.store.merged(for: fixture.firstDirectory)
-    var changes = await fixture.store.changes().makeAsyncIterator()
-    try ConfigFileFixture.write(text, in: sessionRoot)
-    #expect(
-      await changes.next() == SettingsChange(level: .session(fixture.firstDirectory), keyPath: nil))
-    return changes
+    try await OutsideSettingsWrite.write(
+      text, over: Self.sessionTriggerYAML, in: try fixture.sessionRoot(of: fixture.firstDirectory),
+      expecting: SettingsChange(level: .session(fixture.firstDirectory), keyPath: nil)
+    ) {
+      _ = try await fixture.store.merged(for: fixture.firstDirectory)
+      return await fixture.store.changes().makeAsyncIterator()
+    } nextChange: { changes in
+      await changes.next()
+    }
   }
+
+  /// An outside write to a `config.yaml` that the store read updates the
+  /// merged value and sends one change. The next change is the change of
+  /// a later `set`, thus the outside write sent no second change.
+  @Test(.timeLimit(.minutes(1))) func anOutsideWriteReloadsTheLevel() async throws {
+    let fixture = try Fixture(label: "outside")
+
+    var changes = try await Self.writeOutside(Self.outsideTriggerYAML, in: fixture)
+
+    #expect(try await fixture.mergedTrigger(for: fixture.firstDirectory) == Self.outsideTrigger)
+    try await fixture.store.set(.double(Self.userTrigger), at: Self.triggerKeyPath, level: .user)
+    #expect(await changes.next() == SettingsChange(level: .user, keyPath: Self.triggerKeyPath))
+  }
+
+  // MARK: - Load errors
 
   /// The one load error of the levels of the first directory.
   ///
@@ -598,17 +622,20 @@ import Testing
   /// sends a change again.
   @Test(.timeLimit(.minutes(1))) func aStartAfterAStopWatchesAgain() async throws {
     let fixture = try Fixture(label: "start-again")
-    let sessionRoot = try fixture.sessionRoot(of: fixture.firstDirectory)
-    try ConfigFileFixture.write(Self.sessionTriggerYAML, in: sessionRoot)
-    #expect(try await fixture.mergedTrigger(for: fixture.firstDirectory) == Self.sessionTrigger)
-    await fixture.store.stopWatching()
-    var changes = await fixture.store.changes().makeAsyncIterator()
 
-    try await fixture.store.startWatching(cwd: fixture.firstDirectory)
-    try ConfigFileFixture.write(Self.outsideTriggerYAML, in: sessionRoot)
-
-    let session = SettingsLevel.session(fixture.firstDirectory)
-    #expect(await changes.next() == SettingsChange(level: session, keyPath: nil))
+    _ = try await OutsideSettingsWrite.write(
+      Self.outsideTriggerYAML, over: Self.sessionTriggerYAML,
+      in: try fixture.sessionRoot(of: fixture.firstDirectory),
+      expecting: SettingsChange(level: .session(fixture.firstDirectory), keyPath: nil)
+    ) {
+      #expect(try await fixture.mergedTrigger(for: fixture.firstDirectory) == Self.sessionTrigger)
+      await fixture.store.stopWatching()
+      let changes = await fixture.store.changes().makeAsyncIterator()
+      try await fixture.store.startWatching(cwd: fixture.firstDirectory)
+      return changes
+    } nextChange: { changes in
+      await changes.next()
+    }
   }
 
   // MARK: - The level text
