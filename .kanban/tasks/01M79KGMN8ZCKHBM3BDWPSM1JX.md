@@ -72,8 +72,15 @@ comments:
     - notes: the earlier blocker (retention of the residency, flaky HotResumeTests, eviction from the process-wide cache) is gone: Multitool e2455429 holds the owner weakly, and the new tests use an own cache.
     - next: /review. Task stays in doing.
   timestamp: 2026-11-13T05:43:11.013524+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m79q034y62z20xhzamt2atqx
+  text: |-
+    ### review — clean
+    - evidence: review sha 51bec51~1..51bec51; 0 findings (7 attempted, 0 failed); 2 source files reviewed; 2 .kanban files excluded by .reviewignore.
+    - next: none. The task is in done.
+  timestamp: 2026-11-13T05:44:58.270600+00:00
+position_column: done
+position_ordinal: ffffe680
 title: ProfileEmbedding conforms to IdentifiedEmbedding, so sessions of one profile share one catalog embed
 ---
 ## What
