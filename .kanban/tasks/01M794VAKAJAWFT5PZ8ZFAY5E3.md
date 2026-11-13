@@ -47,6 +47,13 @@ comments:
     - evidence: 1 file — Tests/FoundationModelsACPAgentTests/Support/PausedChildTreeFixture.swift (the fixture waits for the text of the child before it records the pause; new helper `isChildText(under:)`). Cause: a race in the fixture between the record of the pause and the lift of the first `mailDelivered` of the child. `swift test --filter MailPauseResumeTests`: 11 of 11 pass. Full `swift test`: 2042 tests in 222 suites, 0 failures, 0 compiler warnings (1 planned known issue in HarnessSmokeTests, there before).
     - next: Review. The fix is in test support, not in product code, because the product has no defect here. Not committed.
   timestamp: 2026-11-13T04:11:13.500904+00:00
+- actor: claude-code
+  id: 01m79htyzrgqq1f6xbq080vjh9
+  text: |-
+    ### review — clean
+    - evidence: review sha 6b43e19~1..6b43e19 — 0 findings (7 validators attempted, 0 failed). File reviewed: Tests/FoundationModelsACPAgentTests/Support/PausedChildTreeFixture.swift. The .kanban files are not in scope (.reviewignore).
+    - next: none. The task stays in done.
+  timestamp: 2026-11-13T04:14:47.288698+00:00
 position_column: done
 position_ordinal: ffffe280
 title: 'Hot resume on the same connection: a state_update of a child can still come before its announcement (1 of 10 ACPClient runs)'
