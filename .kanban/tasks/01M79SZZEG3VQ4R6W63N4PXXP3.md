@@ -18,6 +18,22 @@ comments:
     - note: a stub script that repeats one identical tool call can now meet the repetition check, as the live model does. IntegrationTests stub scripts (ChildDeadlineTests) use no tool calls, thus they do not change.
     - next: /review
   timestamp: 2026-11-13T06:43:40.157900+00:00
+- actor: claude-code
+  id: 01m79tg5bqxveygh0t9kskzjdf
+  text: |-
+    ### review — findings
+    - evidence: review sha eb8254c~1..eb8254c — 1 finding (1 confirmed, 1 refuted) — Tests/FoundationModelsACPAgentTests/HookCompositionTests.swift:698
+    - next: make makeSnapshotFixture take a loader, and make makeStubScriptFixture call it. Then review again.
+  timestamp: 2026-11-13T06:46:10.551476+00:00
+- actor: claude-code
+  id: 01m79tnz0f0xfpah6vp434f46r
+  text: |-
+    ### implement — changed
+    - finding: HookCompositionTests.swift:698 `reuse/reuse` is done and checked.
+    - change: `makeSnapshotFixture` now takes `loader: any ModelLoader` and `label`, not `script`. The eight snapshot callers pass `makeHookLayeredModelLoader(script:)` with the same script as before. `makeStubScriptFixture` writes the script file, then calls `makeSnapshotFixture(loader: ComposedAgent.makeStubLoader(gatedBy: nil, scriptedBy: scriptFile.path), label:)`. Thus the work tree and the fixture come from one helper. Only the test file changed. The work tree directory label stays `<label>-repo`, thus the behavior does not change. `swift format` formatted only the changed lines.
+    - evidence: `timeout 900 swift test --filter HookCompositionTests` exit 0, 23 tests in 1 suite passed. `timeout 900 swift test` exit 0, 2056 tests in 223 suites passed, 1 known issue (the existing `withKnownIssue` in `HarnessSmokeTests`), zero compiler warnings. The only `warning:` line is the SwiftPM build-graph line `missing creator for mutated node` of the dependency bundle mlx-swift_Cmlx.bundle, which is not from this change. No commit.
+    - next: /review
+  timestamp: 2026-11-13T06:49:20.655004+00:00
 position_column: doing
 position_ordinal: '80'
 title: A runCode call that writes a file in a git work tree makes no checkpoint
@@ -41,3 +57,15 @@ Design today: FoundationModelsHooks `SnapshotHook` (Snapshots/SnapshotHook.swift
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #step1
+
+## Review Findings (2026-11-13 00:44)
+
+> Scope: `review sha eb8254c~1..eb8254c` — reviewed the diffs only — lines this change added or modified. 2 file(s) reviewed, 3 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `README.md` — no validator matches this file
+
+- [x] `Tests/FoundationModelsACPAgentTests/HookCompositionTests.swift:698` `reuse/reuse` — makeStubScriptFixture rebuilds the body of makeSnapshotFixture: it makes a work tree with makeSnapshotWorkTree, then calls ScriptedPromptFixture.make with a loader and the same label and working directory. The only difference is the loader, which is a parameter that makeSnapshotFixture fixes to makeHookLayeredModelLoader. This is a near-match that was not extended, so the two fixtures can drift apart. Generalize makeSnapshotFixture to take a loader (or a closure that makes one) instead of a script. Then makeStubScriptFixture calls it with ComposedAgent.makeStubLoader(gatedBy: nil, scriptedBy: scriptFile.path), and the snapshot tests keep their current behavior by passing makeHookLayeredModelLoader(script:).

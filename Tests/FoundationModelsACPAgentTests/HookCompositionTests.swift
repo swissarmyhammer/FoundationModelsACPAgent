@@ -252,7 +252,8 @@ import Testing
   @Test
   func aToolCallThatWritesAFileMakesOneCheckpointThatARollbackRestores() async throws {
     let fixture = try await Self.makeSnapshotFixture(
-      script: try Self.makeSnapshotScript(), label: "HookCompositionTests-snapshots")
+      loader: makeHookLayeredModelLoader(script: try Self.makeSnapshotScript()),
+      label: "HookCompositionTests-snapshots")
     let note = fixture.cwd.appendingPathComponent(Self.noteFileName, isDirectory: false)
 
     _ = try await Self.runTurn(Self.writePromptText, in: fixture)
@@ -385,7 +386,8 @@ import Testing
   @Test
   func twoSessionsInOneWorkingDirectoryShareOneTimeline() async throws {
     let fixture = try await Self.makeSnapshotFixture(
-      script: try Self.makeSnapshotScript(), label: "HookCompositionTests-shared")
+      loader: makeHookLayeredModelLoader(script: try Self.makeSnapshotScript()),
+      label: "HookCompositionTests-shared")
     let second = try await Self.openSession(on: fixture, in: fixture.cwd)
 
     _ = try await Self.runTurn(Self.writePromptText, in: fixture)
@@ -530,7 +532,8 @@ import Testing
   @Test(.timeLimit(.minutes(1)))
   func aTakeAfterASwitchIsAChangeOfTheACPSession() async throws {
     let fixture = try await Self.makeSnapshotFixture(
-      script: try Self.makeSnapshotScript(), label: "HookCompositionTests-switch-change")
+      loader: makeHookLayeredModelLoader(script: try Self.makeSnapshotScript()),
+      label: "HookCompositionTests-switch-change")
     try await fixture.switchModelSlot(drainingHooks: true)
     var changes = try await Self.subscribeToChanges(of: fixture.sessionId, in: fixture)
 
@@ -549,7 +552,8 @@ import Testing
   @Test
   func aRollbackOfTheACPSessionAfterASwitchActsAsTheRestoredSession() async throws {
     let fixture = try await Self.makeSnapshotFixture(
-      script: try Self.makeSnapshotScript(), label: "HookCompositionTests-switch-rollback")
+      loader: makeHookLayeredModelLoader(script: try Self.makeSnapshotScript()),
+      label: "HookCompositionTests-switch-rollback")
     try await fixture.switchModelSlot(drainingHooks: true)
     _ = try await Self.runTurn(Self.writePromptText, in: fixture)
 
@@ -571,7 +575,8 @@ import Testing
   @Test
   func theListAfterASwitchNamesTheACPSessionAsOwner() async throws {
     let fixture = try await Self.makeSnapshotFixture(
-      script: try Self.makeSnapshotScript(), label: "HookCompositionTests-switch-list")
+      loader: makeHookLayeredModelLoader(script: try Self.makeSnapshotScript()),
+      label: "HookCompositionTests-switch-list")
     try await fixture.switchModelSlot(drainingHooks: true)
 
     _ = try await Self.runTurn(Self.writePromptText, in: fixture)
@@ -600,19 +605,19 @@ import Testing
 
   /// Makes a fixture of a snapshot proof: a git work tree from
   /// ``makeSnapshotWorkTree(label:)`` with the label and `-repo`, and a
-  /// session in it whose hook-layered model plays `script`.
+  /// session in it over `loader`.
   ///
   /// - Parameters:
-  ///   - script: The script of the model of the session.
+  ///   - loader: The model loader of the session.
   ///   - label: The directory label of the calling test.
   /// - Returns: The fixture, with its session open.
   /// - Throws: Whatever the work tree or the fixture throws.
   private static func makeSnapshotFixture(
-    script: [ScriptedPassStep], label: String
+    loader: any ModelLoader, label: String
   ) async throws -> ScriptedPromptFixture {
     let cwd = try makeSnapshotWorkTree(label: "\(label)-repo")
     return try await ScriptedPromptFixture.make(
-      loader: makeHookLayeredModelLoader(script: script), label: label, workingDirectory: cwd)
+      loader: loader, label: label, workingDirectory: cwd)
   }
 
   // MARK: - The snapshots of the stub-script model
@@ -675,9 +680,9 @@ import Testing
       sessionKey: AgentHome.projectKey(of: fixture.cwd), owner: fixture.sessionId.rawValue)
   }
 
-  /// Makes a fixture of a stub-script proof: a git work tree from
-  /// ``makeSnapshotWorkTree(label:)``, and a session in it over the loader
-  /// that the composition makes for a stub script file. The script has one
+  /// Makes a fixture of a stub-script proof: a snapshot fixture from
+  /// ``makeSnapshotFixture(loader:label:)`` over the loader that the
+  /// composition makes for a stub script file. The script has one
   /// session, which the prompt ``writePromptText`` chooses: its first pass
   /// calls `runCode` with `code`, and its second pass answers
   /// ``stubFinalText``.
@@ -691,13 +696,12 @@ import Testing
   private static func makeStubScriptFixture(code: String, label: String) async throws
     -> ScriptedPromptFixture
   {
-    let cwd = try makeSnapshotWorkTree(label: "\(label)-repo")
     let scriptFile = makeResolvedDirectory(label: "\(label)-script")
       .appendingPathComponent(stubScriptFileName, isDirectory: false)
     try makeStubScriptData(code: code).write(to: scriptFile)
-    return try await ScriptedPromptFixture.make(
+    return try await makeSnapshotFixture(
       loader: try ComposedAgent.makeStubLoader(gatedBy: nil, scriptedBy: scriptFile.path),
-      label: label, workingDirectory: cwd)
+      label: label)
   }
 
   /// The JSON of the stub script of ``makeStubScriptFixture(code:label:)``.
@@ -738,7 +742,8 @@ import Testing
     -> ScriptedPromptFixture
   {
     let fixture = try await makeSnapshotFixture(
-      script: try ScriptedPromptFixture.makeToolPromptScript(code: writeCode), label: label)
+      loader: makeHookLayeredModelLoader(
+        script: try ScriptedPromptFixture.makeToolPromptScript(code: writeCode)), label: label)
     try await ScriptedPromptFixture.runPrompt(on: fixture, text: writePromptText, count: 1)
     return fixture
   }
@@ -877,7 +882,8 @@ import Testing
   func aSessionWithAWorkingDirectoryMismatchEndsItsTurnWithNoSnapshots() async throws {
     try await TelemetryCapture.run(forbidding: [Self.secondNoteContent]) { context in
       let fixture = try await Self.makeSnapshotFixture(
-        script: try Self.makeSnapshotScript(), label: "HookCompositionTests-mismatch")
+        loader: makeHookLayeredModelLoader(script: try Self.makeSnapshotScript()),
+        label: "HookCompositionTests-mismatch")
       let store = fixture.harness.agent.hooks.snapshotStore
       let sessionKey = AgentHome.projectKey(of: fixture.cwd)
       _ = try await fixture.harness.connection.closeSession(
@@ -913,7 +919,8 @@ import Testing
   func aSessionWithATimelineConflictEndsItsTurnWithNoSnapshots() async throws {
     try await TelemetryCapture.run(forbidding: [Self.secondNoteContent]) { context in
       let fixture = try await Self.makeSnapshotFixture(
-        script: try Self.makeSnapshotScript(), label: "HookCompositionTests-conflict")
+        loader: makeHookLayeredModelLoader(script: try Self.makeSnapshotScript()),
+        label: "HookCompositionTests-conflict")
       let sessionKey = AgentHome.projectKey(of: fixture.cwd)
       await fixture.harness.agent.hooks.dispatcher.drain()
       let secondStore = SnapshotStore(
