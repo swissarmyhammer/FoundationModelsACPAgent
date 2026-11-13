@@ -31,6 +31,13 @@ import Testing
   /// ``outsideTrigger``.
   private static let outsideTriggerYAML = "compaction:\n  trigger: \(outsideTrigger)\n"
 
+  /// A session `config.yaml` that does not parse: its second line has a
+  /// second mapping value.
+  private static let badYAML = "compaction:\n  trigger: bad: x\n"
+
+  /// The line of ``badYAML`` that the parser names.
+  private static let badYAMLLine = 2
+
   /// The id of `compaction.trigger` in `added`, `changed` and `removed`.
   private static let triggerID = SettingsGraphFixture.triggerKeyPath.joined(separator: ".")
 
@@ -224,6 +231,79 @@ import Testing
     var outside = session
     outside.changed = [Self.triggerID]
     #expect(try await ChangeEvent.next(of: &second) == outside)
+  }
+
+  // MARK: - Load errors
+
+  /// Writes ``sessionTriggerYAML`` to the session file of the first
+  /// directory, starts the subscription of that directory, writes
+  /// ``badYAML`` to the file from outside, and reads the event of that
+  /// write. The event has no key path and no id, because no value changed.
+  ///
+  /// - Parameter fixture: The fixture of the test.
+  /// - Returns: The iterator of the subscription after the event.
+  /// - Throws: What the writes and the subscription throw.
+  private static func writeBadSessionFile(in fixture: SettingsGraphFixture) async throws
+    -> AsyncThrowingStream<String, Error>.AsyncIterator
+  {
+    let sessionRoot = try fixture.sessionRoot(of: fixture.firstDirectory)
+    try ConfigFileFixture.write(Self.sessionTriggerYAML, in: sessionRoot)
+    var changes = try await fixture.changes(cwd: fixture.firstDirectory)
+    try ConfigFileFixture.write(Self.badYAML, in: sessionRoot)
+    #expect(
+      try await ChangeEvent.next(of: &changes)
+        == ChangeEvent(
+          level: SettingsGraphFixture.sessionLevel, cwd: fixture.firstDirectory.path, keyPath: nil))
+    return changes
+  }
+
+  /// A setting query after a bad outside write gives the last good value.
+  @Test(.timeLimit(.minutes(1))) func aSettingQueryAfterABadWriteGivesTheLastGoodValue()
+    async throws
+  {
+    let fixture = try SettingsGraphFixture(label: "subscription-bad-value")
+    _ = try await Self.writeBadSessionFile(in: fixture)
+
+    let reply = try await fixture.setting(
+      SettingsGraphFixture.triggerKeyPath, cwd: fixture.firstDirectory)
+
+    #expect(try reply.object("setting")["value"] as? Double == Self.sessionTrigger)
+  }
+
+  /// The problems query after a bad outside write gives the load error of
+  /// the session level, with the file path and the line.
+  @Test(.timeLimit(.minutes(1))) func theProblemsQueryGivesTheLoadError() async throws {
+    let fixture = try SettingsGraphFixture(label: "subscription-bad-problem")
+    let file = ConfigCommandFixture.configURL(
+      in: try fixture.sessionRoot(of: fixture.firstDirectory))
+    _ = try await Self.writeBadSessionFile(in: fixture)
+
+    let problems = try await fixture.problems(cwd: fixture.firstDirectory)
+
+    let problem = try #require(problems.first, "no problem")
+    #expect(problems.count == 1)
+    #expect(problem["level"] as? String == SettingsGraphFixture.sessionLevel)
+    #expect(problem["cwd"] as? String == fixture.firstDirectory.path)
+    #expect(problem["path"] as? String == file.path)
+    #expect(problem["line"] as? Int == Self.badYAMLLine)
+    #expect(!((problem["message"] as? String) ?? "").isEmpty)
+  }
+
+  /// A good outside write after a bad one sends one event that names the
+  /// changed key, and the problems query then gives no load error.
+  @Test(.timeLimit(.minutes(1))) func aGoodWriteClearsTheProblem() async throws {
+    let fixture = try SettingsGraphFixture(label: "subscription-bad-clear")
+    var changes = try await Self.writeBadSessionFile(in: fixture)
+
+    try ConfigFileFixture.write(
+      Self.outsideTriggerYAML, in: try fixture.sessionRoot(of: fixture.firstDirectory))
+
+    #expect(
+      try await ChangeEvent.next(of: &changes)
+        == ChangeEvent(
+          level: SettingsGraphFixture.sessionLevel, cwd: fixture.firstDirectory.path, keyPath: nil,
+          changed: [Self.triggerID]))
+    #expect(try await fixture.problems(cwd: fixture.firstDirectory).isEmpty)
   }
 
   // MARK: - The cursor

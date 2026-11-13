@@ -54,3 +54,27 @@ Tests prove this in process. The suites (for example `SubagentCancelTests`,
 `HotResumeTests`) use the scripted model, and they run the agent in the test process. A test spawns
 a child process only when the subject is a process: a signal, an exit code, the stdio framing of
 the shipped binary, the arguments of the command line, or the shell tool.
+
+## Settings
+
+The agent settings live in memory in one `SettingsStore` (in
+`Sources/FoundationModelsACPAgent/Configuration/`). The store keeps one tree for each level: the
+user level and the session level of each working directory. Each level has its own
+`config.yaml`. The `settings` GraphQL endpoint and the `settings` tool (in
+`Sources/FoundationModelsACPAgent/Settings/`) read and write the store through `SettingsEngine`.
+The endpoint does not read the files. The store does.
+
+- **A change of the store.** A `set` or a `clear` changes the tree of a level, checks the merged
+  result, writes the file, and sends and logs a change with the key path.
+- **An outside write.** The store watches each file that it read. When a file changes from
+  outside, the store reads it again, and sends and logs a change with no key path.
+- **A bad outside write.** When the new text does not read, render or parse, the level keeps its
+  last good values. The store keeps a load error for the level (`SettingsLoadError`): the file
+  path, the line, and a message. The `problems` query gives it. When the load error starts,
+  changes or clears, the store sends and logs a change with no key path. The load error never
+  holds the text of the file, because the file can hold a secret. A parse error gives the message
+  of the parser with no line of the parsed text, and a render error or a read error gives a fixed
+  message.
+
+The dependency direction is one way: the endpoint depends on the engine, and the engine depends on
+the store. The store does not depend on the endpoint.

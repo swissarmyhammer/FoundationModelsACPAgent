@@ -80,6 +80,24 @@ import Testing
   private static let blockYAML =
     "{% if \(templateVariable) %}\ncompaction:\n  trigger: \(userTrigger)\n{% endif %}\n"
 
+  /// A text of a file that must not go into a load error, as a secret
+  /// value must not.
+  private static let hiddenText = "hidden-file-text-4b7e"
+
+  /// A session `config.yaml` that does not parse: its second line holds
+  /// ``hiddenText`` and a second mapping value.
+  private static let badYAML = "compaction:\n  trigger: \(hiddenText): x\n"
+
+  /// The line of ``badYAML`` that the parser names.
+  private static let badYAMLLine = 2
+
+  /// A part of the message of the parser for ``badYAML``.
+  private static let badYAMLProblem = "mapping values are not allowed"
+
+  /// A session `config.yaml` with a tag that the render refuses. The name
+  /// of the tag is ``hiddenText``.
+  private static let unrenderableYAML = "{% \(hiddenText) %}\ncompaction:\n  trigger: 0.5\n"
+
   // MARK: - Fixture
 
   /// A store over a temporary custom home, and two temporary
@@ -368,6 +386,173 @@ import Testing
     #expect(try await fixture.mergedTrigger(for: fixture.firstDirectory) == Self.outsideTrigger)
     try await fixture.store.set(.double(Self.userTrigger), at: Self.triggerKeyPath, level: .user)
     #expect(await changes.next() == SettingsChange(level: .user, keyPath: Self.triggerKeyPath))
+  }
+
+  // MARK: - Load errors
+
+  /// Writes ``sessionTriggerYAML`` to the session file of the first
+  /// directory, reads it, starts a change stream, writes `text` to the file
+  /// from outside, and reads the change of that write.
+  ///
+  /// - Parameters:
+  ///   - text: The new text of the file.
+  ///   - fixture: The fixture of the test.
+  /// - Returns: The change stream after the change of the write.
+  /// - Throws: What the writes and the read throw.
+  private static func writeOutside(_ text: String, in fixture: Fixture) async throws
+    -> AsyncStream<SettingsChange>.AsyncIterator
+  {
+    let sessionRoot = try fixture.sessionRoot(of: fixture.firstDirectory)
+    try ConfigFileFixture.write(Self.sessionTriggerYAML, in: sessionRoot)
+    _ = try await fixture.store.merged(for: fixture.firstDirectory)
+    var changes = await fixture.store.changes().makeAsyncIterator()
+    try ConfigFileFixture.write(text, in: sessionRoot)
+    #expect(
+      await changes.next() == SettingsChange(level: .session(fixture.firstDirectory), keyPath: nil))
+    return changes
+  }
+
+  /// The one load error of the levels of the first directory.
+  ///
+  /// - Parameter fixture: The fixture of the test.
+  /// - Returns: The load error.
+  /// - Throws: A failed requirement when the levels do not have exactly one
+  ///   load error.
+  private static func onlyLoadError(in fixture: Fixture) async throws -> SettingsLoadError {
+    let errors = try await fixture.store.loadErrors(cwd: fixture.firstDirectory)
+    try #require(errors.count == 1, "the load errors are \(errors)")
+    return try #require(errors.first)
+  }
+
+  /// An outside write that does not parse keeps the last good values.
+  @Test(.timeLimit(.minutes(1))) func aBadOutsideWriteKeepsTheLastGoodValues() async throws {
+    let fixture = try Fixture(label: "bad-keeps")
+
+    _ = try await Self.writeOutside(Self.badYAML, in: fixture)
+
+    #expect(try await fixture.mergedTrigger(for: fixture.firstDirectory) == Self.sessionTrigger)
+  }
+
+  /// An outside write that does not parse gives a load error that names the
+  /// file of the level and the line of the parse error.
+  @Test(.timeLimit(.minutes(1))) func aBadOutsideWriteGivesTheFileAndTheLine() async throws {
+    let fixture = try Fixture(label: "bad-place")
+    let file = ConfigCommandFixture.configURL(
+      in: try fixture.sessionRoot(of: fixture.firstDirectory))
+
+    _ = try await Self.writeOutside(Self.badYAML, in: fixture)
+
+    let error = try await Self.onlyLoadError(in: fixture)
+    #expect(error.level == .session(fixture.firstDirectory))
+    #expect(error.path == file.path)
+    #expect(error.line == Self.badYAMLLine)
+  }
+
+  /// The load error of a parse error gives the message of the parser.
+  @Test(.timeLimit(.minutes(1))) func aBadOutsideWriteGivesTheParserMessage() async throws {
+    let fixture = try Fixture(label: "bad-message")
+
+    _ = try await Self.writeOutside(Self.badYAML, in: fixture)
+
+    #expect(try await Self.onlyLoadError(in: fixture).message.contains(Self.badYAMLProblem))
+  }
+
+  /// The load error of a parse error holds no text of the file, because
+  /// the file can hold a secret.
+  @Test(.timeLimit(.minutes(1))) func aParseErrorHoldsNoTextOfTheFile() async throws {
+    let fixture = try Fixture(label: "bad-hidden")
+
+    _ = try await Self.writeOutside(Self.badYAML, in: fixture)
+
+    #expect(!(try await Self.onlyLoadError(in: fixture).message.contains(Self.hiddenText)))
+  }
+
+  /// The load error of a render error holds no text of the file.
+  @Test(.timeLimit(.minutes(1))) func aRenderErrorHoldsNoTextOfTheFile() async throws {
+    let fixture = try Fixture(label: "render-hidden")
+
+    _ = try await Self.writeOutside(Self.unrenderableYAML, in: fixture)
+
+    #expect(!(try await Self.onlyLoadError(in: fixture).message.contains(Self.hiddenText)))
+  }
+
+  /// A second read of the same bad text sends no second change: the next
+  /// change is the change of a later `set`.
+  @Test(.timeLimit(.minutes(1))) func theSameBadTextAgainSendsNoChange() async throws {
+    let fixture = try Fixture(label: "bad-again")
+    let sessionRoot = try fixture.sessionRoot(of: fixture.firstDirectory)
+    var changes = try await Self.writeOutside(Self.badYAML, in: fixture)
+
+    try ConfigFileFixture.write(Self.badYAML, in: sessionRoot)
+    await fixture.store.reload(ConfigCommandFixture.configURL(in: sessionRoot))
+
+    try await fixture.store.set(.double(Self.userTrigger), at: Self.triggerKeyPath, level: .user)
+    #expect(await changes.next() == SettingsChange(level: .user, keyPath: Self.triggerKeyPath))
+  }
+
+  /// A good outside write after a bad one clears the load error.
+  @Test(.timeLimit(.minutes(1))) func aGoodWriteClearsTheLoadError() async throws {
+    let fixture = try Fixture(label: "good-clears")
+    let sessionRoot = try fixture.sessionRoot(of: fixture.firstDirectory)
+    var changes = try await Self.writeOutside(Self.badYAML, in: fixture)
+
+    try ConfigFileFixture.write(Self.outsideTriggerYAML, in: sessionRoot)
+
+    #expect(
+      await changes.next() == SettingsChange(level: .session(fixture.firstDirectory), keyPath: nil))
+    #expect(try await fixture.store.loadErrors(cwd: fixture.firstDirectory).isEmpty)
+  }
+
+  /// A good outside write after a bad one gives its new values.
+  @Test(.timeLimit(.minutes(1))) func aGoodWriteAfterABadWriteGivesTheNewValues() async throws {
+    let fixture = try Fixture(label: "good-values")
+    let sessionRoot = try fixture.sessionRoot(of: fixture.firstDirectory)
+    var changes = try await Self.writeOutside(Self.badYAML, in: fixture)
+
+    try ConfigFileFixture.write(Self.outsideTriggerYAML, in: sessionRoot)
+
+    _ = await changes.next()
+    #expect(try await fixture.mergedTrigger(for: fixture.firstDirectory) == Self.outsideTrigger)
+  }
+
+  /// An outside write of the last good text after a bad write clears the
+  /// load error and sends one change, also when the text is the text that
+  /// the store has.
+  @Test(.timeLimit(.minutes(1))) func theLastGoodTextAgainClearsTheLoadError() async throws {
+    let fixture = try Fixture(label: "good-again")
+    let sessionRoot = try fixture.sessionRoot(of: fixture.firstDirectory)
+    var changes = try await Self.writeOutside(Self.badYAML, in: fixture)
+
+    try ConfigFileFixture.write(Self.sessionTriggerYAML, in: sessionRoot)
+
+    #expect(
+      await changes.next() == SettingsChange(level: .session(fixture.firstDirectory), keyPath: nil))
+    #expect(try await fixture.store.loadErrors(cwd: fixture.firstDirectory).isEmpty)
+  }
+
+  /// A `set` of the level after a bad write writes a good file, thus it
+  /// clears the load error.
+  @Test(.timeLimit(.minutes(1))) func aSetAfterABadWriteClearsTheLoadError() async throws {
+    let fixture = try Fixture(label: "set-clears")
+    _ = try await Self.writeOutside(Self.badYAML, in: fixture)
+
+    try await fixture.store.set(
+      .double(Self.userTrigger), at: Self.triggerKeyPath, level: .session(fixture.firstDirectory))
+
+    #expect(try await fixture.store.loadErrors(cwd: fixture.firstDirectory).isEmpty)
+  }
+
+  /// A `set` that clears a load error sends its own change, then one change
+  /// with no key path for the clear.
+  @Test(.timeLimit(.minutes(1))) func aSetThatClearsTheLoadErrorSendsTheClear() async throws {
+    let fixture = try Fixture(label: "set-clear-change")
+    let session = SettingsLevel.session(fixture.firstDirectory)
+    var changes = try await Self.writeOutside(Self.badYAML, in: fixture)
+
+    try await fixture.store.set(.double(Self.userTrigger), at: Self.triggerKeyPath, level: session)
+
+    #expect(await changes.next() == SettingsChange(level: session, keyPath: Self.triggerKeyPath))
+    #expect(await changes.next() == SettingsChange(level: session, keyPath: nil))
   }
 
   // MARK: - Stop

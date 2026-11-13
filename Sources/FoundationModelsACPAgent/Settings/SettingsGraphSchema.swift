@@ -180,6 +180,37 @@ struct SettingsGraphChange: Codable, Sendable {
   }
 }
 
+/// The `SettingsProblem` object: the load error of one level, whose file did
+/// not read, render or parse after an outside write. It holds no text of the
+/// file.
+struct SettingsGraphProblem: Codable, Sendable {
+  /// The level of the file.
+  let level: SettingsGraphLevel
+
+  /// The working directory of a session level, or `nil` for the user level.
+  let cwd: String?
+
+  /// The path of the `config.yaml` of the level.
+  let path: String
+
+  /// The 1-based line of the error, or `nil` when the error has no line.
+  let line: Int?
+
+  /// The reason of the error.
+  let message: String
+
+  /// Makes the object of a load error of the store.
+  ///
+  /// - Parameter error: The load error.
+  init(_ error: SettingsLoadError) {
+    level = SettingsGraphLevel(error.level)
+    cwd = error.level.workingDirectory?.path
+    path = error.path
+    line = error.line
+    message = error.message
+  }
+}
+
 extension ChangeLogEntry where Event == SettingsLoggedChange {
   /// Resolves one event of `Subscription.changes`.
   ///
@@ -272,6 +303,15 @@ struct SettingsGraphCursorArguments: Codable, Sendable {
   let cwd: String?
 }
 
+/// The arguments of `Query.problems`.
+struct SettingsGraphProblemsArguments: Codable, Sendable {
+  /// The absolute path of the working directory whose session level the
+  /// read gives with the user level, or `nil` for the session folder of the
+  /// call, or for the user level only when the call has no session folder
+  /// (``SettingsGraphContext/workingDirectory(given:)``).
+  let cwd: String?
+}
+
 // MARK: - Resolver and context
 
 /// The context of one call of the `settings` endpoint.
@@ -358,6 +398,22 @@ struct SettingsGraphResolver: Sendable {
   ) async throws -> SettingsGraphSetting? {
     try await mergedSetting(
       at: arguments.keyPath, cwd: context.workingDirectory(given: arguments.cwd))
+  }
+
+  /// Resolves `Query.problems`.
+  ///
+  /// - Parameters:
+  ///   - context: The context of the call, which gives the working
+  ///     directory when the call gives no `cwd`.
+  ///   - arguments: The working directory.
+  /// - Returns: The load error of each level, the user level first.
+  /// - Throws: What ``SettingsGraphContext/workingDirectory(given:)`` and
+  ///   ``SettingsEngine/problems(cwd:)`` throw.
+  func problems(
+    context: SettingsGraphContext, arguments: SettingsGraphProblemsArguments
+  ) async throws -> [SettingsGraphProblem] {
+    try await engine.problems(cwd: context.workingDirectory(given: arguments.cwd))
+      .map(SettingsGraphProblem.init)
   }
 
   /// Resolves `Mutation.updateSetting`.
@@ -607,6 +663,19 @@ struct SettingsGraphAPI: API {
               "The changed key path, or null when the file of the level changed. Read it again.")
         }
         .description("One change of the settings.")
+        Type(SettingsGraphProblem.self, as: "SettingsProblem") {
+          Field("level", at: \.level).description("The level whose file has the error.")
+          Field("cwd", at: \.cwd)
+            .description("The working directory of a session level, or null for the user level.")
+          Field("path", at: \.path).description("The path of the config.yaml of the level.")
+          Field("line", at: \.line)
+            .description("The 1-based line of the error, or null when the error has no line.")
+          Field("message", at: \.message)
+            .description("The reason of the error. It holds no text of the file.")
+        }
+        .description(
+          "The load error of one level: its file changed and does not read, render or parse. The "
+            + "settings of the level stay the last good values until a good write.")
         Input(SettingsGraphUpdateInput.self, as: "UpdateSettingInput") {
           InputField("keyPath", at: \.keyPath).description(Self.keyPathDescription)
           InputField("value", at: \.value)
@@ -632,6 +701,13 @@ struct SettingsGraphAPI: API {
         .description(
           "The merged value of one key for a session, or of the USER level when no cwd applies, or null "
             + "when no layer has the key.")
+        Field("problems", at: SettingsGraphResolver.problems) {
+          Argument("cwd", at: \.cwd).description(Self.cwdDescription)
+        }
+        .description(
+          "The load error of each level whose file changed and does not read, render or parse: USER, "
+            + "and SESSION when a cwd applies. Empty when each file is good. A change with no keyPath "
+            + "comes when an error starts, changes or clears.")
         Field("cursor", at: SettingsGraphResolver.cursor) {
           Argument("cwd", at: \.cwd)
             .description(

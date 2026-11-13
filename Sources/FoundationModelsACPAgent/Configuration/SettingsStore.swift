@@ -53,7 +53,9 @@ public struct SettingsChange: Equatable, Sendable {
   public let level: SettingsLevel
 
   /// The key path that a `set` or a `clear` changed, or `nil` when the
-  /// file of the level changed from outside and the store read it again.
+  /// file of the level changed from outside and the store read it again,
+  /// or when the load error of the level started, changed or cleared
+  /// (``SettingsStore/loadErrors(cwd:)``).
   public let keyPath: [String]?
 
   /// Makes a change.
@@ -139,7 +141,22 @@ public enum SettingsStoreError: Error, Equatable, Sendable, CustomStringConverti
 /// iCloud brings a change from another device) and its text is not the text
 /// that the store last read or wrote, the store reads the file again and
 /// sends a change. ``changes()`` gives each change of a `set`, a `clear` and
-/// an outside write. ``stopWatching()`` stops each watcher, forgets each
+/// an outside write.
+///
+/// When the text of an outside write does not read, render or parse, the
+/// level keeps its last good tree and text, and the store keeps a load error
+/// for the level (``SettingsLoadError``): the file path, the line when the
+/// parser gives one, and the message. ``loadErrors(cwd:)`` gives it. The load
+/// error holds no text of the file, because the file can hold a secret: a
+/// parse error gives the message of the parser with no line of the parsed
+/// text, and a render error or a read error gives a fixed message. When the
+/// load error of a level starts, changes or clears, the store sends and logs
+/// one change with no key path for the level. A second read of the same bad
+/// text sends no change. A good outside write clears the load error, and so
+/// does a `set` or a `clear` of the level, which writes the last good text
+/// with the change to the file.
+///
+/// ``stopWatching()`` stops each watcher, forgets each
 /// level and ends each ``changes()`` stream; a later call reads its levels
 /// from the files again.
 ///
@@ -213,6 +230,11 @@ public actor SettingsStore {
     /// that the store last read or wrote, or `nil` when there was no
     /// file. A change edits it (``SettingsSourceText``).
     var text: String?
+
+    /// The error of the last read of ``file`` after an outside write, or
+    /// `nil` when that read worked or the store wrote the file after it.
+    /// While it is not `nil`, ``root`` and ``text`` are the last good ones.
+    var loadError: SettingsLoadError?
 
     /// The watcher of ``file``. The state keeps it, thus it watches for
     /// as long as the store keeps the level. ``SettingsStore/stopWatching()``
@@ -307,6 +329,21 @@ public actor SettingsStore {
     return try loader.layeredRoot(over: merged.root).value(at: keyPath).map {
       SettingsValue(value: $0, level: ConfigurationLayerName(merged.source(of: keyPath)))
     }
+  }
+
+  /// The load error of each level of a working directory whose file did
+  /// not read, render or parse after an outside write. The values of such a
+  /// level are the last good values.
+  ///
+  /// The call reads the levels as ``startWatching(cwd:)`` reads them, thus
+  /// the store watches their files after it.
+  ///
+  /// - Parameter cwd: The working directory of the session level, or `nil`
+  ///   for the user level only.
+  /// - Returns: The load errors, the user level first.
+  /// - Throws: What ``startWatching(cwd:)`` throws.
+  public func loadErrors(cwd: URL?) throws -> [SettingsLoadError] {
+    try SettingsLevel.watched(cwd: cwd).compactMap { try levelState(of: $0).loadError }
   }
 
   /// A stream of each change that the store makes or reads from now on.
@@ -479,8 +516,10 @@ public actor SettingsStore {
 
   /// Changes the source tree of one level, renders the changed text,
   /// checks the merged result, writes the changed source text to the file
-  /// of the level, and sends and logs the change. A change that gives the
-  /// same source tree writes nothing, sends nothing and logs nothing.
+  /// of the level, and sends and logs the change. The write makes the file
+  /// good, thus it clears the load error of the level, and then the store
+  /// also sends and logs one change with no key path. A change that gives
+  /// the same source tree writes nothing, sends nothing and logs nothing.
   ///
   /// - Parameters:
   ///   - keyPath: The changed key path, for the change event and the
@@ -504,11 +543,17 @@ public actor SettingsStore {
     let root = try Self.renderedTree(of: text, layer: state.layer)
     try check(root, of: level)
     try Self.write(text, to: state.file)
+    let clearsLoadError = state.loadError != nil
     state.root = root
     state.text = text
+    state.loadError = nil
     levels[state.file.path] = state
     await record(
       SettingsLoggedChange(change: SettingsChange(level: level, keyPath: keyPath), ids: ids))
+    if clearsLoadError {
+      await record(
+        SettingsLoggedChange(change: SettingsChange(level: level, keyPath: nil), ids: ChangedIDs()))
+    }
   }
 
   /// Checks the merged settings with `root` as the tree of `level`: the
@@ -642,36 +687,58 @@ public actor SettingsStore {
     }
   }
 
-  /// Reads the file of a level again when its text is not the text that
-  /// the store last read or wrote, and sends and logs a change, whose ids
-  /// name each key that differs from the tree before. A file that cannot
-  /// be read or parsed leaves the level as it was, and the store logs the
-  /// type of the error.
+  /// Reads the file of a level again, and sends and logs a change with no
+  /// key path when the text or the load error of the level changed. The ids
+  /// of the change name each key that differs from the tree before.
+  ///
+  /// A file that cannot be read, rendered or parsed keeps the last good
+  /// tree and text of the level, and sets its load error
+  /// (``SettingsLoadError``). The store logs the type of the error. A read
+  /// that works clears the load error, also when the text is the last good
+  /// text. Thus a change goes out when the error starts, changes or clears,
+  /// and a second read of the same bad text sends no change.
+  ///
+  /// The watcher of the file calls it. A test calls it to read the file
+  /// again at a known time.
   ///
   /// - Parameter file: The `config.yaml` of the level.
-  private func reload(_ file: URL) async {
-    guard var state = levels[file.path] else {
+  func reload(_ file: URL) async {
+    guard let before = levels[file.path] else {
       return
     }
-    let before = state.root
+    let after = Self.reloaded(before)
+    guard after.text != before.text || after.loadError != before.loadError else {
+      return
+    }
+    levels[file.path] = after
+    await record(
+      SettingsLoggedChange(
+        change: SettingsChange(level: after.level, keyPath: nil),
+        ids: SettingsTreeDifference.ids(from: before.root, to: after.root)))
+  }
+
+  /// The state of a level after a new read of its file.
+  ///
+  /// - Parameter state: The state of the level before the read.
+  /// - Returns: The state with the new tree and text and no load error, or
+  ///   the state with its tree and text and the load error of the read.
+  private static func reloaded(_ state: LevelState) -> LevelState {
+    var reloaded = state
     do {
-      let text = try Self.text(of: file)
-      guard text != state.text else {
-        return
+      let text = try text(of: state.file)
+      if text != state.text {
+        reloaded.root = try renderedTree(of: text, layer: state.layer)
+        reloaded.text = text
       }
-      state.root = try Self.renderedTree(of: text, layer: state.layer)
-      state.text = text
+      reloaded.loadError = nil
     } catch {
       ACPAgentTelemetry.logger(.configuration).warning(
         "A settings file changed, and the store could not read it again. The settings in memory stay.",
         metadata: ACPAgentTelemetry.errorMetadata(error))
-      return
+      reloaded.loadError = SettingsLoadError(
+        level: state.level, path: state.file.path, error: error)
     }
-    levels[file.path] = state
-    await record(
-      SettingsLoggedChange(
-        change: SettingsChange(level: state.level, keyPath: nil),
-        ids: SettingsTreeDifference.ids(from: before, to: state.root)))
+    return reloaded
   }
 
   /// Sends a change to each open ``changes()`` stream, and appends it to
@@ -741,7 +808,9 @@ public actor SettingsStore {
   ///   - layer: The layer of the file.
   /// - Returns: The tree, or `.null` when there is no text.
   /// - Throws: `LayeredYAMLDocumentError` for a text that cannot be
-  ///   rendered or parsed.
+  ///   rendered or parsed. The message of a parse error holds no line of
+  ///   the rendered text (``SettingsLoadError/parserMessage(_:hidingLinesOf:)``),
+  ///   because a rendered line can hold a secret value.
   private static func renderedTree(of text: String?, layer: DotfolderStack.Layer) throws
     -> YAMLValue
   {
@@ -760,7 +829,9 @@ public actor SettingsStore {
     do {
       return try YAMLValue.parse(rendered)
     } catch YAMLValueParsingError.malformed(let line, let message) {
-      throw LayeredYAMLDocumentError.malformed(path: path, line: line, message: message)
+      throw LayeredYAMLDocumentError.malformed(
+        path: path, line: line,
+        message: SettingsLoadError.parserMessage(message, hidingLinesOf: rendered))
     }
   }
 }

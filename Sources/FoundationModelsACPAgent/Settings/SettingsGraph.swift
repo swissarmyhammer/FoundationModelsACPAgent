@@ -15,6 +15,12 @@ import GraphQL
 ///   layer that set it. With no `cwd`, it gives the user level over the
 ///   builtin layers. `Query.sections` gives the first key of each key path:
 ///   the sections of ``AgentConfiguration``.
+/// - `Query.problems` gives the load error of each level whose file changed
+///   from outside and does not read, render or parse
+///   (``SettingsStore/loadErrors(cwd:)``): the level, the file path, the line
+///   and a message with no text of the file. With no `cwd`, it gives the user
+///   level only. While a file is bad, `Query.setting` gives the last good
+///   values of its level.
 /// - `Mutation.updateSetting(input:)` and `Mutation.clearSetting(input:)`
 ///   change one key on the level that the input names: `USER` or `SESSION`,
 ///   and give the changed `Setting`. The old names `set` and `clear` are
@@ -26,6 +32,8 @@ import GraphQL
 ///   cursor, from a mutation, from ``SettingsTool``, or from a change of a
 ///   file, in the shape of EXTRAS-9 rule 9: `cursor`, `at`, and the dotted
 ///   key paths in `added`, `changed` and `removed` (``SettingsLoggedChange``).
+///   A change with no key path also comes when the load error of a level
+///   starts, changes or clears: then read `Query.problems` again.
 ///   `Query.cursor` gives the cursor of the newest change. With no `cwd`, the
 ///   subscription gives the changes of the user level only. A cursor that the
 ///   change log cannot resume ends it with `RESYNC_REQUIRED`.

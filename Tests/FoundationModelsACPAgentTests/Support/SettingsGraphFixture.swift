@@ -100,6 +100,14 @@ struct SettingsGraphFixture {
   /// The response key of the query of the cursor.
   static let cursorField = "cursor"
 
+  /// The query of the load error of each level. A `null` or absent `$cwd`
+  /// gives no `cwd`.
+  static let problemsQuery =
+    "query($cwd: String) { problems(cwd: $cwd) { level cwd path line message } }"
+
+  /// The response key of the query of the load errors.
+  static let problemsField = "problems"
+
   // MARK: - Names of the schema
 
   /// The `SettingLevel` and `SettingLayer` name of the user level.
@@ -291,6 +299,19 @@ struct SettingsGraphFixture {
   func cursor(cwd workingDirectory: URL?) async throws -> String {
     let reply = try await run(Self.cursorQuery, variables: Self.cwdVariable(workingDirectory))
     return try #require(reply.data?[Self.cursorField] as? String, "no cursor in \(reply.text)")
+  }
+
+  /// Reads the load error of each level through the endpoint.
+  ///
+  /// - Parameter workingDirectory: The working directory of the session, or
+  ///   `nil` for a call with no `cwd`.
+  /// - Returns: The `SettingsProblem` objects.
+  /// - Throws: What ``run(_:variables:)`` throws, or a failed requirement
+  ///   when the response has no list of problems.
+  func problems(cwd workingDirectory: URL?) async throws -> [[String: Any]] {
+    let reply = try await run(Self.problemsQuery, variables: Self.cwdVariable(workingDirectory))
+    return try #require(
+      reply.data?[Self.problemsField] as? [[String: Any]], "no problems in \(reply.text)")
   }
 
   /// The variables of a key path and a working directory.

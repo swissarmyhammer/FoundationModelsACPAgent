@@ -103,6 +103,22 @@ struct SettingsEngine: Sendable {
     try await reading(at: keyPath, cwd: cwd, secretOf: secretAfterChange(of:))
   }
 
+  /// Reads the load error of each level of a session, or of the user level
+  /// only: the error of a level file that did not read, render or parse
+  /// after an outside write (``SettingsStore/loadErrors(cwd:)``).
+  ///
+  /// - Parameter cwd: The absolute path of the working directory of the
+  ///   session, or `nil` for the user level only.
+  /// - Returns: The load errors, the user level first.
+  /// - Throws: ``SettingsGraphError`` for a working directory that is not
+  ///   absolute, or for a level that the store cannot read.
+  func problems(cwd: String?) async throws -> [SettingsLoadError] {
+    let directory = try cwd.map(Self.workingDirectory)
+    return try await SettingsGraphError.withCodedErrors {
+      try await store.loadErrors(cwd: directory)
+    }
+  }
+
   /// Writes the log record of a read after a saved change that did not
   /// complete. The record holds the dotted key path and the case of the
   /// error, never a value, because a value can be a secret.

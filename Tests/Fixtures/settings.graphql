@@ -103,6 +103,26 @@ type SettingsChange {
   keyPath: [String!]
 }
 
+"""
+The load error of one level: its file changed and does not read, render or parse. The settings of the level stay the last good values until a good write.
+"""
+type SettingsProblem {
+  """The level whose file has the error."""
+  level: SettingLevel!
+
+  """The working directory of a session level, or null for the user level."""
+  cwd: String
+
+  """The path of the config.yaml of the level."""
+  path: String!
+
+  """The 1-based line of the error, or null when the error has no line."""
+  line: Int
+
+  """The reason of the error. It holds no text of the file."""
+  message: String!
+}
+
 """The key, the new value and the level of an updateSetting mutation."""
 input UpdateSettingInput {
   """
@@ -156,6 +176,16 @@ type Query {
     """
     cwd: String
   ): Setting
+
+  """
+  The load error of each level whose file changed and does not read, render or parse: USER, and SESSION when a cwd applies. Empty when each file is good. A change with no keyPath comes when an error starts, changes or clears.
+  """
+  problems(
+    """
+    The absolute path of the working directory of the session. It names the session level. A call of the settings endpoint can omit it: then a read gives the USER level over the builtin layers, a USER change needs no cwd, and a SESSION change is refused. The settings tool of a session can omit it: the folder of that session applies, and a different folder is refused.
+    """
+    cwd: String
+  ): [SettingsProblem!]!
 
   """
   The cursor of the newest change of the settings. Read the state, read this cursor, then subscribe to changes(after:) with it for each change after the read.
