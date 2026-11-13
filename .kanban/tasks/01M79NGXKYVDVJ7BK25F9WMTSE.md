@@ -32,8 +32,15 @@ comments:
     - evidence: cause = full content replaces after a diff chunk (SDK toolStatus, progress, attachment report, settlement) in ACPEventTranslator. Files: Sources/FoundationModelsACPAgent/Agent/KeptDisplayItems.swift (new), Sources/FoundationModelsACPAgent/Agent/ACPEventTranslator.swift, Tests/FoundationModelsACPAgentTests/KeptDisplayItemsTests.swift (new, 9 tests), Tests/FoundationModelsACPAgentTests/Support/ProjectionTestSupport.swift (`clientContent(ofToolCall:)`). RED: `swift test --filter KeptDisplayItemsTests` 7 of 9 failed (the 2 that passed are the "ends as before" and "tool replace" guards). GREEN: 9 of 9 passed. Full `timeout 900 swift test` (log written to a file): run 1 had 2051 tests, 0 failures, 1 known issue that already existed (HarnessSmokeTests withKnownIssue). Run 2, after a refactor that keeps the behavior (one `displayItem` map in the display replace), had 2051 tests and 1 failure: SubagentMessageWireTests `theFinalViewComesBeforeTheFinalStatus` (`view → nil`) at load average about 17. That suite alone passed, 11 of 11. It has no relation to this change. New card ^3hvxfd4. Zero compiler warnings. The only warning is the SwiftPM build-system line "missing creator for mutated node" for the mlx bundle, which already existed. `swift format lint` is clean. Pins: Multitool stays at 9d46b0fa, which already includes b3d7b13e. I made no pin move.
     - next: test step (full `swift test` on a machine that is not under load), then review. Tell testudoapp-75 that the GalleryScriptTests known issue (TestudoApp 825c8e8) will fail.
   timestamp: 2026-11-13T05:32:14.791945+00:00
-position_column: doing
-position_ordinal: '8280'
+- actor: claude-code
+  id: 01m79pdtkrwy3hsnqrft6hg08f
+  text: |-
+    ### review — clean
+    - evidence: review sha 79ea23d~1..79ea23d; 0 findings (7 attempted, 0 failed); 4 files reviewed, 6 .kanban files ignored by .reviewignore
+    - next: the task is in done; tell testudoapp-75 that the known issue in GalleryScriptTests is fixed
+  timestamp: 2026-11-13T05:34:59.704345+00:00
+position_column: done
+position_ordinal: ffffe480
 title: The completion of a runCode call keeps the diff items that the call emitted
 ---
 ## What

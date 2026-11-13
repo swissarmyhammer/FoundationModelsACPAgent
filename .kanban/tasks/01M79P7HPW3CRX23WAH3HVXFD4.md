@@ -1,8 +1,13 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '80'
+comments:
+- actor: claude-code
+  id: 01m79peaabzmpjqptb0zjr638r
+  text: 'Closed by the orchestrator (2026-11-12): the failure came from load. A full `swift test` on main 79ea23d with no other build on the machine passed 2051 tests in 223 suites in 19 s, with 0 failures, and SubagentMessageWireTests passed alone 11/11. No code change.'
+  timestamp: 2026-11-13T05:35:15.787256+00:00
+position_column: done
+position_ordinal: ffffe580
 title: 'SubagentMessageWireTests: the final view test fails under high machine load'
 ---
 ## What
