@@ -34,8 +34,15 @@ comments:
     - evidence: `timeout 900 swift test --filter HookCompositionTests` exit 0, 23 tests in 1 suite passed. `timeout 900 swift test` exit 0, 2056 tests in 223 suites passed, 1 known issue (the existing `withKnownIssue` in `HarnessSmokeTests`), zero compiler warnings. The only `warning:` line is the SwiftPM build-graph line `missing creator for mutated node` of the dependency bundle mlx-swift_Cmlx.bundle, which is not from this change. No commit.
     - next: /review
   timestamp: 2026-11-13T06:49:20.655004+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m79trjm3p8y1529zvbbxk78g
+  text: |-
+    ### review — clean
+    - evidence: review sha 216131a~1..216131a — 0 findings (attempted 7, failed 0). The prior finding at HookCompositionTests.swift:698 is checked.
+    - next: none. The task moved to done.
+  timestamp: 2026-11-13T06:50:46.275519+00:00
+position_column: done
+position_ordinal: ffffe780
 title: A runCode call that writes a file in a git work tree makes no checkpoint
 ---
 ## What
