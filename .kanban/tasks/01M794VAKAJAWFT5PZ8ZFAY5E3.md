@@ -54,6 +54,10 @@ comments:
     - evidence: review sha 6b43e19~1..6b43e19 — 0 findings (7 validators attempted, 0 failed). File reviewed: Tests/FoundationModelsACPAgentTests/Support/PausedChildTreeFixture.swift. The .kanban files are not in scope (.reviewignore).
     - next: none. The task stays in done.
   timestamp: 2026-11-13T04:14:47.288698+00:00
+- actor: claude-code
+  id: 01m79m2fpzjn5jfzxn7147y5xf
+  text: 'Acceptance confirmed by foundationmodelsacpclient-76 (2026-11-12): 20 of 20 full integration runs (two rounds of 10) passed on ACPAgent 74eea0a and FoundationModelsACP 9254159. aHotResumeKeepsTheRunningChildRunning 20/20. No new warning.'
+  timestamp: 2026-11-13T04:53:50.943538+00:00
 position_column: done
 position_ordinal: ffffe280
 title: 'Hot resume on the same connection: a state_update of a child can still come before its announcement (1 of 10 ACPClient runs)'

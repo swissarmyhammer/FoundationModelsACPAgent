@@ -1,0 +1,62 @@
+---
+assignees:
+- claude-code
+comments:
+- actor: claude-code
+  id: 01m79kr88531wrqrg60vdks3m3
+  text: |-
+    Research:
+    - `swift package update FoundationModelsMultitool` (root and IntegrationTests) moved only Multitool: abca4236 to 9d46b0fa. No other family package moved. Note: `Package.resolved` is in `.gitignore`, thus the pin change does not show in `git diff`.
+    - Multitool 9d46b0fa: `SearchIndexCache.sharedEmbedding(for:embedder:)` keys a slot by catalog entries and embedder identity. Identity is `IdentifiedEmbedding.embeddingIdentity`, or `ObjectIdentifier` of a class instance, else nil (no slot, no share). The cache is process-wide (`SearchIndexCache.shared`, capacity 8) and is not injectable from this package (the `indexCache:` overload is internal).
+    - Test seam: the public API is sufficient. `StubModelLoader.makeEmbeddingContainer` gives a `RecordingEmbeddingContainer` (TestSupport), and `ToolCatalogTests.theSessionSurfaceHandsTheProfileEmbedderToSearchTools` already counts the catalog batch through `ToolCatalog.sessionSurface` plus one `searchTools` call. The new tests use the same seam.
+  timestamp: 2026-11-13T04:48:15.621588+00:00
+- actor: claude-code
+  id: 01m79mhrwjex2h6dtd4kknt6qe
+  text: |-
+    Blocker: the conformance makes HotResumeTests fail some of the time, and the test of this card is flaky in the full suite.
+
+    Done (not committed, in the working tree):
+    - Pin: FoundationModelsMultitool abca4236 -> 9d46b0fa in Package.resolved and IntegrationTests/Package.resolved. No other package moved. Package.resolved is gitignored.
+    - Sources/FoundationModelsACPAgent/Tools/ProfileEmbedding.swift: conforms to IdentifiedEmbedding, `embeddingIdentity` is `ObjectIdentifier(embedder)`, with the doc comment of the card.
+    - Tests/FoundationModelsACPAgentTests/ToolCatalogTests.swift: `twoSessionsOfOneProfileEmbedTheCatalogOneTime` (RED: 2 batches before the change, GREEN after) and `twoSessionsOfTwoProfilesEmbedTheCatalogTwoTimes` (passes before and after; it guards against a share across two profiles over one container). Seam: `RecordingEmbeddingContainer` through `StubModelLoader.makeEmbeddingContainer`, `ToolCatalog.sessionSurface`, one `searchTools` call per surface.
+
+    Problem 1 (found by the full `swift test`): HotResumeTests `theReplayAnnouncesTheChildBeforeItsHistory` and `theReplayHoldsTheHistoryOfTheChildBeforeTheResponse` fail with `history -> nil`.
+    - With the change: 3 of 9 suite runs failed; suite time 1.0 to 3.1 s.
+    - With ProfileEmbedding.swift at HEAD (same pin): 0 of 7 runs failed; suite time 0.66 to 0.89 s.
+    - Each failing test passes alone. The fixture `openPrompt` waits for any update of the child, not for the child text, so the test has a latent race. The change makes the race visible.
+    - Fact that is relevant to the design: `RoutedModel` holds `residencyHolds`, one `ModelHold` for each slot of the resolve (standard, flash, embedding). The cache keeps the `ProfileEmbedding`, thus the `RoutedModel`, thus the residency of the whole profile, for up to 8 slots after the sessions end. In production, after a profile change, the old profile's LLMs stay resident until 8 newer slots push the slot out. The card says that the retention is safe for the identity. It does not say that the retention keeps the models loaded. The exact cause of the slowdown in the tests is not proven (each test router has its own `ModelPool`).
+
+    Problem 2: `twoSessionsOfOneProfileEmbedTheCatalogOneTime` failed in the full parallel run with 2 batches (test time 65 s). `SearchIndexCache.shared` is process-wide with capacity 8. Now each session of the suite puts a slot in it, and other tests pushed the slot out between the two mounts. A possible correction: mount the two sessions with one registry, back to back, through `registry.makeSessionToolsAndStaging(selection:embedder:)` (the pattern of RunToolSelectionTests). That does not go through `sessionSurface`.
+
+    A person must decide:
+    (a) Accept the retention of the full residency, and correct the race in the HotResumeTests fixture (wait for the child text) and the seam of the new test. That is work outside the card.
+    (b) Change the identity so that the cache does not keep the residency: for example, Multitool keeps the embedder weakly, or drops a slot when the embedder goes away (a change in a sibling repository; not allowed in this step).
+    (c) Another design.
+  timestamp: 2026-11-13T05:02:11.858638+00:00
+- actor: claude-code
+  id: 01m79mhwe2w7e59x70a797bmfp
+  text: |-
+    ### implement — stuck
+    - evidence: pin FoundationModelsMultitool abca4236 -> 9d46b0fa (root and IntegrationTests, no other package moved); files Sources/FoundationModelsACPAgent/Tools/ProfileEmbedding.swift, Tests/FoundationModelsACPAgentTests/ToolCatalogTests.swift; targeted `swift test --filter ToolCatalogTests/(twoSessions|theSessionSurfaceHandsTheProfileEmbedder)` 3/3 pass; full `swift test` 2044 tests, 3 failures (2 HotResumeTests, 1 twoSessionsOfOneProfileEmbedTheCatalogOneTime) + 1 known issue, zero compiler warnings; HotResumeTests 3/9 runs fail with the change, 0/7 without. IntegrationTests build not run (stopped before it).
+    - next: a person picks option (a), (b) or (c) of the blocker comment.
+  timestamp: 2026-11-13T05:02:15.490306+00:00
+position_column: doing
+position_ordinal: '80'
+title: ProfileEmbedding conforms to IdentifiedEmbedding, so sessions of one profile share one catalog embed
+---
+## What
+Request of foundationmodelsmultitool-2a and testudoapp-75 (2026-11-12; TestudoApp ^qa2eddw, Multitool ^d84hmxw). Multitool main 9d46b0fa adds `public protocol IdentifiedEmbedding: PooledEmbedding { var embeddingIdentity: ObjectIdentifier { get } }`. `SearchIndexCache` keeps one `SharedCatalogEmbedding` for each catalog and embedder identity. ToolCatalog makes a new `ProfileEmbedding` struct for each session (`ToolCatalog.swift` ~443), and a struct has no identity, so today each `session/new` embeds the whole catalog again.
+
+1. Move only the FoundationModelsMultitool pin to 9d46b0fa or later (root and IntegrationTests). If it needs another family package, move it too and say which.
+2. `Sources/FoundationModelsACPAgent/Tools/ProfileEmbedding.swift`: conform to `IdentifiedEmbedding` with `var embeddingIdentity: ObjectIdentifier { ObjectIdentifier(embedder) }`. `RoutedEmbedder` is `RoutedModel`, a final class with `let chosen` and `let container`, so one `RoutedModel` always gives the same vectors; a profile change makes a new `RoutedModel`. The cache keeps the `ProfileEmbedding` and thus the `RoutedModel` alive, so the identifier is not reused. Write this in the doc comment.
+
+## Acceptance Criteria
+- [ ] Two sessions of the same profile embed the catalog one time (the embedder gets the catalog batch one time).
+- [ ] Two sessions of two profiles (two embedders) embed it two times.
+
+## Tests
+- [ ] A test that composes two sessions with the same profile (a counting stub embedder) and checks one catalog embed; and one with two profiles that checks two. Write it first and see it fail.
+- [ ] `swift test` passes with no warnings.
+
+## Workflow
+- Use `/tdd` — write failing tests first, then implement to make them pass. #step1

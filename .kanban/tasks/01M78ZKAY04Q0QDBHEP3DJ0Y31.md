@@ -46,6 +46,10 @@ comments:
     - evidence: review sha 6bcc3b1~1..6bcc3b1, 0 findings (0 confirmed, 0 refuted, 7 attempted). Commit 6bcc3b1 adds noteReported(_:), and deliverChange() and takeUnsentChange() both call it. The guard is one time in forgetPromptEnd(leaving:entering:). Thus the finding of 2026-11-12 18:11 at PromptState.swift:257 is fixed and is now checked.
     - next: none. The task is in done. The acceptance criterion for the confirmation from foundationmodelsacpclient-76 stays open.
   timestamp: 2026-11-13T01:46:14.335843+00:00
+- actor: claude-code
+  id: 01m79m2dxs9ctjpjvabyrkbx92
+  text: 'Acceptance confirmed by foundationmodelsacpclient-76 (2026-11-12): 20 of 20 full integration runs passed on ACPAgent 74eea0a and FoundationModelsACP 9254159, with the idle end on the resume waits (ACPClient 4a53c2d). anOrderlyQuitResumesTheRunsAndCompletesTheOriginalAgentsCall 20/20, aKilledAgentResumesTheNestedRunWithItsTree 20/20.'
+  timestamp: 2026-11-13T04:53:49.113795+00:00
 position_column: done
 position_ordinal: ffffe180
 title: A restored run that will continue is announced idle with noWork after a cold resume
