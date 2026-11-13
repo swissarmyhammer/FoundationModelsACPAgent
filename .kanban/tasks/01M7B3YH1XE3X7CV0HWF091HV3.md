@@ -78,8 +78,24 @@ comments:
     - note: the SwiftPM line "missing creator for mutated node" comes from the build system. It is not a compiler warning.
     - next: review
   timestamp: 2026-11-13T19:28:11.524644+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m7b664yvbvv18rnvke3m9vnd
+  text: |-
+    ### review — clean
+    - evidence: review sha 361c39b~1..361c39b; 0 findings, 0 confirmed, 0 refuted; 4 files reviewed. The 2 items of the 2026-11-13 13:12 round are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-11-13T19:29:39.803418+00:00
+- actor: claude-code
+  id: 01m7b66s5kdmd3khwxge7yvhbm
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 5 files
+    - test: green — swift test, 2071 tests in 223 suites passed, 1 known issue (intended)
+    - commit: 361c39b
+    - review: clean — none
+  timestamp: 2026-11-13T19:30:00.499295+00:00
+position_column: done
+position_ordinal: ffffe880
 title: A settings file that does not parse after an outside write gives an error to the client
 ---
 ## What
