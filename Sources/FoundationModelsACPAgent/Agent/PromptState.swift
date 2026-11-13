@@ -251,15 +251,10 @@ actor SessionStateLedger {
     await takeUnsentChange()
   }
 
-  /// Notes the current state as the reported state with no send, and tells the observer when the
-  /// session became active or idle. A session that leaves `idle` drops the `idle` of its last
-  /// prompt, as a sent change does (``forgetPromptEnd(after:)``).
+  /// Notes the current state as the reported state with no send (``noteReported(_:)``), and tells
+  /// the observer when the session became active or idle.
   private func takeUnsentChange() async {
-    let next = current
-    if next != .idle {
-      forgetPromptEnd(after: reported)
-    }
-    reported = next
+    noteReported(current)
     await tellObserver(noteActivity())
   }
 
@@ -441,10 +436,18 @@ actor SessionStateLedger {
       await resendWhenListChanged()
       return
     }
-    let previous = reported
+    noteReported(next)
+    await deliver(.stateUpdate(stamped(update(entering: next))), recorded: true)
+  }
+
+  /// Notes `next` as the reported state. A session that leaves `idle` drops the `idle` of its last
+  /// prompt (``forgetPromptEnd(leaving:entering:)``). A sent change and an unsent change both
+  /// note the state here.
+  ///
+  /// - Parameter next: The state that the session enters.
+  private func noteReported(_ next: Reported) {
+    forgetPromptEnd(leaving: reported, entering: next)
     reported = next
-    await deliver(
-      .stateUpdate(stamped(update(entering: next, from: previous))), recorded: true)
   }
 
   /// Sends the current state again when the list is not the one that the client holds. The state
@@ -456,19 +459,16 @@ actor SessionStateLedger {
     await deliver(.stateUpdate(stamped(currentState)), recorded: false)
   }
 
-  /// The state update for a change of the reported state.
+  /// The state update for a change of the reported state. An `idle` takes the `idle` of the last
+  /// prompt that ended, when there is one.
   ///
-  /// - Parameters:
-  ///   - next: The state that the session enters.
-  ///   - previous: The state that the session leaves.
+  /// - Parameter next: The state that the session enters.
   /// - Returns: The update.
-  private func update(entering next: Reported, from previous: Reported) -> StateUpdate {
+  private func update(entering next: Reported) -> StateUpdate {
     switch next {
     case .requiresAction:
-      forgetPromptEnd(after: previous)
       return .requiresAction(RequiresActionStateUpdate())
     case .running:
-      forgetPromptEnd(after: previous)
       return .running(RunningStateUpdate())
     case .idle:
       let idle = lastPromptEnd ?? IdleStateUpdate()
@@ -481,9 +481,11 @@ actor SessionStateLedger {
   /// A new stretch of work starts, and the old stop reason is not part
   /// of it.
   ///
-  /// - Parameter previous: The state that the session leaves.
-  private func forgetPromptEnd(after previous: Reported) {
-    if previous == .idle {
+  /// - Parameters:
+  ///   - previous: The state that the session leaves.
+  ///   - next: The state that the session enters.
+  private func forgetPromptEnd(leaving previous: Reported, entering next: Reported) {
+    if previous == .idle, next != .idle {
       lastPromptEnd = nil
     }
   }

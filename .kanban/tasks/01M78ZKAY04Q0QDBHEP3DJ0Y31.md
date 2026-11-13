@@ -32,6 +32,13 @@ comments:
     - evidence: 8 files — Sources/FoundationModelsACPAgent/Agent/PromptState.swift, Sources/FoundationModelsACPAgent/Agent/SessionResumeRedrive.swift, Sources/FoundationModelsACPAgent/Agent/SessionResume.swift, Sources/FoundationModelsACPAgent/Agent/SessionResumeNested.swift (doc), Sources/FoundationModelsACPAgent/Agent/SessionResumeChildSync.swift (doc), README.md, Tests/FoundationModelsACPAgentTests/RestoredRunStateTests.swift (new), Tests/FoundationModelsACPAgentTests/ResumeChildSyncTests.swift. `swift test`: 2038 tests in 222 suites passed, 0 failures, 1 known issue (existing HarnessSmokeTests withKnownIssue), 0 compiler warnings. `swift build --build-tests --package-path IntegrationTests`: Build complete. Targeted run after the last test-format edit: RestoredRunStateTests 6 tests passed; RestoredRunState + ResumeChildSync + RedriveInterruptedRuns + ResumeNestedSessions 48 tests passed.
     - next: /review. Acceptance item 3 waits for a push and the confirmation of foundationmodelsacpclient-76.
   timestamp: 2026-11-12T23:10:41.930900+00:00
+- actor: claude-code
+  id: 01m790m2z4dxrg5mwdfvth2dce
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD, 1 finding (1 confirmed, 7 refuted) — Sources/FoundationModelsACPAgent/Agent/PromptState.swift:257
+    - next: implement the open finding, then review again.
+  timestamp: 2026-11-12T23:13:56.196646+00:00
 position_column: doing
 position_ordinal: '80'
 title: A restored run that will continue is announced idle with noWork after a cold resume
@@ -56,3 +63,15 @@ Report of foundationmodelsacpclient-76 (2026-11-12), on ACPAgent 0c1aeaf. After 
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #step1
+
+## Review Findings (2026-11-12 18:11)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 7 file(s) reviewed, 3 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `README.md` — no validator matches this file
+
+- [ ] `Sources/FoundationModelsACPAgent/Agent/PromptState.swift:257` `reuse/reuse` — `takeUnsentChange()` repeats the reported-state bookkeeping of `deliverChange()` and `update(entering:from:)`: it leaves idle, drops the last prompt end through `forgetPromptEnd(after:)`, and sets `reported`. The logic is written a second time instead of being shared, so a later change to the idle bookkeeping has to be made in two places. Pull the shared step (`forgetPromptEnd(after: reported)` followed by `reported = next`) into one helper that both `deliverChange()` and `takeUnsentChange()` call. Keep the send-only part in `deliverChange()`. If the guard is needed, put it inside `forgetPromptEnd` once, since it already checks `previous == .idle`.
