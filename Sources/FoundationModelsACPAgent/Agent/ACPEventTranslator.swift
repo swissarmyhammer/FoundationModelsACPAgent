@@ -212,6 +212,12 @@ struct ACPEventTranslator {
   /// statuses.
   private var settledToolCallIds: Set<String> = []
 
+  /// The diff items and the terminal items that each tool call keeps to its
+  /// end (task ^f9wmtse). Each content replace that is not a display event
+  /// sends them first, so the completion of a `runCode` call keeps the
+  /// diffs that the files tool posted (``KeptDisplayItems``).
+  private var keptDisplayItems = KeptDisplayItems()
+
   /// Whether a text delta arrived since the last end of an answer. An
   /// answer that streamed its text does not send its reply again. An
   /// answer that mail starts can give its reply whole and stream no text
@@ -569,6 +575,11 @@ struct ACPEventTranslator {
   /// the status maps from Router's three-case vocabulary, and the
   /// answering output segments replace the call's content.
   ///
+  /// The replace keeps the diff items and the terminal item of the call
+  /// first (``keptDisplayItems``), so the completion of a `runCode` call
+  /// keeps the diffs that the files tool posted. When the output adds no
+  /// item to the kept items, the update sends no content.
+  ///
   /// When a run settlement already sent the terminal status of the call,
   /// the update sends no status (``sdkStatusPatch(for:status:)``). An
   /// update that then carries no content and no raw output tells the
@@ -589,7 +600,8 @@ struct ACPEventTranslator {
     let toolCallId = ToolCallId(rawValue: id)
     let update = ToolCallUpdate(
       toolCallId: toolCallId,
-      content: Self.contentPatch(summary: summary, output: output),
+      content: keptDisplayItems.content(
+        for: toolCallId, adding: Self.contentPatch(summary: summary, output: output)),
       rawOutput: Self.rawOutputPatch(from: output),
       status: sdkStatusPatch(for: toolCallId, status: Self.wireStatus(for: status)))
     guard
@@ -768,6 +780,11 @@ struct ACPEventTranslator {
   /// text, and a reconnecting client takes the
   /// `TerminalUpdate.output` replacement instead.
   ///
+  /// The settlement keeps the diff items of the call first
+  /// (``keptDisplayItems``), and the call keeps its `Terminal` item to its
+  /// end: the SDK `toolStatus` that comes after an inline settlement sends
+  /// it again before the text result.
+  ///
   /// - Parameter operationEvent: The run's operation event.
   private mutating func projectSettlement(of operationEvent: OperationEvent) async {
     guard operationEvent.kind == .completed else {
@@ -792,13 +809,17 @@ struct ACPEventTranslator {
     if let note = Self.note(for: operationEvent.outcome) {
       items.append(Self.textItem(note))
     }
-    settledToolCallIds.insert(runCallId(operationEvent.correlationID).rawValue)
+    let toolCallId = runCallId(operationEvent.correlationID)
+    settledToolCallIds.insert(toolCallId.rawValue)
+    let content = keptDisplayItems.content(
+      for: toolCallId, adding: items.isEmpty ? .unchanged : .value(items))
+    keptDisplayItems.append(contentsOf: items.filter(Self.isTerminal), to: toolCallId)
     await send(
       runCallUpdate(
         correlationID: operationEvent.correlationID,
         tool: operationEvent.tool,
         op: operationEvent.op,
-        content: items.isEmpty ? .unchanged : .value(items),
+        content: content,
         status: .value(status)))
   }
 
@@ -812,7 +833,8 @@ struct ACPEventTranslator {
   /// event is the text line for the model, so it does not go to the client.
   ///
   /// A progress event with no plan sends its `detail` as the content of
-  /// the tool call of the run. The update keys on the wire id of the run
+  /// the tool call of the run, after the kept diff items of the call
+  /// (``keptDisplayItems``). The update keys on the wire id of the run
   /// (``runCallId(_:)``), as the attachment report and the settlement do.
   /// The tool of the event never selects the call: in code
   /// mode, a `tools.*` call posts under the tool name and the
@@ -833,7 +855,9 @@ struct ACPEventTranslator {
         correlationID: operationEvent.correlationID,
         tool: operationEvent.tool,
         op: operationEvent.op,
-        content: .value([Self.textItem(operationEvent.detail)]),
+        content: keptDisplayItems.content(
+          for: runCallId(operationEvent.correlationID),
+          adding: .value([Self.textItem(operationEvent.detail)])),
         status: .value(.inProgress)))
   }
 
@@ -876,6 +900,11 @@ struct ACPEventTranslator {
   ///   the tool stays on the client: no later update of the call sends the
   ///   `op` or the tool name over it.
   ///
+  /// The call keeps each diff part of a content chunk or a content replace
+  /// to its end (``keptDisplayItems``). A content replace of the tool
+  /// replaces the whole content, so the call then keeps the diff parts of
+  /// that replace alone.
+  ///
   /// The translator sends each event at once, in the order Router gives.
   /// The settlement of the run comes after the display events of the run,
   /// so its content replace stays the last update of the call. This holds
@@ -884,20 +913,24 @@ struct ACPEventTranslator {
   ///
   /// - Parameter display: The display event of the tool.
   private mutating func projectDisplay(_ display: ToolDisplayEvent) async {
+    let toolCallId = runCallId(display.correlationID)
     switch display.kind {
     case .contentChunk(let content):
-      await send(
-        .toolCallContentChunk(
-          ToolCallContentChunk(
-            content: displayItem(for: content, run: display.correlationID),
-            toolCallId: runCallId(display.correlationID))))
+      let item = displayItem(for: content, run: display.correlationID)
+      if Self.isKept(content) {
+        keptDisplayItems.append(contentsOf: [item], to: toolCallId)
+      }
+      await send(.toolCallContentChunk(ToolCallContentChunk(content: item, toolCallId: toolCallId)))
     case .contentReplace(let contents):
+      let items = contents.map { displayItem(for: $0, run: display.correlationID) }
+      keptDisplayItems.replace(
+        with: zip(contents, items).filter { Self.isKept($0.0) }.map(\.1), for: toolCallId)
       await send(
         runCallUpdate(
           correlationID: display.correlationID,
           tool: display.tool,
           op: display.op,
-          content: .value(contents.map { displayItem(for: $0, run: display.correlationID) })))
+          content: .value(items)))
     case .metadata(let title, let kind, let locations, let rawInput):
       await send(
         runCallUpdate(
@@ -910,6 +943,34 @@ struct ACPEventTranslator {
           locations: locationsPatch(for: locations, run: display.correlationID),
           rawInput: rawInputPatch(from: rawInput, run: display.correlationID)))
     }
+  }
+
+  /// Whether a tool call keeps a display part to its end
+  /// (``keptDisplayItems``). A file change is kept: the text result of the
+  /// call cannot carry it. A text or a JSON part is output of the tool that a
+  /// later replace replaces.
+  ///
+  /// - Parameter content: The display part.
+  /// - Returns: `true` for a part that the call keeps.
+  private static func isKept(_ content: ToolDisplayContent) -> Bool {
+    switch content {
+    case .diff:
+      true
+    case .text, .json:
+      false
+    }
+  }
+
+  /// Whether a content item is a `Terminal` reference. A tool call keeps the
+  /// terminal item of its settlement to its end (``keptDisplayItems``).
+  ///
+  /// - Parameter item: The content item.
+  /// - Returns: `true` for a terminal item.
+  private static func isTerminal(_ item: ToolCallContent) -> Bool {
+    if case .terminal = item {
+      return true
+    }
+    return false
   }
 
   /// Maps one display part of a tool to one tool-call content item.
@@ -1012,7 +1073,8 @@ struct ACPEventTranslator {
 
   /// Sends the attachment `tool_call_update` of one closed call: the
   /// update keys on the wire id of the run (``runCallId(_:)``), carries
-  /// each attached document as one content item in call order, and puts the parsed
+  /// each attached document as one content item in call order after the
+  /// kept diff items of the call (``keptDisplayItems``), and puts the parsed
   /// documents in `rawOutput`. The tool rides as the `name`, and the `op`
   /// rides as the title when the call has no title yet, because this update
   /// can be the creation of the wire call.
@@ -1047,7 +1109,8 @@ struct ACPEventTranslator {
         correlationID: report.correlationID,
         tool: report.tool,
         op: report.op,
-        content: .value(documents.map(Self.textItem)),
+        content: keptDisplayItems.content(
+          for: runCallId(report.correlationID), adding: .value(documents.map(Self.textItem))),
         locations: locations.isEmpty ? .unchanged : .value(locations),
         rawOutput: Self.rawOutputPatch(fromDocuments: documents)))
   }

@@ -813,6 +813,26 @@ extension Array where Element == SessionUpdate {
   /// - Returns: The merged status, or `nil` when the client has no such
   ///   call or the call has no status.
   func clientStatus(ofToolCall toolCallId: String) -> FoundationModelsACP.ToolCallStatus? {
+    clientToolCall(toolCallId).flatMap { patchValue($0.status) }
+  }
+
+  /// The content that the client shows at the end for one tool call: the
+  /// client merges each update, as ``SessionMergeEngine`` does.
+  ///
+  /// - Parameter toolCallId: The wire id of the tool call.
+  /// - Returns: The merged content, or `nil` when the client has no such
+  ///   call or the call has no content.
+  func clientContent(ofToolCall toolCallId: String) -> [ToolCallContent]? {
+    clientToolCall(toolCallId).flatMap { patchValue($0.content) }
+  }
+
+  /// The tool call that the client holds at the end: the client merges each
+  /// update, as ``SessionMergeEngine`` does.
+  ///
+  /// - Parameter toolCallId: The wire id of the tool call.
+  /// - Returns: The merged tool call, or `nil` when the client has no such
+  ///   call.
+  private func clientToolCall(_ toolCallId: String) -> ToolCallUpdate? {
     let merged = SessionMergeEngine(replaying: self)
     guard
       case .toolCall(let call)? = merged.entry(withID: .toolCall(ToolCallId(rawValue: toolCallId)))?
@@ -820,7 +840,7 @@ extension Array where Element == SessionUpdate {
     else {
       return nil
     }
-    return patchValue(call.status)
+    return call
   }
 }
 

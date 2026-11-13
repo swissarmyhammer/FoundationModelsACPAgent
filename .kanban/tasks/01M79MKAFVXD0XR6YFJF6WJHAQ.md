@@ -23,8 +23,15 @@ comments:
     - evidence: 1 file — Tests/FoundationModelsACPAgentTests/HotResumeTests.swift. No product code changed. RED with the test-only delay (300 ms before the text of the child): the 2 replay tests failed. GREEN with the fix: the 2 tests passed. `swift test --filter HotResumeTests` (each run with `timeout 300`): 20 of 20 runs passed, 26 tests in each run. `timeout 900 swift test`: exit 0, 2042 tests in 222 suites passed, 1 known issue (HarnessSmokeTests.orderedSubsequenceAssertionChecksOrderWithGaps, an expected issue that was there before). Zero compiler warnings. The build prints the warning "missing creator for mutated node" for the mlx-swift_Cmlx bundle. That warning is from the build system and was there before this change.
     - next: /review
   timestamp: 2026-11-13T05:18:57.844823+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m79nkswd7tff1qmdq38rwkns
+  text: |-
+    ### review — clean
+    - evidence: review sha 8402f77~1..8402f77 — 0 findings (0 confirmed, 0 refuted); 1 file reviewed (Tests/FoundationModelsACPAgentTests/HotResumeTests.swift), 6 .kanban files not reviewed (ignore rule).
+    - next: The task is in done.
+  timestamp: 2026-11-13T05:20:46.989180+00:00
+position_column: done
+position_ordinal: ffffe380
 title: 'HotResumeTests: the setup waits for any update of the child, not for the child text, so two replay tests can fail'
 ---
 ## What
