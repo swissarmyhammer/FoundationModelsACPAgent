@@ -40,6 +40,19 @@ comments:
     - evidence: pin FoundationModelsMultitool abca4236 -> 9d46b0fa (root and IntegrationTests, no other package moved); files Sources/FoundationModelsACPAgent/Tools/ProfileEmbedding.swift, Tests/FoundationModelsACPAgentTests/ToolCatalogTests.swift; targeted `swift test --filter ToolCatalogTests/(twoSessions|theSessionSurfaceHandsTheProfileEmbedder)` 3/3 pass; full `swift test` 2044 tests, 3 failures (2 HotResumeTests, 1 twoSessionsOfOneProfileEmbedTheCatalogOneTime) + 1 known issue, zero compiler warnings; HotResumeTests 3/9 runs fail with the change, 0/7 without. IntegrationTests build not run (stopped before it).
     - next: a person picks option (a), (b) or (c) of the blocker comment.
   timestamp: 2026-11-13T05:02:15.490306+00:00
+- actor: claude-code
+  id: 01m79n0bpwacfm0rsfqmwdk5kn
+  text: |-
+    Multitool ^zv7da2 (01M79MTJHVJJDZBEZ6ZHZV7DA2, step1), commit 6c0e3de5 in review, not on main yet. The API CHANGES from the stash:
+    - `public protocol IdentifiedEmbedding: PooledEmbedding { var embeddingOwner: any AnyObject & Sendable { get } }`. `embeddingIdentity` is removed. ProfileEmbedding: `var embeddingOwner: any AnyObject & Sendable { embedder }` (the RoutedModel). Change the stashed code to this.
+    - Each embed slot holds only weak references (owner, embedder, SharedCatalogEmbedding). The searchers of each session keep the shared embed. When the last session ends, the model goes and the slot drops. Embed slots have no capacity. Thus two sessions share one embed only while at least one is open.
+    - Test seam (public): `SearchIndexCache(capacity:)`, `cache.builds`, `cache.sharedEmbeddings`, `cache.liveSharedEmbeddings`, and `registry.makeSessionToolsAndStaging(selection:embedder:sampleModel:indexCache:)`. The test gives its own cache, composes two sessions with one RoutedModel while the first is open, checks `sharedEmbeddings == 1`, then ends both and checks `liveSharedEmbeddings == 0` (the model is released).
+    Next run: restore stash@{0} ("wpsm1jx IdentifiedEmbedding and tests"), bump only the Multitool pin to the main commit of ^zv7da2, change to embeddingOwner, and replace the process-wide-cache test with the seam test.
+  timestamp: 2026-11-13T05:10:09.884234+00:00
+- actor: claude-code
+  id: 01m79ndtjspkg71s64htvvasfp
+  text: 'Multitool ^hzv7da2 (correct id; 01M79MTJHVJJDZBEZ6ZHZV7DA2) is on main: e2455429 (commits 6c0e3de5, 66ef5975; 2905 tests pass; review clean). The shape is as in the comment above, with one change: only an IdentifiedEmbedding embedder shares its embed between sessions; a class embedder that does not conform shares only inside one bundle. This card is no longer blocked. Bump only the Multitool pin to e2455429 or later.'
+  timestamp: 2026-11-13T05:17:31.097929+00:00
 position_column: doing
 position_ordinal: '80'
 title: ProfileEmbedding conforms to IdentifiedEmbedding, so sessions of one profile share one catalog embed

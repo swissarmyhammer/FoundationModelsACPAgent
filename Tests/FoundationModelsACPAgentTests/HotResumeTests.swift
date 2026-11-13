@@ -29,6 +29,11 @@ import Testing
   /// The text that the child plays before it waits.
   private static let childText = "HOT-RESUME-CHILD-TEXT"
 
+  /// The time that the child of a live tree waits after its first update, before it plays its
+  /// text. A setup that returns at the first update of the child, and not at its text, then
+  /// resumes a child whose history holds no text.
+  private static let childTextDelay = Duration.milliseconds(300)
+
   /// The text that the child plays after the wait.
   private static let childTextAfter = "HOT-RESUME-CHILD-TEXT-AFTER"
 
@@ -257,17 +262,39 @@ import Testing
 
   /// Starts a root with an open prompt and a child that runs and waits on a hold.
   ///
+  /// The child plays its text ``childTextDelay`` after its first update, as a slow setup of the
+  /// child does. The call returns when the first connection holds the text of the child
+  /// (``waitForTheTextOfTheChild(of:)``), so the history of the child holds the text at a resume.
+  ///
   /// - Returns: The live tree.
   /// - Throws: Whatever the fixture or a wait throws.
   private static func startLiveTree() async throws -> LiveTree {
     let hold = ScriptedHold()
+    let textHold = ScriptedHold()
     let fixture = try await makeTreeFixture(
-      childSteps: [.textDelta(childText), .holdUntilReleased(hold), .endPass])
-    return try await openPrompt(of: fixture, hold: hold)
+      childSteps: [
+        .holdUntilReleased(textHold), .textDelta(childText), .holdUntilReleased(hold), .endPass,
+      ])
+    let tree = try await openPrompt(of: fixture, hold: hold)
+    async let lateText: Void = release(textHold, after: childTextDelay)
+    try await waitForTheTextOfTheChild(of: tree)
+    await lateText
+    return tree
   }
 
-  /// Starts a root with an open prompt and a child that waits on the window hold, then sends two
-  /// live updates, and then waits on the hold of the tree.
+  /// Releases a hold after a delay. A cancelled sleep releases the hold at once.
+  ///
+  /// - Parameters:
+  ///   - hold: The hold.
+  ///   - delay: The time before the release.
+  private static func release(_ hold: ScriptedHold, after delay: Duration) async {
+    try? await Task.sleep(for: delay)
+    hold.release()
+  }
+
+  /// Starts a root with an open prompt and a child that plays its text, waits on the window hold,
+  /// then sends two live updates, and then waits on the hold of the tree. The call returns when
+  /// the first connection holds the text of the child (``waitForTheTextOfTheChild(of:)``).
   ///
   /// - Returns: The tree and its window hold.
   /// - Throws: Whatever the fixture or a wait throws.
@@ -278,11 +305,14 @@ import Testing
       .textDelta(childText), .holdUntilReleased(window), .textDelta(windowFirstText),
       .textDelta(windowSecondText), .holdUntilReleased(hold), .endPass,
     ])
-    return WindowTree(tree: try await openPrompt(of: fixture, hold: hold), window: window)
+    let tree = try await openPrompt(of: fixture, hold: hold)
+    try await waitForTheTextOfTheChild(of: tree)
+    return WindowTree(tree: tree, window: window)
   }
 
-  /// Starts a root with an open prompt and a child that waits on the window hold, then asks one
-  /// question, and then plays its next text.
+  /// Starts a root with an open prompt and a child that plays its text, waits on the window hold,
+  /// then asks one question, and then plays its next text. The call returns when the first
+  /// connection holds the text of the child (``waitForTheTextOfTheChild(of:)``).
   ///
   /// - Parameter kind: The kind of the question.
   /// - Returns: The tree and its window hold.
@@ -294,7 +324,9 @@ import Testing
       .textDelta(childText), .holdUntilReleased(window), kind.step, .textDelta(childTextAfter),
       .endPass,
     ])
-    return WindowTree(tree: try await openPrompt(of: fixture, hold: ScriptedHold()), window: window)
+    let tree = try await openPrompt(of: fixture, hold: ScriptedHold())
+    try await waitForTheTextOfTheChild(of: tree)
+    return WindowTree(tree: tree, window: window)
   }
 
   /// Starts a root with an open prompt and a child that asks one question.
@@ -344,11 +376,7 @@ import Testing
       script: script, label: label, workingDirectory: cwd, projectConfigYAML: gatedConfigYAML,
       secretStore: gate)
     let tree = try await openPrompt(of: fixture, hold: hold)
-    let child = tree.childId
-    _ = try await fixture.collector.wait(for: "the text of the child") { updates in
-      ScriptedPromptFixture.agentText(in: updates.filter { $0.sessionId == child })
-        .contains(childText)
-    }
+    try await waitForTheTextOfTheChild(of: tree)
     return GatedTree(tree: tree, window: window, gate: gate)
   }
 
@@ -368,11 +396,7 @@ import Testing
       childSteps: [.textDelta(childText), .holdUntilReleased(hold), .endPass],
       wire: wire.replacingAgentEnd(with: holder))
     let tree = try await openPrompt(of: fixture, hold: hold)
-    let child = tree.childId
-    _ = try await fixture.collector.wait(for: "the text of the child") { updates in
-      ScriptedPromptFixture.agentText(in: updates.filter { $0.sessionId == child })
-        .contains(childText)
-    }
+    try await waitForTheTextOfTheChild(of: tree)
     return HeldReplayTree(tree: tree, holder: holder)
   }
 
@@ -396,6 +420,23 @@ import Testing
     }
     let child = try #require(updates.first { $0.sessionId != root }?.sessionId)
     return LiveTree(fixture: fixture, prompt: prompt, hold: hold, childId: child)
+  }
+
+  /// Waits until the first connection holds ``childText`` on the stream of the child of a tree.
+  ///
+  /// The first update of the child can come before the child plays its text. A resume at that
+  /// time finds no text in the history of the child, so its replay holds no history of the
+  /// child. When the first connection holds the text, the agent recorded it, and no update of
+  /// the tree is on its way.
+  ///
+  /// - Parameter tree: The live tree.
+  /// - Throws: Whatever the wait throws.
+  private static func waitForTheTextOfTheChild(of tree: LiveTree) async throws {
+    let child = tree.childId
+    _ = try await tree.fixture.collector.wait(for: "the text of the child") { updates in
+      ScriptedPromptFixture.agentText(in: updates.filter { $0.sessionId == child })
+        .contains(childText)
+    }
   }
 
   /// Opens a second connection to the agent of the tree, and completes its `initialize`.
