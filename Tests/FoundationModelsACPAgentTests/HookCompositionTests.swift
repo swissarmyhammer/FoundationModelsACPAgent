@@ -615,6 +615,109 @@ import Testing
       loader: makeHookLayeredModelLoader(script: script), label: label, workingDirectory: cwd)
   }
 
+  // MARK: - The snapshots of the stub-script model
+
+  /// The name of the script file of the stub-script model.
+  private static let stubScriptFileName = "stub-script.json"
+
+  /// The text of the second pass of a stub-script session: the answer of
+  /// the model after the tool call.
+  private static let stubFinalText = "the tool call is done"
+
+  /// The snippet that reads the note through the files capability. It
+  /// changes no file.
+  private static var readCode: String {
+    """
+    const read = await tools.files.read({ path: "\(noteFileName)" });
+    return read.correction ? read.correction : "read";
+    """
+  }
+
+  /// With the stub-script model of the composition
+  /// (`ACP_AGENT_STUB_SCRIPT`), a `runCode` call that writes a file in a
+  /// git work tree makes one checkpoint of that file.
+  @Test
+  func aStubScriptToolCallThatWritesAFileMakesOneCheckpointOfThatFile() async throws {
+    let fixture = try await Self.makeStubScriptFixture(
+      code: Self.writeCode, label: "HookCompositionTests-stub-write")
+
+    try await ScriptedPromptFixture.runPrompt(on: fixture, text: Self.writePromptText)
+    let checkpoints = try await Self.ownCheckpoints(of: fixture)
+
+    #expect(checkpoints.map(\.files) == [[Self.noteFileName]])
+    await fixture.close()
+  }
+
+  /// With the stub-script model of the composition, a `runCode` call that
+  /// changes no file makes no checkpoint.
+  @Test
+  func aStubScriptToolCallThatChangesNoFileMakesNoCheckpoint() async throws {
+    let fixture = try await Self.makeStubScriptFixture(
+      code: Self.readCode, label: "HookCompositionTests-stub-read")
+
+    try await ScriptedPromptFixture.runPrompt(on: fixture, text: Self.writePromptText)
+    let checkpoints = try await Self.ownCheckpoints(of: fixture)
+
+    #expect(checkpoints.isEmpty)
+    await fixture.close()
+  }
+
+  /// The checkpoints that the session of `fixture` owns on the timeline of
+  /// its working directory.
+  ///
+  /// - Parameter fixture: The wired fixture.
+  /// - Returns: The checkpoints, oldest first.
+  /// - Throws: The error of the store.
+  private static func ownCheckpoints(of fixture: ScriptedPromptFixture) async throws
+    -> [Checkpoint]
+  {
+    try await fixture.harness.agent.hooks.snapshotStore.checkpoints(
+      sessionKey: AgentHome.projectKey(of: fixture.cwd), owner: fixture.sessionId.rawValue)
+  }
+
+  /// Makes a fixture of a stub-script proof: a git work tree from
+  /// ``makeSnapshotWorkTree(label:)``, and a session in it over the loader
+  /// that the composition makes for a stub script file. The script has one
+  /// session, which the prompt ``writePromptText`` chooses: its first pass
+  /// calls `runCode` with `code`, and its second pass answers
+  /// ``stubFinalText``.
+  ///
+  /// - Parameters:
+  ///   - code: The snippet of the `runCode` call.
+  ///   - label: The directory label of the calling test.
+  /// - Returns: The fixture, with its session open.
+  /// - Throws: Whatever the work tree, the script file or the fixture
+  ///   throws.
+  private static func makeStubScriptFixture(code: String, label: String) async throws
+    -> ScriptedPromptFixture
+  {
+    let cwd = try makeSnapshotWorkTree(label: "\(label)-repo")
+    let scriptFile = makeResolvedDirectory(label: "\(label)-script")
+      .appendingPathComponent(stubScriptFileName, isDirectory: false)
+    try makeStubScriptData(code: code).write(to: scriptFile)
+    return try await ScriptedPromptFixture.make(
+      loader: try ComposedAgent.makeStubLoader(gatedBy: nil, scriptedBy: scriptFile.path),
+      label: label, workingDirectory: cwd)
+  }
+
+  /// The JSON of the stub script of ``makeStubScriptFixture(code:label:)``.
+  ///
+  /// - Parameter code: The snippet of the `runCode` call.
+  /// - Returns: The JSON data.
+  /// - Throws: The JSON-encoding error.
+  private static func makeStubScriptData(code: String) throws -> Data {
+    let toolCall: [String: Any] = [
+      "toolCall": [
+        "name": ScriptedPromptFixture.runCodeToolName, "arguments": ["code": code],
+      ]
+    ]
+    let session: [String: Any] = [
+      "match": ["promptContains": writePromptText],
+      "passes": [[toolCall], [["text": stubFinalText]]],
+    ]
+    return try JSONSerialization.data(withJSONObject: ["sessions": [session]])
+  }
+
   // MARK: - The removal of a timeline
 
   /// The owner ID of the second owner that opens the session key beside

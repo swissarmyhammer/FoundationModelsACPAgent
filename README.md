@@ -519,6 +519,11 @@ each session says and calls:
   `session/cancel` of the child ends the request while it waits. The step plays as a `runCode`
   call, so the session needs the `runCode` tool and the client must answer form questions. This
   step is for tests only: no tool of the agent sends a permission request.
+- Each tool call of a pass (a `toolCall` step, and the `runCode` call of an `elicit` or a
+  `permission` step) goes through the tool layers of the live model: the no-op check, the
+  repetition check and the tool hooks. Thus the hooks get `PreToolUse`, `PreToolResult` and
+  `PostToolUse` for the call, and a call that changes a file in a git work tree makes one
+  checkpoint on the snapshot timeline. A call that changes no file makes no checkpoint.
 - A file that is not valid stops the agent with an error that names the place. It never
   becomes a silent echo.
 

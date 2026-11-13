@@ -416,19 +416,29 @@ public struct ComposedAgent: Sendable {
   /// - Parameters:
   ///   - chunkGate: The path of the named pipe, or `nil`.
   ///   - stubScript: The path of the script file, or `nil`.
-  /// - Returns: A loader over ``ScriptedLLMContainer`` when `stubScript` is
-  ///   given. Else the library's own stub loader when `chunkGate` is `nil`,
-  ///   and one over ``GatedEchoLLMContainer`` otherwise. Each container of
-  ///   the loader shares one ``StubChunkGate``.
+  /// - Returns: A loader over ``ScriptedLLMContainer`` in a
+  ///   `HookLayeredLLMContainer` when `stubScript` is given. Else the
+  ///   library's own stub loader when `chunkGate` is `nil`, and one over
+  ///   ``GatedEchoLLMContainer`` otherwise. Each container of the loader
+  ///   shares one ``StubChunkGate``.
+  ///
+  ///   A scripted container calls its tools directly: Router puts the tool
+  ///   layers (the no-op check, the repetition check and the tool hook
+  ///   layer) on the tools of the live backend only. The wrapper gives each
+  ///   tool of a scripted session the same layers, so a scripted tool call
+  ///   sends `PreToolUse`, `PreToolResult` and `PostToolUse`, and
+  ///   `SnapshotHook` takes a checkpoint of the files that the call changed.
   /// - Throws: The ``ScriptedStubScriptError`` of a script file that cannot
   ///   be read or is not valid. The file is read here, once, so a bad file
   ///   stops the composition before the wire opens.
-  private static func makeStubLoader(
+  static func makeStubLoader(
     gatedBy chunkGate: String?, scriptedBy stubScript: String?
   ) throws -> StubModelLoader {
     if let stubScript {
       let script = try ScriptedStubScript.load(fromPath: stubScript)
-      return StubModelLoader { _ in ScriptedLLMContainer(playbook: .sessions(script)) }
+      return StubModelLoader { _ in
+        HookLayeredLLMContainer(wrapping: ScriptedLLMContainer(playbook: .sessions(script)))
+      }
     }
     guard let chunkGate else {
       return StubModelLoader()
