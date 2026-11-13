@@ -162,6 +162,9 @@ struct ScriptedPromptFixture {
   ///   - inlineSettleGrace: How long a tool call waits for its run inline
   ///     before the run goes to the background. A test of a background run
   ///     gives `0`, so each run goes to the background at once.
+  ///   - wire: The transport pair of the connection. The in-process pair
+  ///     by default. A test that must stop a frame of the agent gives a
+  ///     pair whose agent end keeps it back.
   /// - Returns: The fixture.
   /// - Throws: Whatever the construction or the handshake throws.
   static func make(
@@ -181,7 +184,8 @@ struct ScriptedPromptFixture {
     hookVisitors: [any HookVisitor] = [],
     secretStore: any SecretStore = InMemorySecretStore(),
     hostTools: [any FoundationModels.Tool] = [],
-    inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace
+    inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
+    wire: HarnessWire = .makeInMemory()
   ) async throws -> ScriptedPromptFixture {
     try await make(
       loader: makeScriptedModelLoader(script: script, recorder: recorder),
@@ -199,7 +203,8 @@ struct ScriptedPromptFixture {
       hookVisitors: hookVisitors,
       secretStore: secretStore,
       hostTools: hostTools,
-      inlineSettleGrace: inlineSettleGrace)
+      inlineSettleGrace: inlineSettleGrace,
+      wire: wire)
   }
 
   /// Wires an agent over `loader`, completes `initialize`, and opens
@@ -248,6 +253,9 @@ struct ScriptedPromptFixture {
   ///   - inlineSettleGrace: How long a tool call waits for its run inline
   ///     before the run goes to the background. A test of a background run
   ///     gives `0`, so each run goes to the background at once.
+  ///   - wire: The transport pair of the connection. The in-process pair
+  ///     by default. A test that must stop a frame of the agent gives a
+  ///     pair whose agent end keeps it back.
   /// - Returns: The fixture.
   /// - Throws: Whatever the construction or the handshake throws.
   static func make(
@@ -267,7 +275,8 @@ struct ScriptedPromptFixture {
     hookVisitors: [any HookVisitor] = [],
     secretStore: any SecretStore = InMemorySecretStore(),
     hostTools: [any FoundationModels.Tool] = [],
-    inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace
+    inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
+    wire: HarnessWire = .makeInMemory()
   ) async throws -> ScriptedPromptFixture {
     let userDirectory = makeResolvedDirectory(label: "\(label)-user")
     let cwd = workingDirectory ?? makeResolvedDirectory(label: "\(label)-repo")
@@ -295,7 +304,7 @@ struct ScriptedPromptFixture {
       await agent.useMailOnlyAnswerLimit(mailOnlyAnswerLimit)
     }
     let harness = await AgentClientHarness.makeRecording(
-      agent: agent, tapsWire: tapsWire, tapsAgentWire: tapsAgentWire)
+      agent: agent, tapsWire: tapsWire, tapsAgentWire: tapsAgentWire, wire: wire)
     // The model must send `initialize` itself: it keeps the agent
     // capabilities, and `newSession(_:)` sends MCP servers and
     // additional directories only when the agent advertises them.

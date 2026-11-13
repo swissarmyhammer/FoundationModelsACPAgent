@@ -156,6 +156,17 @@ import Testing
     let gate: SecretStoreGate
   }
 
+  /// A live tree whose first connection can keep back the first frame of the replay of a later
+  /// resume on the same connection.
+  private struct HeldReplayTree {
+    /// The live tree. Its hold keeps the child running.
+    let tree: LiveTree
+
+    /// The agent end of the first connection. It starts disarmed, so the frames of the setup go
+    /// through.
+    let holder: FrameHoldingTransport
+  }
+
   /// The kind of a question that a child asks.
   enum QuestionKind: CaseIterable, Sendable {
     /// An `elicitation/create`.
@@ -223,11 +234,13 @@ import Testing
   /// Makes the fixture of a root whose prompt starts the child, with the given steps of the
   /// child.
   ///
-  /// - Parameter childSteps: The steps that the child plays.
+  /// - Parameters:
+  ///   - childSteps: The steps that the child plays.
+  ///   - wire: The transport pair of the first connection.
   /// - Returns: The fixture.
   /// - Throws: Whatever the fixture throws.
   private static func makeTreeFixture(
-    childSteps: [ScriptedPassStep]
+    childSteps: [ScriptedPassStep], wire: HarnessWire = .makeInMemory()
   ) async throws -> ScriptedPromptFixture {
     let cwd = makeResolvedDirectory(label: "\(label)-repo")
     try AgentsToolTests.writeAgent(named: childAgent, in: cwd)
@@ -238,7 +251,8 @@ import Testing
         play: [AgentsToolTests.startAgentCall(agent: childAgent, prompt: childMarker), .endPass]),
       .endPass,
     ]
-    return try await ScriptedPromptFixture.make(script: script, label: label, workingDirectory: cwd)
+    return try await ScriptedPromptFixture.make(
+      script: script, label: label, workingDirectory: cwd, wire: wire)
   }
 
   /// Starts a root with an open prompt and a child that runs and waits on a hold.
@@ -336,6 +350,30 @@ import Testing
         .contains(childText)
     }
     return GatedTree(tree: tree, window: window, gate: gate)
+  }
+
+  /// Starts a root with an open prompt and a child that plays its text and waits on the hold of
+  /// the tree. The agent end of the first connection is a disarmed frame holder that keeps the
+  /// first announcement after ``FrameHoldingTransport/arm()``. The call returns when the first
+  /// connection holds the text of the child, so no update of the tree is on its way then.
+  ///
+  /// - Returns: The tree and the agent end of its first connection.
+  /// - Throws: Whatever the fixture or a wait throws.
+  private static func startHeldReplayTree() async throws -> HeldReplayTree {
+    let hold = ScriptedHold()
+    let wire = HarnessWire.makeInMemory()
+    let holder = FrameHoldingTransport(
+      wrapping: wire.agentEnd, holdingFirstFrameContaining: announcementMarker, armed: false)
+    let fixture = try await makeTreeFixture(
+      childSteps: [.textDelta(childText), .holdUntilReleased(hold), .endPass],
+      wire: wire.replacingAgentEnd(with: holder))
+    let tree = try await openPrompt(of: fixture, hold: hold)
+    let child = tree.childId
+    _ = try await fixture.collector.wait(for: "the text of the child") { updates in
+      ScriptedPromptFixture.agentText(in: updates.filter { $0.sessionId == child })
+        .contains(childText)
+    }
+    return HeldReplayTree(tree: tree, holder: holder)
   }
 
   /// Sends the prompt of the root and waits until the client holds an update of the child.
@@ -567,6 +605,79 @@ import Testing
     return trace
   }
 
+  /// Resumes the root on the connection that owns the tree, with an update of `sessionId` that
+  /// the agent records before the take and sends after the take.
+  ///
+  /// A closed gate of the test keeps the send of the update from its record until the first
+  /// frame of the replay waits in the agent end of the connection. The take comes before the
+  /// replay, so the send runs after the take. Then the gate opens, and the call of the gate waits
+  /// until the send is done. Then the replay goes on. No clock decides the order. The read of the
+  /// wire ends at the `state_update` of the child after the response.
+  ///
+  /// - Parameters:
+  ///   - heldTree: The tree and the agent end of its first connection.
+  ///   - sessionId: The session of the update: the root or the child.
+  /// - Returns: The trace, in wire order.
+  /// - Throws: Whatever the request or a wait throws.
+  private static func resumeOnTheSameConnectionAfterARecord(
+    of heldTree: HeldReplayTree, on sessionId: SessionId
+  ) async throws -> [WireTraceEvent] {
+    let tree = heldTree.tree
+    let holder = heldTree.holder
+    let connection = tree.fixture.harness.connection
+    let gate = SessionAnnouncementGate(isOpen: false)
+    let sink = tree.fixture.harness.agent.historySink(for: sessionId, gate: gate)
+    let chunk = ContentChunk(
+      content: .text(TextContent(text: recordedBeforeTheTakeText)),
+      messageId: ACPEventTranslator.makeMessageId())
+    let recorded = Task { await sink(.agentMessageChunk(chunk)) }
+    defer { recorded.cancel() }
+    try await pollUntil(limit: recordPollLimit, interval: recordPollInterval) {
+      gate.pendingCount == sendsBeforeTheTake
+    }
+    holder.arm()
+    let child = tree.childId
+    // The validator does not read the id of the request.
+    let request = WireTraceEvent.resumeRequest(id: .number(1), sessionId: tree.rootId)
+    return try await connection.subscribeToAllSessions().readResumeTrace(
+      startingWith: [request],
+      settledBy: { event in
+        if case .update(let stream, let update) = event {
+          return stream == child && update.isStateUpdate
+        }
+        return false
+      },
+      timeout: .seconds(syncWaitSeconds)
+    ) {
+      defer { holder.release() }
+      let resume = Task { try await connection.resumeSession(tree.replayRequest) }
+      defer { resume.cancel() }
+      await holder.waitUntilHolding()
+      await gate.open()
+      await recorded.value
+      holder.release()
+      _ = try await resume.value
+    }
+  }
+
+  /// Whether a frame of the stream of a session comes in a trace before an index.
+  ///
+  /// - Parameters:
+  ///   - sessionId: The session.
+  ///   - end: The index. Only the events before it count.
+  ///   - trace: The trace.
+  /// - Returns: `true` when an update on the stream of the session comes before `end`.
+  private static func hasFrame(
+    of sessionId: SessionId, before end: Int, in trace: [WireTraceEvent]
+  ) -> Bool {
+    trace.prefix(end).contains { event in
+      if case .update(let stream, _) = event {
+        return stream == sessionId
+      }
+      return false
+    }
+  }
+
   /// Waits until a session nested in `child` is in the table, and its retained history holds a
   /// text.
   ///
@@ -626,6 +737,26 @@ import Testing
     of text: String, on session: SessionId, in trace: [WireTraceEvent]
   ) -> [Int] {
     trace.indices.filter { trace[$0].isAgentText(containing: text, on: session) }
+  }
+
+  /// The positions in a trace of the updates on the stream of a session that carry a text: a
+  /// live text chunk, or a whole agent message of the replay.
+  ///
+  /// - Parameters:
+  ///   - text: The text.
+  ///   - session: The session.
+  ///   - trace: The trace.
+  /// - Returns: The positions, in wire order.
+  private static func deliveries(
+    of text: String, on session: SessionId, in trace: [WireTraceEvent]
+  ) -> [Int] {
+    trace.indices.filter { index in
+      guard case .update(let stream, let update) = trace[index], stream == session else {
+        return false
+      }
+      let replayed = ReplayedMessage.replayed(in: [update]).map(\.text).joined()
+      return (update.agentMessageText + replayed).contains(text)
+    }
   }
 
   /// Releases the child, and waits until the open prompt of the root ends.
@@ -797,6 +928,74 @@ import Testing
 
     #expect(SubagentWireTraceValidator().validate(trace) == [])
     await gatedTree.tree.fixture.close()
+  }
+
+  /// An update of the child that the agent records before the take of a resume on the
+  /// connection that owns the tree, and sends after the take, does not reach the wire before the
+  /// replay announces the child.
+  @Test func anUpdateOfTheChildRecordedBeforeTheTakeDoesNotComeBeforeItsAnnouncement()
+    async throws
+  {
+    let heldTree = try await Self.startHeldReplayTree()
+    defer { heldTree.tree.prompt.cancel() }
+    let child = heldTree.tree.childId
+
+    let trace = try await Self.resumeOnTheSameConnectionAfterARecord(of: heldTree, on: child)
+
+    let announcedAt = try #require(trace.firstIndex { $0.isAnnouncement(of: child) })
+    #expect(!Self.hasFrame(of: child, before: announcedAt, in: trace))
+    _ = try await Self.finish(heldTree.tree, observedBy: heldTree.tree.fixture.collector)
+    await heldTree.tree.fixture.close()
+  }
+
+  /// An update of the child that the agent records before the take of a resume on the
+  /// connection that owns the tree reaches the wire one time, in the replay.
+  @Test func anUpdateOfTheChildRecordedBeforeTheTakeComesOnceInTheReplay() async throws {
+    let heldTree = try await Self.startHeldReplayTree()
+    defer { heldTree.tree.prompt.cancel() }
+    let child = heldTree.tree.childId
+
+    let trace = try await Self.resumeOnTheSameConnectionAfterARecord(of: heldTree, on: child)
+
+    let announcedAt = try #require(trace.firstIndex { $0.isAnnouncement(of: child) })
+    let recorded = Self.deliveries(of: Self.recordedBeforeTheTakeText, on: child, in: trace)
+    #expect(recorded.count == Self.deliveriesOfOneUpdate && recorded.allSatisfy { $0 > announcedAt })
+    _ = try await Self.finish(heldTree.tree, observedBy: heldTree.tree.fixture.collector)
+    await heldTree.tree.fixture.close()
+  }
+
+  /// An update of the root that the agent records before the take of a resume on the
+  /// connection that owns the tree, and sends after the take, does not reach the wire before the
+  /// first frame of the replay. A client cannot tell such an update from the start of the replay.
+  @Test func anUpdateOfTheRootRecordedBeforeTheTakeDoesNotComeBeforeTheReplay() async throws {
+    let heldTree = try await Self.startHeldReplayTree()
+    defer { heldTree.tree.prompt.cancel() }
+    let root = heldTree.tree.rootId
+    let child = heldTree.tree.childId
+
+    let trace = try await Self.resumeOnTheSameConnectionAfterARecord(of: heldTree, on: root)
+
+    let replayStart = try #require(trace.firstIndex { $0.isAnnouncement(of: child) })
+    #expect(!Self.hasFrame(of: root, before: replayStart, in: trace))
+    _ = try await Self.finish(heldTree.tree, observedBy: heldTree.tree.fixture.collector)
+    await heldTree.tree.fixture.close()
+  }
+
+  /// An update of the root that the agent records before the take of a resume on the
+  /// connection that owns the tree reaches the wire one time, in the replay.
+  @Test func anUpdateOfTheRootRecordedBeforeTheTakeComesOnceInTheReplay() async throws {
+    let heldTree = try await Self.startHeldReplayTree()
+    defer { heldTree.tree.prompt.cancel() }
+    let root = heldTree.tree.rootId
+    let child = heldTree.tree.childId
+
+    let trace = try await Self.resumeOnTheSameConnectionAfterARecord(of: heldTree, on: root)
+
+    let replayStart = try #require(trace.firstIndex { $0.isAnnouncement(of: child) })
+    let recorded = Self.deliveries(of: Self.recordedBeforeTheTakeText, on: root, in: trace)
+    #expect(recorded.count == Self.deliveriesOfOneUpdate && recorded.allSatisfy { $0 > replayStart })
+    _ = try await Self.finish(heldTree.tree, observedBy: heldTree.tree.fixture.collector)
+    await heldTree.tree.fixture.close()
   }
 
   // MARK: - A question in the window between the take and the replay

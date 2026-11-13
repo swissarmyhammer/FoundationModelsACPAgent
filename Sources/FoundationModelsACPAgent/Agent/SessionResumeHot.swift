@@ -27,11 +27,14 @@ extension RoutedACPAgent {
   ///
   /// No suspension comes between the start of the request and the take of the session. The
   /// checks are synchronous, and they read no configuration: the cwd check reads the recording
-  /// root of the live session, the parent of its transcript directory. A suspension before the
-  /// take lets the tree record a live update with the route of the owner before the take, and
-  /// no hold. When the connection of the request owns the tree already, that update goes out
-  /// on it after the request, before the replay announces its session and before the response.
-  /// A frame that the agent wrote before it read the request is not in its control.
+  /// root of the live session, the parent of its transcript directory. An update that the tree
+  /// records before the take has the route of the owner then, and no hold. Its send can run after
+  /// the take. When the connection of the request owns the tree already, the send reads the route
+  /// again, finds the hold of the take with the same owner, and drops the update
+  /// (``historySink(for:gate:)``). The replay or the current state of the resume gives the update
+  /// to that connection, so no live update of the root or of a child goes out on it between the
+  /// request and the replay. A frame that the agent wrote before it read the request is not in
+  /// its control.
   ///
   /// The live session keeps its additional roots. The roots of the request are only validated,
   /// as for a resume of a recorded session.
@@ -73,8 +76,9 @@ extension RoutedACPAgent {
   /// announcement of its session, or before the response. The copy of the tree for the replay is
   /// made in the same step of the actor as the take. So an update recorded before the take is in
   /// the replay and goes to the old connection, and an update recorded after the take goes live
-  /// to the new connection after the response (``recordAndRoute(_:of:)``). Each live update
-  /// reaches the new connection one time. A new question of the tree that starts from the take
+  /// to the new connection after the response (``recordAndRoute(_:of:)``). When the old
+  /// connection is the new connection, the send of an update recorded before the take drops it,
+  /// because the replay holds it. Each live update reaches the new connection one time. A new question of the tree that starts from the take
   /// on waits in the same hold, so its request also comes after the response, in order with the
   /// kept updates (``ElicitationRelay``).
   ///

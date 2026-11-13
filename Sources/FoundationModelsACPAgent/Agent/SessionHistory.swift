@@ -290,10 +290,11 @@ extension RoutedACPAgent {
   ///
   /// A hot resume takes the session and copies the history for its replay
   /// in one step of the actor too. So an update that this step records
-  /// before the take is in the replay, and it goes to the old owner. An
-  /// update that it records after the take is not in the replay, and it
-  /// goes to the new owner, through the hold of the resume. No update goes
-  /// to the new owner both in the replay and live.
+  /// before the take is in the replay, and it goes to the old owner. When
+  /// the old owner is the new owner, the send drops it
+  /// (``deliver(_:in:along:)``). An update that it records after the take is
+  /// not in the replay, and it goes to the new owner, through the hold of
+  /// the resume. No update goes to the new owner both in the replay and live.
   ///
   /// - Parameters:
   ///   - update: The update that the agent sends.
@@ -406,6 +407,13 @@ extension RoutedACPAgent {
   /// Sends one update to the owner of its route. A route with the hold of a hot resume gives the
   /// send to the hold, which keeps it until the resume is done.
   ///
+  /// A route with no hold can be older than a take. The sink reads the route of a recorded update
+  /// when it records the update, and the send can run after a later take. So the send reads the
+  /// route again (``isTakenAgain(_:of:)``). When the same connection took the tree since, it drops
+  /// the update. The client of that connection reads the update in the replay, or in the current
+  /// state that the resume sends, so the update is not lost. A live send of it would come after
+  /// the resume request and before the replay announces its session.
+  ///
   /// - Parameters:
   ///   - update: The update.
   ///   - sessionId: The session the update belongs to.
@@ -422,10 +430,28 @@ extension RoutedACPAgent {
       await connections.path(of: route.owner)?.connection.post(update, in: sessionId)
     }
     guard let hold = route.hold else {
-      await send()
+      if !isTakenAgain(route, of: sessionId) {
+        await send()
+      }
       return
     }
     await hold.submit(send)
+  }
+
+  /// Whether the owner of a route with no hold took the session again with a hot resume since the
+  /// route was read: the session now has a hold, and its owner is the same connection.
+  ///
+  /// - Parameters:
+  ///   - route: The route that the sink read, with no hold.
+  ///   - sessionId: The session the update belongs to.
+  /// - Returns: `true` when the same connection took the session again.
+  private nonisolated func isTakenAgain(_ route: SessionUpdateRoute, of sessionId: SessionId)
+    -> Bool
+  {
+    guard let current = connections.route(forSession: sessionId), current.hold != nil else {
+      return false
+    }
+    return current.owner == route.owner
   }
 
   /// Inserts the prompt of `params` as the user message of its session
