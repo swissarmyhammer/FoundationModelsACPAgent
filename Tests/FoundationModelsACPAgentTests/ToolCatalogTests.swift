@@ -245,19 +245,163 @@ import Testing
   /// no known time, between the batches of `searchTools`.
   @Test func theSessionSurfaceHandsTheProfileEmbedderToSearchTools() async throws {
     let embedder = RecordingEmbeddingContainer(wrapping: StubEmbeddingContainer())
-    var loader = makeScriptedModelLoader(script: [.textDelta(Self.flashSelectionJSON), .endPass])
-    loader.makeEmbeddingContainer = { _ in embedder }
-    let context = try await Self.makeContext(loader: loader) { configuration in
-      configuration.tools.codeContext = .disabled
-    }
-    let catalogTexts = try await ToolCatalog.makeRegistry(context: context).registry.surface.entries
-      .map { entry in entry.renderEmbeddedText(from: entry.block) }
+    let context = try await Self.makeEmbeddingContext(embedder: embedder)
+    let catalogTexts = try await Self.catalogTexts(of: context)
 
     let surface = try await ToolCatalog.sessionSurface(context: context)
-    let searchTools = try #require(surface.tools.compactMap { $0 as? SearchToolsTool }.first)
-    _ = try await searchTools.call(arguments: SearchToolsArguments(task: Self.embedderTask))
+    try await Self.searchOnce(on: surface)
 
     #expect(embedder.batches == [catalogTexts])
+  }
+
+  /// Two open sessions of one profile share one catalog embed. Each session
+  /// makes a new `ProfileEmbedding` over the one `RoutedModel` of the
+  /// profile. The Multitool search index cache shares a catalog embed only
+  /// between embedders with one owner, thus the cache makes one shared
+  /// embed for the two mounts.
+  ///
+  /// The cache is the own cache of the test, thus no other test changes
+  /// what it holds. The first session stays open while the second mounts:
+  /// the cache shares an embed only while a session uses it.
+  @Test func twoOpenSessionsOfOneProfileShareOneCatalogEmbed() async throws {
+    let fixture = try await SharedEmbedFixture.make(context: Self.makeContext())
+    let first = try fixture.mountSession()
+    let second = try fixture.mountSession()
+
+    #expect(fixture.cache.sharedEmbeddings == 1)
+    withExtendedLifetime((first, second)) {}
+    await fixture.shutdown()
+  }
+
+  /// The cache keeps no catalog embed after the sessions of a profile end.
+  /// The cache holds each shared embed, and the owner of its embedder, with
+  /// a weak reference only. Thus the end of the last session releases the
+  /// embed and the model under it. The test reads the live embeds while the
+  /// two sessions are open and after they end: one embed, then none.
+  @Test func theCacheKeepsNoCatalogEmbedAfterTheSessionsEnd() async throws {
+    let fixture = try await SharedEmbedFixture.make(context: Self.makeContext())
+    var sessions = [try fixture.mountSession(), try fixture.mountSession()]
+    let liveWhileOpen = fixture.cache.liveSharedEmbeddings
+
+    sessions.removeAll()
+    let liveAfterEnd = fixture.cache.liveSharedEmbeddings
+    let liveEmbeds: [Int] = [liveWhileOpen, liveAfterEnd]
+
+    #expect(liveEmbeds == [1, 0])
+    await fixture.shutdown()
+  }
+
+  /// One built registry of a profile, and an own search index cache, that
+  /// mount the session tools as ``ToolCatalog/sessionSurface(context:skills:agentRegistry:)``
+  /// does. Each mount is one session: it makes a new `ProfileEmbedding`
+  /// over the one `RoutedModel` of the profile.
+  private struct SharedEmbedFixture {
+    /// The number of catalog indexes that the cache of the fixture keeps.
+    /// The fixture has one catalog.
+    private static let indexCacheCapacity = 1
+
+    /// The built registry of the profile.
+    let built: ToolCatalog.BuiltRegistry
+
+    /// The selection tier of `searchTools`, as the session surface makes it.
+    let selection: SearchToolsTool.SelectionFactory
+
+    /// The one embedding handle of the profile.
+    let embedder: RoutedEmbedder
+
+    /// The own cache of the test, which counts the shared catalog embeds.
+    let cache = SearchIndexCache(capacity: indexCacheCapacity)
+
+    /// Builds the registry of `context`.
+    ///
+    /// - Parameter context: The context of the profile.
+    /// - Returns: The fixture.
+    /// - Throws: Whatever the registry build throws.
+    static func make(context: CatalogContext) async throws -> SharedEmbedFixture {
+      SharedEmbedFixture(
+        built: try await ToolCatalog.makeRegistry(context: context),
+        selection: ToolCatalog.makeSearchSelection(profile: context.profile),
+        embedder: context.profile.embedding)
+    }
+
+    /// Mounts the session tools of one session over the cache of the
+    /// fixture. The session stays open while the caller keeps the result.
+    ///
+    /// - Returns: The mounted tools and their staging.
+    /// - Throws: Whatever the mount throws.
+    func mountSession() throws -> (tools: [any Tool], staging: any RegistryStaging) {
+      try built.registry.makeSessionToolsAndStaging(
+        selection: selection, embedder: ProfileEmbedding(embedder: embedder), sampleModel: nil,
+        indexCache: cache)
+    }
+
+    /// Releases the shell store lease of the built registry, and stops its
+    /// MCP servers, as the shutdown of a session surface does.
+    func shutdown() async {
+      await built.shellStoreLease?.release()
+      await built.pool.shutdownAll()
+    }
+  }
+
+  /// Two sessions of two profiles embed the catalog two times. The two
+  /// profiles resolve one recording container, but each profile has its
+  /// own embedding handle. Thus the identity of the embedder is the handle
+  /// of the profile, and not the container under it: a vector of one
+  /// profile does not go to a session of the other profile.
+  @Test func twoSessionsOfTwoProfilesEmbedTheCatalogTwoTimes() async throws {
+    let embedder = RecordingEmbeddingContainer(wrapping: StubEmbeddingContainer())
+    let firstContext = try await Self.makeEmbeddingContext(embedder: embedder)
+    let secondContext = try await Self.makeEmbeddingContext(embedder: embedder)
+    let catalogTexts = try await Self.catalogTexts(of: firstContext)
+
+    let first = try await ToolCatalog.sessionSurface(context: firstContext)
+    let second = try await ToolCatalog.sessionSurface(context: secondContext)
+    try await Self.searchOnce(on: first)
+    try await Self.searchOnce(on: second)
+
+    #expect(embedder.batches == [catalogTexts, catalogTexts])
+    await first.shutdown()
+    await second.shutdown()
+  }
+
+  /// A context whose profile resolves `embedder` for its embedding slot,
+  /// and whose flash slot answers each `searchTools` selection with
+  /// ``flashSelectionJSON``. The `codeContext:` section is off, thus no
+  /// code context embeds through the same container.
+  ///
+  /// - Parameter embedder: The container the embedding slot of the
+  ///   profile resolves.
+  /// - Returns: The context under test.
+  /// - Throws: Whatever ``makeContext(additionalRoots:loader:environment:keepsCodeContext:hasSettingsStore:configure:)``
+  ///   throws.
+  private static func makeEmbeddingContext(
+    embedder: RecordingEmbeddingContainer
+  ) async throws -> CatalogContext {
+    var loader = makeScriptedModelLoader(script: [.textDelta(flashSelectionJSON), .endPass])
+    loader.makeEmbeddingContainer = { _ in embedder }
+    return try await makeContext(loader: loader)
+  }
+
+  /// The embedded text of each catalog entry of `context`, in catalog
+  /// order: the one batch that a catalog embed sends to the embedder.
+  ///
+  /// - Parameter context: The context whose catalog to read.
+  /// - Returns: The texts of the catalog batch.
+  /// - Throws: Whatever the registry build throws.
+  private static func catalogTexts(of context: CatalogContext) async throws -> [String] {
+    try await ToolCatalog.makeRegistry(context: context).registry.surface.entries
+      .map { entry in entry.renderEmbeddedText(from: entry.block) }
+  }
+
+  /// Calls the `searchTools` tool of `surface` one time with
+  /// ``embedderTask``. The first search of a catalog embeds the catalog.
+  ///
+  /// - Parameter surface: The session surface to search on.
+  /// - Throws: Whatever the search throws, or a missing `searchTools`
+  ///   tool.
+  private static func searchOnce(on surface: SessionSurface) async throws {
+    let searchTools = try #require(surface.tools.compactMap { $0 as? SearchToolsTool }.first)
+    _ = try await searchTools.call(arguments: SearchToolsArguments(task: embedderTask))
   }
 
   // MARK: The built surface

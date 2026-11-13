@@ -53,6 +53,25 @@ comments:
   id: 01m79ndtjspkg71s64htvvasfp
   text: 'Multitool ^hzv7da2 (correct id; 01M79MTJHVJJDZBEZ6ZHZV7DA2) is on main: e2455429 (commits 6c0e3de5, 66ef5975; 2905 tests pass; review clean). The shape is as in the comment above, with one change: only an IdentifiedEmbedding embedder shares its embed between sessions; a class embedder that does not conform shares only inside one bundle. This card is no longer blocked. Bump only the Multitool pin to e2455429 or later.'
   timestamp: 2026-11-13T05:17:31.097929+00:00
+- actor: claude-code
+  id: 01m79ps2bbmmqh5e7631ss5enm
+  text: |-
+    Run 2 (after ^hzv7da2):
+    - `git stash pop` of stash@{0} applied cleanly (ProfileEmbedding.swift, ToolCatalogTests.swift).
+    - `swift package update FoundationModelsMultitool` (root and IntegrationTests): Multitool 9d46b0fa -> e2455429. No other package moved (diff of both Package.resolved files shows one line each).
+    - Multitool e2455429: the shared embed is made when the bundle mounts (`RegistryBundle.SearchSource.init`), not at the first search. Thus `cache.sharedEmbeddings` counts the mounts that did not share, and a test needs no search call.
+    - The stashed `embeddingIdentity` does not compile against e2455429. For RED, ProfileEmbedding.swift went back to HEAD; the conformance was then written again with `embeddingOwner`.
+    - New seam tests (own `SearchIndexCache(capacity: 1)`, one `ToolCatalog.makeRegistry`, two `makeSessionToolsAndStaging(selection:embedder:sampleModel:indexCache:)` mounts over one RoutedModel): RED before the conformance gave `sharedEmbeddings -> 2` and live embeds `[0, 0]`; GREEN after it gives 1 and `[1, 0]`.
+    - The first session must stay alive while the second mounts (`withExtendedLifetime`): Swift can release an unused local before the next statement, and then the cache has no live embed to share.
+  timestamp: 2026-11-13T05:41:08.075561+00:00
+- actor: claude-code
+  id: 01m79pwtd5zj7y5s3hkmn1d76s
+  text: |-
+    ### implement — changed
+    - evidence: pin FoundationModelsMultitool 9d46b0fa -> e2455429 (root and IntegrationTests Package.resolved; gitignored; no other package moved). Files: Sources/FoundationModelsACPAgent/Tools/ProfileEmbedding.swift (conforms to IdentifiedEmbedding, `var embeddingOwner: any AnyObject & Sendable { embedder }`, no `embeddingIdentity`; the doc comment says the cache holds the owner weakly, so a released profile frees its models, and one RoutedModel cannot change its model), Tests/FoundationModelsACPAgentTests/ToolCatalogTests.swift (the process-wide-cache test is replaced by `twoOpenSessionsOfOneProfileShareOneCatalogEmbed` and `theCacheKeepsNoCatalogEmbedAfterTheSessionsEnd` over the private `SharedEmbedFixture` with an own `SearchIndexCache(capacity: 1)`; `twoSessionsOfTwoProfilesEmbedTheCatalogTwoTimes` is kept; shared helpers `makeEmbeddingContext`, `catalogTexts`, `searchOnce` from the stash). RED: `sharedEmbeddings -> 2`, live embeds `[0, 0]`. GREEN: 2/2 pass. Full `timeout 900 swift test`: 2054 tests in 223 suites pass, 0 failures, 1 known issue (the deliberate one in HarnessSmokeTests); HotResumeTests suite passes. `swift build --build-tests --package-path IntegrationTests`: build complete. Zero compiler warnings; the only "warning:" line is the SwiftPM "missing creator for mutated node" line for the mlx-swift_Cmlx bundle (there before, task ^tvjz12j).
+    - notes: the earlier blocker (retention of the residency, flaky HotResumeTests, eviction from the process-wide cache) is gone: Multitool e2455429 holds the owner weakly, and the new tests use an own cache.
+    - next: /review. Task stays in doing.
+  timestamp: 2026-11-13T05:43:11.013524+00:00
 position_column: doing
 position_ordinal: '80'
 title: ProfileEmbedding conforms to IdentifiedEmbedding, so sessions of one profile share one catalog embed
@@ -64,12 +83,12 @@ Request of foundationmodelsmultitool-2a and testudoapp-75 (2026-11-12; TestudoAp
 2. `Sources/FoundationModelsACPAgent/Tools/ProfileEmbedding.swift`: conform to `IdentifiedEmbedding` with `var embeddingIdentity: ObjectIdentifier { ObjectIdentifier(embedder) }`. `RoutedEmbedder` is `RoutedModel`, a final class with `let chosen` and `let container`, so one `RoutedModel` always gives the same vectors; a profile change makes a new `RoutedModel`. The cache keeps the `ProfileEmbedding` and thus the `RoutedModel` alive, so the identifier is not reused. Write this in the doc comment.
 
 ## Acceptance Criteria
-- [ ] Two sessions of the same profile embed the catalog one time (the embedder gets the catalog batch one time).
-- [ ] Two sessions of two profiles (two embedders) embed it two times.
+- [x] Two sessions of the same profile embed the catalog one time (the embedder gets the catalog batch one time).
+- [x] Two sessions of two profiles (two embedders) embed it two times.
 
 ## Tests
-- [ ] A test that composes two sessions with the same profile (a counting stub embedder) and checks one catalog embed; and one with two profiles that checks two. Write it first and see it fail.
-- [ ] `swift test` passes with no warnings.
+- [x] A test that composes two sessions with the same profile (a counting stub embedder) and checks one catalog embed; and one with two profiles that checks two. Write it first and see it fail.
+- [x] `swift test` passes with no warnings.
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass. #step1
