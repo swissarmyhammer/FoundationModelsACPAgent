@@ -61,8 +61,16 @@ struct PausedChildTree {
       replayFrom: .start(ReplayFromStart()))
   }
 
-  /// Starts the tree, waits until the client holds an update of the child, and records the
-  /// pause of the child.
+  /// Starts the tree, waits until the client holds the text of the child, and records the pause
+  /// of the child.
+  ///
+  /// The wait is for the text, not for the first update of the child. The `running` state of
+  /// the child can come before the projector of the child reads the `mailDelivered` event of its
+  /// first mail, and that event lifts the pause in force
+  /// (``RoutedACPAgent/liftMailDeliveryPause(of:)``). The projector reads the events of the child
+  /// in order, and the model of the child plays its text only after it took the mail. So when the
+  /// client holds the text, the lift of the first mail is done, and the recorded pause stays in
+  /// force.
   ///
   /// - Parameter label: The directory label of the test.
   /// - Returns: The tree.
@@ -86,10 +94,10 @@ struct PausedChildTree {
       try await fixture.harness.connection.prompt(
         AgentClientHarness.makePromptRequest(sessionId: root, text: rootMarker))
     }
-    let updates = try await fixture.collector.wait(for: "an update of the child") { updates in
-      updates.contains { $0.sessionId != root }
+    let updates = try await fixture.collector.wait(for: "the text of the child") { updates in
+      updates.contains { $0.isChildText(under: root) }
     }
-    let child = try #require(updates.first { $0.sessionId != root }?.sessionId)
+    let child = try #require(updates.first { $0.isChildText(under: root) }?.sessionId)
     await fixture.harness.agent.recordInHistory(pause, of: child)
     return PausedChildTree(fixture: fixture, prompt: prompt, hold: hold, childId: child)
   }
@@ -153,6 +161,17 @@ struct PausedChildTree {
       updates.contains { $0.sessionId == child && $0.update.isStateUpdate }
     }
     return (second, updates.filter { $0.sessionId == child }.map(\.update))
+  }
+}
+
+extension UpdateSessionNotification {
+  /// Whether this update is a text chunk of the child of a ``PausedChildTree``: an agent message
+  /// of a session other than the root that holds ``PausedChildTree/childText``.
+  ///
+  /// - Parameter root: The id of the root session.
+  /// - Returns: `true` for the text of the child.
+  fileprivate func isChildText(under root: SessionId) -> Bool {
+    sessionId != root && update.agentMessageText.contains(PausedChildTree.childText)
   }
 }
 

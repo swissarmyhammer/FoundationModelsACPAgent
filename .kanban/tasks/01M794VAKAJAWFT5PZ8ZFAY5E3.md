@@ -23,8 +23,32 @@ comments:
     - The replay sends the announcements first (`replay(_:from:sessionId:)` in SessionResume.swift), then the history. It sends no retained `state_update`; the current state of a child comes from the snapshot after the response (`scheduleHotSync`).
     - Test plan: the existing `FrameHoldingTransport` holds the first `subagent_update` frame (the first replay frame). It must start disarmed, because the same connection already carried announcements. `ScriptedPromptFixture.make` gets a `wire` parameter so the first connection can run over the holder. A closed `SessionAnnouncementGate` keeps the send of a text chunk from its record (before the take) until the holder keeps the replay. Then the test opens the gate (the `open` call waits for the send), and releases the replay. The order comes from the gate and the holder, not from a clock.
   timestamp: 2026-11-13T01:35:16.372670+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m79h0bcjay9346b13arc74x8
+  text: |-
+    ### review — clean
+    - evidence: review sha 09e53b7~1..09e53b7; 5 files reviewed; 0 findings (7 attempted, 2 refuted, 0 failed).
+    - next: The acceptance item "foundationmodelsacpclient-76 confirms 10 of 10 (twice)" waits for a push. It is not a review finding.
+  timestamp: 2026-11-13T04:00:15.250447+00:00
+- actor: claude-code
+  id: 01m79hmbbk1x7mvf6vyyhz1vvy
+  text: |-
+    Cause of the failure of `MailPauseResumeTests.aHotResumeOfAPausedChildSendsOnePauseAfterItsState` on main 09e53b7 (2026-11-12):
+    - The stream of the child on the second connection had 0 pauses, not 2: [0] replayed text chunk, [1] `running` (the sync), [2] `idle`. At the sync, `sessions[child].mailDeliveryPause` was nil. The route had the hold of the take, so no send dropped the pause.
+    - Trace: `PausedChildTree.start` recorded the pause when the client held the first update of the child. That update was the child `state_update` `running`. Then the projector of the child read the `mailDelivered` event of the first mail of the child (the prompt of the `agents` call), and `liftMailDeliveryPause(of:)` cleared the recorded pause.
+    - Thus it is a race in the fixture. The product is correct: a real pause comes from the event stream of the child, and the projector reads that stream in order, so a lift and a pause keep the order of their events.
+    - The two commits only change the schedule. With the drop of 09e53b7 turned off (`isTakenAgain` not called), the test still failed. Neither commit changes the lift or the pause.
+    - Fix (test support only): `PausedChildTree.start` waits for the text chunk of the child (`childText`) before it records the pause. The projector reads the events of the child in one serial loop, and the model plays the text only after it took the mail. So the lift of the first mail is done before the record. The assertion of the test is the same. No product file changed, and no rule changed (one pause after the state; no live update on the same connection between the request and the replay).
+  timestamp: 2026-11-13T04:11:10.579649+00:00
+- actor: claude-code
+  id: 01m79hme6w3nfp1xdznenzg59f
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsACPAgentTests/Support/PausedChildTreeFixture.swift (the fixture waits for the text of the child before it records the pause; new helper `isChildText(under:)`). Cause: a race in the fixture between the record of the pause and the lift of the first `mailDelivered` of the child. `swift test --filter MailPauseResumeTests`: 11 of 11 pass. Full `swift test`: 2042 tests in 222 suites, 0 failures, 0 compiler warnings (1 planned known issue in HarnessSmokeTests, there before).
+    - next: Review. The fix is in test support, not in product code, because the product has no defect here. Not committed.
+  timestamp: 2026-11-13T04:11:13.500904+00:00
+position_column: done
+position_ordinal: ffffe280
 title: 'Hot resume on the same connection: a state_update of a child can still come before its announcement (1 of 10 ACPClient runs)'
 ---
 ## What
