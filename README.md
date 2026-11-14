@@ -431,12 +431,14 @@ has two views. The outgoing view is in the transcript of the sender. The incomin
 transcript of the receiver. Each view has its own `messageId`. The outgoing view names the
 incoming view in `recipientMessageId` and `recipientSessionId`. The incoming view names the
 outgoing view in `senderMessageId` and `senderSessionId`. Both ids come from one key, so the
-same message has the same two ids after a restore. Three routes make messages:
+same message has the same two ids after a restore. Four routes make messages:
 
 - The mail that the `agents` tool sends with `send agent` and `send caller`.
 - A message that a run posts to its caller.
 - The final reply of a run. A run that failed or was cancelled has no reply, so it has no
   outgoing view.
+- The result that the agent mails to the caller for a run: each firing of a scheduled agent,
+  and a restored run.
 
 ### Cold resume
 

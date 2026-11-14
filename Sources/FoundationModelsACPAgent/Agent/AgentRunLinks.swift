@@ -8,7 +8,9 @@ extension RoutedACPAgent {
   /// Makes the links of the agent runs of one surface to this agent.
   ///
   /// A run marks its session as ended through the session directory when it reaches a real end.
-  /// A restored run mails its result to a root session through the same directory. A claimed
+  /// A restored run, and a firing of a scheduled agent, mail the result to a root session through
+  /// the same directory, and the message projector of the root gives the client the views of that
+  /// mail (``SubagentMessageProjector/mailed(_:from:to:text:)``). A claimed
   /// `start agent` call of a live root session ends through the session of the table, and the
   /// end returns after the projector of the session sent the final status of the call.
   ///
@@ -21,12 +23,20 @@ extension RoutedACPAgent {
       sessionEnding: { session, reason in
         _ = try await directory.markEnded(session, reason: reason)
       },
-      callerMail: { message, sender, caller in
+      callerMail: { [weak self] message, sender, caller in
         let mail = OutgoingSessionMessage(
           from: .session(sender), to: .session(caller), text: message)
         do {
           let receipts = try await directory.send(mail)
-          return receipts.first { $0.outcome != .refused }?.messageID
+          let delivered = receipts.first { $0.outcome != .refused }?.messageID
+          if let delivered {
+            // The client sees the mail as a message between the run and its caller.
+            let recipient = SessionId(rawValue: caller.description)
+            await self?.sessions[recipient]?.surface.runCallJoins.messages.mailed(
+              delivered, from: SessionId(rawValue: sender.description), to: recipient,
+              text: message)
+          }
+          return delivered
         } catch {
           // The links type cannot throw, so the reason of the failure goes to the log.
           ACPAgentTelemetry.logger(.session).warning(

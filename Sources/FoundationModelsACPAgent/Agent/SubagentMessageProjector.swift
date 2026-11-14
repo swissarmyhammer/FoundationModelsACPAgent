@@ -23,7 +23,7 @@ import Synchronization
 /// updates for the transcript of that session, so the session sends them at once, in the order of
 /// its events. The call gives the updates for any other session to the inbox of that session.
 ///
-/// Three routes make messages.
+/// Four routes make messages.
 ///
 /// - The mail route (``sent(_:from:text:)``, ``delivered(_:to:)``). The `agents` tool attached a
 ///   record to the tool call that mailed the message. The send step is the record with its text.
@@ -38,6 +38,10 @@ import Synchronization
 ///   the outgoing view names the incoming view at once (the ids derive from the token). A run
 ///   with no reply (a failed or a cancelled run) has no outgoing view, and its incoming view
 ///   names none.
+/// - The host mail route (``mailed(_:from:to:text:)``, ``delivered(_:to:)``). The host mailed the
+///   result of a run to its caller through the session directory: a firing of a scheduled agent,
+///   or a restored run. The send step is the receipt of the directory. The receive step is the
+///   `mailDelivered` event of the caller.
 ///
 /// A class, because the sessions of a surface share one object. A `Mutex` guards the state. The
 /// object calls an inbox after it left the lock, so an inbox can call the object.
@@ -100,6 +104,24 @@ final class SubagentMessageProjector: Sendable {
     perform(as: session) {
       $0.receive(key: mail.value.description, by: session, text: nil)
     }
+  }
+
+  // MARK: - The host mail route
+
+  /// The send step of a mail that the host sent for a run through the session directory: the
+  /// result of a firing of a scheduled agent, or of a restored run, mailed to its caller session.
+  /// The receive step is the `mailDelivered` event of the caller (``delivered(_:to:)``), and it
+  /// can come first. All views go to the inboxes.
+  ///
+  /// - Parameters:
+  ///   - mail: The id of the mail that the directory delivered.
+  ///   - sender: The session of the run.
+  ///   - recipient: The caller session that got the mail.
+  ///   - text: The text of the mail.
+  func mailed(_ mail: MailID, from sender: SessionId, to recipient: SessionId, text: String) {
+    let message = Message(
+      key: mail.value.description, sender: sender, recipient: recipient, text: text)
+    perform(as: nil) { $0.send(message) }
   }
 
   // MARK: - The message of a run
