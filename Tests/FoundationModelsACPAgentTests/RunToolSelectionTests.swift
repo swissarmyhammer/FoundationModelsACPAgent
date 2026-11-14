@@ -35,6 +35,9 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   /// The `tools:` key that keeps only the web capability.
   private static let webOnlyKey = "tools: [web]"
 
+  /// The `disallowedTools:` key that denies the files capability.
+  private static let noFilesKey = "disallowedTools: [\(SurfaceCatalog.filesGroupName)]"
+
   /// The resolved tools of one run.
   private struct ResolvedRun {
     /// The nouns of the registry of the `runCode` of the run.
@@ -209,10 +212,43 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     #expect(run.nouns.contains(Self.webNoun), "\(run.nouns)")
   }
 
-  /// A run of an agent with `tools: [web]` keeps the files noun in its
-  /// `runCode`: `files` gives an endpoint, thus the keys cannot remove it.
-  @Test func aRunWithToolsWebKeepsTheFilesInRunCode() async throws {
+  /// A run of an agent with `tools: [web]` has no files noun in its
+  /// `runCode`: `files` gives no endpoint, thus `tools:` can leave it out.
+  @Test func aRunWithToolsWebHasNoFilesInRunCode() async throws {
     let run = try await Self.resolvedRun(keys: [Self.webOnlyKey], name: "web-files")
+
+    #expect(!run.nouns.contains(SurfaceCatalog.filesGroupName), "\(run.nouns)")
+  }
+
+  /// A run of an agent with `disallowedTools: [files]` has no files noun in
+  /// its `runCode`.
+  @Test func aRunWithDisallowedFilesHasNoFilesInRunCode() async throws {
+    let run = try await Self.resolvedRun(keys: [Self.noFilesKey], name: "no-files")
+
+    #expect(!run.nouns.contains(SurfaceCatalog.filesGroupName), "\(run.nouns)")
+  }
+
+  /// A run of an agent with no `tools:` key keeps the files noun in its
+  /// `runCode`.
+  @Test func aRunWithNoToolsKeyKeepsTheFilesInRunCode() async throws {
+    let run = try await Self.resolvedRun(keys: [], name: "plain-files")
+
+    #expect(run.nouns.contains(SurfaceCatalog.filesGroupName), "\(run.nouns)")
+  }
+
+  /// A run of an agent with `disallowedTools: [files]` over the run catalog
+  /// of the agent environment of a session has no files noun in its
+  /// `runCode`: the catalog that a real child run reads.
+  @Test func aChildRunWithDisallowedFilesHasNoFilesInRunCode() async throws {
+    let run = try await Self.environmentRun(keys: [Self.noFilesKey], name: "child-no-files")
+
+    #expect(!run.nouns.contains(SurfaceCatalog.filesGroupName), "\(run.nouns)")
+  }
+
+  /// A run of an agent with no `tools:` key over the run catalog of the
+  /// agent environment of a session keeps the files noun in its `runCode`.
+  @Test func aChildRunWithNoToolsKeyKeepsTheFilesInRunCode() async throws {
+    let run = try await Self.environmentRun(keys: [], name: "child-files")
 
     #expect(run.nouns.contains(SurfaceCatalog.filesGroupName), "\(run.nouns)")
   }

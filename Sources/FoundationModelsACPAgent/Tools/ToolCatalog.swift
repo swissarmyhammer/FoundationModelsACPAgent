@@ -319,8 +319,12 @@ public enum ToolCatalog {
   /// The name of the `agents` tool of a session.
   static let agentsToolName = "agents"
 
-  /// The Multitool group of the files capability, the endpoint that
-  /// `runCode` gives (D90 (c)).
+  /// The Multitool group of the files capability. The group gives no
+  /// endpoint, thus the `tools:` and `disallowedTools:` keys of an agent can
+  /// remove it, as they remove `shell` or `web` (decision of 2026-11-14).
+  /// The read verb of the resource links of a prompt
+  /// (``SessionSurface/filesReadVerb``) comes from the full registry, and
+  /// stays when the agent removes the group.
   static let filesGroupName = "files"
 
   /// The tool group of the MCP tools in the skills template values
@@ -329,12 +333,12 @@ public enum ToolCatalog {
 
   /// The tools that give an endpoint (D90 (c)). The `tools:` and
   /// `disallowedTools:` keys of a session agent cannot remove them
-  /// (``SessionToolSelection``). `files`, `settings` and `kanban` are nouns
-  /// in the registry of `runCode`; `sessions` and `rules` are not mounted
-  /// yet (ACPA-9).
+  /// (``SessionToolSelection``). `settings` and `kanban` are nouns in the
+  /// registry of `runCode`; `sessions` and `rules` are not mounted yet
+  /// (ACPA-9). `files` is not one of them (``filesGroupName``).
   static let endpointToolNames: Set<String> = [
     agentsToolName, SkillOutputProtection.skillsToolName, "sessions", "kanban", "rules",
-    SettingsGraph.endpointName, NoOpToolCall.runCodeToolName, filesGroupName,
+    SettingsGraph.endpointName, NoOpToolCall.runCodeToolName,
   ]
 
   /// The discovery half of `runCode`. The description of `runCode` tells the

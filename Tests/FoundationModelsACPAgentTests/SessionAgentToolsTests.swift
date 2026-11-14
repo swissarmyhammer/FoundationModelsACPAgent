@@ -45,9 +45,9 @@ import Testing
   /// The name of the environment capability.
   private static let environmentName = "environment"
 
-  /// The capabilities that `tools: [web]` keeps or removes: the files
-  /// endpoint, the web capability, and three capabilities that only a
-  /// configuration or the agent turns off.
+  /// The capabilities that `tools: [web]` keeps or removes: the web
+  /// capability, and four capabilities that only a configuration or the
+  /// agent turns off.
   private static let webCheckNames: Set<String> = [
     filesName, webName, shellName, gitName, environmentName,
   ]
@@ -55,13 +55,34 @@ import Testing
   /// The groups of `runCode` that read source or run commands, and that a
   /// session agent can remove.
   private static let removableSourceGroups: Set<String> = [
-    shellName, ToolCatalog.codeContextGroupName, webName, gitName,
+    filesName, shellName, ToolCatalog.codeContextGroupName, webName, gitName,
   ]
 
   /// The key of a session agent that denies each group of `runCode` that
-  /// reads source or runs commands: ``removableSourceGroups`` and `files`.
+  /// reads source or runs commands: ``removableSourceGroups``.
   private static let sourceGroupsDenial =
-    "disallowedTools: [\(filesName), \(removableSourceGroups.sorted().joined(separator: ", "))]"
+    "disallowedTools: [\(removableSourceGroups.sorted().joined(separator: ", "))]"
+
+  /// The key of a session agent that denies the `files` group only.
+  private static let filesDenial = "disallowedTools: [\(filesName)]"
+
+  /// The key of a session agent that keeps the `agents` and `kanban` tools
+  /// only.
+  private static let agentsAndKanbanOnly = "tools: [\(agentsName), kanban]"
+
+  /// The text of the file that a resource link of a session names.
+  private static let linkedFileContent = "the text of the linked file"
+
+  /// The name of the file that a resource link of a session names.
+  private static let linkedFileName = "linked.txt"
+
+  /// The task that the `searchTools` tests give: one that the files read
+  /// verb answers.
+  private static let readFileTask = "read a file"
+
+  /// The answer of the flash slot to each selection of `searchTools`: the
+  /// one id of the files read verb.
+  private static let filesReadSelectionJSON = #"{"ids":["\#(ToolCatalog.filesReadVerbPath)"]}"#
 
   /// The spellings of `model: flash` in other letter cases.
   private static let flashSpellings = ["Flash", "FLASH"]
@@ -70,12 +91,11 @@ import Testing
   private static let agentsName = "agents"
 
   /// The names that always stay on the surface of a root session: the tools
-  /// that give an endpoint (D90 (c)), with `files` of `runCode`, and
-  /// `searchTools`, the discovery half of `runCode`. The test keeps its own
-  /// copy of the list.
+  /// that give an endpoint (D90 (c)), and `searchTools`, the discovery half
+  /// of `runCode`. `files` is not one of them: a session agent can deny it.
+  /// The test keeps its own copy of the list.
   private static let alwaysOnNames: Set<String> = [
-    "agents", "skills", "sessions", "kanban", "rules", "settings", "runCode", "files",
-    "searchTools",
+    "agents", "skills", "sessions", "kanban", "rules", "settings", "runCode", "searchTools",
   ]
 
   /// The names of a surface for the unit tests of the selection, with no
@@ -246,16 +266,23 @@ import Testing
         == plain.intersection(Self.alwaysOnNames.union([Self.webName])))
   }
 
-  /// A session agent with `tools: [web]` gives the model `files` and `web`,
-  /// and no `shell`, `git` or `environment` (D90 (c): `files` is an
-  /// endpoint).
-  @Test func toolsWebGivesTheModelFilesAndWebOnly() throws {
+  /// A session agent with `tools: [web]` gives the model `web`, and no
+  /// `files`, `shell`, `git` or `environment`: `files` gives no endpoint,
+  /// thus `tools:` can leave it out.
+  @Test func toolsWebGivesTheModelWebOnly() throws {
     let selection = SessionToolSelection(
       definition: try Self.definition(keys: ["tools: [web]"]),
       names: Self.surfaceNames + [Self.gitName, Self.environmentName])
 
-    #expect(
-      selection.keptNames.intersection(Self.webCheckNames) == [Self.filesName, Self.webName])
+    #expect(selection.keptNames.intersection(Self.webCheckNames) == [Self.webName])
+  }
+
+  /// A session agent with ``agentsAndKanbanOnly`` has no `files` group in
+  /// the registry of its root `runCode`.
+  @Test func toolsAgentsAndKanbanLeaveNoFilesGroup() async throws {
+    let sessions = try await Self.openSessions(keys: [Self.agentsAndKanbanOnly], name: "kanban")
+
+    #expect(!(try Self.capabilities(of: sessions.agent.surface).contains(Self.filesName)))
   }
 
   /// A session agent with no `tools:` has the full surface, as a session
@@ -266,6 +293,14 @@ import Testing
     #expect(
       try Self.capabilities(of: sessions.agent.surface)
         == Self.capabilities(of: sessions.plain.surface))
+  }
+
+  /// A session agent with no `tools:` and no `disallowedTools:` has the
+  /// `files` group in the registry of its root `runCode`.
+  @Test func noKeysKeepTheFilesGroup() async throws {
+    let sessions = try await Self.openSessions(keys: [], name: "files-on")
+
+    #expect(try Self.capabilities(of: sessions.agent.surface).contains(Self.filesName))
   }
 
   // MARK: - disallowedTools:
@@ -302,7 +337,7 @@ import Testing
     #expect(sessions.agent.surface.tools.map(\.name).contains(skills))
   }
 
-  /// A session agent with ``sourceGroupsDenial`` has no `shell`,
+  /// A session agent with ``sourceGroupsDenial`` has no `files`, `shell`,
   /// `code_context`, `web` or `git` in the registry of its root `runCode`,
   /// and each other capability of the full surface.
   @Test func disallowedSourceGroupsLeaveTheRootRunCode() async throws {
@@ -315,13 +350,71 @@ import Testing
       "full surface: \(plain)")
   }
 
-  /// A session agent with ``sourceGroupsDenial`` still has `files` in the
-  /// registry of its root `runCode`: `files` gives an endpoint (D90 (c)),
-  /// thus the selection of a root session cannot remove it.
-  @Test func disallowedFilesStaysInTheRootRunCode() async throws {
-    let sessions = try await Self.openSessions(keys: [Self.sourceGroupsDenial], name: "files")
+  /// A session agent with ``filesDenial`` has no `files` in the registry of
+  /// its root `runCode`: `files` gives no endpoint, thus the agent can deny
+  /// it.
+  @Test func disallowedFilesLeavesTheRootRunCode() async throws {
+    let sessions = try await Self.openSessions(keys: [Self.filesDenial], name: "files")
 
-    #expect(try Self.capabilities(of: sessions.agent.surface).contains(Self.filesName))
+    #expect(!(try Self.capabilities(of: sessions.agent.surface).contains(Self.filesName)))
+  }
+
+  /// The answer of the root `searchTools` of a session surface with the
+  /// session agent `keys` applied, for ``readFileTask``. The flash slot of
+  /// the profile answers each selection of `searchTools` with
+  /// ``filesReadSelectionJSON``, thus the answer names the files read verb
+  /// when the registry of the surface holds it.
+  ///
+  /// - Parameters:
+  ///   - keys: The frontmatter lines of the session agent, or `nil` for no
+  ///     session agent: the full surface.
+  ///   - name: The name of the test, for the folders.
+  /// - Returns: The text of the answer.
+  /// - Throws: What the surface build, the selection or the search throws,
+  ///   or when the surface has no `searchTools`.
+  private static func searchAnswer(keys: [String]?, name: String) async throws -> String {
+    let context = try await AgentsToolTests.makeContext(
+      label: "\(label)-\(name)", script: [.textDelta(filesReadSelectionJSON), .endPass])
+    let full = try await ToolCatalog.sessionSurface(context: context)
+    let surface = try await full.applying(agent: try keys.map(definition(keys:)))
+    let searchTools = try #require(surface.tools.compactMap { $0 as? SearchToolsTool }.first)
+    let answer = try await searchTools.call(arguments: SearchToolsArguments(task: readFileTask))
+    await surface.shutdown()
+    return answer
+  }
+
+  /// The root `searchTools` of a session with no session agent finds the
+  /// files read verb: the proof that ``disallowedFilesLeavesSearchTools``
+  /// can see the verb.
+  @Test func searchToolsOfAPlainSessionFindsTheFilesReadVerb() async throws {
+    let answer = try await Self.searchAnswer(keys: nil, name: "search-plain")
+
+    #expect(answer.contains(ToolCatalog.filesReadVerbPath), "\(answer)")
+  }
+
+  /// The root `searchTools` of a session agent with ``filesDenial`` does not
+  /// find the files read verb: it reads the registry of the root `runCode`.
+  @Test func disallowedFilesLeavesSearchTools() async throws {
+    let answer = try await Self.searchAnswer(keys: [Self.filesDenial], name: "search-files")
+
+    #expect(!answer.contains(ToolCatalog.filesReadVerbPath), "\(answer)")
+  }
+
+  /// A session agent with ``filesDenial`` still resolves a resource link of
+  /// the prompt to the text of the file: the read verb of the resource
+  /// links comes from the full registry, not from the model's tools.
+  @Test func disallowedFilesKeepsTheResourceLinks() async throws {
+    let routed = try await AgentClientHarness.makeInitializedAgent(label: Self.label)
+    let cwd = makeResolvedDirectory(label: "\(Self.label)-links")
+    try Self.writeSessionAgent(keys: [Self.filesDenial], in: cwd)
+    let file = cwd.appendingPathComponent(Self.linkedFileName)
+    try Self.linkedFileContent.write(to: file, atomically: true, encoding: .utf8)
+    let entry = try await Self.openSession(in: cwd, on: routed)
+
+    let resolved = await ResourceLinkResolver(readVerb: entry.surface.filesReadVerb)
+      .resolve(uri: file.absoluteString)
+
+    #expect(resolved == Self.linkedFileContent)
   }
 
   /// `disallowedTools: [agents, shell]` gives one warning: the `agents` tool
@@ -422,9 +515,9 @@ import Testing
   }
 
   /// A session agent with `tools: [web]` renders `tools.files.enabled` as
-  /// `true`: `files` gives an endpoint, thus it always stays (D90 (c)).
-  @Test func toolsWebKeepsTheFilesTemplateValueOn() throws {
-    #expect(try Self.templateValues(keys: ["tools: [web]"])[Self.filesName] == true)
+  /// `false`: `files` gives no endpoint, thus `tools:` can leave it out.
+  @Test func toolsWebTurnsTheFilesTemplateValueOff() throws {
+    #expect(try Self.templateValues(keys: ["tools: [web]"])[Self.filesName] == false)
   }
 
   /// A session agent with `tools: [web]` renders `tools.mcp.enabled` as
@@ -489,11 +582,24 @@ import Testing
     #expect(try Self.templateValues(keys: ["tools: [shell]"])[Self.shellName] == true)
   }
 
-  /// A session agent with `disallowedTools: [files]` renders
-  /// `tools.files.enabled` as `true`: `files` gives an endpoint, thus the
-  /// selection cannot remove it (D90 (c)).
-  @Test func disallowedFilesKeepsTheFilesTemplateValueOn() throws {
-    #expect(try Self.templateValues(keys: ["disallowedTools: [files]"])[Self.filesName] == true)
+  /// A session agent with ``filesDenial`` renders `tools.files.enabled` as
+  /// `false`.
+  @Test func disallowedFilesTurnsTheFilesTemplateValueOff() throws {
+    #expect(try Self.templateValues(keys: [Self.filesDenial])[Self.filesName] == false)
+  }
+
+  /// A session agent with no `tools:` and no `disallowedTools:` renders
+  /// `tools.files.enabled` as `true`, the value of the configuration.
+  @Test func noKeysKeepTheFilesTemplateValueOn() throws {
+    #expect(try Self.templateValues(keys: [])[Self.filesName] == true)
+  }
+
+  /// A run agent with ``filesDenial`` gets `tools.files.enabled` as
+  /// `false`.
+  @Test func aRunWithDisallowedFilesGetsTheFilesTemplateValueOff() throws {
+    #expect(
+      try Self.runTemplateValues(keys: [Self.filesDenial], toolNames: Self.surfaceNames)[
+        Self.filesName] == false)
   }
 
   /// The `tools.<group>.enabled` values that the run closure of the agent
