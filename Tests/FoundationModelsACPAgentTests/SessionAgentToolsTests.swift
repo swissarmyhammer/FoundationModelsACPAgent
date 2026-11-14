@@ -52,6 +52,17 @@ import Testing
     filesName, webName, shellName, gitName, environmentName,
   ]
 
+  /// The groups of `runCode` that read source or run commands, and that a
+  /// session agent can remove.
+  private static let removableSourceGroups: Set<String> = [
+    shellName, ToolCatalog.codeContextGroupName, webName, gitName,
+  ]
+
+  /// The key of a session agent that denies each group of `runCode` that
+  /// reads source or runs commands: ``removableSourceGroups`` and `files`.
+  private static let sourceGroupsDenial =
+    "disallowedTools: [\(filesName), \(removableSourceGroups.sorted().joined(separator: ", "))]"
+
   /// The spellings of `model: flash` in other letter cases.
   private static let flashSpellings = ["Flash", "FLASH"]
 
@@ -289,6 +300,28 @@ import Testing
       keys: [AgentToolKeys.noSkills], name: "skills")
 
     #expect(sessions.agent.surface.tools.map(\.name).contains(skills))
+  }
+
+  /// A session agent with ``sourceGroupsDenial`` has no `shell`,
+  /// `code_context`, `web` or `git` in the registry of its root `runCode`,
+  /// and each other capability of the full surface.
+  @Test func disallowedSourceGroupsLeaveTheRootRunCode() async throws {
+    let sessions = try await Self.openSessions(keys: [Self.sourceGroupsDenial], name: "nosource")
+
+    let plain = try Self.capabilities(of: sessions.plain.surface)
+    #expect(
+      try Self.capabilities(of: sessions.agent.surface)
+        == plain.subtracting(Self.removableSourceGroups),
+      "full surface: \(plain)")
+  }
+
+  /// A session agent with ``sourceGroupsDenial`` still has `files` in the
+  /// registry of its root `runCode`: `files` gives an endpoint (D90 (c)),
+  /// thus the selection of a root session cannot remove it.
+  @Test func disallowedFilesStaysInTheRootRunCode() async throws {
+    let sessions = try await Self.openSessions(keys: [Self.sourceGroupsDenial], name: "files")
+
+    #expect(try Self.capabilities(of: sessions.agent.surface).contains(Self.filesName))
   }
 
   /// `disallowedTools: [agents, shell]` gives one warning: the `agents` tool
@@ -588,6 +621,22 @@ import Testing
     #expect(Set(recorder.staged.flatMap { $0.surface.entries.compactMap(\.group) }) == ["git"])
   }
 
+  /// The selection of ``sourceGroupsDenial`` removes the `code_context`
+  /// group from a registry of the root `runCode`. The stub session mounts
+  /// no code context, thus this test gives the registry a probe group.
+  @Test func disallowedCodeContextLeavesTheRegistry() throws {
+    let registry = try MultiTool.Builder(mode: .open).withEnvironment().addGroup(
+      named: ToolCatalog.codeContextGroupName, [CodeContextProbeTool()]
+    ).buildRegistry()
+    let selection = RegistrySelection(
+      definition: try Self.definition(keys: [Self.sourceGroupsDenial]), topLevelNames: [],
+      mcpServerNames: [])
+
+    #expect(
+      Set(selection.applied(to: registry).surface.entries.compactMap(\.group))
+        == [Self.environmentName])
+  }
+
   // MARK: - model:
 
   /// A session agent with `model: flash` starts on the flash slot.
@@ -641,5 +690,20 @@ private final class RecordingStaging: RegistryStaging {
   /// - Parameter registry: The staged registry.
   func stage(_ registry: MultiTool.Registry) {
     registries.withLock { $0.append(registry) }
+  }
+}
+
+/// A tool of the probe `code_context` group of a registry.
+private struct CodeContextProbeTool: FoundationModels.Tool {
+  /// The wire arguments; the tool reads nothing from them.
+  @Generable
+  struct Arguments {}
+
+  let name = "probe_symbol"
+
+  let description = "a probe of the code context group"
+
+  func call(arguments: Arguments) async throws -> String {
+    name
   }
 }
