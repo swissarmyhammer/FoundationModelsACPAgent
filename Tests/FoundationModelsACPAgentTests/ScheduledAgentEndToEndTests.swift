@@ -445,31 +445,19 @@ import Testing
     await second.close()
   }
 
-  /// After a user `session/close` of the root, a cold resume of the root in a second agent
-  /// restores the schedule, and the task fires: its result reaches the resumed root.
-  ///
-  /// A known issue of FoundationModelsAgents: `AgentRunner.cancelRuns(caller:)`, which the close
-  /// of a session calls, ends each scheduled agent of the caller (`AgentScheduler.endTasks`) and
-  /// saves an empty list, so `ScheduleFileStore` removes `schedules.json`. The resume then has no
-  /// schedule to restore. The check of the file fails at once, so the test does not wait for a
-  /// firing that cannot come.
-  @Test func aScheduleSurvivesACloseAndAColdResumeAndFires() async throws {
+  /// A user `session/close` of the root ends its scheduled agents. The user decided this
+  /// (2026-11-14): a cancel keeps the schedules, a close deletes them.
+  /// `AgentRunner.cancelRuns(caller:)`, which the close calls, ends each scheduled agent of the
+  /// caller (`AgentScheduler.endTasks`) and saves an empty list, so `ScheduleFileStore` removes
+  /// `schedules.json`, and a later cold resume has no schedule to restore.
+  @Test func aCloseOfTheRootDeletesItsSchedule() async throws {
     let scheduled = try await Self.makeScheduled()
+    #expect(FileManager.default.fileExists(atPath: scheduled.savedSchedule.path))
+
     _ = try await scheduled.fixture.harness.connection.closeSession(
       CloseSessionRequest(sessionId: scheduled.root))
     await scheduled.fixture.close()
 
-    await withKnownIssue(
-      "FoundationModelsAgents: a session close ends the scheduled agents of the session"
-    ) {
-      try #require(
-        FileManager.default.fileExists(atPath: scheduled.savedSchedule.path),
-        "the close removed the saved schedule of the root")
-      let second = try await Self.resume(scheduled)
-      let messages = try await Self.waitForResult(of: scheduled.root, in: second.collector)
-
-      #expect(!messages.isEmpty)
-      await second.close()
-    }
+    #expect(!FileManager.default.fileExists(atPath: scheduled.savedSchedule.path))
   }
 }

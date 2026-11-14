@@ -19,8 +19,12 @@ comments:
     - Under load the scheduled time passed before the tool read it, so the tool refused the call. The call now reads its arguments from a file that the test writes when the pass reaches the call (`.writeFile` + `.toolCallFromFile`). The lead time is 5 s.
     - next: /review. The peer issue (close ends schedules) waits for a decision and a FoundationModelsAgents change.
   timestamp: 2026-11-14T12:03:33.090598+00:00
-position_column: doing
-position_ordinal: '8280'
+- actor: claude-code
+  id: 01m7d2cr3k076m1n9thssydngb
+  text: 'Decision (user, 2026-11-14): a session/close DELETES the session''s scheduled agents (FoundationModelsAgents behavior stays); a cancel keeps them. The close test is now `aCloseOfTheRootDeletesItsSchedule` (the saved schedules.json is gone after the close), no known issue. The "survives close + cold resume" requirement is dropped; shutdown + cold resume is covered by `aScheduleSurvivesAShutdownAndAColdResumeAndFires`.'
+  timestamp: 2026-11-14T13:01:50.579040+00:00
+position_column: done
+position_ordinal: ffffe980
 title: End-to-end test of a scheduled agent through the ACP surface
 ---
 Open item of ^kw4mt32 (carried over from ^2pa0kzs): "A real end-to-end test of a scheduled agent".
