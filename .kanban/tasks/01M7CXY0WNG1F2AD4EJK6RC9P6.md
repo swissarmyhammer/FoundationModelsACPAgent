@@ -19,8 +19,12 @@ comments:
     - evidence: 3 files — Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift, Tests/FoundationModelsACPAgentTests/SessionAgentToolsTests.swift, Tests/FoundationModelsACPAgentTests/RunToolSelectionTests.swift. `swift test`: 2085 tests in 223 suites passed, 0 failures, 1 known issue (pre-existing `withKnownIssue` in HarnessSmokeTests.orderedSubsequenceAssertionChecksOrderWithGaps). Only warning is the SwiftPM build-graph line "missing creator for mutated node ... mlx-swift_Cmlx.bundle", unrelated to this change.
     - next: /review
   timestamp: 2026-11-14T11:57:59.556196+00:00
-position_column: doing
-position_ordinal: '8380'
+- actor: claude-code
+  id: 01m7d2ercgf3xydbyjwqh2vsc1
+  text: 'Done: 3bfe4f3 on main (full suite 2085, later 2094 tests pass). The user chose to keep the capability; no agent denies files today (the root-restriction use was reverted in skills 3398caf).'
+  timestamp: 2026-11-14T13:02:56.400561+00:00
+position_column: done
+position_ordinal: ffffea80
 title: A session agent can deny the files group
 ---
 ## What

@@ -90,8 +90,12 @@ comments:
   id: 01m7cyy1xx33sanfzkn93t0v4e
   text: 'Correction (user, 2026-11-14): the user does NOT want the root''s tools removed. Skills 7066883 reverted by 3398caf; the default agent has no disallowedTools again. Kept, by the user''s choice: ACPAgent 3bfe4f3 (files is deniable as a capability; nothing denies it) and 06f017d (tests). The root-skips-the-planner problem (14534, 14155) stays open; look for another fix that keeps the root''s tools.'
   timestamp: 2026-11-14T12:01:23.389413+00:00
-position_column: todo
-position_ordinal: '9180'
+- actor: claude-code
+  id: 01m7d2ew71tw3a53s34ektzmx2
+  text: 'Closed 2026-11-14. Done: skills 1-5 (bb0fe55), hypothesis/git-history/convention + planner-first (107aa4a), tester procedure (4fe4846), short planner answers (723e0cb), delegate-every-step wording (65e977a); "schedule an agent" gate (Agents 86dc3f8); end-to-end scheduled-agent test (^ybpc6ap, 72f264f + 86cf8ea: a firing''s result reaches the client; close deletes schedules by user decision). Bench: hint24 24/24 in 21.1 h; rerun24 stopped at 11/12 (polling gone; 14534 root started no agent). Root keeps its tools (user). Next: a 24-instance run to confirm the root always delegates.'
+  timestamp: 2026-11-14T13:03:00.321006+00:00
+position_column: done
+position_ordinal: ffffeb80
 title: 'After oneplan24: skills fixes and follow-ups from the run'
 ---
 Items from the oneplan24 SWE-bench run (2026-11-10/11, 22/24, 25.9 h). Skills changes 1-5 approved by the user 2026-11-12. Push skills only when no bench run is live (the bench reads skills from GitHub main).
