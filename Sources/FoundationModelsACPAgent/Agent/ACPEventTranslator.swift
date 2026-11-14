@@ -890,8 +890,9 @@ struct ACPEventTranslator {
   /// Each shape keys on the wire id of the run (``runCallId(_:)``), as the
   /// progress, the attachment report and the settlement do:
   ///
-  /// - A content chunk is one `tool_call_content_chunk`: the client adds
-  ///   the item after the earlier items of the call.
+  /// - A content chunk is one `tool_call_content_chunk` for each item of
+  ///   its part (``displayItems(for:run:)``): the client adds each item
+  ///   after the earlier items of the call.
   /// - A content replace is a `tool_call_update` that replaces the content
   ///   of the call with all the parts, in order.
   /// - A metadata event is a `tool_call_update` patch of `title`, `kind`,
@@ -900,10 +901,10 @@ struct ACPEventTranslator {
   ///   the tool stays on the client: no later update of the call sends the
   ///   `op` or the tool name over it.
   ///
-  /// The call keeps each diff part of a content chunk or a content replace
-  /// to its end (``keptDisplayItems``). A content replace of the tool
-  /// replaces the whole content, so the call then keeps the diff parts of
-  /// that replace alone.
+  /// The call keeps each diff part and each MCP result part of a content
+  /// chunk or a content replace to its end (``keptDisplayItems``). A
+  /// content replace of the tool replaces the whole content, so the call
+  /// then keeps the kept parts of that replace alone.
   ///
   /// The translator sends each event at once, in the order Router gives.
   /// The settlement of the run comes after the display events of the run,
@@ -916,21 +917,24 @@ struct ACPEventTranslator {
     let toolCallId = runCallId(display.correlationID)
     switch display.kind {
     case .contentChunk(let content):
-      let item = displayItem(for: content, run: display.correlationID)
-      if Self.isKept(content) {
-        keptDisplayItems.append(contentsOf: [item], to: toolCallId)
+      let part = displayItems(for: content, run: display.correlationID)
+      if part.isKept {
+        keptDisplayItems.append(contentsOf: part.items, to: toolCallId)
       }
-      await send(.toolCallContentChunk(ToolCallContentChunk(content: item, toolCallId: toolCallId)))
+      for item in part.items {
+        await send(
+          .toolCallContentChunk(ToolCallContentChunk(content: item, toolCallId: toolCallId)))
+      }
     case .contentReplace(let contents):
-      let items = contents.map { displayItem(for: $0, run: display.correlationID) }
+      let parts = contents.map { displayItems(for: $0, run: display.correlationID) }
       keptDisplayItems.replace(
-        with: zip(contents, items).filter { Self.isKept($0.0) }.map(\.1), for: toolCallId)
+        with: parts.filter(\.isKept).flatMap(\.items), for: toolCallId)
       await send(
         runCallUpdate(
           correlationID: display.correlationID,
           tool: display.tool,
           op: display.op,
-          content: .value(items)))
+          content: .value(parts.flatMap(\.items))))
     case .metadata(let title, let kind, let locations, let rawInput):
       await send(
         runCallUpdate(
@@ -948,7 +952,8 @@ struct ACPEventTranslator {
   /// Whether a tool call keeps a display part to its end
   /// (``keptDisplayItems``). A file change is kept: the text result of the
   /// call cannot carry it. A text or a JSON part is output of the tool that a
-  /// later replace replaces.
+  /// later replace replaces. ``displayItems(for:run:)`` keeps the JSON part
+  /// of an MCP result before it asks this function.
   ///
   /// - Parameter content: The display part.
   /// - Returns: `true` for a part that the call keeps.
@@ -971,6 +976,32 @@ struct ACPEventTranslator {
       return true
     }
     return false
+  }
+
+  /// Maps one display part of a tool to its tool-call content items, and
+  /// tells whether the call keeps them to its end.
+  ///
+  /// The JSON part of an MCP tool result (`MCPToolContent`) holds the
+  /// ordered content blocks of the result. Each block rides as one content
+  /// item of the same type (``PromptContent/toolCallContent(from:)``): an
+  /// image rides as an image item with its data and its mime type, and not
+  /// as JSON text. The call keeps these items, because the text result of
+  /// the call cannot carry an image. Each other part rides as one item
+  /// (``displayItem(for:run:)``), and ``isKept(_:)`` tells whether the call
+  /// keeps it.
+  ///
+  /// - Parameters:
+  ///   - content: The display part.
+  ///   - runId: The correlation id of the run, for the log record.
+  /// - Returns: The content items, in order, and whether the call keeps
+  ///   them.
+  private func displayItems(
+    for content: ToolDisplayContent, run runId: String
+  ) -> (items: [ToolCallContent], isKept: Bool) {
+    if let result = MCPToolContent(display: content) {
+      return (PromptContent.toolCallContent(from: result.content), true)
+    }
+    return ([displayItem(for: content, run: runId)], Self.isKept(content))
   }
 
   /// Maps one display part of a tool to one tool-call content item.

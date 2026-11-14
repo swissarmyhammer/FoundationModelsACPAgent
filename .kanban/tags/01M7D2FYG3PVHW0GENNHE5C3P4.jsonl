@@ -1,0 +1,1 @@
+{"id":"01M7D2FYG3G6EM4398V6TS4BF8","timestamp":"2026-11-14T13:03:35.427289Z","op":"create","item_id":"01M7D2FYG3PVHW0GENNHE5C3P4","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: b60205\n+tag_name: step2\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: b60205\n-tag_name: step2\n","transaction_id":null}
