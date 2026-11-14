@@ -31,8 +31,24 @@ comments:
     - evidence: swift test — 2098 tests in 225 suites passed, 1 known issue (HarnessSmokeTests, intended withKnownIssue), 0 failures. swift build --build-tests --package-path IntegrationTests — Build complete, 0 compiler warnings. Only the SwiftPM line "missing creator for mutated node" showed (build system, not a compiler warning).
     - next: review
   timestamp: 2026-11-14T13:18:20.553735+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m7d3d6r302wgwfcneqskv5tw
+  text: |-
+    ### review — clean
+    - evidence: review sha 2bb1f42~1..2bb1f42 — 0 findings, 0 confirmed, 0 refuted; 7 validator runs attempted, 0 failed, 0 skipped. 2 source files reviewed. 4 .kanban files are excluded by .reviewignore.
+    - next: none. The task is in done. Send the card id and the commit sha 2bb1f42 to testudoapp-75.
+  timestamp: 2026-11-14T13:19:34.147755+00:00
+- actor: claude-code
+  id: 01m7d3dh5363whehgp6cx0n35v
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 2 files (ACPEventTranslator.swift, McpImageToolResultTests.swift)
+    - test: green — swift test, 2098 tests in 225 suites passed, 1 known issue (intended)
+    - commit: 2bb1f42
+    - review: clean — none
+  timestamp: 2026-11-14T13:19:44.803916+00:00
+position_column: done
+position_ordinal: ffffec80
 title: The image blocks of an MCP tool result go to the client in the tool call content
 ---
 ## What
