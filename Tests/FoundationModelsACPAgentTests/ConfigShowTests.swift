@@ -212,6 +212,44 @@ struct ConfigShowTests {
         "identicalToolCallLimit: \(RepetitionDetection.defaultIdenticalToolCallLimit)"))
   }
 
+  /// With no file in any layer, the report shows `profile.decision` with
+  /// Router's decision candidates, so a person can see and edit the model
+  /// of the decision slot.
+  @Test func noFilesShowTheDecisionSlotWithRouterCandidates() throws {
+    let fixture = ConfigCommandFixture(label: "ConfigShowTests-decision")
+    let candidates = ProfileDefinition.defaultDecisionCandidates.map { "    - \"\($0.stringValue)\"" }
+
+    let report = try Self.report([], in: fixture)
+
+    #expect(
+      report.standardOutput.contains(
+        (["  decision:"] + candidates).joined(separator: "\n") + "\n"))
+  }
+
+  /// With no file in any layer, the report shows `profile.decisionContext`
+  /// with Router's decision context.
+  @Test func noFilesShowTheDecisionContextWithRouterDefault() throws {
+    let fixture = ConfigCommandFixture(label: "ConfigShowTests-decision-context")
+
+    let report = try Self.report([], in: fixture)
+
+    #expect(
+      report.standardOutput.contains(
+        "  decisionContext: \(ProfileDefinition.defaultDecisionContext)\n"))
+  }
+
+  /// The comment above the `profile:` section names the decision slot
+  /// with the other slots.
+  @Test func theProfileCommentNamesTheDecisionSlot() throws {
+    let fixture = ConfigCommandFixture(label: "ConfigShowTests-profile-comment")
+
+    let report = try Self.report([], in: fixture)
+
+    #expect(
+      report.standardOutput.contains(
+        "# The model profile: the standard, flash, embedding and decision slots.\nprofile:"))
+  }
+
   /// With no file in any layer, the report shows `tools.files.exclude`
   /// with its default: the dotfolder of the CLI, which holds the
   /// transcripts that the search verbs skip.

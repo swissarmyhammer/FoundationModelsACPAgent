@@ -154,6 +154,35 @@ struct FailingModelLoader: ModelLoader {
     #expect(definition.context == nil)
   }
 
+  /// A configured `profile.decision` arrives in the definition's
+  /// decision slot unchanged.
+  @Test func theDecisionSlotMapsThrough() throws {
+    var configuration = ProfileConfiguration()
+    configuration.decision = [Self.configuredDecisionModel]
+
+    let definition = configuration.definition(fallbackName: try Self.makeDotfolderName())
+
+    #expect(definition.decision == [Self.configuredDecisionModel])
+  }
+
+  /// A configured `profile.decisionContext` arrives in the definition's
+  /// decision context unchanged.
+  @Test func theDecisionContextMapsThrough() throws {
+    var configuration = ProfileConfiguration()
+    configuration.decisionContext = Self.configuredDecisionContext
+
+    let definition = configuration.definition(fallbackName: try Self.makeDotfolderName())
+
+    #expect(definition.decisionContext == Self.configuredDecisionContext)
+  }
+
+  /// The decision model the pass-through test configures.
+  private static let configuredDecisionModel: ModelRef = "org/decision/model.gguf"
+
+  /// The decision context the pass-through test configures. It differs
+  /// from Router's default, thus the pass-through is observable.
+  private static let configuredDecisionContext = 4096
+
   // MARK: - Construction
 
   /// Agent construction with the in-code default configuration resolves

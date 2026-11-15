@@ -949,6 +949,53 @@ import Testing
     #expect(profile.embedding != defaults.embedding)
   }
 
+  /// The empty stack gives Router's decision candidates: the config
+  /// names no decision model of its own.
+  @Test func theEmptyStackGivesRouterDecisionCandidates() throws {
+    let fixture = Fixture()
+
+    let profile = try fixture.makeLoader().load().configuration.profile
+
+    #expect(profile.decision == ProfileDefinition.defaultDecisionCandidates)
+  }
+
+  /// The empty stack gives Router's decision context.
+  @Test func theEmptyStackGivesRouterDecisionContext() throws {
+    let fixture = Fixture()
+
+    let profile = try fixture.makeLoader().load().configuration.profile
+
+    #expect(profile.decisionContext == ProfileDefinition.defaultDecisionContext)
+  }
+
+  /// A project `profile.decision` wins over Router's candidates.
+  @Test func theProjectDecisionSlotWinsOverItsDefault() throws {
+    let fixture = Fixture()
+
+    let loaded = try fixture.loadProjectConfig(
+      """
+      profile:
+        decision:
+          - \(Self.configuredDecisionModel)
+      """)
+
+    let decision = loaded.configuration.profile.decision
+    #expect(decision.map(\.stringValue) == [Self.configuredDecisionModel])
+  }
+
+  /// A project `profile.decisionContext` wins over Router's context.
+  @Test func theProjectDecisionContextWinsOverItsDefault() throws {
+    let fixture = Fixture()
+
+    let loaded = try fixture.loadProjectConfig(
+      """
+      profile:
+        decisionContext: \(Self.configuredDecisionContext)
+      """)
+
+    #expect(loaded.configuration.profile.decisionContext == Self.configuredDecisionContext)
+  }
+
   /// The `compaction.trigger` the section test writes; it differs from the
   /// default so the decode is observable.
   private static let configuredTrigger = 0.7
@@ -981,6 +1028,13 @@ import Testing
 
   /// The `profile.embedding` model the override test writes.
   private static let configuredEmbeddingModel = "org/embedding-override"
+
+  /// The `profile.decision` model the override test writes.
+  private static let configuredDecisionModel = "org/decision-override/model.gguf"
+
+  /// The `profile.decisionContext` the override test writes. It differs
+  /// from Router's default, thus the decode is observable.
+  private static let configuredDecisionContext = 8192
 
   // MARK: - Helpers
 

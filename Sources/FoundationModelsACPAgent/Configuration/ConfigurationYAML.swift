@@ -101,7 +101,7 @@ public enum ConfigurationYAML {
   /// YAML spelling of the section's coding key.
   private static let sectionComments: [String: String] = [
     AgentConfiguration.CodingKeys.profile.stringValue:
-      "The model profile: the standard, flash and embedding slots.",
+      "The model profile: the standard, flash, embedding and decision slots.",
     AgentConfiguration.CodingKeys.tools.stringValue:
       "The tool roster: each capability is on unless set to false.",
     AgentConfiguration.CodingKeys.recording.stringValue:

@@ -27,7 +27,9 @@ profile:
   standard: mlx-community/Qwen3.8-27B-mxfp4
   flash: mlx-community/Qwen3-4B-4bit
   embedding: erjigit17/embeddinggemma-300m-ane-coreml
+  decision: h2oai/h2o-lightning-4b-gguf/h2o-lightning-4b-Q4_K_M.gguf@61f8d8b7a8c2d84426d0d143ca187f65d235934b
   context: 32768
+  decisionContext: 16384
 configuration:
   instructions: '
 

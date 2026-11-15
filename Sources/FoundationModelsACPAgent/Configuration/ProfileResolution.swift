@@ -3,7 +3,7 @@ import FoundationModelsRouter
 /// The readable failure of the agent's profile resolution.
 ///
 /// Router's `ResolutionFailure` — the error `resolve` throws when no
-/// candidate trio fits — is internal, so the resolve path catches
+/// candidate set fits — is internal, so the resolve path catches
 /// `any Error` and carries the underlying message here, next to the name
 /// of the profile that did not resolve.
 public struct ProfileResolutionError: Error, Equatable, Sendable, CustomStringConvertible {
@@ -32,7 +32,8 @@ extension ProfileConfiguration {
   /// `context` stays `nil` on purpose: the config has no context key
   /// (the context size comes from the model), so resolution derives the working context from each
   /// candidate's native maximum instead of the initializer's 8192
-  /// default.
+  /// default. The decision slot is the exception: it runs at its own
+  /// ``decisionContext``, which the config does carry.
   ///
   /// - Parameter fallbackName: The dotfolder name the profile's name
   ///   falls back to when ``name`` is not set.
@@ -44,7 +45,9 @@ extension ProfileConfiguration {
       standard: standard,
       flash: flash,
       embedding: embedding,
-      context: nil)
+      decision: decision,
+      context: nil,
+      decisionContext: decisionContext)
   }
 
   /// Resolves this section to a resident profile through

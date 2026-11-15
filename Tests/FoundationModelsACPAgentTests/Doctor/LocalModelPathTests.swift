@@ -40,6 +40,7 @@ struct LocalModelPathTests {
       namedLookups: StubModelResolver.foundLookups(
         of: ProfileConfiguration.defaultStandard
           + ProfileConfiguration.defaultFlash
+          + ProfileConfiguration.defaultDecision
           + ProfileConfiguration.defaultStandard.compactMap(\.drafter)),
       lookup: .notFound)
     return await ProfileDoctor(

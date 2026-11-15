@@ -27,10 +27,12 @@ extension KeyCheckedSection {
 /// There is no `permissions` section and no `sandbox` section: the agent
 /// asks for no permission, and the shell runs with no sandbox.
 /// There is no `instructions` section: the system prompt is the markdown
-/// file `Instructions.md`. There is no context-size key: the context comes
-/// from the model.
+/// file `Instructions.md`. There is no context-size key for the shared
+/// window: that context comes from the model. Only the decision slot has a
+/// context key of its own, `profile.decisionContext`.
 public struct AgentConfiguration: Codable, Equatable, Sendable {
-  /// The model profile: the `standard`, `flash` and `embedding` slots.
+  /// The model profile: the `standard`, `flash`, `embedding` and `decision`
+  /// slots.
   public var profile = ProfileConfiguration()
 
   /// The tool roster: per-tool enable and disable through the
@@ -142,11 +144,11 @@ public enum AgentTheme: String, Codable, CaseIterable, Sendable {
 // MARK: - profile
 
 /// The `profile:` section: the candidate models of each slot, in preference
-/// order, and the profile's name. The defaults are a coding profile that
-/// operates on a 32 GB machine (cli-plan.md §7). A 27B model at 4 bits is
-/// approximately 15 GB on its own, and Router's `JointFit` measures the three
-/// models together against the memory budget. Thus a 16 GB machine is too
-/// small.
+/// order, the context of the decision slot, and the profile's name. The
+/// defaults are a coding profile that operates on a 32 GB machine
+/// (cli-plan.md §7). A 27B model at 4 bits is approximately 15 GB on its own,
+/// and Router's `JointFit` measures the four models together against the
+/// memory budget. Thus a 16 GB machine is too small.
 ///
 /// The `standard` default decodes with MTP (multi-token prediction): its
 /// reference names the MTP head of its build as the `drafter`. Router loads a
@@ -182,6 +184,14 @@ public struct ProfileConfiguration: Codable, Equatable, Sendable, KeyCheckedSect
     "erjigit17/embeddinggemma-300m-ane-coreml"
   ]
 
+  /// The default candidates of the `decision` slot: Router's own
+  /// candidates, so the config and Router name one model.
+  public static let defaultDecision = ProfileDefinition.defaultDecisionCandidates
+
+  /// The default context of the `decision` slot, in tokens: Router's own
+  /// default.
+  public static let defaultDecisionContext = ProfileDefinition.defaultDecisionContext
+
   /// The default one-line description of the profile's intent.
   public static let defaultDescription = "Local coding assistant."
 
@@ -200,9 +210,16 @@ public struct ProfileConfiguration: Codable, Equatable, Sendable, KeyCheckedSect
   /// Candidate models of the `embedding` slot, in preference order.
   public var embedding = ProfileConfiguration.defaultEmbedding
 
+  /// Candidate models of the `decision` slot, in preference order.
+  public var decision = ProfileConfiguration.defaultDecision
+
+  /// The context of the `decision` slot, in tokens. The slot runs at this
+  /// context and not at the context of the other slots.
+  public var decisionContext = ProfileConfiguration.defaultDecisionContext
+
   /// The YAML spelling of each key.
   public enum CodingKeys: String, CodingKey, CaseIterable {
-    case name, description, standard, flash, embedding
+    case name, description, standard, flash, embedding, decision, decisionContext
   }
 
   /// The default coding profile.
@@ -216,6 +233,9 @@ public struct ProfileConfiguration: Codable, Equatable, Sendable, KeyCheckedSect
     standard = try container.decodeIfPresent([ModelRef].self, forKey: .standard) ?? standard
     flash = try container.decodeIfPresent([ModelRef].self, forKey: .flash) ?? flash
     embedding = try container.decodeIfPresent([ModelRef].self, forKey: .embedding) ?? embedding
+    decision = try container.decodeIfPresent([ModelRef].self, forKey: .decision) ?? decision
+    decisionContext =
+      try container.decodeIfPresent(Int.self, forKey: .decisionContext) ?? decisionContext
   }
 }
 

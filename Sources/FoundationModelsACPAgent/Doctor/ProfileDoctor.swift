@@ -4,7 +4,7 @@ import FoundationModelsRouter
 
 /// The `doctor` component of the profile (cli-plan.md §5.12, row 2): each
 /// model reference is well formed, each one resolves at Hugging Face, the
-/// cache state says whether the next run downloads, the trio fits the
+/// cache state says whether the next run downloads, the profile fits the
 /// memory of the machine, the free disk covers the download, and a slot
 /// that names an MTP build warns.
 ///
@@ -36,11 +36,11 @@ public struct ProfileDoctor: Doctorable {
   /// 32 GB (cli-plan.md §7).
   ///
   /// **The figure is the one of cli-plan.md, and this component does no arithmetic
-  /// of its own.** Router's `JointFit` prices the three slots together
+  /// of its own.** Router's `JointFit` prices the four slots together
   /// against one shared budget, and it needs the repository metadata of
   /// each candidate to do it. This check reads no such metadata, so it
   /// compares the machine with the floor cli-plan.md measured for the
-  /// shipped trio, and it applies that same floor to a profile that
+  /// shipped profile, and it applies that same floor to a profile that
   /// names other models.
   public static let memoryFloorBytes: Int64 = 34_359_738_368
 
@@ -80,6 +80,9 @@ public struct ProfileDoctor: Doctorable {
   /// The dotted key path of the embedding slot.
   private static let embeddingKey = key(ofSlot: .embedding)
 
+  /// The dotted key path of the decision slot.
+  private static let decisionKey = key(ofSlot: .decision)
+
   /// The dotted key path of one slot.
   ///
   /// - Parameter slot: The slot to name.
@@ -91,7 +94,7 @@ public struct ProfileDoctor: Doctorable {
   // MARK: - Stored state
 
   /// The resolved configuration, whose `profile:` section names the
-  /// three slots.
+  /// four slots.
   private let configuration: AgentConfiguration
 
   /// How the checks reach the Hub and the model cache.
@@ -176,6 +179,7 @@ public struct ProfileDoctor: Doctorable {
       (Self.standardKey, configuration.profile.standard),
       (Self.flashKey, configuration.profile.flash),
       (Self.embeddingKey, configuration.profile.embedding),
+      (Self.decisionKey, configuration.profile.decision),
     ]
     return slots.flatMap { key, references in
       references.flatMap { reference in

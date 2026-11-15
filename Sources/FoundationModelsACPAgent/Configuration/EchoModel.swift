@@ -378,18 +378,131 @@ struct StubMetadata: MetadataSource {
   /// prompt played twice).
   static let window = 32768
 
+  /// The bytes of each file the stub tree lists.
+  static let fileBytes = 10_000_000
+
+  /// The safetensors file at the root of each stub repository. It makes the
+  /// root of each repository an MLX model, whatever GGUF file the tree
+  /// lists beside it.
+  private static let weightsPath = "model.safetensors"
+
+  /// The GGUF files the stub tree lists: the files of Router's default
+  /// decision candidates.
+  ///
+  /// Router sizes a reference that names a file of its repository from the
+  /// GGUF header of that file, and it finds the file in the tree. The
+  /// default decision model is such a file, and the decision slot has no
+  /// fallback, so a stub tree without it resolves no default profile. A
+  /// GGUF file that another profile names is not in the tree, and that
+  /// profile does not resolve on the stub path.
+  private static let ggufPaths = ProfileDefinition.defaultDecisionCandidates.compactMap(\.path)
+
   func fetchRawMetadata(repo: String, revision: String?) async throws -> RawRepoMetadata {
-    RawRepoMetadata(
+    let entries = ([Self.weightsPath] + Self.ggufPaths).map { path in
+      #"{"type":"file","path":"\#(path)","size":\#(Self.fileBytes)}"#
+    }
+    return RawRepoMetadata(
       configJSON: Data(
         """
         {"num_hidden_layers":2,"num_attention_heads":8,\
         "num_key_value_heads":2,"head_dim":16,"hidden_size":128,\
         "max_position_embeddings":\(Self.window)}
         """.utf8),
-      treeJSON: Data(
-        """
-        [{"type":"file","path":"model.safetensors","size":10000000}]
-        """.utf8))
+      treeJSON: Data("[\(entries.joined(separator: ","))]".utf8))
+  }
+
+  /// Gives the bytes of a stub GGUF file: the header of ``StubGGUFHeader``,
+  /// whatever the repository. Each other file is not in the stub tree.
+  ///
+  /// - Parameters:
+  ///   - repo: The repository id. The stub ignores it.
+  ///   - revision: The revision. The stub ignores it.
+  ///   - path: The path of the file in the repository.
+  ///   - range: The byte offsets to read.
+  /// - Returns: The bytes of the range, fewer at the end of the header.
+  /// - Throws: ``StubMetadataError/noSuchFile(_:)`` for a path that is not
+  ///   a GGUF file of the stub tree.
+  func fetchFileBytes(
+    repo: String, revision: String?, path: String, range: Range<Int>
+  ) async throws -> Data {
+    guard Self.ggufPaths.contains(path) else {
+      throw StubMetadataError.noSuchFile(path)
+    }
+    let header = StubGGUFHeader.bytes
+    let clamped = range.clamped(to: 0..<header.count)
+    return header.subdata(in: clamped)
+  }
+}
+
+/// The failure of a read of ``StubMetadata``.
+enum StubMetadataError: Error, Equatable {
+  /// The stub tree has no such file.
+  case noSuchFile(String)
+}
+
+/// The GGUF header of each stub GGUF file: version 3, no tensor, and the
+/// metadata of the stub architecture, which matches the `config.json` of
+/// ``StubMetadata``.
+enum StubGGUFHeader {
+  /// The architecture of the stub model.
+  private static let architecture = "stub"
+
+  /// The GGUF version of the header.
+  private static let version: UInt32 = 3
+
+  /// The `gguf_type` of a string value.
+  private static let stringType: UInt32 = 8
+
+  /// The `gguf_type` of an unsigned 32-bit value.
+  private static let unsignedType: UInt32 = 4
+
+  /// The unsigned values of the metadata, by the key after the
+  /// architecture prefix.
+  private static let unsignedValues: [(key: String, value: UInt32)] = [
+    ("context_length", UInt32(StubMetadata.window)),
+    ("block_count", 2),
+    ("embedding_length", 128),
+    ("attention.head_count", 8),
+    ("attention.head_count_kv", 2),
+    ("attention.key_length", 16),
+    ("attention.value_length", 16),
+  ]
+
+  /// The bytes of the header.
+  static let bytes: Data = {
+    var data = Data("GGUF".utf8)
+    append(version, to: &data)
+    append(UInt64(0), to: &data)
+    append(UInt64(unsignedValues.count + 1), to: &data)
+    append(string: "general.architecture", to: &data)
+    append(stringType, to: &data)
+    append(string: architecture, to: &data)
+    for entry in unsignedValues {
+      append(string: "\(architecture).\(entry.key)", to: &data)
+      append(unsignedType, to: &data)
+      append(entry.value, to: &data)
+    }
+    return data
+  }()
+
+  /// Appends one little-endian integer.
+  ///
+  /// - Parameters:
+  ///   - value: The integer.
+  ///   - data: The bytes to append to.
+  private static func append<Value: FixedWidthInteger>(_ value: Value, to data: inout Data) {
+    withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
+  }
+
+  /// Appends one GGUF string: its byte count, then its UTF-8 bytes.
+  ///
+  /// - Parameters:
+  ///   - string: The string.
+  ///   - data: The bytes to append to.
+  private static func append(string: String, to data: inout Data) {
+    let utf8 = Data(string.utf8)
+    append(UInt64(utf8.count), to: &data)
+    data.append(utf8)
   }
 }
 

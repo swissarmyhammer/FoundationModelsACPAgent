@@ -39,10 +39,10 @@ struct ProfileDoctorTests {
   /// How ``smallDiskBytes`` is stated in a message.
   private static let smallDiskText = "1.0 GB"
 
-  /// How the download of the four scripted references of the shipped
-  /// profile, each of ``downloadBytes``, is stated in a message: the three
+  /// How the download of the five scripted references of the shipped
+  /// profile, each of ``downloadBytes``, is stated in a message: the four
   /// slot models and the MTP drafter of the standard slot.
-  private static let wholeDownloadText = "40.0 GB"
+  private static let wholeDownloadText = "50.0 GB"
 
   /// The words the message of a reference the cache already holds
   /// carries.
@@ -73,6 +73,9 @@ struct ProfileDoctorTests {
 
   /// The dotted key of the flash slot.
   private static let flashKey = "profile.flash"
+
+  /// The dotted key of the decision slot.
+  private static let decisionKey = "profile.decision"
 
   /// The command a fix tells a person to run.
   private static let editCommand = "acp-agent config edit"
@@ -151,7 +154,8 @@ struct ProfileDoctorTests {
   @Test func aMalformedReferenceIsNeverLookedUp() async {
     let resolver = StubModelResolver(
       namedLookups: StubModelResolver.foundLookups(
-        of: ProfileConfiguration.defaultFlash + ProfileConfiguration.defaultEmbedding),
+        of: ProfileConfiguration.defaultFlash + ProfileConfiguration.defaultEmbedding
+          + ProfileConfiguration.defaultDecision),
       lookup: .notFound)
 
     let checks = await Self.doctor(
@@ -177,6 +181,19 @@ struct ProfileDoctorTests {
     #expect(failure.name.contains(Self.standardKey))
     #expect(failure.message.contains(reference.stringValue))
     #expect(fix.contains(Self.editCommand))
+  }
+
+  /// The decision slot is checked as the other slots are: a decision
+  /// reference the resolver does not find is one `.error` that names the
+  /// decision slot.
+  @Test func aDecisionReferenceThatIsNotFoundGivesOneErrorThatNamesTheSlot() async throws {
+    let reference = ProfileConfiguration.defaultDecision[0]
+    let resolver = StubModelResolver(namedLookups: [reference.stringValue: .notFound])
+
+    let checks = await Self.doctor(resolver: resolver).runHealthChecks()
+
+    let failure = try checks.singleFinding(.error)
+    #expect(failure.name.contains(Self.decisionKey))
   }
 
   /// A network failure is one `.warning` and no `.error`: an offline

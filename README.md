@@ -65,7 +65,7 @@ the composition the `acp-agent` CLI builds every mode on.
 ## The machine, and the models
 
 The agent needs a Mac with **32 GB** of memory. The default profile fills
-three model slots at one time, and Router's `JointFit` prices the three
+four model slots at one time, and Router's `JointFit` prices the four
 models together against the memory of the machine. A 27B model at 4 bits is
 approximately 15 GB alone, so a 16 GB machine is too small.
 
@@ -74,16 +74,30 @@ approximately 15 GB alone, so a 16 GB machine is too small.
 | `standard` | `mlx-community/Qwen3.8-27B-4bit` | `mlx-community/Qwen3.8-27B-MTP-4bit` |
 | `flash` | `mlx-community/Qwen3-4B-4bit` | none |
 | `embedding` | `erjigit17/embeddinggemma-300m-ane-coreml` | none |
+| `decision` | `h2oai/h2o-lightning-4b-gguf/h2o-lightning-4b-Q4_K_M.gguf@61f8d8b7a8c2d84426d0d143ca187f65d235934b` | none |
 
-These three are the defaults of `ProfileConfiguration` in
+These four are the defaults of `ProfileConfiguration` in
 [`Sources/FoundationModelsACPAgent/Configuration/AgentConfiguration.swift`](Sources/FoundationModelsACPAgent/Configuration/AgentConfiguration.swift).
-The `profile:` section of a `config.yaml` replaces the candidates of any
-slot.
+The `decision` default is Router's `ProfileDefinition.defaultDecisionCandidates`:
+one GGUF file of a Hub repository, at a pinned revision. The `profile:`
+section of a `config.yaml` replaces the candidates of any slot.
+
+The `decision` slot runs at a context of its own, `profile.decisionContext`,
+and not at the context of the other slots. Its default is Router's
+`ProfileDefinition.defaultDecisionContext`, 16384 tokens:
+
+```yaml
+profile:
+  decision:
+    - h2oai/h2o-lightning-4b-gguf/h2o-lightning-4b-Q4_K_M.gguf
+  decisionContext: 16384
+```
 
 Every slot takes a Hub repository id or a folder on the disk. The loader finds
 the format (MLX or Core ML) by itself from the files: a `.mlpackage` folder and
 no `safetensors` file means Core ML, which runs on the Apple Neural Engine
-(only the `embedding` slot loads Core ML). Any other model loads with MLX.
+(only the `embedding` slot loads Core ML). A `.gguf` file loads with
+llama.cpp (the `decision` slot). Any other model loads with MLX.
 
 ```yaml
 profile:
