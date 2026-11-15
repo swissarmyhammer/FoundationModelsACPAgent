@@ -106,6 +106,12 @@ public actor RoutedACPAgent: Agent {
   /// OpenTestudo, and give this URL (``OpenTestudoInstructions``).
   public nonisolated let openTestudoDownloadURL: URL?
 
+  /// The name of the agent that the host gave, for example `Testudo`, or
+  /// `nil` for none. The instructions of each session tell the model this
+  /// name (``AgentNameInstructions``), so that it answers "what is your
+  /// name". It is not the dotfolder name (``name``).
+  public nonisolated let agentName: String?
+
   /// The probe that tells if the process is sandboxed. The init checks
   /// ``toolMode`` against it, and each session gives it to the Multitool
   /// builder (``CatalogContext/sandboxProbe``).
@@ -461,6 +467,8 @@ public actor RoutedACPAgent: Agent {
   ///   - openTestudoDownloadURL: The URL of the download page of
   ///     OpenTestudo, or `nil` (the default) for none — see
   ///     ``openTestudoDownloadURL``.
+  ///   - agentName: The name of the agent, or `nil` (the default) for
+  ///     none — see ``agentName``.
   ///   - environment: The environment of the host: the stacks read their
   ///     defaults layer from it, and the session tools read it
   ///     (``CatalogContext/environment``).
@@ -492,6 +500,7 @@ public actor RoutedACPAgent: Agent {
     mode: ToolMode,
     sandboxProbe: SandboxProbe = .live,
     openTestudoDownloadURL: URL? = nil,
+    agentName: String? = nil,
     environment: [String: String] = ProcessInfo.processInfo.environment,
     inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
     transcriptLocation: TranscriptLocation? = nil,
@@ -502,6 +511,7 @@ public actor RoutedACPAgent: Agent {
     self.toolMode = mode
     self.sandboxProbe = sandboxProbe
     self.openTestudoDownloadURL = openTestudoDownloadURL
+    self.agentName = agentName
     self.name = name
     self.sessionDirectory = router.sessionDirectory
     self.hooks = hooks

@@ -136,6 +136,10 @@ public struct ComposedAgent: Sendable {
   ///     this URL (``RoutedACPAgent/openTestudoDownloadURL``). With `nil`,
   ///     the instructions give no link. In `.open` the instructions do not
   ///     name OpenTestudo.
+  ///   - agentName: The name of the agent, for example `Testudo`, or `nil`
+  ///     (the default) for none. The instructions of each session tell the
+  ///     model this name (``RoutedACPAgent/agentName``). An
+  ///     `Instructions.md` cannot replace it.
   ///   - environment: The environment the stacks read their defaults
   ///     layer from, and the session tools read. The process environment
   ///     by default.
@@ -207,6 +211,7 @@ public struct ComposedAgent: Sendable {
     mode: ToolMode,
     sandboxProbe: SandboxProbe = .live,
     openTestudoDownloadURL: URL? = nil,
+    agentName: String? = nil,
     environment: [String: String] = ProcessInfo.processInfo.environment,
     modelSource: ModelSource = .live,
     stubChunkGate: String? = nil,
@@ -244,6 +249,7 @@ public struct ComposedAgent: Sendable {
       mode: mode,
       sandboxProbe: sandboxProbe,
       openTestudoDownloadURL: openTestudoDownloadURL,
+      agentName: agentName,
       environment: environment,
       transcriptLocation: transcriptLocation,
       secretStore: secretStore,

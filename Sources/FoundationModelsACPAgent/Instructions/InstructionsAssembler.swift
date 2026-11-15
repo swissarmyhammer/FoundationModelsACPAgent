@@ -45,16 +45,18 @@ public struct AssembledInstructions: Equatable, Sendable {
 ///
 /// 1. The compiled-in ``StyleInstructions``, for each base prompt. Nothing
 ///    replaces it.
-/// 2. In ``FoundationModelsExtras/ToolMode/sandboxed`` only, the
+/// 2. When the host gave a name (``agentName``), the compiled-in
+///    ``AgentNameInstructions`` section. Nothing replaces it.
+/// 3. In ``FoundationModelsExtras/ToolMode/sandboxed`` only, the
 ///    compiled-in ``OpenTestudoInstructions`` section with the download URL
 ///    of the host (ACPA-19c).
-/// 3. The base prompt: the nearest `Instructions.md` through
+/// 4. The base prompt: the nearest `Instructions.md` through
 ///    `stack.content(_:)`, which **replaces the builtin wholesale**; with no
 ///    file in any layer the compiled-in ``BuiltinInstructions`` renders.
-/// 4. The preloaded skill bodies: `registry.preloadedBodies()`, one already-
+/// 5. The preloaded skill bodies: `registry.preloadedBodies()`, one already-
 ///    rendered string.
-/// 5. The user-level `AGENTS.md` through `stack.content(_:)`.
-/// 6. The project-level documents through `AgentsMd.documents(from:)`, from
+/// 6. The user-level `AGENTS.md` through `stack.content(_:)`.
+/// 7. The project-level documents through `AgentsMd.documents(from:)`, from
 ///    the repository root down to the working directory. The
 ///    ``WorkingDirectoryAgent`` role of the session tells what the `AGENT.md`
 ///    of the working directory is.
@@ -111,6 +113,10 @@ public struct InstructionsAssembler: Sendable {
   /// `nil` for none. The ``OpenTestudoInstructions`` section gives it.
   public let openTestudoDownloadURL: URL?
 
+  /// The name of the agent that the host gave, for example `Testudo`, or
+  /// `nil` for none. The ``AgentNameInstructions`` section gives it.
+  public let agentName: String?
+
   /// Creates an assembler for one session.
   ///
   /// - Parameters:
@@ -123,14 +129,17 @@ public struct InstructionsAssembler: Sendable {
   ///   - openTestudoDownloadURL: The URL of the download page of
   ///     OpenTestudo (``openTestudoDownloadURL``), or `nil` (the default)
   ///     for none.
+  ///   - agentName: The name of the agent (``agentName``), or `nil` (the
+  ///     default) for no name section.
   public init(
     stack: DotfolderStack, workingDirectory: URL, toolMode: ToolMode = .open,
-    openTestudoDownloadURL: URL? = nil
+    openTestudoDownloadURL: URL? = nil, agentName: String? = nil
   ) {
     self.stack = stack
     self.workingDirectory = workingDirectory
     self.toolMode = toolMode
     self.openTestudoDownloadURL = openTestudoDownloadURL
+    self.agentName = agentName
   }
 
   /// Assembles the instructions text for one session.
@@ -157,6 +166,9 @@ public struct InstructionsAssembler: Sendable {
     let renderer = Renderer(engine: TemplateEngine(partials: stack))
     var warnings: [InstructionsWarning] = []
     var sections = [StyleInstructions.text]
+    if let agentName {
+      sections.append(AgentNameInstructions.text(name: agentName))
+    }
     if let toolModeSection {
       sections.append(toolModeSection)
     }

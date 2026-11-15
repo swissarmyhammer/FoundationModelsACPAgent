@@ -578,6 +578,31 @@ import Testing
     #expect(instructions?.contains(openTestudoDownloadURL.absoluteString) == true)
   }
 
+  /// The name that the host gives in the cases of the name section.
+  private static let hostAgentName = "Testudo"
+
+  @Test func aNewSessionAndAResumedSessionHaveTheNameOfTheAgent() async throws {
+    let composed = try await composeStubAgent(
+      name: Self.label, label: Self.label, agentName: Self.hostAgentName)
+    _ = try await composed.agent.initialize(AgentClientHarness.makeInitializeRequest())
+    let workspace = makeResolvedDirectory(label: "\(Self.label)-name")
+    let nameSection = AgentNameInstructions.text(name: Self.hostAgentName)
+
+    let sessionId = try await composed.agent.newSession(
+      AgentClientHarness.makeNewSessionRequest(cwd: workspace)
+    ).sessionId
+    let newInstructions = await composed.agent.sessions[sessionId]?.instructions
+    _ = try await composed.agent.closeSession(CloseSessionRequest(sessionId: sessionId))
+    _ = try await composed.agent.resumeSession(
+      ResumeSessionRequest(cwd: AbsolutePath(rawValue: workspace.path), sessionId: sessionId))
+    let resumedInstructions = await composed.agent.sessions[sessionId]?.instructions
+    await composed.closeOpenSessions()
+
+    #expect(composed.agent.agentName == Self.hostAgentName)
+    #expect(newInstructions?.contains(nameSection) == true)
+    #expect(resumedInstructions?.contains(nameSection) == true)
+  }
+
   @Test func eachSessionContextOfTheAgentHasTheModeOfTheAgent() async throws {
     let agent = try await Self.makeAgent(mode: .sandboxed, probe: .fixed(true))
 

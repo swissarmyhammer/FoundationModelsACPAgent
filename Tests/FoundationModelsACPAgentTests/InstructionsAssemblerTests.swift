@@ -81,7 +81,7 @@ import Testing
     /// - Returns: The assembler.
     func assembler(
       at directory: URL? = nil, mode: ToolMode = .open,
-      openTestudoDownloadURL downloadURL: URL? = nil
+      openTestudoDownloadURL downloadURL: URL? = nil, agentName: String? = nil
     ) -> InstructionsAssembler {
       let sessionDirectory = directory ?? workingDirectory
       let stack = DotfolderStack(
@@ -91,7 +91,7 @@ import Testing
         environment: [:])
       return InstructionsAssembler(
         stack: stack, workingDirectory: sessionDirectory, toolMode: mode,
-        openTestudoDownloadURL: downloadURL)
+        openTestudoDownloadURL: downloadURL, agentName: agentName)
     }
 
     /// Writes `text` at `relativePath` under `directory`, and creates
@@ -323,6 +323,68 @@ import Testing
     ).assemble()
 
     #expect(assembled.text == StyleInstructions.prefixed(BuiltinInstructions.text))
+  }
+
+  // MARK: - The name section
+
+  /// The name of the agent in the cases of the name section.
+  static let hostAgentName = "Testudo"
+
+  /// With a name, the name section comes right after the style text and
+  /// before the base prompt.
+  @Test func aNameAddsTheNameSectionAfterTheStyleText() async throws {
+    let assembled = try await Fixture().assembler(agentName: Self.hostAgentName).assemble()
+
+    #expect(
+      assembled.text
+        == StyleInstructions.prefixed(
+          AgentNameInstructions.text(name: Self.hostAgentName)
+            + InstructionsAssembler.sectionSeparator + BuiltinInstructions.text))
+  }
+
+  /// The name section tells the name, and what to say when the user asks.
+  @Test func theNameSectionTellsTheName() {
+    let section = AgentNameInstructions.text(name: Self.hostAgentName)
+
+    #expect(section.contains("Your name is Testudo."))
+    #expect(section.contains("When the user asks your name, say that your name is Testudo."))
+  }
+
+  /// With no name, the instructions have no name section.
+  @Test func noNameAddsNoNameSection() async throws {
+    let assembled = try await Fixture().assembler().assemble()
+
+    #expect(!assembled.text.contains("# Name"))
+  }
+
+  /// An `Instructions.md` replaces the base prompt, but not the name
+  /// section.
+  @Test func anInstructionsFileDoesNotReplaceTheNameSection() async throws {
+    let fixture = Fixture()
+    fixture.write("my own base prompt", to: "Instructions.md", under: fixture.projectDirectory)
+
+    let assembled = try await fixture.assembler(agentName: Self.hostAgentName).assemble()
+
+    #expect(assembled.text.contains(AgentNameInstructions.text(name: Self.hostAgentName)))
+    #expect(assembled.text.contains("my own base prompt"))
+    #expect(!assembled.text.contains(BuiltinInstructions.text))
+  }
+
+  /// In the `sandboxed` mode, the name section comes before the
+  /// OpenTestudo section.
+  @Test func theNameSectionComesBeforeTheOpenTestudoSection() async throws {
+    let assembled = try await Fixture().assembler(
+      mode: .sandboxed, openTestudoDownloadURL: openTestudoDownloadURL,
+      agentName: Self.hostAgentName
+    ).assemble()
+
+    #expect(
+      assembled.text
+        == StyleInstructions.prefixed(
+          AgentNameInstructions.text(name: Self.hostAgentName)
+            + InstructionsAssembler.sectionSeparator
+            + OpenTestudoInstructions.text(downloadURL: openTestudoDownloadURL)
+            + InstructionsAssembler.sectionSeparator + BuiltinInstructions.text))
   }
 
   // MARK: - Wholesale replacement

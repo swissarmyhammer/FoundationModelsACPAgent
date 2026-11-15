@@ -1,8 +1,8 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '8380'
+position_column: done
+position_ordinal: ffffef80
 title: Let the host give the agent a name (agentName)
 ---
 From TestudoApp (testudoapp-75). The user wants "what is your name" to answer "Testudo".
