@@ -144,4 +144,4 @@ python3 -m unittest discover --start-directory bench --pattern 'test_*.py'
 ```
 
 The tests use only the standard library. They start no agent and no docker
-daemon. The `bench` job of CI runs them on each push.
+daemon. CI does not run them. Run them on your computer before you push.

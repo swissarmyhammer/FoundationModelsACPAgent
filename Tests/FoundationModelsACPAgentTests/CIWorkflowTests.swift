@@ -14,8 +14,8 @@ import Testing
 /// and no environment variable selects anything.
 ///
 /// The suite pins seven properties of that shape: the `uses:` line names
-/// the shared workflow at `@persistent-build` (`@main` after the merge); exactly one job exists and it has no
-/// `steps:` key, thus every test run is delegated;
+/// the shared workflow at `@main`; exactly one job exists and it has
+/// no `steps:` key, thus every test run is delegated;
 /// `integration-package-path` names the nested package and
 /// `integration-no-parallel` holds the live prompts to one at a time; no
 /// other selector or `integration-*` input is present; no source, test,
@@ -35,11 +35,9 @@ import Testing
 @Suite("CI workflow")
 struct CIWorkflowTests {
   /// The full `uses:` value that `ci.yml` must delegate to. It names the
-  /// `persistent-build` branch of the shared workflow while that branch is
-  /// under test on the runner. After the merge, it goes back to the `@main`
-  /// ref that the whole package family tracks.
+  /// `@main` ref that the whole package family tracks.
   private static let sharedWorkflowReference =
-    "uses: swissarmyhammer/workflows/.github/workflows/swift-ci.yaml@persistent-build"
+    "uses: swissarmyhammer/workflows/.github/workflows/swift-ci.yaml@main"
 
   /// The number of jobs `ci.yml` is allowed to declare. One job, and
   /// only one, keeps every test run inside the shared workflow.
@@ -57,7 +55,6 @@ struct CIWorkflowTests {
   private static let requiredInputs = [
     (input: "integration-package-path", value: "IntegrationTests"),
     (input: "integration-no-parallel", value: "true"),
-    (input: "persistent-build", value: "true"),
   ]
 
   /// The inputs `ci.yml` must never pass.
@@ -156,7 +153,7 @@ struct CIWorkflowTests {
     (input: "integration-root-products", value: "mixed-case-integration-root-products"),
   ]
 
-  @Test("ci.yml calls the shared swift-ci.yaml workflow at @persistent-build")
+  @Test("ci.yml calls the shared swift-ci.yaml workflow at @main")
   func callsTheSharedWorkflow() throws {
     let lines = try Self.workflowLines()
     let callsShared = lines.contains { line in
