@@ -20,14 +20,23 @@ The `swebench` pin is 4.0.5, and not the 5.0.2 of `swebench_score.py`. This
 script reads `MAP_REPO_VERSION_TO_SPECS` for the environment of each instance,
 and that table is absent from 5.0.2.
 
-This script does NOT give a score. `swebench_score.py` gives the score, and it
-needs docker. The two steps are separate because they fail in different ways.
+This script does NOT score by itself. `swebench_score.py` gives the score, and
+it needs docker. The two steps are separate because they fail in different ways.
 The agent run is long and expensive. The docker step is short but it can run
 out of memory. Keep the predictions on disk, and score them as many times as
 you must:
 
     uv run bench/swebench_run.py   bench/preds.jsonl   # this script: patches only
     uv run bench/swebench_score.py bench/preds.jsonl   # the score, with docker
+
+But the run does not wait for its end to score. Each instance with a patch
+goes to a queue, and ONE worker thread scores it in the background with
+`swebench_score.py`, one instance at a time, into the run id `score_<NAME>` of
+`bench/preds.<NAME>.jsonl`. The log of the run gets one line for each score,
+with the running total, and the summary table gets the live score. A run that
+continues scores each patch of the file that has no report yet.
+`swebench_live_score.py` holds the queue, and it says why.
+`--no-live-score` turns it off.
 
 This script APPENDS, so it can CONTINUE. If the predictions file has results
 already, this script does the other instances only. Use --force to do all the
@@ -183,7 +192,8 @@ from swebench_clone import clone_repository, exclude_agent_folder
 from swebench_common import console, log
 from swebench_env import environment_fields
 from swebench_history import upstream_reads
-from swebench_prediction import prediction_row
+from swebench_live_score import LiveScore, score_log_path, score_run_id
+from swebench_prediction import PATCH_KEY, prediction_row
 from swebench_prompt import instance_prompt, prompt_name
 from swebench_record import (
     append_row,
@@ -327,6 +337,12 @@ parser.add_argument(
     help="do not give `--telemetry-file` to the agent. By default the agent "
     "writes its logs, spans and metrics to <preds stem>.telemetry.jsonl. "
     "Use this for an agent binary from before that option",
+)
+parser.add_argument(
+    "--no-live-score", dest="live_score", action="store_false", default=True,
+    help="do not score each instance with docker when it ends. By default "
+    "each instance with a patch is scored in the background, one at a time, "
+    "into the run id score_<NAME> of preds.<NAME>.jsonl",
 )
 args = parser.parse_args()
 outpath = args.outpath
@@ -508,10 +524,16 @@ if args.sample is not None:
 instances = selection.instances[:LIMIT] if LIMIT else selection.instances
 
 done = set()
+# The instances of `done` whose row holds a patch. A run that continues scores
+# each of them that has no report yet.
+patched = set()
 if outpath.exists() and outpath.stat().st_size and not args.force:
     for ln in outpath.read_text().splitlines():
         try:
-            done.add(json.loads(ln)["instance_id"])
+            row = json.loads(ln)
+            done.add(row["instance_id"])
+            if row.get(PATCH_KEY, "").strip():
+                patched.add(row["instance_id"])
         except Exception:
             pass
     if done:
@@ -534,6 +556,15 @@ log("the record of each instance", record=runs_path(outpath))
 # line comes before the first instance, so no agent output stands above it.
 if args.agent_config is not None:
     log("the agent config", agent_config=args.agent_config)
+# The score of each instance, in the background, when the instance ends.
+live = None
+if args.live_score:
+    live = LiveScore(outpath, log)
+    log(
+        "the live score of each instance",
+        run_id=score_run_id(outpath),
+        log=score_log_path(outpath),
+    )
 
 counts = {
     "patches": 0, "empty": 0, "timeouts": 0, "errors": 0, "skipped": 0,
@@ -603,6 +634,8 @@ with outpath.open("w" if args.force else "a") as out, \
         if instance_id in done:
             counts["skipped"] += 1
             log("[dim]done already, and not done again[/]", **about)
+            if live is not None and instance_id in patched:
+                live.catch_up(instance_id)
             continue
         # The reader of the session events of the agent needs to know which
         # instance is running, and the agent knows of none.
@@ -750,6 +783,10 @@ with outpath.open("w" if args.force else "a") as out, \
             else:
                 counts["empty"] += 1
                 log("[yellow]EMPTY patch[/]", **about, **shape)
+            # The row is on disk, so the score can read it. An empty patch is
+            # not scored: the score counts it as not resolved.
+            if live is not None and patch.strip():
+                live.queue(instance_id)
         except Exception as exc:  # one bad instance must not stop the batch
             counts["errors"] += 1
             log("[red]ERROR[/]", **about, error=exc)
@@ -812,6 +849,16 @@ with outpath.open("w" if args.force else "a") as out, \
             )
 
 # --- the summary ------------------------------------------------------------
+# The table gives the live score, so it waits for the last score to end.
+live_totals = None
+if live is not None:
+    live_totals = live.drain()
+    log(
+        "[bold]the live score: resolved of scored[/]",
+        resolved=live_totals.resolved,
+        scored=live_totals.scored,
+        run_id=score_run_id(outpath),
+    )
 total_dt = time.monotonic() - t_all
 total_minutes = round(total_dt / SECONDS_OF_A_MINUTE, MINUTE_PLACES)
 log(
@@ -860,6 +907,12 @@ table.add_row("not done again", str(counts["skipped"]))
 table.add_row("output", str(outpath))
 table.add_row("record", str(runs_path(outpath)))
 table.add_row("next", f"uv run bench/swebench_score.py {outpath}")
+if live_totals is not None:
+    table.add_row(
+        "live score",
+        f"[bold green]{live_totals.resolved}/{live_totals.scored}[/] resolved "
+        f"of scored ({score_run_id(outpath)})",
+    )
 if server.load_seconds is not None:
     table.add_row("model load", f"{round(server.load_seconds)} s, one time")
 table.add_row("wall time", f"{total_minutes} min")

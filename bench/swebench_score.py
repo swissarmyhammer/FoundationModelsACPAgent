@@ -59,7 +59,6 @@ HOW TO USE IT:
   uv run bench/swebench_score.py bench/preds.jsonl --instance-ids django__django-10914
 """
 import argparse
-import json
 import os
 import time
 from pathlib import Path
@@ -84,6 +83,7 @@ from swebench_docker import (
     ensure_host,
     missing_daemon_message,
 )
+from swebench_live_score import EVALUATION_ROOT, tally_reports
 from swebench_prediction import load_predictions
 from swebench_report import (
     RunIdError,
@@ -221,24 +221,10 @@ def chosen_run_id(named):
 def tally(run_id):
     """Read the report.json files of the run.
 
-    Returns (resolved_ids, evaluated_ids). This is safe if the harness stops
-    in the middle, and it is safe if a second try writes over a report with a
-    new result.
+    Returns (resolved_ids, evaluated_ids). `swebench_live_score.py` reads the
+    reports, because the live score of a run reads them too.
     """
-    resolved, evaluated = set(), set()
-    root = Path("logs/run_evaluation") / run_id
-    for rep in root.glob("*/*/report.json"):
-        try:
-            d = json.loads(rep.read_text())
-        except Exception:
-            continue
-        if not d:
-            continue
-        k = next(iter(d))
-        evaluated.add(k)
-        if d[k].get("resolved"):
-            resolved.add(k)
-    return resolved, evaluated
+    return tally_reports(EVALUATION_ROOT / run_id)
 
 
 def pull_images(instance_ids):
