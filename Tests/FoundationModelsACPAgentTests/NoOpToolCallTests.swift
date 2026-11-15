@@ -8,7 +8,8 @@ import Testing
 @testable import FoundationModelsACPAgent
 
 /// The no-op check of a tool call (task ^ys32tj4): the check marks a
-/// `runCode` call whose snippet calls no `tools.*` verb, and each session
+/// `runCode` call whose snippet only stands by (empty, `return;`, or `return`
+/// of one constant), and each session
 /// that the agent vends or restores gets the check.
 ///
 /// While an operation of a session is pending, Router does not run the body
@@ -19,6 +20,14 @@ import Testing
   /// A snippet that calls no `tools.*` verb. SWE-bench run `no-otel-1011`
   /// recorded this snippet while a call was pending.
   static let placeholderSnippet = #"return "end 11";"#
+
+  /// A stand-by snippet of the form that TestudoApp saw.
+  static let waitingSnippet = #"return "waiting-3""#
+
+  /// A snippet that calls no `tools.*` verb but computes a value. The model
+  /// sent it for "what is today" (TestudoApp transcript
+  /// 01M7GAVMTBF2RQ5T4SFNVE1YW1).
+  static let computingSnippet = "const now = new Date(); return now.toString();"
 
   /// A snippet that calls a `tools.*` verb.
   static let toolsVerbSnippet = #"return await tools.files.read({ path: "README.md" });"#
@@ -77,6 +86,18 @@ import Testing
     let arguments = try Self.arguments(Self.runCodeArguments(Self.placeholderSnippet))
 
     #expect(NoOpToolCall.check(NoOpToolCall.runCodeToolName, arguments))
+  }
+
+  @Test func aRunCodeCallThatReturnsAWaitingConstantIsANoOp() throws {
+    let arguments = try Self.arguments(Self.runCodeArguments(Self.waitingSnippet))
+
+    #expect(NoOpToolCall.check(NoOpToolCall.runCodeToolName, arguments))
+  }
+
+  @Test func aRunCodeCallThatComputesAValueIsNotANoOp() throws {
+    let arguments = try Self.arguments(Self.runCodeArguments(Self.computingSnippet))
+
+    #expect(!NoOpToolCall.check(NoOpToolCall.runCodeToolName, arguments))
   }
 
   @Test func aRunCodeCallOfAToolsVerbIsNotANoOp() throws {
