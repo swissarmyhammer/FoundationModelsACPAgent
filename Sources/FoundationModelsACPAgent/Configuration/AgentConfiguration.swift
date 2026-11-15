@@ -55,9 +55,17 @@ public struct AgentConfiguration: Codable, Equatable, Sendable {
   /// keeps the key in the settings stack for the host.
   public var theme = AgentTheme.system
 
+  /// The key bindings of the editor of a host. The agent does not read it:
+  /// it keeps the key in the settings stack for the host.
+  public var keymap = AgentKeymap.cua
+
+  /// The fonts that a host applies to each role. The agent does not read
+  /// it: it keeps the section in the settings stack for the host.
+  public var fonts = FontsConfiguration()
+
   /// The YAML spelling of each top-level section.
   public enum CodingKeys: String, CodingKey, CaseIterable {
-    case profile, tools, recording, transcripts, compaction, repetition, theme
+    case profile, tools, recording, transcripts, compaction, repetition, theme, keymap, fonts
   }
 
   /// The builtin configuration: every section at its default.
@@ -82,6 +90,8 @@ public struct AgentConfiguration: Codable, Equatable, Sendable {
       try container.decodeIfPresent(RepetitionConfiguration.self, forKey: .repetition)
       ?? repetition
     theme = try container.decodeIfPresent(AgentTheme.self, forKey: .theme) ?? theme
+    keymap = try container.decodeIfPresent(AgentKeymap.self, forKey: .keymap) ?? keymap
+    fonts = try container.decodeIfPresent(FontsConfiguration.self, forKey: .fonts) ?? fonts
   }
 }
 
@@ -108,17 +118,41 @@ extension AgentConfiguration {
     CodingKeys.compaction.stringValue: .checked(CompactionConfiguration.knownKeys),
     CodingKeys.repetition.stringValue: .checked(RepetitionConfiguration.knownKeys),
     CodingKeys.theme.stringValue: .scalar,
+    CodingKeys.keymap.stringValue: .scalar,
+    CodingKeys.fonts.stringValue: .checked(FontsConfiguration.knownKeys),
   ]
 }
 
-// MARK: - theme
+// MARK: - theme and keymap
+
+/// A top-level key whose value is one word from a fixed list.
+///
+/// The decode ignores case, because a host shows the choices with a capital
+/// letter (`System`, `Vim`). Each other value is an error that names the
+/// choices, thus the settings store refuses it before it writes a file.
+protocol CaseInsensitiveChoice: RawRepresentable, CaseIterable, Decodable
+where RawValue == String {
+  /// The YAML spelling of the key, for the error text.
+  static var keyName: String { get }
+}
+
+extension CaseInsensitiveChoice {
+  /// Decodes one choice, in any case.
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    let word = try container.decode(String.self)
+    guard let choice = Self(rawValue: word.lowercased()) else {
+      let choices = Self.allCases.map(\.rawValue).joined(separator: ", ")
+      throw DecodingError.dataCorruptedError(
+        in: container,
+        debugDescription: "\(Self.keyName) must be one of: \(choices) (got \"\(word)\")")
+    }
+    self = choice
+  }
+}
 
 /// The top-level `theme` key: `system`, `light` or `dark`.
-///
-/// The decode ignores case, because a host shows the choices as `System`,
-/// `Light` and `Dark`. Each other value is an error that names the choices,
-/// thus the settings store refuses it before it writes a file.
-public enum AgentTheme: String, Codable, CaseIterable, Sendable {
+public enum AgentTheme: String, Codable, CaseIterable, Sendable, CaseInsensitiveChoice {
   /// Follow the appearance of the system.
   case system
 
@@ -128,16 +162,110 @@ public enum AgentTheme: String, Codable, CaseIterable, Sendable {
   /// The dark appearance.
   case dark
 
-  /// Decodes one choice, in any case.
+  static var keyName: String { AgentConfiguration.CodingKeys.theme.stringValue }
+}
+
+/// The top-level `keymap` key: `cua`, `vim` or `emacs`.
+public enum AgentKeymap: String, Codable, CaseIterable, Sendable, CaseInsensitiveChoice {
+  /// The standard key bindings of the platform (Common User Access).
+  case cua
+
+  /// The Vim key bindings.
+  case vim
+
+  /// The Emacs key bindings.
+  case emacs
+
+  static var keyName: String { AgentConfiguration.CodingKeys.keymap.stringValue }
+}
+
+// MARK: - fonts
+
+/// The `fonts:` section: the font of each role of a host. The agent does not
+/// read it.
+///
+/// Each role is optional. An absent family or size means that the host uses
+/// its own default.
+public struct FontsConfiguration: Codable, Equatable, Sendable, KeyCheckedSection {
+  /// The font of the controls of the host.
+  public var ui = FontRoleConfiguration()
+
+  /// The font of the large text of the host, for example the titles.
+  public var display = FontRoleConfiguration()
+
+  /// The font of the code and of the terminal.
+  public var code = FontRoleConfiguration()
+
+  /// The YAML spelling of each key.
+  public enum CodingKeys: String, CodingKey, CaseIterable {
+    case ui, display, code
+  }
+
+  /// The default: each role uses the default of the host.
+  public init() {}
+
+  /// Decodes each present role and keeps the default for each absent role.
   public init(from decoder: any Decoder) throws {
-    let container = try decoder.singleValueContainer()
-    let word = try container.decode(String.self)
-    guard let theme = Self(rawValue: word.lowercased()) else {
-      let choices = Self.allCases.map(\.rawValue).joined(separator: ", ")
-      throw DecodingError.dataCorruptedError(
-        in: container, debugDescription: "theme must be one of: \(choices) (got \"\(word)\")")
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    ui = try container.decodeIfPresent(FontRoleConfiguration.self, forKey: .ui) ?? ui
+    display =
+      try container.decodeIfPresent(FontRoleConfiguration.self, forKey: .display) ?? display
+    code = try container.decodeIfPresent(FontRoleConfiguration.self, forKey: .code) ?? code
+  }
+}
+
+/// The font of one role under `fonts:`: a family and a size in points.
+///
+/// The section check of the loader looks at the role names only, thus the
+/// decode of a role refuses each key that is not `family` or `size`.
+public struct FontRoleConfiguration: Codable, Equatable, Sendable, KeyCheckedSection {
+  /// The name of the font family. When nil, the host uses its default.
+  public var family: String?
+
+  /// The size in points. When nil, the host uses its default.
+  public var size: Double?
+
+  /// The YAML spelling of each key.
+  public enum CodingKeys: String, CodingKey, CaseIterable {
+    case family, size
+  }
+
+  /// A role with the given family and size.
+  ///
+  /// - Parameters:
+  ///   - family: The name of the font family, or nil for the default.
+  ///   - size: The size in points, or nil for the default.
+  public init(family: String? = nil, size: Double? = nil) {
+    self.family = family
+    self.size = size
+  }
+
+  /// Decodes `family` and `size` when present, and refuses each other key.
+  public init(from decoder: any Decoder) throws {
+    let unknown = try decoder.container(keyedBy: AnyFontKey.self).allKeys
+      .map(\.stringValue).filter { !Self.knownKeys.contains($0) }.sorted()
+    if let first = unknown.first {
+      let choices = CodingKeys.allCases.map(\.stringValue).joined(separator: ", ")
+      throw DecodingError.dataCorrupted(
+        DecodingError.Context(
+          codingPath: decoder.codingPath,
+          debugDescription: "unknown font key \"\(first)\"; the keys are: \(choices)"))
     }
-    self = theme
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    family = try container.decodeIfPresent(String.self, forKey: .family)
+    size = try container.decodeIfPresent(Double.self, forKey: .size)
+    if let size, !(size > 0) {
+      throw DecodingError.dataCorruptedError(
+        forKey: .size, in: container, debugDescription: "a font size must be more than 0")
+    }
+  }
+
+  /// A coding key that holds each key of a role, to find the unknown keys.
+  private struct AnyFontKey: CodingKey {
+    let stringValue: String
+    var intValue: Int? { nil }
+    init(stringValue: String) { self.stringValue = stringValue }
+    init?(intValue: Int) { nil }
   }
 }
 

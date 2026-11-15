@@ -262,6 +262,88 @@ import Testing
     #expect(kept?.value == .string(AgentTheme.system.rawValue))
   }
 
+  // MARK: - The keymap and the fonts
+
+  /// The key path of the keymap: one top-level string.
+  private static let keymapKeyPath = [AgentConfiguration.CodingKeys.keymap.stringValue]
+
+  /// The key path of the size of the code font.
+  private static let codeFontSizeKeyPath = [
+    AgentConfiguration.CodingKeys.fonts.stringValue,
+    FontsConfiguration.CodingKeys.code.stringValue,
+    FontRoleConfiguration.CodingKeys.size.stringValue,
+  ]
+
+  /// The keymap reads as `cua` from the builtin layer.
+  @Test func theKeymapReadsAsCuaFromTheBuiltinLayer() async throws {
+    let fixture = try SettingsGraphFixture(label: "keymap-default")
+
+    let reply = try await fixture.run("{ setting(keyPath: [\"keymap\"]) { value level } }")
+
+    #expect(reply.codes.isEmpty)
+    let kept = try await fixture.store.value(at: Self.keymapKeyPath, cwd: nil)
+    #expect(kept?.value == .string(AgentKeymap.cua.rawValue))
+  }
+
+  /// A `set` of the keymap on the user level needs no working directory,
+  /// and a clear gives the default again (the Keymap commands of a host).
+  @Test func aKeymapSetsAndClearsOnTheUserLevelWithNoWorkingDirectory() async throws {
+    let fixture = try SettingsGraphFixture(label: "keymap-user")
+
+    let set = try await fixture.run(
+      """
+      mutation {
+        updateSetting(input: {keyPath: ["keymap"], value: "vim", level: USER}) { value level }
+      }
+      """)
+
+    #expect(set.codes.isEmpty)
+    let changed = try set.object(SettingsGraphFixture.updateField)
+    #expect(changed["value"] as? String == AgentKeymap.vim.rawValue)
+    #expect(changed["level"] as? String == SettingsGraphFixture.userLevel)
+
+    let clear = try await fixture.run(
+      "mutation { clearSetting(input: {keyPath: [\"keymap\"], level: USER}) { value level } }")
+
+    #expect(clear.codes.isEmpty)
+    let cleared = try await fixture.store.value(at: Self.keymapKeyPath, cwd: nil)
+    #expect(cleared?.value == .string(AgentKeymap.cua.rawValue))
+  }
+
+  /// A keymap that is not a choice is refused, and the setting stays.
+  @Test func aKeymapThatIsNotAChoiceIsRefused() async throws {
+    let fixture = try SettingsGraphFixture(label: "keymap-refused")
+
+    let reply = try await fixture.run(
+      """
+      mutation {
+        updateSetting(input: {keyPath: ["keymap"], value: "nano", level: USER}) { value level }
+      }
+      """)
+
+    #expect(!reply.codes.isEmpty)
+    let kept = try await fixture.store.value(at: Self.keymapKeyPath, cwd: nil)
+    #expect(kept?.value == .string(AgentKeymap.cua.rawValue))
+  }
+
+  /// The size of a font role sets on the user level.
+  @Test func aFontSizeSetsOnTheUserLevel() async throws {
+    let fixture = try SettingsGraphFixture(label: "fonts-user")
+
+    let set = try await fixture.run(
+      """
+      mutation {
+        updateSetting(input: {keyPath: ["fonts", "code", "size"], value: 14, level: USER}) {
+          value level
+        }
+      }
+      """)
+
+    #expect(set.codes.isEmpty)
+    let changed = try await fixture.store.value(at: Self.codeFontSizeKeyPath, cwd: nil)
+    #expect(changed?.value == .int(14) || changed?.value == .double(14))
+  }
+
   // MARK: - Mutations
 
   /// A `set` on the user level changes the value of each session

@@ -1,8 +1,8 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '8280'
+position_column: done
+position_ordinal: ffffee80
 title: Add a keymap key and a fonts section to the configuration
 ---
 From TestudoApp (testudoapp-75). The `settings` endpoint refuses top-level `keymap` with UNKNOWN_SECTION.

@@ -408,6 +408,104 @@ import Testing
     }
   }
 
+  // MARK: - The keymap
+
+  /// With no file, the keymap is `cua`.
+  @Test func theKeymapDefaultsToCua() throws {
+    let loaded = try Fixture().makeLoader().load()
+
+    #expect(loaded.configuration.keymap == .cua)
+  }
+
+  /// `keymap` is a top-level string. It gives no unknown-section warning,
+  /// and a choice reads in any case.
+  @Test(arguments: [("vim", AgentKeymap.vim), ("Emacs", .emacs), ("CUA", .cua)])
+  func aKeymapLoadsAsATopLevelString(text: String, keymap: AgentKeymap) throws {
+    let loaded = try Fixture().loadProjectConfig("keymap: \(text)\n")
+
+    #expect(loaded.configuration.keymap == keymap)
+    #expect(loaded.warnings.isEmpty)
+    #expect(loaded.sources["keymap"] == .project)
+  }
+
+  /// A value that is not a choice is an error that names each choice.
+  @Test func anUnknownKeymapIsAnErrorThatNamesTheChoices() throws {
+    let fixture = Fixture()
+    fixture.writeConfig("keymap: nano\n", in: fixture.projectDirectory)
+
+    let error = #expect(throws: (any Error).self) {
+      try fixture.makeLoader().load()
+    }
+
+    let message = String(describing: error)
+    #expect(message.contains("nano"))
+    for keymap in AgentKeymap.allCases {
+      #expect(message.contains(keymap.rawValue))
+    }
+  }
+
+  // MARK: - The fonts
+
+  /// With no file, each font role uses the default of the host.
+  @Test func theFontsDefaultToNoFamilyAndNoSize() throws {
+    let loaded = try Fixture().makeLoader().load()
+
+    #expect(loaded.configuration.fonts == FontsConfiguration())
+    #expect(loaded.configuration.fonts.code == FontRoleConfiguration())
+  }
+
+  /// Each role decodes its family and its size; an absent role keeps the
+  /// default.
+  @Test func theFontsDecodeEachRole() throws {
+    let loaded = try Fixture().loadProjectConfig(
+      """
+      fonts:
+        ui:
+          family: SF Pro
+          size: 13
+        code:
+          size: 12.5
+      """)
+
+    let fonts = loaded.configuration.fonts
+    #expect(fonts.ui == FontRoleConfiguration(family: "SF Pro", size: 13))
+    #expect(fonts.code == FontRoleConfiguration(size: 12.5))
+    #expect(fonts.display == FontRoleConfiguration())
+    #expect(loaded.warnings.isEmpty)
+  }
+
+  /// A role that is not ui, display or code is an error.
+  @Test func anUnknownFontRoleIsAnError() throws {
+    let fixture = Fixture()
+    fixture.writeConfig("fonts:\n  title:\n    size: 20\n", in: fixture.projectDirectory)
+
+    #expect(throws: (any Error).self) {
+      try fixture.makeLoader().load()
+    }
+  }
+
+  /// A key in a role that is not family or size is an error.
+  @Test func anUnknownFontKeyIsAnError() throws {
+    let fixture = Fixture()
+    fixture.writeConfig("fonts:\n  ui:\n    weight: bold\n", in: fixture.projectDirectory)
+
+    let error = #expect(throws: (any Error).self) {
+      try fixture.makeLoader().load()
+    }
+
+    #expect(String(describing: error).contains("weight"))
+  }
+
+  /// A size that is not more than zero is an error.
+  @Test func aFontSizeOfZeroIsAnError() throws {
+    let fixture = Fixture()
+    fixture.writeConfig("fonts:\n  code:\n    size: 0\n", in: fixture.projectDirectory)
+
+    #expect(throws: (any Error).self) {
+      try fixture.makeLoader().load()
+    }
+  }
+
   // MARK: - The per-key source map
 
   /// The source map names the layer that set each key, by dotted key

@@ -23,6 +23,25 @@
 # not read it.
 theme: system
 
+# The key bindings of the editor of a host: cua (the standard bindings),
+# vim or emacs. The agent does not read it.
+keymap: cua
+
+# The font of each role of a host. The agent does not read it. Each role
+# has a family (the name of the font) and a size in points. An absent key
+# means that the host uses its own default, for example:
+#
+#   fonts:
+#     ui:
+#       family: SF Pro
+#       size: 13
+#     display:
+#       family: New York
+#     code:
+#       family: SF Mono
+#       size: 12
+fonts: {}
+
 tools:
   # The files tools: read, write, search and edit the files of the session.
   files:

@@ -114,6 +114,10 @@ public enum ConfigurationYAML {
       "The detector that stops a generate call that repeats itself.",
     AgentConfiguration.CodingKeys.theme.stringValue:
       "The appearance that a host applies: system, light or dark.",
+    AgentConfiguration.CodingKeys.keymap.stringValue:
+      "The key bindings of the editor of a host: cua, vim or emacs.",
+    AgentConfiguration.CodingKeys.fonts.stringValue:
+      "The font family and size of each role of a host: ui, display and code.",
   ]
 
   /// The comment printed at the top of the document.

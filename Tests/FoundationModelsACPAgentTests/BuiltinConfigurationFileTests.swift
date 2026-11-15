@@ -145,6 +145,19 @@ import Testing
   }
 
   /// The file names each tool of the roster under `tools:`.
+  /// The file names each key that the agent keeps only for a host, thus a
+  /// person who reads the file finds the choices of the host.
+  @Test(arguments: [
+    AgentConfiguration.CodingKeys.theme, .keymap, .fonts,
+  ])
+  func theFileNamesEachHostKey(section: AgentConfiguration.CodingKeys) throws {
+    let root = try BuiltinConfigurationFile.root()
+    let sections = try #require(root.mapping, "the builtin file is not a mapping: \(root)")
+    do {
+      #expect(sections[section.stringValue] != nil, "the builtin file has no \(section.stringValue)")
+    }
+  }
+
   @Test func theFileNamesEachToolOfTheRoster() throws {
     let tools = try Self.toolBodies()
 
