@@ -569,6 +569,10 @@ public actor RoutedACPAgent: Agent {
     await router.sessionDirectory.useRecordingRoots { await directoryRoots() }
     // The directory restores a recorded root session through the agent (ACPA-9).
     await router.sessionDirectory.use(launcher: AgentSessionLauncher(agent: self))
+    // The Pinned and Recent lists of this server are in a file of the state of this machine,
+    // not in the recording of each session (D118 (e)).
+    await router.sessionDirectory.use(
+      usageStore: JSONFileSessionUsageStore(fileURL: home.sessionUsageFile))
   }
 
   // MARK: - The order rule

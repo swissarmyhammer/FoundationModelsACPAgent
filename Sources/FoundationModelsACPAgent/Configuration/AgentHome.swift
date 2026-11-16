@@ -137,6 +137,15 @@ public struct AgentHome: Sendable, Equatable {
   /// Where the user layer of each settings stack is.
   let settingsLayout: SettingsLayout
 
+  /// The file of the Pinned and Recent lists of this server
+  /// (`JSONFileSessionUsageStore` of Router): `sessions/usage.json` in
+  /// ``local``. The lists are the state of this machine, thus they never
+  /// sync and are not in the recording of a session (D118 (e)).
+  public var sessionUsageFile: URL {
+    local.appendingPathComponent("sessions", isDirectory: true)
+      .appendingPathComponent("usage.json", isDirectory: false)
+  }
+
   // MARK: - Presets
 
   /// The home of a host that gives its own two roots. Each folder of the

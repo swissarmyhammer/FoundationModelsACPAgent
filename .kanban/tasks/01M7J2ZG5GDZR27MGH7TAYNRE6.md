@@ -1,8 +1,8 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '8180'
+position_column: done
+position_ordinal: fffff380
 title: Give the machine-local usage store to the session directory
 ---
 BLOCKED until Router has `SessionUsageStore`, its JSON file and `RouterSessionDirectory.use(usageStore:)` (the Router owner, another machine).
