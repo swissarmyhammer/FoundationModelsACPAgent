@@ -4,36 +4,37 @@ import FoundationModelsRouter
 import GraphQL
 import Graphiti
 
-/// The `models` GraphQL endpoint (D183 (c), D100 (d)): the model of each slot
-/// of the profile, the models that a slot can take, and the download size and
-/// the disk state of each of them, for the Models pane of the settings.
+/// The `models` GraphQL endpoint (D183 (c), D100 (d), ACPA-21, D189): the
+/// builtin profiles that the user can select, the model of each slot of the
+/// selected profile, and the download size, the disk state and the fit of
+/// each of them, for the Models pane of the settings.
 ///
-/// - `Query.models` gives one row for each slot: `STANDARD`, `FLASH`,
-///   `EMBEDDING` and `DECISION`. A row shows the first candidate of the slot
-///   in the settings at the user level, its MTP drafter, its GGUF file, the
-///   bytes of its download (model and drafter), the bytes on disk, the disk
-///   state, and `configValue`: the reference in the encoding of a slot key.
-///   `active` is the model that runs in the slot now, and `restartRequired`
-///   tells that the settings differ from the launch of the running agent.
-/// - `Query.choices(slot:)` gives the models that the slot can take, with the
-///   same storage fields.
-/// - `Subscription.changes(after:)` gives a change when the value of a slot
-///   changes at the user level (`reason: SLOT`, `appliesAt: NEXT_LAUNCH`), or
-///   when the disk state of a model of a slot changes (`reason: DISK`,
-///   `appliesAt: NOW`). `Query.cursor` gives the cursor of the newest change.
+/// - `Query.profiles` gives one row for each builtin profile, in the order of
+///   the list. A row shows the name, the description, if the profile is
+///   selected and if it is active, the model of each slot, the download size
+///   and the bytes on disk of its different models (each counted one time),
+///   its disk state, and its fit against the memory budget of the machine.
+/// - `Query.models` gives one row for each slot of the selected profile:
+///   `STANDARD`, `FLASH`, `EMBEDDING` and `DECISION`. It is read-only.
+/// - `Subscription.changes(after:)` gives a change when `profile.preset`
+///   changes at the user level (`reason: PROFILE`, `appliesAt: NEXT_LAUNCH`),
+///   or when the disk state of a model of a builtin profile changes
+///   (`reason: DISK`, `appliesAt: NOW`). `Query.cursor` gives the cursor of
+///   the newest change.
 ///
-/// A slot change applies at the next launch of the agent: the agent resolves
-/// its profile one time, when it starts, and each session of the running
-/// agent keeps the models of that launch.
+/// A profile change applies at the next launch of the agent: the agent
+/// resolves its profile one time, when it starts, and each session of the
+/// running agent keeps the models of that launch.
 ///
-/// The endpoint writes nothing. A client changes a slot through the
-/// `settings` endpoint: `updateSetting(keyPath: ["profile", "<slot>"],
-/// value: [configValue], level: USER)`.
+/// The endpoint writes nothing. A client selects a profile through the
+/// `settings` endpoint: `updateSetting(keyPath: ["profile", "preset"],
+/// value: "<name>", level: USER)`.
 ///
 /// No read of the endpoint downloads a model or loads a model. The agent
 /// makes one endpoint over its settings store (``RoutedACPAgent/modelsEndpoint``).
 /// A host that needs the endpoint before the agent exists, for example before
-/// the first download, makes one with ``init(store:storage:launched:active:diskPollInterval:)``.
+/// the first download, makes one with
+/// ``init(store:storage:launched:active:fitEstimator:diskPollInterval:)``.
 public final class ModelsGraph: GraphQLEndpoint, Sendable {
   /// The name of the endpoint.
   public static let endpointName = "models"
@@ -49,7 +50,7 @@ public final class ModelsGraph: GraphQLEndpoint, Sendable {
   static let rules = GraphQLNameRules(
     aliases: GraphQLAliasTable(
       byType: [
-        "Query": ["models": ["slots"], "choices": ["modelChoices"]],
+        "Query": ["models": ["slots"], "profiles": ["modelProfiles", "presets"]],
         "Subscription": ["changes": ["modelChanges"]],
       ]))
 
@@ -77,14 +78,21 @@ public final class ModelsGraph: GraphQLEndpoint, Sendable {
   ///   - launched: The profile section that the running agent resolved at its
   ///     launch, or `nil` (the default) when no agent runs yet.
   ///   - active: The model that runs in each slot, or none (the default).
+  ///   - fitEstimator: The source of the fit estimate of each profile, or
+  ///     `nil` (the default) when the fit is not known: then each profile
+  ///     has the fit `UNKNOWN`. A host gives the estimate of its router
+  ///     also before the agent exists.
   ///   - diskPollInterval: The time between two reads of the disk while a
   ///     subscriber is open.
   public init(
     store: SettingsStore, storage: any ModelStorageSource,
     launched: ProfileConfiguration? = nil, active: [ModelSlot: ModelRef] = [:],
+    fitEstimator: (any ProfileFitEstimating)? = nil,
     diskPollInterval: Duration = ModelsGraph.defaultDiskPollInterval
   ) {
-    engine = ModelsEngine(store: store, storage: storage, launched: launched, active: active)
+    engine = ModelsEngine(
+      store: store, storage: storage, launched: launched, active: active,
+      fitEstimator: fitEstimator)
     feed = ModelsGraphChangeFeed(
       engine: engine, diskPollInterval: diskPollInterval, capacity: Self.changeLogCapacity)
   }
@@ -175,15 +183,11 @@ struct ModelsGraphResolver: Sendable {
     return rows
   }
 
-  /// `Query.choices(slot:)`.
-  func choices(context: ModelsGraphContext, arguments: ModelsGraphChoicesArguments) async throws
-    -> [ModelsGraphChoice]
+  /// `Query.profiles`.
+  func profiles(context: ModelsGraphContext, arguments _: NoArguments) async throws
+    -> [ModelsGraphProfile]
   {
-    var choices: [ModelsGraphChoice] = []
-    for ref in try await context.engine.choices(of: arguments.slot.slot) {
-      choices.append(ModelsGraphChoice(model: ModelsGraphModelFields(await context.engine.report(of: ref))))
-    }
-    return choices
+    try await context.engine.profiles()
   }
 
   /// `Query.cursor`.
@@ -235,10 +239,10 @@ struct ModelsGraphAPI: API {
   /// A type of the schema.
   typealias SchemaType = TypeComponent<ModelsGraphResolver, ModelsGraphContext>
 
-  /// The text of the description of a slot change.
+  /// The text of the description of a profile change.
   static let appliesText =
-    "A slot change applies at the next launch of the agent: the agent resolves its profile when it starts, and "
-    + "each session of the running agent keeps the models of that launch."
+    "A profile change applies at the next launch of the agent: the agent resolves its profile when it starts, "
+    + "and each session of the running agent keeps the models of that launch."
 
   /// Builds the schema.
   private static func makeSchema() throws -> Schema<ModelsGraphResolver, ModelsGraphContext> {
@@ -247,10 +251,10 @@ struct ModelsGraphAPI: API {
       .addToolkitIDScalar()
       .add {
         Enum(ModelsGraphSlot.self, as: "ModelSlot") {
-          Value(.standard).description("The model of the main work: profile.standard.")
-          Value(.flash).description("The small fast model: profile.flash.")
-          Value(.embedding).description("The embedding model: profile.embedding.")
-          Value(.decision).description("The model of the decisions of the router: profile.decision.")
+          Value(.standard).description("The model of the main work.")
+          Value(.flash).description("The fast model.")
+          Value(.embedding).description("The embedding model.")
+          Value(.decision).description("The model of the decisions of the router.")
         }
         .description("A model slot of the profile.")
         Enum(ModelsGraphDiskState.self, as: "ModelDiskState") {
@@ -259,8 +263,14 @@ struct ModelsGraphAPI: API {
           Value(.missing).description("No byte is on disk. The first use downloads the model.")
         }
         .description("The disk state of a model and its drafter.")
+        Enum(ModelsGraphProfileFit.self, as: "ProfileFit") {
+          Value(.fits).description("The profile fits the memory budget of this machine.")
+          Value(.doesNotFit).description("The profile does not fit the memory budget of this machine.")
+          Value(.unknown).description("The fit is not known: the endpoint has no fit estimate.")
+        }
+        .description("The fit of a profile against the memory budget of the machine.")
         Enum(ModelsGraphChangeReason.self, as: "ModelChangeReason") {
-          Value(.slot).description("The value of a slot in the settings changed.")
+          Value(.profile).description("The value of profile.preset in the settings changed.")
           Value(.disk).description("The files of a model on disk changed, for example a download ended.")
         }
         .description("Why the slots of a change changed.")
@@ -270,21 +280,20 @@ struct ModelsGraphAPI: API {
         }
         .description("When a change takes effect.")
         slotModelType()
-        choiceType()
+        profileModelType()
+        profileType()
         changeType()
       }
       .addQuery {
+        Field("profiles", at: ModelsGraphResolver.profiles)
+          .description(
+            "One row for each builtin profile, in order, from the largest to the smallest. To select one, give "
+              + "its name to the settings endpoint: updateSetting(keyPath: [\"profile\", \"preset\"], "
+              + "value: \"<name>\", level: USER). No read downloads or loads a model.")
         Field("models", at: ModelsGraphResolver.models)
           .description(
-            "One row for each slot: the first candidate of the slot in the settings at the USER level, and its "
-              + "storage. No read downloads or loads a model.")
-        Field("choices", at: ModelsGraphResolver.choices) {
-          Argument("slot", at: \.slot).description("The slot.")
-        }
-        .description(
-          "The models that the slot can take: its candidates in the settings, then the builtin choices of "
-            + "the router for the slot. To select one, give [configValue] to the settings endpoint at the key path "
-            + "[\"profile\", \"<slot>\"].")
+            "One row for each slot of the profile that profile.preset selects at the USER level: the first "
+              + "candidate of the slot, and its storage. Read-only. No read downloads or loads a model.")
         Field("cursor", at: ModelsGraphResolver.cursor)
           .description("The cursor of the newest change. Read the models, then subscribe after this cursor.")
       }
@@ -302,8 +311,9 @@ struct ModelsGraphAPI: API {
             .description("The cursor to resume after. None: the changes from now.")
         }
         .description(
-          "A change when the value of a slot changes at the USER level (reason SLOT, appliesAt NEXT_LAUNCH), "
-            + "or when the disk state of a model of a slot changes (reason DISK, appliesAt NOW). "
+          "A change when profile.preset changes at the USER level (reason PROFILE, appliesAt NEXT_LAUNCH), "
+            + "or when the disk state of a model of a builtin profile changes (reason DISK, appliesAt NOW). "
+            + "Read the profiles and the models again. "
             + "RESYNC_REQUIRED ends it when a change after the cursor is lost: read the models and the cursor "
             + "again.")
       }
@@ -323,22 +333,21 @@ struct ModelsGraphAPI: API {
         .description("The download size of the model and its drafter in bytes, or null when it is not known.")
       Field("presentBytes", at: \.presentBytes).description("The bytes of the model and its drafter on disk.")
       Field("state", at: \.state).description("The disk state of the model and its drafter.")
-      Field("configValue", at: \.configValue)
-        .description("The model in the encoding of a slot key of config.yaml: a string, or an object with a drafter.")
-      Field("candidates", at: \.candidates).description("Each candidate of the slot in the settings, in order.")
+      Field("candidates", at: \.candidates).description("Each candidate of the slot in the profile, in order.")
       Field("active", at: \.active)
         .description("The model that runs in the slot now, or null when no agent runs.")
       Field("restartRequired", at: \.restartRequired)
-        .description("True when the settings of the slot differ from the launch of the running agent. " + appliesText)
+        .description("True when the model of the slot differs from the launch of the running agent. " + appliesText)
       Field("storageError", at: \.storageError)
         .description("The error of a storage read, or null. Then the size is null.")
     }
-    .description("The model of one slot of the profile.")
+    .description("The model of one slot of the selected profile.")
   }
 
-  /// The `ModelChoice` type.
-  private static func choiceType() -> SchemaType {
-    Type(ModelsGraphChoice.self, as: "ModelChoice") {
+  /// The `ProfileModel` type.
+  private static func profileModelType() -> SchemaType {
+    Type(ModelsGraphProfileModel.self, as: "ProfileModel") {
+      Field("slot", at: \.slot).description("The slot.")
       Field("repo", at: \.repo).description("The repository, or the location of a local model.")
       Field("path", at: \.path).description("The path inside the repository, or null.")
       Field("revision", at: \.revision).description("The pinned revision, or null.")
@@ -348,12 +357,40 @@ struct ModelsGraphAPI: API {
         .description("The download size of the model and its drafter in bytes, or null when it is not known.")
       Field("presentBytes", at: \.presentBytes).description("The bytes of the model and its drafter on disk.")
       Field("state", at: \.state).description("The disk state of the model and its drafter.")
-      Field("configValue", at: \.configValue)
-        .description("The model in the encoding of a slot key of config.yaml: a string, or an object with a drafter.")
       Field("storageError", at: \.storageError)
         .description("The error of a storage read, or null. Then the size is null.")
     }
-    .description("One model that a slot can take.")
+    .description("The model of one slot of a profile: the first candidate of the slot.")
+  }
+
+  /// The `ModelProfile` type.
+  private static func profileType() -> SchemaType {
+    Type(ModelsGraphProfile.self, as: "ModelProfile") {
+      Field("name", at: \.name).description("The name: the value of profile.preset that selects the profile.")
+      Field("description", at: \.description).description("One sentence about the profile.")
+      Field("selected", at: \.selected).description("True when profile.preset at the USER level names the profile.")
+      Field("active", at: \.active)
+        .description("True when the running agent launched with the profile. False when no agent runs.")
+      Field("restartRequired", at: \.restartRequired)
+        .description("True when the profile is selected and the running agent launched with a different one. " + appliesText)
+      Field("models", at: \.models).description("The model of each slot.")
+      Field("downloadBytes", at: \.downloadBytes)
+        .description(
+          "The download size of the different models and drafters of the profile in bytes, each model counted one "
+            + "time, or null when a size is not known.")
+      Field("presentBytes", at: \.presentBytes)
+        .description("The bytes of the different models and drafters of the profile on disk.")
+      Field("state", at: \.state)
+        .description("COMPLETE when each model is complete, MISSING when no byte is on disk, else PARTIAL.")
+      Field("fit", at: \.fit).description("The fit of the profile against the memory budget of this machine.")
+      Field("requiredBytes", at: \.requiredBytes)
+        .description("The memory that the profile needs in bytes, or null when the profile does not fit.")
+      Field("budgetBytes", at: \.budgetBytes)
+        .description("The memory budget of this machine in bytes, or null when no estimate ran.")
+      Field("fitError", at: \.fitError)
+        .description("Why the profile does not fit: the budget is too small, or a model could not be sized. Null when it fits.")
+    }
+    .description("One builtin profile: the models of the four slots, which the user selects together.")
   }
 
   /// The `ModelChange` type.
@@ -361,9 +398,11 @@ struct ModelsGraphAPI: API {
     Type(ModelsGraphChange.self, as: "ModelChange") {
       Field("cursor", at: \.cursor).description("The cursor that resumes the subscription after this change.")
       Field("at", at: \.at).description("The time of the change.")
-      Field("added", at: \.added).description("None: the four slots are always there.")
+      Field("added", at: \.added).description("None: the four slots and the builtin profiles are always there.")
       Field("changed", at: \.changed)
-        .description("The slots that changed, by their key: standard, flash, embedding or decision.")
+        .description(
+          "The slots of the selected profile that changed, by their key: standard, flash, embedding or decision. "
+            + "A DISK change of a model of an other profile names no slot.")
       Field("removed", at: \.removed).description("None.")
       Field("reason", at: \.reason).description("Why the slots changed.")
       Field("appliesAt", at: \.appliesAt).description("When the change takes effect.")

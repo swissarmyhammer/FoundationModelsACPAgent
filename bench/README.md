@@ -134,8 +134,9 @@ The gate measures what the model chose, not when. A run stops at the first
 no skill. No clock decides it.
 
 `ACP_AGENT_SKILL_TRIGGER_SAMPLES=understand-parser,release-notes` runs the
-slower samples. `ACP_AGENT_SKILL_TRIGGER_MODEL` and
-`ACP_AGENT_SKILL_TRIGGER_REPEATS` set the model and the number of runs.
+slower samples. `ACP_AGENT_SKILL_TRIGGER_PRESET` and
+`ACP_AGENT_SKILL_TRIGGER_REPEATS` set the builtin profile (for example
+`tiny`) and the number of runs.
 
 ## The tests of the harness
 

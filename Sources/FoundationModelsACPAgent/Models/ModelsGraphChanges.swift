@@ -4,8 +4,9 @@ import FoundationModelsRouter
 import Synchronization
 
 // The change feed of the `models` endpoint (EXTRAS-9 rule 9): one change log
-// of each endpoint, fed by the changes of the slot keys in the settings store,
-// and by a watch of the disk state of the models of the slots.
+// of each endpoint, fed by the changes of `profile.preset` in the settings
+// store, and by a watch of the disk state of the models of the builtin
+// profiles.
 
 /// One change of the `models` endpoint.
 struct ModelsGraphChangeEvent: Sendable {
@@ -29,9 +30,9 @@ actor ModelsDiskWatch {
   /// The open subscribers.
   private var subscribers = 0
 
-  /// The disk state of each slot at the last read, or `nil` when no
-  /// subscriber is open.
-  private var last: [ModelSlot: String]?
+  /// The disk state of each model at the last read, by the text form of
+  /// the model, or `nil` when no subscriber is open.
+  private var last: [String: String]?
 
   /// Makes the watch.
   ///
@@ -64,11 +65,12 @@ actor ModelsDiskWatch {
     last = await engine.diskFingerprint()
   }
 
-  /// Reads the disk state, and gives each slot whose state changed since
+  /// Reads the disk state, and gives each model whose state changed since
   /// the last read.
   ///
-  /// - Returns: The changed slots, none when no subscriber is open.
-  func poll() async -> [ModelSlot] {
+  /// - Returns: The text forms of the changed models, none when no
+  ///   subscriber is open.
+  func poll() async -> Set<String> {
     guard subscribers > 0, let old = last else {
       return []
     }
@@ -77,7 +79,7 @@ actor ModelsDiskWatch {
       return []
     }
     last = now
-    return ModelSlot.allCases.filter { now[$0] != old[$0] }
+    return Set(now.keys.filter { now[$0] != old[$0] })
   }
 }
 
@@ -117,10 +119,12 @@ final class ModelsGraphChangeFeed: Sendable {
     }
     self.settingsWatch = settingsWatch
     let settings = Task {
-      await Self.recordSettingsChanges(await settingsWatch.value, into: log, rebasing: watch)
+      await Self.recordSettingsChanges(
+        await settingsWatch.value, into: log, rebasing: watch, clearing: engine.fitCache)
     }
     let disk = Task {
-      await Self.recordDiskChanges(of: watch, every: diskPollInterval, into: log)
+      await Self.recordDiskChanges(
+        of: watch, engine: engine, every: diskPollInterval, into: log)
     }
     tasks = Mutex([settings, disk])
   }
@@ -129,59 +133,57 @@ final class ModelsGraphChangeFeed: Sendable {
     tasks.withLock { $0.forEach { $0.cancel() } }
   }
 
-  /// The slots that a change of the settings can change: the slot of the
-  /// key path, each slot for a change of the whole profile or of a whole
-  /// file, else none.
+  /// Tells if a change of the settings can change the selected profile: a
+  /// change of `profile.preset`, of the whole profile section, or of a
+  /// whole file.
   ///
   /// - Parameter keyPath: The changed key path, or `nil` for a change of a
   ///   whole file.
-  /// - Returns: The slots.
-  static func slots(changedBy keyPath: [String]?) -> [ModelSlot] {
+  /// - Returns: `true` when the selected profile can change.
+  static func changesProfile(_ keyPath: [String]?) -> Bool {
     guard let keyPath else {
-      return ModelSlot.allCases
+      return true
     }
-    guard keyPath.first == AgentConfiguration.CodingKeys.profile.stringValue else {
-      return []
-    }
-    guard keyPath.count > 1 else {
-      return ModelSlot.allCases
-    }
-    return ModelSlot.allCases.filter { $0.rawValue == keyPath[1] }
+    return ProfileConfiguration.presetKeyPath.starts(with: keyPath)
+      || keyPath.starts(with: ProfileConfiguration.presetKeyPath)
   }
 
-  /// Logs a change for each change of a slot at the user level.
+  /// Logs a change for each change of `profile.preset` at the user level.
+  /// The change names each slot, because each slot can have a new model.
   ///
   /// - Parameters:
   ///   - changes: The changes of the settings store.
   ///   - log: The change log.
   ///   - watch: The disk watch, which takes its base state again after a
-  ///     slot change, so that the new model of the slot is not a disk change.
+  ///     profile change.
+  ///   - fitCache: The fit estimates, which the change clears.
   private static func recordSettingsChanges(
     _ changes: AsyncStream<SettingsChange>, into log: ChangeLog<ModelsGraphChangeEvent>,
-    rebasing watch: ModelsDiskWatch
+    rebasing watch: ModelsDiskWatch, clearing fitCache: ProfileFitCache
   ) async {
     for await change in changes {
-      guard change.level == .user else {
+      guard change.level == .user, changesProfile(change.keyPath) else {
         continue
       }
-      let slots = slots(changedBy: change.keyPath)
-      guard !slots.isEmpty else {
-        continue
-      }
-      await log.append(ModelsGraphChangeEvent(slots: slots, reason: .slot))
+      await fitCache.clear()
+      await log.append(ModelsGraphChangeEvent(slots: ModelSlot.allCases, reason: .profile))
       await watch.rebase()
     }
   }
 
-  /// Logs a change for each slot whose disk state changed, while a
-  /// subscriber is open.
+  /// Logs a change when the disk state of a model of a builtin profile
+  /// changed, while a subscriber is open. The change names the slots of
+  /// the selected profile that hold such a model; it can name none, when
+  /// the model is only in other profiles. Each such change changes the
+  /// `state` of each profile that has the model.
   ///
   /// - Parameters:
   ///   - watch: The disk watch.
+  ///   - engine: The engine, which gives the slots of a model.
   ///   - interval: The time between two reads.
   ///   - log: The change log.
   private static func recordDiskChanges(
-    of watch: ModelsDiskWatch, every interval: Duration,
+    of watch: ModelsDiskWatch, engine: ModelsEngine, every interval: Duration,
     into log: ChangeLog<ModelsGraphChangeEvent>
   ) async {
     while !Task.isCancelled {
@@ -190,8 +192,10 @@ final class ModelsGraphChangeFeed: Sendable {
       } catch {
         return
       }
-      let slots = await watch.poll()
-      if !slots.isEmpty {
+      let models = await watch.poll()
+      if !models.isEmpty {
+        let slots = await engine.slots(holding: models)
+        await engine.fitCache.clear()
         await log.append(ModelsGraphChangeEvent(slots: slots, reason: .disk))
       }
     }
@@ -206,7 +210,8 @@ struct ModelsGraphChange: Sendable {
   /// The time of the change.
   let at: DateTime
 
-  /// The rows that came: none, because the four slots are always there.
+  /// The rows that came: none, because the four slots and the builtin
+  /// profiles are always there.
   var added: [ToolkitID] { [] }
 
   /// The slots that changed, by the name of their key: `standard`, `flash`,
@@ -230,6 +235,6 @@ struct ModelsGraphChange: Sendable {
     at = DateTime(entry.at)
     changed = entry.event.slots.map { ToolkitID($0.rawValue) }
     reason = entry.event.reason
-    appliesAt = entry.event.reason == .slot ? .nextLaunch : .now
+    appliesAt = entry.event.reason == .profile ? .nextLaunch : .now
   }
 }

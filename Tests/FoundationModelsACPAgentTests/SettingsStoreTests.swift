@@ -180,6 +180,24 @@ import Testing
   // MARK: - set and clear
 
   /// A `set` on the user level changes the merged value for each working
+  /// The store writes no slot model and no decision context (ACPA-21): a
+  /// set of a key that `profile` no longer has is an error, and the user
+  /// file does not change. A clear of such a key works, so a user can
+  /// remove it from an old file.
+  @Test func aSetOfARetiredProfileKeyIsRefused() async throws {
+    let fixture = try Fixture(label: "retired-set")
+
+    await #expect(
+      throws: SettingsStoreError.retiredKey(keyPath: "profile.standard")
+    ) {
+      try await fixture.store.set(.array([.string("org/model")]), at: ["profile", "standard"], level: .user)
+    }
+    try await fixture.store.clear(at: ["profile", "decisionContext"], level: .user)
+
+    let userFile = ConfigCommandFixture.configURL(in: try fixture.userRoot)
+    #expect(!FileManager.default.fileExists(atPath: userFile.path))
+  }
+
   /// directory that does not set the key, and writes `<user>/config.yaml`.
   @Test func aUserSetChangesEachSessionAndWritesTheUserFile() async throws {
     let fixture = try Fixture(label: "user-set")

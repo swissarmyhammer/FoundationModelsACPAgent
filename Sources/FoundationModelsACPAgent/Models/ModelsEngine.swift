@@ -2,28 +2,17 @@ import Foundation
 import FoundationModelsExtras
 import FoundationModelsRouter
 
-/// The `models` endpoint reads the four slots of Router's `ModelSlot`: the
-/// keys `profile.standard`, `profile.flash`, `profile.embedding` and
-/// `profile.decision` of `config.yaml`.
+/// The `models` endpoint reads the four slots of Router's `ModelSlot` in the
+/// profile that `profile.preset` selects (ACPA-21).
 extension ModelSlot: @retroactive CaseIterable {
   /// The four slots, in the order of the profile section.
   public static let allCases: [ModelSlot] = [.standard, .flash, .embedding, .decision]
 
-  /// The key path of the slot in the settings.
-  var keyPath: [String] {
-    [AgentConfiguration.CodingKeys.profile.stringValue, rawValue]
-  }
-
-  /// The builtin candidates of the slot.
-  var builtinCandidates: [ModelRef] {
-    candidates(in: ProfileConfiguration())
-  }
-
-  /// The candidates of the slot in a profile section.
+  /// The candidates of the slot in a profile.
   ///
-  /// - Parameter profile: The profile section.
+  /// - Parameter profile: The profile.
   /// - Returns: The candidates, in order.
-  func candidates(in profile: ProfileConfiguration) -> [ModelRef] {
+  func candidates(in profile: ProfileDefinition) -> [ModelRef] {
     switch self {
     case .standard: profile.standard
     case .flash: profile.flash
@@ -31,6 +20,13 @@ extension ModelSlot: @retroactive CaseIterable {
     case .decision: profile.decision
     }
   }
+}
+
+extension ProfileConfiguration {
+  /// The key path of `profile.preset` in the settings.
+  static let presetKeyPath = [
+    AgentConfiguration.CodingKeys.profile.stringValue, CodingKeys.preset.stringValue,
+  ]
 }
 
 /// The storage of one model and its MTP drafter, as one row of the
@@ -63,9 +59,10 @@ struct ModelsReport: Sendable {
   var state: ModelDiskState { summary?.state ?? .missing }
 }
 
-/// The reads of the `models` endpoint: the slot values of the settings at
-/// the user level, the profile that the agent launched with, the model that
-/// runs in each slot, and the storage of each model.
+/// The reads of the `models` endpoint: the profile that `profile.preset`
+/// selects at the user level, the profile that the agent launched with, the
+/// model that runs in each slot, the storage of each model, and the fit of
+/// each builtin profile.
 ///
 /// No read downloads a model or loads a model. Thus a host can make the
 /// endpoint before the first download.
@@ -84,19 +81,35 @@ struct ModelsEngine: Sendable {
   /// The model that runs in each slot, or none when no agent runs yet.
   let active: [ModelSlot: ModelRef]
 
-  /// The candidates of a slot in the settings now, at the user level.
+  /// The source of the fit estimate of a profile, or `nil` when the fit is
+  /// not known.
+  let fitEstimator: (any ProfileFitEstimating)?
+
+  /// The fit estimates that the engine read, by the name of the profile.
+  let fitCache = ProfileFitCache()
+
+  /// The profile that `profile.preset` selects in the settings now, at the
+  /// user level.
+  ///
+  /// - Returns: The profile. The default profile when no layer has a
+  ///   value that names a builtin profile.
+  /// - Throws: What the store throws for a level file.
+  func selectedProfile() async throws -> ProfileDefinition {
+    guard let setting = try await store.value(at: ProfileConfiguration.presetKeyPath, cwd: nil),
+      let name: String = try? setting.value.decoded(), let profile = ModelProfiles.named(name)
+    else {
+      return ModelProfiles.defaultProfile
+    }
+    return profile
+  }
+
+  /// The candidates of a slot in the selected profile.
   ///
   /// - Parameter slot: The slot.
-  /// - Returns: The candidates, in order. The builtin candidates when no
-  ///   layer has a value that decodes.
+  /// - Returns: The candidates, in order.
   /// - Throws: What the store throws for a level file.
   func candidates(of slot: ModelSlot) async throws -> [ModelRef] {
-    guard let setting = try await store.value(at: slot.keyPath, cwd: nil),
-      let refs: [ModelRef] = try? setting.value.decoded(), !refs.isEmpty
-    else {
-      return slot.builtinCandidates
-    }
-    return refs
+    slot.candidates(in: try await selectedProfile())
   }
 
   /// Tells if the candidates of a slot in the settings differ from the
@@ -111,26 +124,98 @@ struct ModelsEngine: Sendable {
     guard let launched else {
       return false
     }
-    return slot.candidates(in: launched) != candidates
+    return slot.candidates(in: launched.presetProfile) != candidates
   }
 
-  /// The choices of a slot: Router's `ProfileDefinition.choices(for:)`
-  /// over the candidates in the settings. The candidates come first, then
-  /// the builtin choices of Router (`ModelChoices.builtin(for:)`), with no
-  /// copy.
+  /// The name of the profile that `profile.preset` selects now, at the
+  /// user level.
   ///
-  /// - Parameter slot: The slot.
-  /// - Returns: The choices, in order.
-  /// - Throws: What ``candidates(of:)`` throws.
-  func choices(of slot: ModelSlot) async throws -> [ModelRef] {
-    let candidates = try await candidates(of: slot)
-    let definition = ProfileDefinition(
-      name: "models", description: "",
-      standard: slot == .standard ? candidates : [],
-      flash: slot == .flash ? candidates : [],
-      embedding: slot == .embedding ? candidates : [],
-      decision: slot == .decision ? candidates : [])
-    return definition.choices(for: slot)
+  /// - Returns: The name.
+  /// - Throws: What the store throws for a level file.
+  func selectedName() async throws -> String {
+    try await selectedProfile().name
+  }
+
+  /// One row of each builtin profile, in the order of the list.
+  ///
+  /// - Returns: The rows.
+  /// - Throws: What the store throws for a level file.
+  func profiles() async throws -> [ModelsGraphProfile] {
+    let selected = try await selectedName()
+    var rows: [ModelsGraphProfile] = []
+    for profile in ModelProfiles.builtin {
+      rows.append(await row(of: profile, selected: selected))
+    }
+    return rows
+  }
+
+  /// The row of one profile.
+  ///
+  /// - Parameters:
+  ///   - profile: The profile.
+  ///   - selected: The name of the selected profile.
+  /// - Returns: The row.
+  private func row(of profile: ProfileDefinition, selected: String) async -> ModelsGraphProfile {
+    var models: [ModelsGraphProfileModel] = []
+    var reports: [String: ModelsReport] = [:]
+    for slot in ModelSlot.allCases {
+      guard let ref = slot.candidates(in: profile).first else {
+        continue
+      }
+      let report = await reports[ref.stringValue].asyncDefault { await self.report(of: ref) }
+      reports[ref.stringValue] = report
+      models.append(
+        ModelsGraphProfileModel(slot: ModelsGraphSlot(slot), model: ModelsGraphModelFields(report)))
+    }
+    let parts = Array(reports.values)
+    let sizes = parts.map(\.sizeBytes)
+    let present = parts.reduce(Int64(0)) { $0 + $1.presentBytes }
+    let estimate = await fit(of: profile)
+    let launchedName = launched?.presetProfile.name
+    return ModelsGraphProfile(
+      name: profile.name, description: profile.description,
+      selected: profile.name == selected,
+      active: profile.name == launchedName,
+      restartRequired: launchedName != nil && profile.name == selected && selected != launchedName,
+      models: models,
+      downloadBytes: sizes.contains(nil) ? nil : Double(sizes.compactMap { $0 }.reduce(0, +)),
+      presentBytes: Double(present),
+      state: Self.state(of: parts, present: present),
+      fit: ModelsGraphProfileFit(estimate),
+      requiredBytes: estimate?.requiredBytes.map(Double.init),
+      budgetBytes: estimate.map { Double($0.budgetBytes) },
+      fitError: estimate?.failure)
+  }
+
+  /// The disk state of a profile: complete when each model is complete,
+  /// missing when no byte is on disk, else partial.
+  ///
+  /// - Parameters:
+  ///   - parts: The reports of the different models of the profile.
+  ///   - present: The bytes of the models on disk.
+  /// - Returns: The state.
+  private static func state(of parts: [ModelsReport], present: Int64) -> ModelsGraphDiskState {
+    if !parts.isEmpty, parts.allSatisfy({ $0.state == .complete }) {
+      return .complete
+    }
+    return present == 0 ? .missing : .partial
+  }
+
+  /// The fit estimate of a profile, from the cache when the engine read it
+  /// before.
+  ///
+  /// - Parameter profile: The profile.
+  /// - Returns: The estimate, or `nil` when the engine has no estimator.
+  func fit(of profile: ProfileDefinition) async -> ProfileFitReport? {
+    guard let fitEstimator else {
+      return nil
+    }
+    if let cached = await fitCache.value(of: profile.name) {
+      return cached
+    }
+    let estimate = await fitEstimator.fitReport(of: profile)
+    await fitCache.set(estimate, of: profile.name)
+    return estimate
   }
 
   /// The storage of a model and its MTP drafter, from Router's
@@ -147,23 +232,81 @@ struct ModelsEngine: Sendable {
     }
   }
 
-  /// A short text of the disk state of the models of each slot. The change
-  /// feed compares two of them to find a model that came on disk.
+  /// Each different model of the builtin profiles, in the order of the
+  /// profiles and their slots.
+  static var builtinModels: [ModelRef] {
+    var seen = Set<String>()
+    return ModelProfiles.builtin.flatMap { profile in
+      ModelSlot.allCases.flatMap { $0.candidates(in: profile) }
+    }.filter { seen.insert($0.stringValue).inserted }
+  }
+
+  /// A short text of the disk state of each model of the builtin profiles,
+  /// by the text form of the model. The change feed compares two of them
+  /// to find a model that came on disk.
   ///
-  /// - Returns: The text of each slot.
-  func diskFingerprint() async -> [ModelSlot: String] {
-    var texts: [ModelSlot: String] = [:]
-    for slot in ModelSlot.allCases {
-      guard let candidates = try? await candidates(of: slot) else {
-        continue
-      }
-      var text = ""
-      for ref in candidates {
-        let report = await report(of: ref)
-        text += "\(ref.stringValue)=\(report.state):\(report.presentBytes);"
-      }
-      texts[slot] = text
+  /// - Returns: The text of each model.
+  func diskFingerprint() async -> [String: String] {
+    var texts: [String: String] = [:]
+    for ref in Self.builtinModels {
+      let report = await report(of: ref)
+      texts[ref.stringValue] = "\(report.state):\(report.presentBytes)"
     }
     return texts
+  }
+
+  /// The slots of the selected profile whose model is in a set.
+  ///
+  /// - Parameter models: The text forms of the models.
+  /// - Returns: The slots, in order.
+  func slots(holding models: Set<String>) async -> [ModelSlot] {
+    guard let profile = try? await selectedProfile() else {
+      return []
+    }
+    return ModelSlot.allCases.filter { slot in
+      slot.candidates(in: profile).contains { models.contains($0.stringValue) }
+    }
+  }
+}
+
+/// The fit estimates that a `models` endpoint read, by the name of the
+/// profile. A change of the settings or of the disk clears it.
+actor ProfileFitCache {
+  /// The estimates.
+  private var estimates: [String: ProfileFitReport] = [:]
+
+  /// The estimate of a profile.
+  ///
+  /// - Parameter name: The name of the profile.
+  /// - Returns: The estimate, or `nil` when the cache has none.
+  func value(of name: String) -> ProfileFitReport? {
+    estimates[name]
+  }
+
+  /// Keeps the estimate of a profile.
+  ///
+  /// - Parameters:
+  ///   - estimate: The estimate.
+  ///   - name: The name of the profile.
+  func set(_ estimate: ProfileFitReport, of name: String) {
+    estimates[name] = estimate
+  }
+
+  /// Forgets each estimate.
+  func clear() {
+    estimates = [:]
+  }
+}
+
+extension Optional {
+  /// The wrapped value, or the value of an async function.
+  ///
+  /// - Parameter fallback: The function.
+  /// - Returns: The value.
+  fileprivate func asyncDefault(_ fallback: () async -> Wrapped) async -> Wrapped {
+    switch self {
+    case .some(let value): value
+    case .none: await fallback()
+    }
   }
 }

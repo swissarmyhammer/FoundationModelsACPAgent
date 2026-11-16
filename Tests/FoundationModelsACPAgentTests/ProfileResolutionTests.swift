@@ -98,50 +98,28 @@ struct FailingModelLoader: ModelLoader {
     #expect(definition.name == "custom")
   }
 
-  /// A config that lists three `standard` candidates maps to three
-  /// `ModelRef` values in preference order, with the `@` revision
-  /// separator intact. The refs come through `Codable`, the only decode
-  /// door `ModelRef` has.
-  @Test func threeStandardCandidatesMapInPreferenceOrder() throws {
+  /// The definition is the profile that `profile.preset` names: each slot,
+  /// the description and the decision context come from the preset
+  /// (ACPA-21). The configured description is a label only.
+  @Test func theDefinitionIsThePresetProfile() throws {
     let fixture = ConfigurationLoaderTests.Fixture()
     let loaded = try fixture.loadProjectConfig(
       """
       profile:
-        standard:
-          - org/one
-          - org/two@rev
-          - org/three
+        description: a label only
+        preset: medium
       """)
 
     let definition = loaded.configuration.profile.definition(
       fallbackName: try Self.makeDotfolderName())
 
-    #expect(definition.standard.map(\.stringValue) == ["org/one", "org/two@rev", "org/three"])
-  }
-
-  /// The description and every slot map through: the configured values
-  /// arrive in the definition unchanged.
-  @Test func descriptionAndEverySlotMapThrough() throws {
-    let fixture = ConfigurationLoaderTests.Fixture()
-    let loaded = try fixture.loadProjectConfig(
-      """
-      profile:
-        description: a mapped description
-        standard:
-          - org/standard
-        flash:
-          - org/flash
-        embedding:
-          - org/embedding
-      """)
-
-    let definition = loaded.configuration.profile.definition(
-      fallbackName: try Self.makeDotfolderName())
-
-    #expect(definition.description == "a mapped description")
-    #expect(definition.standard.map(\.stringValue) == ["org/standard"])
-    #expect(definition.flash.map(\.stringValue) == ["org/flash"])
-    #expect(definition.embedding.map(\.stringValue) == ["org/embedding"])
+    let medium = try #require(ModelProfiles.named("medium"))
+    #expect(definition.description == medium.description)
+    #expect(definition.standard == medium.standard)
+    #expect(definition.flash == medium.flash)
+    #expect(definition.embedding == medium.embedding)
+    #expect(definition.decision == medium.decision)
+    #expect(definition.decisionContext == medium.decisionContext)
   }
 
   /// The config has no context key, because the context size comes from
@@ -153,35 +131,6 @@ struct FailingModelLoader: ModelLoader {
 
     #expect(definition.context == nil)
   }
-
-  /// A configured `profile.decision` arrives in the definition's
-  /// decision slot unchanged.
-  @Test func theDecisionSlotMapsThrough() throws {
-    var configuration = ProfileConfiguration()
-    configuration.decision = [Self.configuredDecisionModel]
-
-    let definition = configuration.definition(fallbackName: try Self.makeDotfolderName())
-
-    #expect(definition.decision == [Self.configuredDecisionModel])
-  }
-
-  /// A configured `profile.decisionContext` arrives in the definition's
-  /// decision context unchanged.
-  @Test func theDecisionContextMapsThrough() throws {
-    var configuration = ProfileConfiguration()
-    configuration.decisionContext = Self.configuredDecisionContext
-
-    let definition = configuration.definition(fallbackName: try Self.makeDotfolderName())
-
-    #expect(definition.decisionContext == Self.configuredDecisionContext)
-  }
-
-  /// The decision model the pass-through test configures.
-  private static let configuredDecisionModel: ModelRef = "org/decision/model.gguf"
-
-  /// The decision context the pass-through test configures. It differs
-  /// from Router's default, thus the pass-through is observable.
-  private static let configuredDecisionContext = 4096
 
   // MARK: - Construction
 

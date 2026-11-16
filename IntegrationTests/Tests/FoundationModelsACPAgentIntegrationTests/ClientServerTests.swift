@@ -47,7 +47,7 @@ struct ClientServerTests {
   /// exit nonzero with the reason on stderr.
   private static let brokenConfigYAML = """
     profile:
-      standard: [
+      preset: [
     """
 
   // MARK: - The subprocess driver

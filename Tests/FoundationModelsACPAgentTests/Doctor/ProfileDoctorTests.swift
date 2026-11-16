@@ -63,20 +63,21 @@ struct ProfileDoctorTests {
   /// A drafter that the Hub does not have.
   private static let missingDrafter: ModelRef = "mlx-community/No-Such-MTP-Head"
 
-  /// The dotted key of the standard slot.
-  private static let standardKey = "profile.standard"
+  /// The key of the standard slot of the default profile.
+  private static let standardKey = "large.standard"
 
-  /// The dotted key of the drafter of the standard slot.
-  private static let standardDrafterKey = "profile.standard.drafter"
+  /// The key of the drafter of the standard slot.
+  private static let standardDrafterKey = "large.standard.drafter"
 
-  /// The word the fix of the MTP warning names: the key that turns MTP on.
-  private static let drafterWord = "drafter"
+  /// The key that each fix names: the user selects a different profile
+  /// (ACPA-21).
+  private static let presetKey = "profile.preset"
 
-  /// The dotted key of the flash slot.
-  private static let flashKey = "profile.flash"
+  /// The key of the flash slot of the default profile.
+  private static let flashKey = "large.flash"
 
-  /// The dotted key of the decision slot.
-  private static let decisionKey = "profile.decision"
+  /// The key of the decision slot of the default profile.
+  private static let decisionKey = "large.decision"
 
   /// The command a fix tells a person to run.
   private static let editCommand = "acp-agent config edit"
@@ -118,7 +119,7 @@ struct ProfileDoctorTests {
   /// - Returns: The configuration.
   private static func configuration(standard reference: ModelRef) -> AgentConfiguration {
     var configuration = AgentConfiguration()
-    configuration.profile.standard = [reference]
+    configuration.setTestSlot(\.standard, [reference])
     return configuration
   }
 
@@ -155,8 +156,8 @@ struct ProfileDoctorTests {
   @Test func aMalformedReferenceIsNeverLookedUp() async {
     let resolver = StubModelResolver(
       namedLookups: StubModelResolver.foundLookups(
-        of: ProfileConfiguration.defaultFlash + ProfileConfiguration.defaultEmbedding
-          + ProfileConfiguration.defaultDecision),
+        of: ModelProfiles.defaultProfile.flash + ModelProfiles.defaultProfile.embedding
+          + ModelProfiles.defaultProfile.decision),
       lookup: .notFound)
 
     let checks = await Self.doctor(
@@ -171,7 +172,7 @@ struct ProfileDoctorTests {
   /// The `standard` and `flash` defaults name the same model, and the
   /// next run downloads it one time.
   @Test func aModelThatTwoSlotsNameIsCheckedOnceUnderBothKeys() async throws {
-    let shared = ProfileConfiguration.defaultStandard[0]
+    let shared = ModelProfiles.defaultProfile.standard[0]
     let shapeName = "the shape of \(shared.stringValue)"
 
     let checks = await Self.doctor().runHealthChecks()
@@ -188,7 +189,7 @@ struct ProfileDoctorTests {
   /// A reference the resolver does not find is one `.error` that names
   /// the slot and the reference, and whose fix names `config edit`.
   @Test func aReferenceThatIsNotFoundGivesOneErrorWithTheEditFix() async throws {
-    let reference = ProfileConfiguration.defaultStandard[0]
+    let reference = ModelProfiles.defaultProfile.standard[0]
     let resolver = StubModelResolver(namedLookups: [reference.stringValue: .notFound])
 
     let checks = await Self.doctor(resolver: resolver).runHealthChecks()
@@ -204,7 +205,7 @@ struct ProfileDoctorTests {
   /// reference the resolver does not find is one `.error` that names the
   /// decision slot.
   @Test func aDecisionReferenceThatIsNotFoundGivesOneErrorThatNamesTheSlot() async throws {
-    let reference = ProfileConfiguration.defaultDecision[0]
+    let reference = ModelProfiles.defaultProfile.decision[0]
     let resolver = StubModelResolver(namedLookups: [reference.stringValue: .notFound])
 
     let checks = await Self.doctor(resolver: resolver).runHealthChecks()
@@ -216,7 +217,7 @@ struct ProfileDoctorTests {
   /// A network failure is one `.warning` and no `.error`: an offline
   /// machine with a warm cache still works.
   @Test func aNetworkFailureGivesOneWarningAndNoError() async throws {
-    let reference = ProfileConfiguration.defaultStandard[0]
+    let reference = ModelProfiles.defaultProfile.standard[0]
     let resolver = StubModelResolver(
       namedLookups: [
         reference.stringValue: .unreachable(reason: Self.unreachableReason)
@@ -239,7 +240,7 @@ struct ProfileDoctorTests {
   /// limit would fail the test.
   @Test
   func aResolverThatDoesNotAnswerInTimeWarnsInsideTheNamedTimeout() async throws {
-    let reference = ProfileConfiguration.defaultStandard[0]
+    let reference = ModelProfiles.defaultProfile.standard[0]
     let resolver = StubModelResolver(silentReferences: [reference.stringValue])
 
     let checks = await Self.doctor(
@@ -297,9 +298,9 @@ struct ProfileDoctorTests {
     let fix = try #require(failure.fix)
     #expect(failure.message.contains(Self.smallMemoryText))
     #expect(failure.message.contains(Self.memoryFloorText))
-    #expect(fix.contains(Self.standardKey))
-    #expect(fix.contains(Self.flashKey))
-    #expect(!fix.contains(ProfileConfiguration.defaultStandard[0].repo))
+    #expect(fix.contains(Self.presetKey))
+    #expect(fix.contains(ProfileDoctor.smallerProfileName))
+    #expect(!fix.contains(ModelProfiles.defaultProfile.standard[0].repo))
   }
 
   // MARK: - The free disk
@@ -326,7 +327,7 @@ struct ProfileDoctorTests {
   /// so the build decodes plain. The fix names the `drafter` key.
   @Test func anMTPSlotWithNoDrafterGivesExactlyOneWarning() async throws {
     var configuration = AgentConfiguration()
-    configuration.profile.flash = [Self.mtpReference]
+    configuration.setTestSlot(\.flash, [Self.mtpReference])
 
     let checks = await Self.doctor(configuration: configuration).runHealthChecks()
 
@@ -334,7 +335,7 @@ struct ProfileDoctorTests {
     let fix = try #require(warning.fix)
     #expect(warning.name.contains(Self.flashKey))
     #expect(warning.message.contains(Self.mtpReference.stringValue))
-    #expect(fix.contains(Self.drafterWord))
+    #expect(fix.contains(Self.presetKey))
   }
 
   /// An MTP build that names its drafter decodes with MTP, so it gives no
@@ -352,7 +353,7 @@ struct ProfileDoctorTests {
   /// drafter the Hub does not have is one `.error` that names the drafter
   /// key of the slot and the drafter.
   @Test func aDrafterThatIsNotFoundGivesOneErrorThatNamesTheDrafterKey() async throws {
-    let target = ProfileConfiguration.defaultStandard[0]
+    let target = ModelProfiles.defaultProfile.standard[0]
     let resolver = StubModelResolver(
       namedLookups: [Self.missingDrafter.stringValue: .notFound])
 
@@ -382,7 +383,7 @@ struct ProfileDoctorTests {
   /// head, the memory and the disk all report a fault at once.
   @Test func noWarningOrErrorCarriesANilFix() async {
     var configuration = Self.configuration(standard: Self.malformedReference)
-    configuration.profile.flash = [Self.mtpReference]
+    configuration.setTestSlot(\.flash, [Self.mtpReference])
     let resolver = StubModelResolver(
       namedLookups: [Self.mtpReference.stringValue: .notFound],
       lookup: .found(downloadBytes: Self.downloadBytes))

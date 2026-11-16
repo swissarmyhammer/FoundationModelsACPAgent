@@ -20,34 +20,27 @@ public struct ProfileResolutionError: Error, Equatable, Sendable, CustomStringCo
 }
 
 extension ProfileConfiguration {
-  /// Maps this decoded section to Router's authored profile.
+  /// Maps this decoded section to Router's authored profile: the profile
+  /// that ``preset`` names (ACPA-21, D189).
   ///
-  /// The configured ``name`` wins; a section without one falls back to
-  /// the dotfolder name. The name has three consumers: the configuration
-  /// stack, the transcript root and this default. Each
-  /// slot carries its candidate list in preference order, and the refs
-  /// arrive as the `ModelRef` values the config decode produced through
-  /// `Codable`, the one decode door that type has.
+  /// The four candidate lists, the description and the context of the
+  /// decision slot come from the preset. The configured ``name`` is a label
+  /// only: it wins over the name of the preset; a section without one falls
+  /// back to the dotfolder name. The name has three consumers: the
+  /// configuration stack, the transcript root and this default.
   ///
-  /// `context` stays `nil` on purpose: the config has no context key
-  /// (the context size comes from the model), so resolution derives the working context from each
-  /// candidate's native maximum instead of the initializer's 8192
-  /// default. The decision slot is the exception: it runs at its own
-  /// ``decisionContext``, which the config does carry.
+  /// `context` stays `nil` on purpose: the context size comes from the
+  /// model, so resolution derives the working context from each
+  /// candidate's native maximum.
   ///
   /// - Parameter fallbackName: The dotfolder name the profile's name
   ///   falls back to when ``name`` is not set.
   /// - Returns: The authored profile to resolve.
   public func definition(fallbackName: DotfolderName) -> ProfileDefinition {
-    ProfileDefinition(
-      name: name ?? fallbackName.rawValue,
-      description: description,
-      standard: standard,
-      flash: flash,
-      embedding: embedding,
-      decision: decision,
-      context: nil,
-      decisionContext: decisionContext)
+    var definition = presetProfile
+    definition.name = name ?? fallbackName.rawValue
+    definition.context = nil
+    return definition
   }
 
   /// Resolves this section to a resident profile through

@@ -212,30 +212,18 @@ struct ConfigShowTests {
         "identicalToolCallLimit: \(RepetitionDetection.defaultIdenticalToolCallLimit)"))
   }
 
-  /// With no file in any layer, the report shows `profile.decision` with
-  /// Router's decision candidates, so a person can see and edit the model
-  /// of the decision slot.
-  @Test func noFilesShowTheDecisionSlotWithRouterCandidates() throws {
-    let fixture = ConfigCommandFixture(label: "ConfigShowTests-decision")
-    let candidates = ProfileDefinition.defaultDecisionCandidates.map { "    - \"\($0.stringValue)\"" }
+  /// With no file in any layer, the report shows `profile.preset` with the
+  /// default profile, and no slot key and no `decisionContext` (ACPA-21).
+  @Test func noFilesShowThePresetAndNoSlotKey() throws {
+    let fixture = ConfigCommandFixture(label: "ConfigShowTests-preset")
 
     let report = try Self.report([], in: fixture)
 
-    #expect(
-      report.standardOutput.contains(
-        (["  decision:"] + candidates).joined(separator: "\n") + "\n"))
-  }
-
-  /// With no file in any layer, the report shows `profile.decisionContext`
-  /// with Router's decision context.
-  @Test func noFilesShowTheDecisionContextWithRouterDefault() throws {
-    let fixture = ConfigCommandFixture(label: "ConfigShowTests-decision-context")
-
-    let report = try Self.report([], in: fixture)
-
-    #expect(
-      report.standardOutput.contains(
-        "  decisionContext: \(ProfileDefinition.defaultDecisionContext)\n"))
+    #expect(report.standardOutput.contains("  preset: \"\(ModelProfiles.defaultName)\"\n")
+      || report.standardOutput.contains("  preset: \(ModelProfiles.defaultName)\n"))
+    #expect(!report.standardOutput.contains("  decision:"))
+    #expect(!report.standardOutput.contains("decisionContext"))
+    #expect(!report.standardOutput.contains("  standard:"))
   }
 
   /// The comment above the `profile:` section names the decision slot

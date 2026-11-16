@@ -27,12 +27,11 @@ extension KeyCheckedSection {
 /// There is no `permissions` section and no `sandbox` section: the agent
 /// asks for no permission, and the shell runs with no sandbox.
 /// There is no `instructions` section: the system prompt is the markdown
-/// file `Instructions.md`. There is no context-size key for the shared
-/// window: that context comes from the model. Only the decision slot has a
-/// context key of its own, `profile.decisionContext`.
+/// file `Instructions.md`. There is no context-size key: the context comes
+/// from the model, and the profile decides the context of the decision slot.
 public struct AgentConfiguration: Codable, Equatable, Sendable {
-  /// The model profile: the `standard`, `flash`, `embedding` and `decision`
-  /// slots.
+  /// The model profile: the builtin profile that selects the models of the
+  /// `standard`, `flash`, `embedding` and `decision` slots.
   public var profile = ProfileConfiguration()
 
   /// The tool roster: per-tool enable and disable through the
@@ -100,6 +99,9 @@ extension AgentConfiguration {
   enum SectionSchema: Equatable, Sendable {
     /// The section decodes exactly these keys; any other key is an error.
     case checked(Set<String>)
+    /// The section decodes the `known` keys. A `retired` key gives a
+    /// warning, and the decode ignores it. Any other key is an error.
+    case checkedWithRetired(known: Set<String>, retired: Set<String>)
     /// The `tools:` roster: a known tool's body keys are
     /// checked, and an unknown tool key is a warning only.
     case toolRoster
@@ -111,7 +113,8 @@ extension AgentConfiguration {
   /// top-level key absent from this table is an unknown section, which
   /// the loader reports as a warning.
   static let sectionSchemas: [String: SectionSchema] = [
-    CodingKeys.profile.stringValue: .checked(ProfileConfiguration.knownKeys),
+    CodingKeys.profile.stringValue: .checkedWithRetired(
+      known: ProfileConfiguration.knownKeys, retired: ProfileConfiguration.retiredKeys),
     CodingKeys.tools.stringValue: .toolRoster,
     CodingKeys.recording.stringValue: .checked(RecordingConfiguration.knownKeys),
     CodingKeys.transcripts.stringValue: .checked(TranscriptsConfiguration.knownKeys),
@@ -271,104 +274,106 @@ public struct FontRoleConfiguration: Codable, Equatable, Sendable, KeyCheckedSec
 
 // MARK: - profile
 
-/// The `profile:` section: the candidate models of each slot, in preference
-/// order, the context of the decision slot, and the profile's name. The
-/// defaults are a coding profile that operates on a 32 GB machine
+/// The `profile:` section: the builtin profile that the agent resolves, and
+/// the name of the profile (ACPA-21, D189).
+///
+/// The model configuration is by profile. `preset` names one profile of
+/// ``ModelProfiles/builtin``, and that profile decides the model of each
+/// slot and the context of the decision slot. The section has no slot key
+/// and no context key. An old layer that still has one of
+/// ``retiredKeys`` loads: the loader gives a warning for each such key, and
+/// the agent ignores it.
+///
+/// The default profile is a coding profile that operates on a 32 GB machine
 /// (cli-plan.md §7). A 27B model at 4 bits is approximately 15 GB on its own,
 /// and Router's `JointFit` measures the four models together against the
-/// memory budget. Thus a 16 GB machine is too small.
-///
-/// The `standard` and `flash` defaults are one model that decodes with MTP
-/// (multi-token prediction): its reference names the MTP head of its build
-/// as the `drafter`. Router loads a drafter only when a reference names one,
-/// so no other default speculates.
+/// memory budget.
 public struct ProfileConfiguration: Codable, Equatable, Sendable, KeyCheckedSection {
-  /// The default candidates of the `standard` slot.
-  ///
-  /// The `4bit` build with its MTP head as the drafter. The head drafts a
-  /// few tokens each round and the model checks them in one pass, and the
-  /// output is the output of plain decoding. Measured on 2026-10-29 through
-  /// Router (its gated `MTPDrafterIntegrationTests`): plain decode 32-38
-  /// tokens per second, with the drafter 55-67. In the SWE-bench run
-  /// mtpsmoke2 the same pair decoded at 51-72 tokens per second over
-  /// contexts of 5k to 23k tokens.
-  ///
-  /// The head is the head of the `4bit` build
-  /// (`MTPDrafterRegistry.qwen3_8_27b_mtp_4bit` in mlx-swift-lm), thus the
-  /// target is the `4bit` build and not the `mxfp4` build of earlier
-  /// defaults. On 2026-09-08 the `4bit` build made no token (card
-  /// `^s0bw5cv`). On 2026-10-29 it generates through Router, with the
-  /// drafter and without it.
-  public static let defaultStandard: [ModelRef] = [
-    ModelRef(
-      repo: "mlx-community/Qwen3.8-27B-4bit",
-      drafter: "mlx-community/Qwen3.8-27B-MTP-4bit")
-  ]
-
-  /// The default candidates of the `flash` slot: the model of the
-  /// `standard` slot. Router shares one container between the two slots
-  /// when they name the same model, so the profile loads one 27B model and
-  /// not a second, smaller one. The flash sessions then get the same model
-  /// and the same MTP drafter as the standard sessions.
-  public static let defaultFlash: [ModelRef] = defaultStandard
-
-  /// The default candidates of the `embedding` slot.
-  public static let defaultEmbedding: [ModelRef] = [
-    "erjigit17/embeddinggemma-300m-ane-coreml"
-  ]
-
-  /// The default candidates of the `decision` slot: Router's own
-  /// candidates, so the config and Router name one model.
-  public static let defaultDecision = ProfileDefinition.defaultDecisionCandidates
-
-  /// The default context of the `decision` slot, in tokens: Router's own
-  /// default.
-  public static let defaultDecisionContext = ProfileDefinition.defaultDecisionContext
-
   /// The default one-line description of the profile's intent.
   public static let defaultDescription = "Local coding assistant."
 
-  /// The profile's name, or `nil` to fall back to the dotfolder name.
+  /// The keys of the section before ACPA-21: the model of each slot and the
+  /// context of the decision slot. A layer that has one of them gives a
+  /// warning, and the agent ignores the key.
+  public static let retiredKeys: Set<String> = [
+    "standard", "flash", "embedding", "decision", "decisionContext",
+  ]
+
+  /// The profile's name, or `nil` to fall back to the dotfolder name. It is
+  /// a label only: it does not select the models.
   public var name: String?
 
-  /// A short description of the profile's intent.
+  /// A short description of the profile's intent. It is a label only: the
+  /// resolved profile has the description of the preset.
   public var description = ProfileConfiguration.defaultDescription
 
-  /// Candidate models of the `standard` slot, in preference order.
-  public var standard = ProfileConfiguration.defaultStandard
+  /// The name of the builtin profile that selects the models: one name of
+  /// ``ModelProfiles/builtin``.
+  public var preset = ModelProfiles.defaultName
 
-  /// Candidate models of the `flash` slot, in preference order.
-  public var flash = ProfileConfiguration.defaultFlash
-
-  /// Candidate models of the `embedding` slot, in preference order.
-  public var embedding = ProfileConfiguration.defaultEmbedding
-
-  /// Candidate models of the `decision` slot, in preference order.
-  public var decision = ProfileConfiguration.defaultDecision
-
-  /// The context of the `decision` slot, in tokens. The slot runs at this
-  /// context and not at the context of the other slots.
-  public var decisionContext = ProfileConfiguration.defaultDecisionContext
+  /// A profile that wins over ``preset``, for a test only. It is not a
+  /// key of the settings: no layer can set it. A suite that needs models
+  /// that no builtin profile has, such as a `flash` model that differs from
+  /// the `standard` model, sets it in code.
+  var testProfile: ProfileDefinition?
 
   /// The YAML spelling of each key.
   public enum CodingKeys: String, CodingKey, CaseIterable {
-    case name, description, standard, flash, embedding, decision, decisionContext
+    case name, description, preset
   }
 
   /// The default coding profile.
   public init() {}
 
   /// Decodes each present key and keeps the default for each absent one.
+  ///
+  /// - Throws: `DecodingError` when `preset` names no builtin profile. The
+  ///   error names each profile.
   public init(from decoder: any Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     name = try container.decodeIfPresent(String.self, forKey: .name)
     description = try container.decodeIfPresent(String.self, forKey: .description) ?? description
-    standard = try container.decodeIfPresent([ModelRef].self, forKey: .standard) ?? standard
-    flash = try container.decodeIfPresent([ModelRef].self, forKey: .flash) ?? flash
-    embedding = try container.decodeIfPresent([ModelRef].self, forKey: .embedding) ?? embedding
-    decision = try container.decodeIfPresent([ModelRef].self, forKey: .decision) ?? decision
-    decisionContext =
-      try container.decodeIfPresent(Int.self, forKey: .decisionContext) ?? decisionContext
+    if let preset = try container.decodeIfPresent(String.self, forKey: .preset) {
+      guard ModelProfiles.named(preset) != nil else {
+        let names = ModelProfiles.builtin.map(\.name).joined(separator: ", ")
+        throw DecodingError.dataCorruptedError(
+          forKey: .preset, in: container,
+          debugDescription: "profile.preset must be one of: \(names) (got \"\(preset)\")")
+      }
+      self.preset = preset
+    }
+  }
+
+  /// The builtin profile that ``preset`` names. A value that names no
+  /// profile, which only code can set, gives the default profile.
+  public var presetProfile: ProfileDefinition {
+    testProfile ?? ModelProfiles.named(preset) ?? ModelProfiles.defaultProfile
+  }
+
+  /// Two sections are equal when their keys are equal and their test
+  /// profiles have the same encoding. `ProfileDefinition` is not
+  /// `Equatable`.
+  public static func == (lhs: ProfileConfiguration, rhs: ProfileConfiguration) -> Bool {
+    lhs.name == rhs.name && lhs.description == rhs.description && lhs.preset == rhs.preset
+      && encoding(of: lhs.testProfile) == encoding(of: rhs.testProfile)
+  }
+
+  /// The JSON encoding of a test profile, or `nil` for none.
+  ///
+  /// - Parameter profile: The profile.
+  /// - Returns: The encoding.
+  private static func encoding(of profile: ProfileDefinition?) -> Data? {
+    profile.flatMap { try? JSONEncoder.sortedKeys.encode($0) }
+  }
+}
+
+extension JSONEncoder {
+  /// An encoder with sorted keys, so that two equal values give the same
+  /// data.
+  fileprivate static var sortedKeys: JSONEncoder {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = .sortedKeys
+    return encoder
   }
 }
 

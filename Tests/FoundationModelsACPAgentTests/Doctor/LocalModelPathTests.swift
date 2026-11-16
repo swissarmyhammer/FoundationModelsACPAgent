@@ -35,13 +35,13 @@ struct LocalModelPathTests {
   /// local path would show as an error.
   private static func findings(embedding reference: ModelRef) async -> [HealthCheck] {
     var configuration = AgentConfiguration()
-    configuration.profile.embedding = [reference]
+    configuration.setTestSlot(\.embedding, [reference])
     let resolver = StubModelResolver(
       namedLookups: StubModelResolver.foundLookups(
-        of: ProfileConfiguration.defaultStandard
-          + ProfileConfiguration.defaultFlash
-          + ProfileConfiguration.defaultDecision
-          + ProfileConfiguration.defaultStandard.compactMap(\.drafter)),
+        of: ModelProfiles.defaultProfile.standard
+          + ModelProfiles.defaultProfile.flash
+          + ModelProfiles.defaultProfile.decision
+          + ModelProfiles.defaultProfile.standard.compactMap(\.drafter)),
       lookup: .notFound)
     return await ProfileDoctor(
       configuration: configuration, resolver: resolver,

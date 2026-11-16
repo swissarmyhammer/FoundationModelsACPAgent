@@ -98,7 +98,7 @@ struct ConfigInitTests {
   /// - Returns: The checked keys, or the tool roster's own keys.
   private static func knownKeys(of schema: AgentConfiguration.SectionSchema) -> Set<String> {
     switch schema {
-    case .checked(let keys):
+    case .checked(let keys), .checkedWithRetired(let keys, _):
       return keys
     case .toolRoster:
       return ToolsConfiguration.knownKeys

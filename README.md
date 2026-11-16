@@ -64,7 +64,8 @@ the composition the `acp-agent` CLI builds every mode on.
 
 ## The machine, and the models
 
-The agent needs a Mac with **32 GB** of memory. The default profile fills
+The agent needs a Mac with **32 GB** of memory for the default profile,
+`large`. The default profile fills
 four model slots at one time, and Router's `JointFit` prices the four
 models together against the memory of the machine. A 27B model at 4 bits is
 approximately 15 GB alone, so a 16 GB machine is too small.
@@ -76,53 +77,42 @@ approximately 15 GB alone, so a 16 GB machine is too small.
 | `embedding` | `erjigit17/embeddinggemma-300m-ane-coreml` | none |
 | `decision` | `h2oai/h2o-lightning-4b-gguf/h2o-lightning-4b-Q4_K_M.gguf@61f8d8b7a8c2d84426d0d143ca187f65d235934b` | none |
 
-These four are the defaults of `ProfileConfiguration` in
-[`Sources/FoundationModelsACPAgent/Configuration/AgentConfiguration.swift`](Sources/FoundationModelsACPAgent/Configuration/AgentConfiguration.swift).
-The `decision` default is Router's `ProfileDefinition.defaultDecisionCandidates`:
-one GGUF file of a Hub repository, at a pinned revision. The `profile:`
-section of a `config.yaml` replaces the candidates of any slot.
+These four are the models of the builtin profile `large`. The model
+configuration is by profile: `profile.preset` selects one builtin profile, and
+the profile decides the model of each slot and the context of the decision
+slot. No key of `config.yaml` names the model of a slot.
 
-The `decision` slot runs at a context of its own, `profile.decisionContext`,
-and not at the context of the other slots. Its default is Router's
-`ProfileDefinition.defaultDecisionContext`, 16384 tokens:
+| `profile.preset` | `standard` and `flash` |
+|---|---|
+| `large` (the default) | `mlx-community/Qwen3.8-27B-4bit` with its MTP drafter |
+| `medium` | `mlx-community/Qwen3-14B-4bit` |
+| `small` | `mlx-community/Qwen3-8B-4bit` |
+| `tiny` | `mlx-community/Qwen3-4B-4bit` |
 
-```yaml
-profile:
-  decision:
-    - h2oai/h2o-lightning-4b-gguf/h2o-lightning-4b-Q4_K_M.gguf
-  decisionContext: 16384
-```
-
-Every slot takes a Hub repository id or a folder on the disk. The loader finds
-the format (MLX or Core ML) by itself from the files: a `.mlpackage` folder and
-no `safetensors` file means Core ML, which runs on the Apple Neural Engine
-(only the `embedding` slot loads Core ML). A `.gguf` file loads with
-llama.cpp (the `decision` slot). Any other model loads with MLX.
+Each profile has the same `embedding` and `decision` models. A smaller
+profile fits a Mac with less memory:
 
 ```yaml
 profile:
-  embedding:
-    - ~/models/embeddinggemma-300m-ane-coreml   # a folder: no download
+  preset: small
 ```
 
-A path starts with `/`, `~` or `./`. Use an absolute path or `~`: `./` is
-relative to the working directory of the agent process. A path must not hold
-`@`, which is read as a revision. `doctor` shows the format it found in the
-folder.
+A name that is not a builtin profile is an error, and the error names the
+profiles. An old `config.yaml` that still has `profile.standard`,
+`profile.flash`, `profile.embedding`, `profile.decision` or
+`profile.decisionContext` loads: each such key gives a warning, and the agent
+ignores it. A change of `profile.preset` applies at the next launch of the
+agent.
 
-The `standard` slot decodes with MTP (multi-token prediction): its MTP head
-drafts a few tokens each round, and the model checks them in one pass. The
-output is the output of plain decoding, and it comes faster. A reference
-turns MTP on only when it names its `drafter`, in the mapping form:
+The `decision` model is Router's `ProfileDefinition.defaultDecisionCandidates`:
+one GGUF file of a Hub repository, at a pinned revision, which loads with
+llama.cpp. It runs at a context of its own, Router's
+`ProfileDefinition.defaultDecisionContext` (16384 tokens). The `embedding`
+model is a Core ML model, which runs on the Apple Neural Engine.
 
-```yaml
-profile:
-  standard:
-    - repo: mlx-community/Qwen3.8-27B-4bit
-      drafter: mlx-community/Qwen3.8-27B-MTP-4bit
-```
-
-A plain string (`- mlx-community/Qwen3.8-27B-4bit`) decodes with no drafter.
+The `standard` model of `large` decodes with MTP (multi-token prediction):
+its MTP head drafts a few tokens each round, and the model checks them in one
+pass. The output is the output of plain decoding, and it comes faster.
 
 The first run downloads the weights of each slot, which is many gigabytes.
 The weights stay in the Hugging Face cache, so a later run starts from

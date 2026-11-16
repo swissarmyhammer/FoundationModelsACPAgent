@@ -41,19 +41,25 @@ struct SkillTriggerRun: Sendable {
   }
 }
 
-/// The model of the standard slot of a live run.
+/// The builtin profile of a live run (ACPA-21).
 ///
-/// The default is the standard model the agent ships with
-/// (`ProfileConfiguration.defaultStandard`), because the proof that matters is
-/// that the shipped model uses skills. The test follows a change of that
-/// default with no edit. `ACP_AGENT_SKILL_TRIGGER_MODEL` pins another model.
-let skillTriggerModel: String = {
-  let variable = "ACP_AGENT_SKILL_TRIGGER_MODEL"
+/// The default is the profile the agent ships with
+/// (`ModelProfiles.defaultName`), because the proof that matters is that
+/// the shipped model uses skills. The test follows a change of that default
+/// with no edit. `ACP_AGENT_SKILL_TRIGGER_PRESET` selects another builtin
+/// profile.
+let skillTriggerPreset: String = {
+  let variable = "ACP_AGENT_SKILL_TRIGGER_PRESET"
   let value = ProcessInfo.processInfo.environment[variable]
-  guard let shipped = ProfileConfiguration.defaultStandard.first?.stringValue else {
-    preconditionFailure("ProfileConfiguration.defaultStandard names no model")
+  return (value?.isEmpty == false ? value : nil) ?? ModelProfiles.defaultName
+}()
+
+/// The standard model of ``skillTriggerPreset``.
+let skillTriggerModel: String = {
+  guard let model = ModelProfiles.named(skillTriggerPreset)?.standard.first?.stringValue else {
+    preconditionFailure("ACP_AGENT_SKILL_TRIGGER_PRESET names no builtin profile")
   }
-  return (value?.isEmpty == false ? value : nil) ?? shipped
+  return model
 }()
 
 /// The live subject of the skill trigger gate: one composed agent, one
@@ -86,9 +92,8 @@ struct SkillTriggerSubject {
   /// samples, and the skills of the default marketplace would change that
   /// set and need the network.
   ///
-  /// The standard slot is ``skillTriggerModel``, which is the shipped
-  /// standard model unless `ACP_AGENT_SKILL_TRIGGER_MODEL` pins another
-  /// one.
+  /// The profile is ``skillTriggerPreset``, which is the shipped profile
+  /// unless `ACP_AGENT_SKILL_TRIGGER_PRESET` selects another one.
   static var userConfigYAML: String {
     """
     transcripts:
@@ -99,7 +104,7 @@ struct SkillTriggerSubject {
       skills:
         marketplaces: []
     profile:
-      standard: ["\(skillTriggerModel)"]
+      preset: \(skillTriggerPreset)
     """
   }
 

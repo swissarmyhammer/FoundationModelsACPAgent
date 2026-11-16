@@ -70,17 +70,8 @@ struct ToolCallingTests {
       skills:
         marketplaces: []
     profile:
-      standard: ["\(shippedStandardModel)"]
+      preset: \(ModelProfiles.defaultName)
     """
-  }
-
-  /// The standard model the agent ships with. The gate follows a change
-  /// of that default with no edit.
-  private static var shippedStandardModel: String {
-    guard let shipped = ProfileConfiguration.defaultStandard.first?.stringValue else {
-      preconditionFailure("ProfileConfiguration.defaultStandard names no model")
-    }
-    return shipped
   }
 
   /// The prompt text. It names the two verb paths and the

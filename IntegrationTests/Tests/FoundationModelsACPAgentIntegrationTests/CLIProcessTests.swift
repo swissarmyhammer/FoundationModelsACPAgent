@@ -35,24 +35,19 @@ struct CLIProcessTests {
 
   /// The text `doctor` writes for a profile reference that is not
   /// `owner/name` (cli-plan.md §5.12).
-  private static let malformedReferenceMarker = "is not a well formed owner/name reference"
+  private static let malformedReferenceMarker = "profile.preset must be one of"
 
   /// The `doctor` subcommand (cli-plan.md §5.12).
   private static let doctorSubcommand = "doctor"
 
-  /// A user-layer `config.yaml` with one malformed profile reference and
-  /// two empty slots.
-  ///
-  /// The malformed shape fails before any lookup starts — `ProfileDoctor`
-  /// looks up only a well formed reference — so this run makes no network
-  /// call, and the empty `flash` and `embedding` slots make none either.
-  /// That failure is deterministic and reachable with no model and no
-  /// network, so it is the one `doctor` exit this suite can assert.
+  /// A user-layer `config.yaml` whose `profile.preset` names no builtin
+  /// profile (ACPA-21). The load of the configuration fails, and the
+  /// configuration check of `doctor` reports the error, which names the
+  /// profiles. That failure is deterministic with no model, so it is the
+  /// one `doctor` exit this suite can assert.
   private static let malformedProfileYAML = """
     profile:
-      standard: ["not-well-formed"]
-      flash: []
-      embedding: []
+      preset: no-such-profile
     """
 
   /// The line of the git tool that `config show --source` writes when no

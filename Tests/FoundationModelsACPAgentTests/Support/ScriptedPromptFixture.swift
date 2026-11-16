@@ -342,7 +342,9 @@ struct ScriptedPromptFixture {
   /// construction, before any session reads its project layer.
   static let distinctFlashConfiguration: AgentConfiguration = {
     var configuration = AgentConfiguration()
-    configuration.profile.flash = ["mlx-community/Qwen3-4B-4bit"]
+    var profile = configuration.profile.presetProfile
+    profile.flash = ["mlx-community/Qwen3-4B-4bit"]
+    configuration.profile.testProfile = profile
     return configuration
   }()
 

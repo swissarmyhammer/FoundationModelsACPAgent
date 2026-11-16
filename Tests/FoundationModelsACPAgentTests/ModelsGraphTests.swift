@@ -53,40 +53,59 @@ import Testing
       diskBytes: present, state: state)
   }
 
-  /// The builtin standard model and its drafter.
-  static let standard = ProfileConfiguration.defaultStandard[0]
+  /// The builtin standard model and its drafter: the models of the
+  /// profile `large`.
+  static let standard = ModelProfiles.defaultProfile.standard[0]
   static let standardDrafter = standard.drafter!
 
   /// The builtin flash model: the standard model, with its drafter.
-  static let flash = ProfileConfiguration.defaultFlash[0]
+  static let flash = ModelProfiles.defaultProfile.flash[0]
 
-  /// A model with no drafter, which a test names in the flash slot.
-  static let plainFlash = ModelRef("mlx-community/Qwen3-4B-4bit")
+  /// The model of the profile `tiny`, with no drafter.
+  static let tinyModel = ModelRef("mlx-community/Qwen3-4B-4bit")
 
-  /// A storage with answers for each builtin model and drafter, and for
-  /// ``plainFlash``: the standard model complete, its drafter missing, the
-  /// plain flash model complete. The builtin flash model is the standard
-  /// model, so it has the answer of the standard model.
+  /// A storage with answers for each model and drafter of the builtin
+  /// profiles: the standard model complete, its drafter missing, the model
+  /// of `tiny` complete, each other model missing.
   static func builtinStorage() -> FakeStorage {
     let storage = FakeStorage()
-    storage.set(info(standard, total: 1_000, present: 1_000, state: .complete))
-    storage.set(info(standardDrafter, total: 200, present: 0, state: .missing))
-    storage.set(info(plainFlash, total: 300, present: 300, state: .complete))
-    for ref in ProfileConfiguration.defaultEmbedding + ProfileConfiguration.defaultDecision {
+    for ref in ModelsEngine.builtinModels {
       storage.set(info(ref, total: 50, present: 0, state: .missing))
     }
+    storage.set(info(standard, total: 1_000, present: 1_000, state: .complete))
+    storage.set(info(standardDrafter, total: 200, present: 0, state: .missing))
+    storage.set(info(tinyModel, total: 300, present: 300, state: .complete))
     return storage
+  }
+
+  /// A fit estimate with fixed answers, which counts its calls.
+  final class StubFit: ProfileFitEstimating, Sendable {
+    /// The answer of each profile, by name. A profile with no answer fits.
+    let answers: [String: ProfileFitReport]
+
+    /// The calls, by the name of the profile.
+    let calls = Mutex<[String]>([])
+
+    init(_ answers: [String: ProfileFitReport] = [:]) {
+      self.answers = answers
+    }
+
+    func fitReport(of profile: ProfileDefinition) async -> ProfileFitReport {
+      calls.withLock { $0.append(profile.name) }
+      return answers[profile.name]
+        ?? ProfileFitReport(fits: true, requiredBytes: 1, budgetBytes: 2)
+    }
   }
 
   /// An endpoint over the store of a settings fixture.
   static func graph(
     _ fixture: SettingsGraphFixture, storage: FakeStorage = builtinStorage(),
     launched: ProfileConfiguration? = nil, active: [ModelSlot: ModelRef] = [:],
-    poll: Duration = .seconds(30)
+    fit: StubFit? = nil, poll: Duration = .seconds(30)
   ) -> ModelsGraph {
     ModelsGraph(
       store: fixture.store, storage: storage, launched: launched, active: active,
-      diskPollInterval: poll)
+      fitEstimator: fit, diskPollInterval: poll)
   }
 
   /// Runs a document and parses the reply.
@@ -99,17 +118,30 @@ import Testing
   static func rows(_ graph: ModelsGraph) async throws -> [[String: Any]] {
     let reply = try await run(
       graph,
-      "{ models { slot repo drafter file sizeBytes presentBytes state configValue candidates active "
+      "{ models { slot repo drafter file sizeBytes presentBytes state candidates active "
         + "restartRequired storageError } }")
     #expect(reply.codes.isEmpty, "\(reply.text)")
     return try #require(reply.data?["models"] as? [[String: Any]])
   }
 
-  /// Names ``plainFlash`` in the flash slot at the user level, so the flash
-  /// row is a model with no drafter and not the builtin standard model.
-  static func namePlainFlash(in fixture: SettingsGraphFixture) async throws {
-    try await fixture.store.set(
-      .array([.string(plainFlash.stringValue)]), at: ["profile", "flash"], level: .user)
+  /// The rows of `profiles`.
+  static func profiles(_ graph: ModelsGraph) async throws -> [[String: Any]] {
+    let reply = try await run(
+      graph,
+      "{ profiles { name description selected active restartRequired downloadBytes presentBytes state "
+        + "fit requiredBytes budgetBytes fitError models { slot repo drafter sizeBytes state } } }")
+    #expect(reply.codes.isEmpty, "\(reply.text)")
+    return try #require(reply.data?["profiles"] as? [[String: Any]])
+  }
+
+  /// The row of one profile of `profiles`.
+  static func profile(_ name: String, in rows: [[String: Any]]) throws -> [String: Any] {
+    try #require(rows.first { $0["name"] as? String == name })
+  }
+
+  /// Selects a builtin profile at the user level.
+  static func select(_ name: String, in fixture: SettingsGraphFixture) async throws {
+    try await fixture.store.set(.string(name), at: ["profile", "preset"], level: .user)
   }
 
   /// The next event of a subscription, as an object.
@@ -126,9 +158,9 @@ import Testing
 
   // MARK: - models
 
-  /// One row for each slot, in the profile order, with the first candidate
-  /// of each slot. The builtin flash row names the standard model and its
-  /// drafter.
+  /// One row for each slot of the selected profile, in the profile order,
+  /// with the first candidate of each slot. The flash row of `large` names
+  /// the standard model and its drafter.
   @Test func eachSlotHasOneRow() async throws {
     let fixture = try SettingsGraphFixture(label: "models-rows")
 
@@ -141,13 +173,16 @@ import Testing
     #expect(rows[1]["drafter"] as? String == Self.standardDrafter.stringValue)
   }
 
-  /// The row of a model with no drafter has no drafter.
-  @Test func aModelWithNoDrafterHasANullDrafter() async throws {
-    let fixture = try SettingsGraphFixture(label: "models-no-drafter")
-    try await Self.namePlainFlash(in: fixture)
+  /// The rows follow `profile.preset`: the slots of `tiny` name a model
+  /// with no drafter.
+  @Test func theRowsFollowThePreset() async throws {
+    let fixture = try SettingsGraphFixture(label: "models-preset")
+    try await Self.select("tiny", in: fixture)
 
     let rows = try await Self.rows(Self.graph(fixture))
 
+    #expect(rows[0]["repo"] as? String == Self.tinyModel.repo)
+    #expect(rows[1]["repo"] as? String == Self.tinyModel.repo)
     #expect(rows[1]["drafter"] is NSNull)
   }
 
@@ -155,15 +190,12 @@ import Testing
   /// model with a missing drafter is partial.
   @Test func theSizeAndTheStateCoverTheDrafter() async throws {
     let fixture = try SettingsGraphFixture(label: "models-drafter")
-    try await Self.namePlainFlash(in: fixture)
 
     let rows = try await Self.rows(Self.graph(fixture))
 
     #expect(rows[0]["sizeBytes"] as? Double == 1_200)
     #expect(rows[0]["presentBytes"] as? Double == 1_000)
     #expect(rows[0]["state"] as? String == "PARTIAL")
-    #expect(rows[1]["sizeBytes"] as? Double == 300)
-    #expect(rows[1]["state"] as? String == "COMPLETE")
   }
 
   /// The state follows the rule of Router: MISSING only when the model and
@@ -189,63 +221,33 @@ import Testing
   /// error text.
   @Test func aFailedReadGivesNoSizeAndTheError() async throws {
     let fixture = try SettingsGraphFixture(label: "models-error")
-    let storage = Self.builtinStorage()
-    let unknown = ModelRef("org/unknown-model")
-    try await fixture.store.set(.array([.string(unknown.stringValue)]), at: ["profile", "flash"], level: .user)
+    let storage = FakeStorage()
+    storage.set(Self.info(Self.standard, total: 1_000, present: 1_000, state: .complete))
+    storage.set(Self.info(Self.standardDrafter, total: 200, present: 200, state: .complete))
 
     let rows = try await Self.rows(Self.graph(fixture, storage: storage))
 
-    #expect(rows[1]["repo"] as? String == "org/unknown-model")
-    #expect(rows[1]["sizeBytes"] is NSNull)
-    #expect(rows[1]["state"] as? String == "MISSING")
-    #expect((rows[1]["storageError"] as? String)?.contains("org/unknown-model") == true)
-  }
-
-  /// The GGUF file of a model is its model file, not the projector.
-  @Test func theFileIsTheGGUFModelFile() async throws {
-    let fixture = try SettingsGraphFixture(label: "models-gguf")
-    let storage = Self.builtinStorage()
-    let gguf = ModelRef("unsloth/Qwen3-8B-GGUF/Q4_K_M")
-    storage.set(
-      Self.info(
-        gguf, total: 10, present: 10, state: .complete,
-        files: ["Q4_K_M/mmproj-F16.gguf", "Q4_K_M/Qwen3-8B-Q4_K_M.gguf"]))
-    try await fixture.store.set(.array([.string(gguf.stringValue)]), at: ["profile", "flash"], level: .user)
-
-    let rows = try await Self.rows(Self.graph(fixture, storage: storage))
-
-    #expect(rows[1]["file"] as? String == "Q4_K_M/Qwen3-8B-Q4_K_M.gguf")
-  }
-
-  /// `configValue` is the encoding of a slot key: a string for a model with
-  /// no drafter, an object for a model with a drafter. It decodes to the
-  /// same reference.
-  @Test func theConfigValueIsTheSlotKeyEncoding() async throws {
-    let fixture = try SettingsGraphFixture(label: "models-config")
-    try await Self.namePlainFlash(in: fixture)
-
-    let rows = try await Self.rows(Self.graph(fixture))
-
-    #expect(rows[1]["configValue"] as? String == Self.plainFlash.stringValue)
-    let standardValue = try #require(rows[0]["configValue"] as? [String: Any])
-    let data = try JSONSerialization.data(withJSONObject: standardValue)
-    #expect(try JSONDecoder().decode(ModelRef.self, from: data) == Self.standard)
+    let embedding = ModelProfiles.defaultProfile.embedding[0]
+    #expect(rows[2]["repo"] as? String == embedding.repo)
+    #expect(rows[2]["sizeBytes"] is NSNull)
+    #expect(rows[2]["state"] as? String == "MISSING")
+    #expect((rows[2]["storageError"] as? String)?.contains(embedding.stringValue) == true)
   }
 
   /// With a running agent, `active` names the model of the slot, and a
-  /// slot whose settings differ from the launch needs a restart.
-  @Test func aSlotChangeNeedsARestart() async throws {
+  /// slot whose model differs from the launch needs a restart.
+  @Test func aProfileChangeNeedsARestartOfTheChangedSlots() async throws {
     let fixture = try SettingsGraphFixture(label: "models-restart")
     let graph = Self.graph(
       fixture, launched: ProfileConfiguration(), active: [.standard: Self.standard, .flash: Self.flash])
-    let other = ModelRef("org/other-flash")
-    try await fixture.store.set(.array([.string(other.stringValue)]), at: ["profile", "flash"], level: .user)
+    try await Self.select("medium", in: fixture)
 
     let rows = try await Self.rows(graph)
 
-    #expect(rows[0]["restartRequired"] as? Bool == false)
+    #expect(rows[0]["restartRequired"] as? Bool == true)
     #expect(rows[1]["restartRequired"] as? Bool == true)
-    #expect(rows[1]["repo"] as? String == "org/other-flash")
+    #expect(rows[2]["restartRequired"] as? Bool == false)
+    #expect(rows[1]["repo"] as? String == "mlx-community/Qwen3-14B-4bit")
     #expect(rows[1]["active"] as? String == Self.flash.stringValue)
   }
 
@@ -259,64 +261,147 @@ import Testing
     #expect(rows.allSatisfy { $0["active"] is NSNull })
   }
 
-  // MARK: - choices
+  // MARK: - profiles
 
-  /// The choices of a slot are its candidates in the settings, then the
-  /// builtin choices of Router (`ModelChoices.builtin(for:)`), with no copy.
-  @Test func theChoicesAreTheCandidatesThenTheBuiltins() async throws {
-    let fixture = try SettingsGraphFixture(label: "models-choices")
-    let other = ModelRef("org/other-flash")
-    try await fixture.store.set(
-      .array([.string(other.stringValue), .string(Self.flash.stringValue)]), at: ["profile", "flash"],
-      level: .user)
+  /// One row for each builtin profile, in the order of the list, each with
+  /// a model for each slot. With no agent, `large` is selected and no
+  /// profile is active; with no estimate, the fit is UNKNOWN.
+  @Test func eachBuiltinProfileHasOneRow() async throws {
+    let fixture = try SettingsGraphFixture(label: "models-profiles")
 
-    let reply = try await Self.run(
-      Self.graph(fixture), "{ choices(slot: FLASH) { repo state configValue } }")
+    let rows = try await Self.profiles(Self.graph(fixture))
 
-    #expect(reply.codes.isEmpty, "\(reply.text)")
-    let choices = try #require(reply.data?["choices"] as? [[String: Any]])
-    // The text form names no drafter. Router keeps a reference with a
-    // drafter and the same reference with no drafter as two choices.
-    var seen = Set<ModelRef>()
-    let named = ModelRef(Self.flash.stringValue)
-    let expected = ([other, named] + ModelChoices.builtin(for: .flash)).filter {
-      seen.insert($0).inserted
+    #expect(rows.map { $0["name"] as? String } == ModelProfiles.builtin.map(\.name))
+    #expect(rows.map { $0["description"] as? String } == ModelProfiles.builtin.map(\.description))
+    #expect(rows.allSatisfy { ($0["models"] as? [[String: Any]])?.count == 4 })
+    #expect(rows.map { $0["selected"] as? Bool } == rows.map { $0["name"] as? String == "large" })
+    #expect(rows.allSatisfy { $0["active"] as? Bool == false && $0["restartRequired"] as? Bool == false })
+    #expect(rows.allSatisfy { $0["fit"] as? String == "UNKNOWN" && $0["budgetBytes"] is NSNull })
+  }
+
+  /// A model of two slots counts one time in `downloadBytes`: `large` names
+  /// one model with its drafter in `standard` and `flash`.
+  @Test func aModelOfTwoSlotsCountsOneTime() async throws {
+    let fixture = try SettingsGraphFixture(label: "models-shared")
+
+    let rows = try await Self.profiles(Self.graph(fixture))
+
+    let large = try Self.profile("large", in: rows)
+    // The model 1 000 and the drafter 200 one time, the embedding and the
+    // decision models 50 each.
+    #expect(large["downloadBytes"] as? Double == 1_300)
+    #expect(large["presentBytes"] as? Double == 1_000)
+    #expect(large["state"] as? String == "PARTIAL")
+    let tiny = try Self.profile("tiny", in: rows)
+    #expect(tiny["downloadBytes"] as? Double == 400)
+    let medium = try Self.profile("medium", in: rows)
+    #expect(medium["presentBytes"] as? Double == 0)
+    #expect(medium["state"] as? String == "MISSING")
+  }
+
+  /// A profile whose each model is on disk is COMPLETE, and a size that is
+  /// not known gives no download size.
+  @Test func theStateAndTheSizeOfAProfile() async throws {
+    let fixture = try SettingsGraphFixture(label: "models-profile-state")
+    let storage = FakeStorage()
+    for ref in ModelsEngine.builtinModels + ModelsEngine.builtinModels.compactMap(\.drafter) {
+      storage.set(Self.info(ref, total: 10, present: 10, state: .complete))
     }
-    #expect(choices.map { $0["repo"] as? String } == expected.map(\.repo))
-    #expect(choices.map { $0["repo"] as? String }.contains("mlx-community/Qwen3-14B-4bit"))
-    #expect(choices[1]["state"] as? String == "COMPLETE")
+    storage.set(Self.info(Self.tinyModel, total: nil, present: 10, state: .complete))
+
+    let rows = try await Self.profiles(Self.graph(fixture, storage: storage))
+
+    #expect(try Self.profile("large", in: rows)["state"] as? String == "COMPLETE")
+    #expect(try Self.profile("tiny", in: rows)["downloadBytes"] is NSNull)
+  }
+
+  /// `selected` follows `profile.preset` at the user level. With a running
+  /// agent of an other profile, the selected profile needs a restart, and
+  /// the profile of the launch is active.
+  @Test func selectedFollowsThePreset() async throws {
+    let fixture = try SettingsGraphFixture(label: "models-selected")
+    let graph = Self.graph(fixture, launched: ProfileConfiguration())
+    try await Self.select("small", in: fixture)
+
+    let rows = try await Self.profiles(graph)
+
+    #expect(rows.compactMap { $0["selected"] as? Bool == true ? $0["name"] as? String : nil } == ["small"])
+    #expect(try Self.profile("small", in: rows)["restartRequired"] as? Bool == true)
+    #expect(try Self.profile("large", in: rows)["active"] as? Bool == true)
+    #expect(try Self.profile("large", in: rows)["restartRequired"] as? Bool == false)
+  }
+
+  /// The fit of each profile comes from the estimate: FITS with the bytes,
+  /// or DOES_NOT_FIT with the reason. The endpoint keeps each estimate
+  /// until the settings or the disk change.
+  @Test func theFitComesFromTheEstimate() async throws {
+    let fixture = try SettingsGraphFixture(label: "models-fit")
+    let fit = StubFit([
+      "large": ProfileFitReport(
+        fits: false, requiredBytes: nil, budgetBytes: 32, failure: "needs 40, has 32"),
+      "tiny": ProfileFitReport(fits: true, requiredBytes: 20, budgetBytes: 32),
+    ])
+    let graph = Self.graph(fixture, fit: fit)
+
+    let rows = try await Self.profiles(graph)
+    _ = try await Self.profiles(graph)
+
+    let large = try Self.profile("large", in: rows)
+    #expect(large["fit"] as? String == "DOES_NOT_FIT")
+    #expect(large["requiredBytes"] is NSNull)
+    #expect(large["budgetBytes"] as? Double == 32)
+    #expect(large["fitError"] as? String == "needs 40, has 32")
+    let tiny = try Self.profile("tiny", in: rows)
+    #expect(tiny["fit"] as? String == "FITS")
+    #expect(tiny["requiredBytes"] as? Double == 20)
+    #expect(tiny["fitError"] is NSNull)
+    #expect(fit.calls.withLock { $0 } == ModelProfiles.builtin.map(\.name))
+  }
+
+  /// A preset that names no builtin profile is refused by the settings
+  /// store, and the error names the profiles.
+  @Test func anUnknownPresetIsRefused() async throws {
+    let fixture = try SettingsGraphFixture(label: "models-unknown")
+
+    let error = await #expect(throws: (any Error).self) {
+      try await Self.select("huge", in: fixture)
+    }
+
+    #expect(String(describing: try #require(error)).contains("large"))
   }
 
   // MARK: - changes
 
-  /// A slot change at the user level gives a SLOT change that applies at
-  /// the next launch.
-  @Test func aSlotChangeGivesASlotChange() async throws {
-    let fixture = try SettingsGraphFixture(label: "models-slot-change")
+  /// A write of `profile.preset` at the user level gives a PROFILE change
+  /// of each slot that applies at the next launch.
+  @Test func aPresetWriteGivesAProfileChange() async throws {
+    let fixture = try SettingsGraphFixture(label: "models-profile-change")
     let graph = Self.graph(fixture)
     var events = try await graph.subscribe(
       query: Self.changesDocument, variables: [:], operationName: nil, viewer: nil
     ).makeAsyncIterator()
 
-    try await fixture.store.set(.array([.string("org/other-flash")]), at: ["profile", "flash"], level: .user)
+    try await Self.select("medium", in: fixture)
 
     let change = try await Self.next(&events)
-    #expect(change["changed"] as? [String] == ["flash"])
-    #expect(change["reason"] as? String == "SLOT")
+    #expect(change["changed"] as? [String] == ["standard", "flash", "embedding", "decision"])
+    #expect(change["reason"] as? String == "PROFILE")
     #expect(change["appliesAt"] as? String == "NEXT_LAUNCH")
   }
 
-  /// A change of a key out of the profile gives no change.
-  @Test func aChangeOutOfTheProfileGivesNoChange() {
-    #expect(ModelsGraphChangeFeed.slots(changedBy: ["theme"]).isEmpty)
-    #expect(ModelsGraphChangeFeed.slots(changedBy: ["profile", "decision"]) == [.decision])
-    #expect(ModelsGraphChangeFeed.slots(changedBy: ["profile"]) == ModelSlot.allCases)
-    #expect(ModelsGraphChangeFeed.slots(changedBy: nil) == ModelSlot.allCases)
+  /// Only a change that can change `profile.preset` changes the profile.
+  @Test func onlyAPresetChangeChangesTheProfile() {
+    #expect(!ModelsGraphChangeFeed.changesProfile(["theme"]))
+    #expect(!ModelsGraphChangeFeed.changesProfile(["profile", "name"]))
+    #expect(ModelsGraphChangeFeed.changesProfile(["profile", "preset"]))
+    #expect(ModelsGraphChangeFeed.changesProfile(["profile"]))
+    #expect(ModelsGraphChangeFeed.changesProfile(nil))
   }
 
   /// A model that comes on disk while a subscriber is open gives a DISK
-  /// change that applies now, for each slot that names it: the builtin
-  /// standard and flash slots name one model and one drafter.
+  /// change that applies now, for each slot of the selected profile that
+  /// names it: the standard and flash slots of `large` name one model and
+  /// one drafter.
   @Test func aModelOnDiskGivesADiskChange() async throws {
     let fixture = try SettingsGraphFixture(label: "models-disk-change")
     let storage = Self.builtinStorage()
@@ -333,25 +418,45 @@ import Testing
     #expect(change["appliesAt"] as? String == "NOW")
   }
 
+  /// A model of an other profile that comes on disk gives a DISK change
+  /// that names no slot: the state of that profile changed.
+  @Test func aModelOfAnOtherProfileGivesADiskChangeWithNoSlot() async throws {
+    let fixture = try SettingsGraphFixture(label: "models-disk-other")
+    let storage = Self.builtinStorage()
+    let graph = Self.graph(fixture, storage: storage, poll: .milliseconds(20))
+    var events = try await graph.subscribe(
+      query: Self.changesDocument, variables: [:], operationName: nil, viewer: nil
+    ).makeAsyncIterator()
+
+    storage.set(Self.info("mlx-community/Qwen3-14B-4bit", total: 50, present: 50, state: .complete))
+
+    let change = try await Self.next(&events)
+    #expect(change["changed"] as? [String] == [])
+    #expect(change["reason"] as? String == "DISK")
+  }
+
   // MARK: - The agent
 
   /// The endpoint of a composed agent reads the storage that `compose`
   /// got, thus a test makes no network request.
   @Test func theComposedAgentReadsTheGivenStorage() async throws {
     let storage = FakeStorage()
-    for slot in ModelSlot.allCases {
-      for ref in slot.builtinCandidates + slot.builtinCandidates.compactMap(\.drafter) {
-        storage.set(Self.info(ref, total: 7, present: 7, state: .complete))
-      }
+    for ref in ModelsEngine.builtinModels + ModelsEngine.builtinModels.compactMap(\.drafter) {
+      storage.set(Self.info(ref, total: 7, present: 7, state: .complete))
     }
     let composed = try await composeStubAgent(
       name: "ModelsGraphTests", label: "ModelsGraphTests-storage", modelStorage: storage)
 
     let rows = try await Self.rows(composed.agent.modelsEndpoint)
+    let profiles = try await Self.profiles(composed.agent.modelsEndpoint)
 
     #expect(rows.allSatisfy { $0["state"] as? String == "COMPLETE" })
     #expect(rows.allSatisfy { $0["storageError"] is NSNull })
     #expect(rows.allSatisfy { $0["active"] is String })
+    #expect(try Self.profile("large", in: profiles)["active"] as? Bool == true)
+    // The agent gives its router as the fit estimate.
+    #expect(profiles.allSatisfy { $0["fit"] as? String != "UNKNOWN" })
+    #expect(profiles.allSatisfy { $0["budgetBytes"] is Double })
   }
 
   /// Each session of the agent has the top-level `models` tool, which gives

@@ -248,9 +248,15 @@ public enum ConfigurationYAML {
   ///   the open-ended `tools:` roster, whose own keys always encode.
   private static func completed(value: Any, forSection section: String) -> Any {
     guard let mapping = value as? [String: Any],
-      let schema = AgentConfiguration.sectionSchemas[section],
-      case .checked(let knownKeys) = schema
+      let schema = AgentConfiguration.sectionSchemas[section]
     else {
+      return value
+    }
+    let knownKeys: Set<String>
+    switch schema {
+    case .checked(let keys), .checkedWithRetired(let keys, _):
+      knownKeys = keys
+    case .toolRoster, .scalar:
       return value
     }
     return mapping.merging(knownKeys.map { ($0, NSNull() as Any) }) { present, _ in present }

@@ -5,13 +5,14 @@ import FoundationModelsRouter
 import FoundationModelsRouterTestSupport
 import Testing
 
-/// Proves that a configuration file loads and uses a REAL embedding model of
-/// each format: the Core ML model on the Apple Neural Engine (the shipped
+/// Proves that a profile loads and uses a REAL embedding model of each
+/// format: the Core ML model on the Apple Neural Engine (the shipped
 /// default) and the MLX Qwen embedding model.
 ///
-/// Each test writes a user-layer `config.yaml`, loads it through the
-/// `ConfigurationLoader`, resolves the profile through a live router, and embeds
-/// text through the resident handle of the `embedding` slot. The `standard`
+/// The settings select a builtin profile only (ACPA-21), so a test cannot
+/// name an embedding model in `config.yaml`. Each test resolves a profile
+/// definition through a live router, and embeds text through the resident
+/// handle of the `embedding` slot. The `standard`
 /// and `flash` slots name two small models, so the run does not load the 27B
 /// model of the shipped profile. The first run needs the network, and the
 /// suite runs one test at a time because each loads models into the GPU and
@@ -42,37 +43,23 @@ struct EmbeddingModelTests {
 
   // MARK: - Helpers
 
-  /// Loads `embeddingYAML` as the `embedding` slot of a profile, resolves the
-  /// profile with live models, and embeds ``texts``.
+  /// Resolves a profile whose `embedding` slot is `embedding` with live
+  /// models, and embeds ``texts``.
   ///
-  /// - Parameter embeddingYAML: The value of the `embedding:` key.
-  /// - Returns: The configuration that loaded, and one vector for each text.
-  private static func embed(embeddingYAML: String) async throws -> (ProfileConfiguration, [[Float]])
-  {
+  /// - Parameter embedding: The model of the `embedding` slot.
+  /// - Returns: One vector for each text.
+  private static func embed(with embedding: String) async throws -> [[Float]] {
     _ = MetalLibraryTestBootstrap.ensureColocatedMetallib
-    let userDirectory = makeResolvedDirectory(label: "EmbeddingModelTests-user")
-    let yaml = """
-      profile:
-        standard: ["\(standardModel)"]
-        flash: ["\(flashModel)"]
-        embedding: \(embeddingYAML)
-      """
-    try yaml.write(
-      to: userDirectory.appendingPathComponent(ConfigurationLoader.configFileName),
-      atomically: true, encoding: .utf8)
-    let home = AgentHomeFixture.make(label: "EmbeddingModelTests", synced: userDirectory)
-    let name = try DotfolderName(AgentClientHarness.dotfolderName)
-    let profile = try ConfigurationLoader(
-      name: name, workingDirectory: userDirectory, home: home, environment: [:]
-    ).load().configuration.profile
+    let definition = ProfileDefinition(
+      name: "EmbeddingModelTests", description: "Two small models and one embedding model.",
+      standard: [ModelRef(standardModel)], flash: [ModelRef(flashModel)],
+      embedding: [ModelRef(embedding)])
     let router = Router(
       recordingsDir: makeResolvedDirectory(label: "EmbeddingModelTests-recordings"),
       loader: LiveModelLoader(),
       samplingMode: .greedy)
-    let resident = try await profile.resolveResident(
-      fallbackName: name, router: router, reporting: ResolutionProgress())
-    let vectors = try await resident.embedding.embed(texts: texts)
-    return (profile, vectors)
+    let resident = try await router.resolve(profile: definition, reporting: ResolutionProgress())
+    return try await resident.embedding.embed(texts: texts)
   }
 
   /// The cosine similarity of two vectors.
@@ -99,22 +86,20 @@ struct EmbeddingModelTests {
 
   // MARK: - The tests
 
-  /// The shipped default, with no `embedding` key in the file, is the Core ML
-  /// model, and it embeds.
+  /// The embedding model of the default profile is the Core ML model, and
+  /// it embeds.
   @Test func theShippedDefaultCoreMLModelLoadsAndEmbeds() async throws {
-    #expect(ProfileConfiguration.defaultEmbedding.map(\.stringValue) == [Self.aneModel])
+    #expect(ModelProfiles.named(ModelProfiles.defaultName)?.embedding.map(\.stringValue) == [Self.aneModel])
 
-    let (_, vectors) = try await Self.embed(embeddingYAML: "[\"\(Self.aneModel)\"]")
+    let vectors = try await Self.embed(with: Self.aneModel)
 
     Self.expectUseful(vectors, dimension: 768)
   }
 
-  /// A configuration file that names the MLX Qwen embedding model loads it
-  /// and embeds.
-  @Test func aConfiguredMLXQwenEmbeddingModelLoadsAndEmbeds() async throws {
-    let (profile, vectors) = try await Self.embed(embeddingYAML: "[\"\(Self.mlxModel)\"]")
+  /// A profile that names the MLX Qwen embedding model loads it and embeds.
+  @Test func anMLXQwenEmbeddingModelLoadsAndEmbeds() async throws {
+    let vectors = try await Self.embed(with: Self.mlxModel)
 
-    #expect(profile.embedding.map(\.stringValue) == [Self.mlxModel])
     Self.expectUseful(vectors, dimension: 1024)
   }
 }

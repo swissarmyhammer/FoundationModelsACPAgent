@@ -10,6 +10,7 @@
 // `swift test --package-path IntegrationTests` runs them.
 
 import Foundation
+import FoundationModelsRouter
 import FoundationModelsACPAgent
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsExtras
@@ -174,7 +175,7 @@ enum TierThreeFixture {
   }
 
   /// The user-layer `config.yaml` the spawned agent resolves its
-  /// profile from: the shipped profile, slot for slot.
+  /// profile from: the shipped profile (ACPA-21).
   ///
   /// The tests drive the models the agent ships, so a pass says the
   /// shipped agent works, and a change of a default reaches the tests
@@ -182,21 +183,8 @@ enum TierThreeFixture {
   static var userConfigYAML: String {
     """
     profile:
-      standard: ["\(shippedModel(ProfileConfiguration.defaultStandard))"]
-      flash: ["\(shippedModel(ProfileConfiguration.defaultFlash))"]
-      embedding: ["\(shippedModel(ProfileConfiguration.defaultEmbedding))"]
+      preset: \(ModelProfiles.defaultName)
     """
-  }
-
-  /// The first model of one shipped slot.
-  ///
-  /// - Parameter slot: The shipped default of the slot.
-  /// - Returns: The model reference.
-  private static func shippedModel(_ slot: [ModelRef]) -> String {
-    guard let first = slot.first?.stringValue else {
-      preconditionFailure("a shipped profile slot names no model")
-    }
-    return first
   }
 
   /// Writes the user-layer `config.yaml` under `configHome`, at

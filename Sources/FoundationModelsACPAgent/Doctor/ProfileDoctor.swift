@@ -68,34 +68,28 @@ public struct ProfileDoctor: Doctorable {
   /// The check that states the free disk.
   private static let diskCheckName = "the free disk"
 
-  /// The dotted key path of the profile section.
-  private static let profileKey = AgentConfiguration.CodingKeys.profile.stringValue
+  /// The fix of a model of the profile that does not resolve or does not
+  /// load: the user selects a different builtin profile (ACPA-21).
+  private static let selectFix =
+    "select a different profile with \"profile.preset\" in \(ConfigurationLoader.configFileName), "
+    + "with \(editCommand)"
 
-  /// The dotted key path of the standard slot.
-  private static let standardKey = key(ofSlot: .standard)
-
-  /// The dotted key path of the flash slot.
-  private static let flashKey = key(ofSlot: .flash)
-
-  /// The dotted key path of the embedding slot.
-  private static let embeddingKey = key(ofSlot: .embedding)
-
-  /// The dotted key path of the decision slot.
-  private static let decisionKey = key(ofSlot: .decision)
-
-  /// The dotted key path of one slot.
+  /// The key of one slot in the rows: the name of the profile, then the
+  /// slot, for example `large.standard`.
   ///
-  /// - Parameter slot: The slot to name.
-  /// - Returns: The dotted key path.
-  private static func key(ofSlot slot: ProfileConfiguration.CodingKeys) -> String {
-    profileKey + LoadedConfiguration.keyPathSeparator + slot.stringValue
+  /// - Parameters:
+  ///   - slot: The slot to name.
+  ///   - profile: The name of the profile.
+  /// - Returns: The key.
+  private static func key(ofSlot slot: ModelSlot, in profile: String) -> String {
+    profile + LoadedConfiguration.keyPathSeparator + slot.rawValue
   }
 
   // MARK: - Stored state
 
-  /// The resolved configuration, whose `profile:` section names the
-  /// four slots.
-  private let configuration: AgentConfiguration
+  /// The profile whose models the checks read: the profile that
+  /// `profile.preset` selects.
+  private let profile: ProfileDefinition
 
   /// How the checks reach the Hub and the model cache.
   private let resolver: any ModelResolver
@@ -131,7 +125,26 @@ public struct ProfileDoctor: Doctorable {
     configuration: AgentConfiguration, resolver: any ModelResolver, memoryBytes: Int64,
     freeDiskBytes: Int64, timeoutSeconds: Double = ProfileDoctor.resolveTimeoutSeconds
   ) {
-    self.configuration = configuration
+    self.init(
+      profile: configuration.profile.presetProfile, resolver: resolver, memoryBytes: memoryBytes,
+      freeDiskBytes: freeDiskBytes, timeoutSeconds: timeoutSeconds)
+  }
+
+  /// Makes the component over one profile, one resolver and the two
+  /// machine figures.
+  ///
+  /// - Parameters:
+  ///   - profile: The profile whose models the checks read.
+  ///   - resolver: How the checks reach the Hub and the cache.
+  ///   - memoryBytes: The memory of the machine, in bytes.
+  ///   - freeDiskBytes: The free disk of the model cache, in bytes.
+  ///   - timeoutSeconds: How long one resolver call may take. The
+  ///     default is ``resolveTimeoutSeconds``.
+  public init(
+    profile: ProfileDefinition, resolver: any ModelResolver, memoryBytes: Int64,
+    freeDiskBytes: Int64, timeoutSeconds: Double = ProfileDoctor.resolveTimeoutSeconds
+  ) {
+    self.profile = profile
     self.resolver = resolver
     self.memoryBytes = memoryBytes
     self.freeDiskBytes = freeDiskBytes
@@ -182,12 +195,9 @@ public struct ProfileDoctor: Doctorable {
   /// under the keys of all those slots. The `standard` and `flash` defaults
   /// name one model: it is checked once, and its download counts once.
   private var slotReferences: [SlotReference] {
-    let slots = [
-      (Self.standardKey, configuration.profile.standard),
-      (Self.flashKey, configuration.profile.flash),
-      (Self.embeddingKey, configuration.profile.embedding),
-      (Self.decisionKey, configuration.profile.decision),
-    ]
+    let slots = ModelSlot.allCases.map { slot in
+      (Self.key(ofSlot: slot, in: profile.name), slot.candidates(in: profile))
+    }
     let named = slots.flatMap { key, references in
       references.flatMap { reference in
         [SlotReference(key: key, reference: reference, isDrafter: false)]
@@ -297,9 +307,7 @@ public struct ProfileDoctor: Doctorable {
   /// - Returns: The row.
   private static func localCheck(of entry: SlotReference, text: String) -> HealthCheck {
     let name = "\(entry.key): the local model \(text)"
-    let fix =
-      "set \(entry.key) in \(ConfigurationLoader.configFileName) to an absolute folder "
-      + "that holds a model, with no @ in the path, with \(editCommand)"
+    let fix = selectFix
     guard ModelReferenceFormat.parts(of: entry.reference).revision == nil else {
       return .error(
         name: name, message: "\(text) has an @, which is read as a revision", fix: fix,
@@ -361,8 +369,7 @@ public struct ProfileDoctor: Doctorable {
     .error(
       name: "\(entry.key): the shape of \(text)",
       message: "\(text) is not a well formed owner/name reference",
-      fix: "set \(entry.key) in \(ConfigurationLoader.configFileName) to an "
-        + "owner/name reference, with \(editCommand)",
+      fix: selectFix,
       category: category)
   }
 
@@ -392,8 +399,7 @@ public struct ProfileDoctor: Doctorable {
       return [
         .error(
           name: name, message: "Hugging Face has no repository \(text)",
-          fix: "correct \(entry.key) in \(ConfigurationLoader.configFileName), "
-            + "with \(editCommand)",
+          fix: selectFix,
           category: category)
       ]
     case .unreachable(let reason):
@@ -464,9 +470,7 @@ public struct ProfileDoctor: Doctorable {
         name: "\(entry.key): the MTP head of \(text)",
         message: "\(text) is an MTP build, and \(entry.key) names no drafter, so "
           + "Router decodes it plain: the download is larger and the speed is the same",
-        fix: "name the MTP head of \(text) as the `\(drafterKey)` of the reference in "
-          + "\(entry.key) of \(ConfigurationLoader.configFileName), or set a build "
-          + "with no MTP head, with \(editCommand)",
+        fix: selectFix,
         category: category)
     ]
   }
@@ -487,15 +491,17 @@ public struct ProfileDoctor: Doctorable {
       category: Self.category)
   }
 
-  /// A model that fits a 16 GB machine, which the fix of a machine below
-  /// the floor names.
-  static let smallerModel: [ModelRef] = ["mlx-community/Qwen3-4B-4bit"]
+  /// The smallest builtin profile, which the fix of a machine below the
+  /// floor names.
+  static var smallerProfileName: String {
+    ModelProfiles.builtin.last?.name ?? ModelProfiles.defaultName
+  }
 
-  /// The fix of a machine below the floor: name a smaller model in the
-  /// standard and flash slots.
-  private static let smallerProfileFix =
-    "set \(standardKey) and \(flashKey) in \(ConfigurationLoader.configFileName) to a smaller model, "
-    + "such as \(describe(smallerModel)), with \(editCommand)"
+  /// The fix of a machine below the floor: select a smaller profile.
+  private static var smallerProfileFix: String {
+    "set \"profile.preset\" in \(ConfigurationLoader.configFileName) to a smaller profile, "
+      + "such as \(smallerProfileName), with \(editCommand)"
+  }
 
   // MARK: - The free disk
 
@@ -539,8 +545,8 @@ public struct ProfileDoctor: Doctorable {
   /// The fix of a volume that is too small: make space, or name smaller
   /// models.
   private static let diskFix =
-    "make space on the volume of the model cache, or set \(profileKey) in "
-    + "\(ConfigurationLoader.configFileName) to smaller models, with \(editCommand)"
+    "make space on the volume of the model cache, or set \"profile.preset\" in "
+    + "\(ConfigurationLoader.configFileName) to a smaller profile, with \(editCommand)"
 
   // MARK: - The shared shapes
 

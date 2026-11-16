@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsRouter
 import FoundationModelsExtras
 import Logging
 
@@ -75,6 +76,11 @@ public enum ConfigurationWarning: Equatable, Sendable, CustomStringConvertible {
   /// and it does not hold the error of the store.
   case unreadableSecret(keyPath: String, reference: String)
 
+  /// A key that the section had before and does not decode now, such as
+  /// `profile.standard` or `profile.decisionContext` (ACPA-21). The loader
+  /// ignores the key.
+  case retiredKey(section: String, key: String)
+
   /// A human-readable message that names the section.
   public var description: String {
     switch self {
@@ -92,6 +98,13 @@ public enum ConfigurationWarning: Equatable, Sendable, CustomStringConvertible {
     case .unreadableSecret(let keyPath, let reference):
       return
         "\(ConfigurationLoader.configFileName): the secret store could not read the item for the reference \"\(ConfiguredSecret.referencePrefix)\(reference)\" of \"\(keyPath)\"; the lookup failed and the key is not set"
+    case .retiredKey(let section, let key):
+      return
+        "\(ConfigurationLoader.configFileName): the key \"\(section).\(key)\" is no longer used and is ignored"
+        + (section == AgentConfiguration.CodingKeys.profile.stringValue
+          ? "; set \"profile.preset\" to one of: "
+            + ModelProfiles.builtin.map(\.name).joined(separator: ", ")
+          : "")
     }
   }
 }
@@ -119,6 +132,8 @@ extension ConfigurationWarning {
       "The secret store has no item for a secret reference of the configuration. The key is not set."
     case .unreadableSecret:
       "The secret store could not read the item for a secret reference of the configuration. The key is not set."
+    case .retiredKey:
+      "The configuration has a key that is no longer used. The loader ignored the key."
     }
   }
 
@@ -132,6 +147,8 @@ extension ConfigurationWarning {
       ToolsConfiguration.dottedSection(name)
     case .unresolvedSecret(let keyPath, _), .unreadableSecret(let keyPath, _):
       keyPath
+    case .retiredKey(let section, let key):
+      section + LoadedConfiguration.keyPathSeparator + key
     }
   }
 }
@@ -583,6 +600,15 @@ public struct ConfigurationLoader: Sendable {
     case .checked(let knownKeys):
       try ConfigurationError.checkKeys(of: body, against: knownKeys, section: name)
       return []
+    case .checkedWithRetired(let knownKeys, let retiredKeys):
+      try ConfigurationError.checkKeys(
+        of: body, against: knownKeys.union(retiredKeys), section: name)
+      guard case .dictionary(let keys) = body else {
+        return []
+      }
+      return keys.keys.filter(retiredKeys.contains).sorted().map {
+        .retiredKey(section: name, key: $0)
+      }
     case .toolRoster:
       return try ToolsConfiguration.schemaWarnings(inBody: body)
     case .scalar:

@@ -564,7 +564,8 @@ public actor RoutedACPAgent: Agent {
       active: [
         .standard: residentProfile.standard.chosen, .flash: residentProfile.flash.chosen,
         .embedding: residentProfile.embedding.chosen, .decision: residentProfile.decision.chosen,
-      ])
+      ],
+      fitEstimator: router)
     let directoryRoots = recordingRootsOfTheDirectory()
     await router.sessionDirectory.useRecordingRoots { await directoryRoots() }
     // The directory restores a recorded root session through the agent (ACPA-9).

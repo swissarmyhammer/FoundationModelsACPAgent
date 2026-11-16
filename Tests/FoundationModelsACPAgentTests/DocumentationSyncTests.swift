@@ -159,14 +159,17 @@ import Testing
 
   /// Every model the default profile names, over the four slots, in
   /// slot order, and the MTP drafter of each reference that names one.
-  /// The list is the `ProfileConfiguration` statics, so a changed default
-  /// fails the README test until the README changes too.
+  /// The list is the default profile of Router (`ModelProfiles`), so a
+  /// changed default fails the README test until the README changes too.
   static var defaultProfileModels: [String] {
-    (ProfileConfiguration.defaultStandard + ProfileConfiguration.defaultFlash
-      + ProfileConfiguration.defaultEmbedding + ProfileConfiguration.defaultDecision).flatMap {
-        reference in
-        [reference.stringValue] + (reference.drafter.map { [$0.stringValue] } ?? [])
-      }
+    guard let profile = ModelProfiles.named(ModelProfiles.defaultName) else {
+      return []
+    }
+    return (profile.standard + profile.flash + profile.embedding + profile.decision).flatMap {
+      reference in
+      [reference.stringValue] + (reference.drafter.map { [$0.stringValue] } ?? [])
+    }
+  }
   }
 
   /// The README names every default model id, exactly as

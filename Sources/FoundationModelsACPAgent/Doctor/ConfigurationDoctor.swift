@@ -124,7 +124,9 @@ public struct ConfigurationDoctor: Doctorable {
     case .unreadableSecret(_, let reference):
       return
         "unlock the secret store and let this app read the item for the reference \"\(reference)\", or \(removal)"
-    case .unknownSection, .unknownToolSection, .cannotDisable:
+    case .retiredKey(let section, _) where section == AgentConfiguration.CodingKeys.profile.stringValue:
+      return removal + ", and select a profile with \"profile.preset\""
+    case .unknownSection, .unknownToolSection, .cannotDisable, .retiredKey:
       return removal
     }
   }

@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsRouter
 import FoundationModelsExtras
 import Synchronization
 
@@ -98,9 +99,17 @@ public enum SettingsStoreError: Error, Equatable, Sendable, CustomStringConverti
   /// user layer when the CLI finds no XDG folder.
   case noLayer(SettingsLevel)
 
-  /// A human-readable reason that names the level.
+  /// The key path names a key that its section no longer has, such as
+  /// `profile.standard` (ACPA-21). The store writes no such key; a clear
+  /// of it works. `keyPath` is the dotted key path.
+  case retiredKey(keyPath: String)
+
+  /// A human-readable reason that names the level or the key.
   public var description: String {
     switch self {
+    case .retiredKey(let keyPath):
+      return "the key \"\(keyPath)\" is no longer used; select a profile with \"profile.preset\" "
+        + "(one of: \(ModelProfiles.builtin.map(\.name).joined(separator: ", ")))"
     case .noLayer(.user):
       return "the settings folders give no folder for the user level"
     case .noLayer(.session(let workingDirectory)):
@@ -498,9 +507,17 @@ public actor SettingsStore {
   ///   that does not render or parse; a file error. The message of a parse
   ///   error is the message of the parser with no line of the parsed text
   ///   (``SettingsLoadError/parserMessage(_:hidingLinesOf:)``), because a
-  ///   rendered line can hold a secret value. After an error, the level and
-  ///   its file do not change.
+  ///   rendered line can hold a secret value.
+  ///   ``SettingsStoreError/retiredKey(keyPath:)`` for a key of `profile`
+  ///   that the section no longer has. After an error, the level and its
+  ///   file do not change.
   public func set(_ value: YAMLValue, at keyPath: [String], level: SettingsLevel) async throws {
+    if keyPath.count > 1, keyPath[0] == AgentConfiguration.CodingKeys.profile.stringValue,
+      ProfileConfiguration.retiredKeys.contains(keyPath[1])
+    {
+      throw SettingsStoreError.retiredKey(
+        keyPath: keyPath.prefix(2).joined(separator: LoadedConfiguration.keyPathSeparator))
+    }
     let id = SettingsTreeDifference.id(of: keyPath)
     try await change(at: keyPath, level: level) { tree in
       let ids = tree.value(at: keyPath) == nil ? ChangedIDs(added: [id]) : ChangedIDs(changed: [id])

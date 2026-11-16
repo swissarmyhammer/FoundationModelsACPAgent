@@ -7,16 +7,16 @@ import GraphQL
 
 /// The `ModelSlot` enum of the schema.
 enum ModelsGraphSlot: String, Codable, CaseIterable, Sendable {
-  /// `profile.standard`.
+  /// The slot of the main work.
   case standard = "STANDARD"
 
-  /// `profile.flash`.
+  /// The slot of the fast model.
   case flash = "FLASH"
 
-  /// `profile.embedding`.
+  /// The slot of the embedding model.
   case embedding = "EMBEDDING"
 
-  /// `profile.decision`.
+  /// The slot of the decision model.
   case decision = "DECISION"
 
   /// The schema value of a slot.
@@ -65,10 +65,34 @@ enum ModelsGraphDiskState: String, Codable, CaseIterable, Sendable {
   }
 }
 
+/// The `ProfileFit` enum of the schema.
+enum ModelsGraphProfileFit: String, Codable, CaseIterable, Sendable {
+  /// The profile fits the memory budget of the machine.
+  case fits = "FITS"
+
+  /// The profile does not fit the memory budget of the machine.
+  case doesNotFit = "DOES_NOT_FIT"
+
+  /// The fit is not known: the endpoint has no fit estimate.
+  case unknown = "UNKNOWN"
+
+  /// The schema value of a report.
+  ///
+  /// - Parameter report: The report, or `nil` when the endpoint has no fit
+  ///   estimate.
+  init(_ report: ProfileFitReport?) {
+    guard let report else {
+      self = .unknown
+      return
+    }
+    self = report.fits ? .fits : .doesNotFit
+  }
+}
+
 /// The `ModelChangeReason` enum of the schema.
 enum ModelsGraphChangeReason: String, Codable, CaseIterable, Sendable {
-  /// The value of a slot in the settings changed.
-  case slot = "SLOT"
+  /// The value of `profile.preset` in the settings changed.
+  case profile = "PROFILE"
 
   /// The files of a model on disk changed, for example a download ended.
   case disk = "DISK"
@@ -111,9 +135,6 @@ struct ModelsGraphModelFields: Sendable {
   /// The disk state of the model and its drafter.
   let state: ModelsGraphDiskState
 
-  /// The reference in the encoding of a slot key of `config.yaml`.
-  let configValue: Map
-
   /// The error of a storage read, or null.
   let storageError: String?
 
@@ -129,7 +150,6 @@ struct ModelsGraphModelFields: Sendable {
     sizeBytes = report.sizeBytes.map(Double.init)
     presentBytes = Double(report.presentBytes)
     state = ModelsGraphDiskState(report.state)
-    configValue = report.ref.graphQLMap
     storageError = report.storageError
   }
 }
@@ -159,13 +179,15 @@ struct ModelsGraphSlotModel: Sendable {
   var sizeBytes: Double? { model.sizeBytes }
   var presentBytes: Double { model.presentBytes }
   var state: ModelsGraphDiskState { model.state }
-  var configValue: Map { model.configValue }
   var storageError: String? { model.storageError }
 }
 
-/// The `ModelChoice` object: one model that a slot can take.
-struct ModelsGraphChoice: Sendable {
-  /// The fields of the model.
+/// The `ProfileModel` object: the model of one slot of a profile.
+struct ModelsGraphProfileModel: Sendable {
+  /// The slot.
+  let slot: ModelsGraphSlot
+
+  /// The fields of the first candidate of the slot in the profile.
   let model: ModelsGraphModelFields
 
   var repo: String { model.repo }
@@ -176,14 +198,51 @@ struct ModelsGraphChoice: Sendable {
   var sizeBytes: Double? { model.sizeBytes }
   var presentBytes: Double { model.presentBytes }
   var state: ModelsGraphDiskState { model.state }
-  var configValue: Map { model.configValue }
   var storageError: String? { model.storageError }
 }
 
-/// The arguments of `Query.choices`.
-struct ModelsGraphChoicesArguments: Codable, Sendable {
-  /// The slot.
-  let slot: ModelsGraphSlot
+/// The `ModelProfile` object: one builtin profile that the user can select.
+struct ModelsGraphProfile: Sendable {
+  /// The name of the profile: the value of `profile.preset`.
+  let name: String
+
+  /// The description of the profile.
+  let description: String
+
+  /// True when `profile.preset` at the user level names this profile.
+  let selected: Bool
+
+  /// True when the running agent launched with this profile.
+  let active: Bool
+
+  /// True when this profile is selected and the running agent launched
+  /// with a different profile.
+  let restartRequired: Bool
+
+  /// The model of each slot.
+  let models: [ModelsGraphProfileModel]
+
+  /// The download size of the different models and drafters of the
+  /// profile, each counted one time, or `nil` when a size is not known.
+  let downloadBytes: Double?
+
+  /// The bytes of the different models and drafters on disk.
+  let presentBytes: Double
+
+  /// The disk state of the profile.
+  let state: ModelsGraphDiskState
+
+  /// The fit of the profile against the memory budget of the machine.
+  let fit: ModelsGraphProfileFit
+
+  /// The bytes that the profile needs, or `nil`.
+  let requiredBytes: Double?
+
+  /// The memory budget of the machine, or `nil` when no estimate ran.
+  let budgetBytes: Double?
+
+  /// The readable reason of a fit that failed, or `nil`.
+  let fitError: String?
 }
 
 /// The arguments of `Subscription.changes`.

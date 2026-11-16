@@ -117,9 +117,10 @@ import Testing
     #expect(configuration.recording.level == .full)
     #expect(configuration.transcripts.location == .project)
     #expect(configuration.profile.name == nil)
-    #expect(!configuration.profile.standard.isEmpty)
-    #expect(!configuration.profile.flash.isEmpty)
-    #expect(!configuration.profile.embedding.isEmpty)
+    #expect(configuration.profile.preset == ModelProfiles.defaultName)
+    #expect(!configuration.profile.presetProfile.standard.isEmpty)
+    #expect(!configuration.profile.presetProfile.flash.isEmpty)
+    #expect(!configuration.profile.presetProfile.embedding.isEmpty)
   }
 
   /// A project-layer key overrides the same user-layer key. A user-layer
@@ -148,15 +149,17 @@ import Testing
 
   // MARK: - The builtin default models
 
-  /// The empty stack — no `config.yaml` in any layer — gives the three
-  /// model references of cli-plan.md §7 exactly. This is what a person
-  /// gets on a first run with no configuration, so a wrong id here stops
-  /// that run.
+  /// The empty stack — no `config.yaml` in any layer — gives the preset
+  /// `large` and its three model references of cli-plan.md §7 exactly.
+  /// This is what a person gets on a first run with no configuration, so a
+  /// wrong id here stops that run.
   @Test func theEmptyStackGivesTheThreeDefaultModels() throws {
     let fixture = Fixture()
 
-    let profile = try fixture.makeLoader().load().configuration.profile
+    let configured = try fixture.makeLoader().load().configuration.profile
+    let profile = configured.presetProfile
 
+    #expect(configured.preset == "large")
     #expect(profile.standard.map(\.stringValue) == [Self.defaultStandardModel])
     #expect(profile.flash.map(\.stringValue) == [Self.defaultFlashModel])
     #expect(profile.embedding.map(\.stringValue) == [Self.defaultEmbeddingModel])
@@ -170,7 +173,7 @@ import Testing
   @Test func theStandardAndFlashDefaultsNameTheirMTPDrafter() throws {
     let fixture = Fixture()
 
-    let profile = try fixture.makeLoader().load().configuration.profile
+    let profile = try fixture.makeLoader().load().configuration.profile.presetProfile
 
     #expect(profile.standard.map { $0.drafter?.stringValue } == [Self.defaultStandardDrafter])
     #expect(profile.flash.map { $0.drafter?.stringValue } == [Self.defaultStandardDrafter])
@@ -292,7 +295,7 @@ import Testing
 
   /// Every model reference the builtin defaults name, over the three slots.
   private static var defaultModelReferences: [ModelRef] {
-    let profile = AgentConfiguration().profile
+    let profile = AgentConfiguration().profile.presetProfile
     return profile.standard + profile.flash + profile.embedding
   }
 
@@ -880,9 +883,7 @@ import Testing
       """
       profile:
         name: pair
-        standard:
-          - org/model-a
-          - org/model-b
+        preset: medium
       compaction:
         trigger: \(Self.configuredTrigger)
         toolOutputLimit: \(Self.configuredToolOutputLimit)
@@ -892,8 +893,8 @@ import Testing
     let defaults = AgentConfiguration()
 
     #expect(loaded.configuration.profile.name == "pair")
-    #expect(loaded.configuration.profile.standard == ["org/model-a", "org/model-b"])
-    #expect(loaded.configuration.profile.flash == defaults.profile.flash)
+    #expect(loaded.configuration.profile.preset == "medium")
+    #expect(loaded.configuration.profile.presetProfile.name == "medium")
     #expect(loaded.configuration.compaction.trigger == Self.configuredTrigger)
     #expect(loaded.configuration.compaction.target == defaults.compaction.target)
     #expect(loaded.configuration.compaction.toolOutputLimit == Self.configuredToolOutputLimit)
@@ -1019,13 +1020,38 @@ import Testing
     }
   }
 
-  /// A project `config.yaml` that names a model for each of the three slots
-  /// wins over each builtin default (cli-plan.md §7).
-  ///
-  /// The section test above writes the `standard` slot alone, thus it shows
-  /// the override for one slot of three. This test writes all three slots and
-  /// reads all three values back, thus each default is shown to lose.
-  @Test func eachProfileSlotInTheProjectConfigWinsOverItsDefault() throws {
+  /// The model configuration is by profile (D189): `profile.preset` names
+  /// one builtin profile, and the slot models come from it.
+  @Test func thePresetSelectsTheModelsOfTheProfile() throws {
+    let fixture = Fixture()
+
+    let loaded = try fixture.loadProjectConfig("profile:\n  preset: small\n")
+
+    let small = try #require(ModelProfiles.named("small"))
+    #expect(loaded.configuration.profile.presetProfile.name == "small")
+    #expect(loaded.configuration.profile.presetProfile.standard == small.standard)
+    #expect(loaded.configuration.profile.presetProfile.standard != AgentConfiguration().profile.presetProfile.standard)
+    #expect(loaded.warnings.isEmpty)
+  }
+
+  /// A preset that is not a builtin profile is an error, and the error
+  /// names each profile. Thus the settings store refuses the write.
+  @Test func anUnknownPresetIsAnErrorThatNamesTheProfiles() throws {
+    let fixture = Fixture()
+    fixture.writeConfig("profile:\n  preset: huge\n", in: fixture.projectDirectory)
+
+    let error = #expect(throws: (any Error).self) { try fixture.makeLoader().load() }
+
+    let message = String(describing: try #require(error))
+    #expect(message.contains("huge"))
+    for profile in ModelProfiles.builtin {
+      #expect(message.contains(profile.name))
+    }
+  }
+
+  /// An old layer that still names a slot model or `decisionContext`
+  /// loads: each such key gives a warning, and the agent ignores it.
+  @Test func anOldLayerWithSlotKeysLoadsWithAWarning() throws {
     let fixture = Fixture()
 
     let loaded = try fixture.loadProjectConfig(
@@ -1033,20 +1059,16 @@ import Testing
       profile:
         standard:
           - \(Self.configuredStandardModel)
-        flash:
-          - \(Self.configuredFlashModel)
-        embedding:
-          - \(Self.configuredEmbeddingModel)
+        decisionContext: 4096
       """)
 
-    let profile = loaded.configuration.profile
-    let defaults = AgentConfiguration().profile
-    #expect(profile.standard.map(\.stringValue) == [Self.configuredStandardModel])
-    #expect(profile.flash.map(\.stringValue) == [Self.configuredFlashModel])
-    #expect(profile.embedding.map(\.stringValue) == [Self.configuredEmbeddingModel])
-    #expect(profile.standard != defaults.standard)
-    #expect(profile.flash != defaults.flash)
-    #expect(profile.embedding != defaults.embedding)
+    #expect(
+      loaded.warnings == [
+        .retiredKey(section: "profile", key: "decisionContext"),
+        .retiredKey(section: "profile", key: "standard"),
+      ])
+    #expect(loaded.configuration.profile == AgentConfiguration().profile)
+    #expect(loaded.configuration.profile.presetProfile.decisionContext == ProfileDefinition.defaultDecisionContext)
   }
 
   /// The empty stack gives Router's decision candidates: the config
@@ -1054,7 +1076,7 @@ import Testing
   @Test func theEmptyStackGivesRouterDecisionCandidates() throws {
     let fixture = Fixture()
 
-    let profile = try fixture.makeLoader().load().configuration.profile
+    let profile = try fixture.makeLoader().load().configuration.profile.presetProfile
 
     #expect(profile.decision == ProfileDefinition.defaultDecisionCandidates)
   }
@@ -1063,37 +1085,9 @@ import Testing
   @Test func theEmptyStackGivesRouterDecisionContext() throws {
     let fixture = Fixture()
 
-    let profile = try fixture.makeLoader().load().configuration.profile
+    let profile = try fixture.makeLoader().load().configuration.profile.presetProfile
 
     #expect(profile.decisionContext == ProfileDefinition.defaultDecisionContext)
-  }
-
-  /// A project `profile.decision` wins over Router's candidates.
-  @Test func theProjectDecisionSlotWinsOverItsDefault() throws {
-    let fixture = Fixture()
-
-    let loaded = try fixture.loadProjectConfig(
-      """
-      profile:
-        decision:
-          - \(Self.configuredDecisionModel)
-      """)
-
-    let decision = loaded.configuration.profile.decision
-    #expect(decision.map(\.stringValue) == [Self.configuredDecisionModel])
-  }
-
-  /// A project `profile.decisionContext` wins over Router's context.
-  @Test func theProjectDecisionContextWinsOverItsDefault() throws {
-    let fixture = Fixture()
-
-    let loaded = try fixture.loadProjectConfig(
-      """
-      profile:
-        decisionContext: \(Self.configuredDecisionContext)
-      """)
-
-    #expect(loaded.configuration.profile.decisionContext == Self.configuredDecisionContext)
   }
 
   /// The `compaction.trigger` the section test writes; it differs from the
@@ -1119,22 +1113,8 @@ import Testing
   /// differs from Router's default, thus the decode is observable.
   private static let configuredIdenticalToolCallLimit = 5
 
-  /// The `profile.standard` model the override test writes. It differs from
-  /// the default, thus the override is observable.
+  /// The `profile.standard` model that the test of an old layer writes.
   private static let configuredStandardModel = "org/standard-override"
-
-  /// The `profile.flash` model the override test writes.
-  private static let configuredFlashModel = "org/flash-override"
-
-  /// The `profile.embedding` model the override test writes.
-  private static let configuredEmbeddingModel = "org/embedding-override"
-
-  /// The `profile.decision` model the override test writes.
-  private static let configuredDecisionModel = "org/decision-override/model.gguf"
-
-  /// The `profile.decisionContext` the override test writes. It differs
-  /// from Router's default, thus the decode is observable.
-  private static let configuredDecisionContext = 8192
 
   // MARK: - Helpers
 
