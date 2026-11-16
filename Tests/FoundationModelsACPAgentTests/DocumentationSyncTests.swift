@@ -170,7 +170,6 @@ import Testing
       [reference.stringValue] + (reference.drafter.map { [$0.stringValue] } ?? [])
     }
   }
-  }
 
   /// The README names every default model id, exactly as
   /// ``ProfileConfiguration`` gives them.
