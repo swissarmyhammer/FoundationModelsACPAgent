@@ -12,6 +12,9 @@ import FoundationModelsSkills
 /// template constructs of the file, and the store logs one change of the
 /// list.
 ///
+/// A child agent run cannot change the list: a save and a reset from it
+/// throw ``MarketplaceChangeRefusal/childRun`` (D193).
+///
 /// With no list in the settings, a load gives
 /// ``SkillsToolOptions/defaultMarketplaces``: the list that a session reads.
 /// The first save then writes the full list, and a reset clears it again.
@@ -23,8 +26,18 @@ struct SettingsMarketplaceSourceStorage: MarketplaceSourceStorage {
     SkillsToolOptions.CodingKeys.marketplaces.stringValue,
   ]
 
+  /// The text of the refusal of a change from a child agent run.
+  static let childRunRefusal =
+    "A child agent run cannot change the marketplace list: it is configuration of the user. "
+    + "Use `list marketplace` or `show marketplace` to read it, and ask the user or the parent "
+    + "session to change it."
+
   /// The settings store of the agent.
   let store: SettingsStore
+
+  /// Tells if the call runs in a child agent run: a tool call whose session
+  /// has a parent session. A test gives its own answer.
+  var isChildRun: @Sendable () -> Bool = { ToolContext.current?.parentSessionID != nil }
 
   /// The sources of `tools.skills.marketplaces` at the USER level, in their
   /// stored order, or the default list when the settings have no list.
@@ -44,6 +57,7 @@ struct SettingsMarketplaceSourceStorage: MarketplaceSourceStorage {
   /// - Parameter sources: The sources, in order.
   /// - Throws: What ``SettingsStore/set(_:at:level:)`` throws.
   func saveSources(_ sources: [MarketplaceSource]) async throws {
+    try refuseChildRun()
     try await store.set(.array(sources.map(\.yamlValue)), at: Self.keyPath, level: .user)
   }
 
@@ -60,8 +74,38 @@ struct SettingsMarketplaceSourceStorage: MarketplaceSourceStorage {
   /// - Throws: What ``SettingsStore/clear(at:level:)`` throws, or the load
   ///   error of the list.
   func resetSources() async throws -> [MarketplaceSource] {
+    try refuseChildRun()
     try await store.clear(at: Self.keyPath, level: .user)
     return try await loadSources()
+  }
+}
+
+extension SettingsMarketplaceSourceStorage {
+  /// Refuses a change from a child agent run (D193). The marketplace list
+  /// is configuration of the user, as the MCP servers are, and a child run
+  /// has no `mcpServers` tool either. The read operations still work.
+  ///
+  /// - Throws: ``MarketplaceChangeRefusal/childRun`` in a child run.
+  func refuseChildRun() throws {
+    if isChildRun() {
+      throw MarketplaceChangeRefusal.childRun
+    }
+  }
+}
+
+/// Why the agent refused a change of the marketplace list.
+enum MarketplaceChangeRefusal: Error, Equatable, LocalizedError, CustomStringConvertible {
+  /// The change came from a child agent run.
+  case childRun
+
+  /// The corrective text for the model.
+  var errorDescription: String? {
+    SettingsMarketplaceSourceStorage.childRunRefusal
+  }
+
+  /// The corrective text for the model.
+  var description: String {
+    SettingsMarketplaceSourceStorage.childRunRefusal
   }
 }
 
