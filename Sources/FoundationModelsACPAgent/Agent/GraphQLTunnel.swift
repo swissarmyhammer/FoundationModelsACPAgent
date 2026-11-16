@@ -9,8 +9,8 @@ import FoundationModelsMultitool
 /// A call names its endpoint, and the agent routes it by name:
 ///
 /// - The endpoints of the agent itself (``agentGraphQLEndpoints``), with the
-///   server scope: `settings` and `snapshots`. A call reaches them with or
-///   without a session.
+///   server scope: `settings`, `snapshots` and `models`. A call reaches them
+///   with or without a session.
 /// - The endpoints of the top-level tools of a session
 ///   (`GraphQLEndpointTool`, EXTRAS-7). A call with a session reaches the
 ///   endpoints of that session. A call with no session reaches an endpoint
@@ -28,7 +28,7 @@ extension RoutedACPAgent {
   /// The GraphQL endpoints that the agent holds one time for all its
   /// sessions and connections (EXTRAS-9 rule 1), with the server scope.
   nonisolated var agentGraphQLEndpoints: [any GraphQLEndpoint] {
-    [settingsEndpoint, snapshotsEndpoint]
+    [settingsEndpoint, snapshotsEndpoint, modelsEndpoint]
   }
 
   /// The handlers of the `_sah/graphql/*` methods for one connection. Each

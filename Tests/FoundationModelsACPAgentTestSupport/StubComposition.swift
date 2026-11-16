@@ -39,6 +39,8 @@ public let openTestudoDownloadURL = URL(string: "https://example.test/opentestud
 ///     the composition, or `nil` (the default) for none.
 ///   - agentName: The name of the agent to give to the composition, or
 ///     `nil` (the default) for none.
+///   - modelStorage: The reader of the model storage of the `models`
+///     endpoint, or `nil` (the default) for the real `ModelStorage`.
 /// - Returns: The composition.
 /// - Throws: `DotfolderNameError` when `name` is refused, the write error of
 ///   the defaults layer, or whatever the composition throws.
@@ -53,7 +55,8 @@ public func composeStubAgent(
   mode: ToolMode = .open,
   sandboxProbe: SandboxProbe = .live,
   openTestudoDownloadURL: URL? = nil,
-  agentName: String? = nil
+  agentName: String? = nil,
+  modelStorage: (any ModelStorageReading)? = nil
 ) async throws -> ComposedAgent {
   let workspace = workspace ?? makeResolvedDirectory(label: "\(label)-repo")
   return try await ComposedAgent.compose(
@@ -67,5 +70,6 @@ public func composeStubAgent(
     environment: try StubAgentDefaultsLayer.makeEnvironment(name: name, base: environment),
     modelSource: .stub,
     secretStore: secretStore,
-    userDeviceTokens: userDeviceTokens)
+    userDeviceTokens: userDeviceTokens,
+    modelStorage: modelStorage)
 }

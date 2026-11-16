@@ -308,6 +308,25 @@ import Testing
 
   // MARK: - The agent
 
+  /// The endpoint of a composed agent reads the storage that `compose`
+  /// got, thus a test makes no network request.
+  @Test func theComposedAgentReadsTheGivenStorage() async throws {
+    let storage = FakeStorage()
+    for slot in ModelSlot.allCases {
+      for ref in slot.builtinCandidates + slot.builtinCandidates.compactMap(\.drafter) {
+        storage.set(Self.info(ref, total: 7, present: 7, state: .complete))
+      }
+    }
+    let composed = try await composeStubAgent(
+      name: "ModelsGraphTests", label: "ModelsGraphTests-storage", modelStorage: storage)
+
+    let rows = try await Self.rows(composed.agent.modelsEndpoint)
+
+    #expect(rows.allSatisfy { $0["state"] as? String == "COMPLETE" })
+    #expect(rows.allSatisfy { $0["storageError"] is NSNull })
+    #expect(rows.allSatisfy { $0["active"] is String })
+  }
+
   /// Each session of the agent has the top-level `models` tool, which gives
   /// the one `models` endpoint of the agent.
   @Test func aSessionHasTheModelsToolAndTheEndpointOfTheAgent() async throws {

@@ -223,8 +223,8 @@ import Testing
   }
 
   /// A server endpoint needs no session: the server probe of the session
-  /// tools, the `settings` endpoint and the `snapshots` endpoint of the
-  /// agent each answer a call with no session.
+  /// tools, the `settings` endpoint, the `snapshots` endpoint and the
+  /// `models` endpoint of the agent each answer a call with no session.
   @Test
   func theServerEndpointsAnswerACallWithNoSession() async throws {
     let fixture = try await TunnelFixture.make(label: "GraphQLTunnelTests-server")
@@ -237,10 +237,13 @@ import Testing
     let snapshots = try await Self.execute(
       on: fixture.device, endpoint: SnapshotsGraph.endpointName, sessionId: nil,
       query: Self.cursorQuery)
+    let models = try await Self.execute(
+      on: fixture.device, endpoint: ModelsGraph.endpointName, sessionId: nil,
+      query: Self.cursorQuery)
 
     #expect(probe == ProbeEndpoint.answer)
     #expect(fixture.log.viewers.value.map { $0?.trust } == [.external])
-    for result in [settings, snapshots] {
+    for result in [settings, snapshots, models] {
       #expect(result.errors == nil)
       #expect(Self.cursor(of: result) != nil)
     }
@@ -259,8 +262,8 @@ import Testing
     let names = response.endpoints.map(\.name)
     #expect(Set(names).count == names.count)
     let expected: Set<String> = [
-      SettingsGraph.endpointName, SnapshotsGraph.endpointName, Self.folderProbeName,
-      Self.serverProbeName,
+      SettingsGraph.endpointName, SnapshotsGraph.endpointName, ModelsGraph.endpointName,
+      Self.folderProbeName, Self.serverProbeName,
     ]
     #expect(expected.isSubset(of: Set(names)))
     let folderProbe = try #require(response.endpoints.first { $0.name == Self.folderProbeName })

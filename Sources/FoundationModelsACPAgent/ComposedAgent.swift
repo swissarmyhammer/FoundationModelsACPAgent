@@ -186,6 +186,11 @@ public struct ComposedAgent: Sendable {
   ///     for example `.custom { ... }` over its Keychain, so the agent does
   ///     not read the token in the Hugging Face folder of the user. The stub
   ///     path ignores it, because it downloads and sizes nothing.
+  ///   - modelStorage: The reader of the model storage of the `models`
+  ///     endpoint (``RoutedACPAgent/modelsEndpoint``), or `nil` (the default)
+  ///     for a `ModelStorage` over ``AgentHome/modelCacheDirectory`` with
+  ///     `huggingFaceTokenProvider`. A test gives a reader that makes no
+  ///     network request.
   ///   - progress: The progress object the resolution reports into, or
   ///     `nil` for a fresh unobserved one. A caller that draws a
   ///     download bar makes the object first, hands it here, and
@@ -220,6 +225,7 @@ public struct ComposedAgent: Sendable {
     secretStore: (any SecretStore)? = nil,
     userDeviceTokens: Set<String> = [],
     huggingFaceTokenProvider: TokenProvider = .environment,
+    modelStorage: (any ModelStorageReading)? = nil,
     sessionToolFactories: [SessionToolFactory] = [],
     reporting progress: ResolutionProgress? = nil
   ) async throws -> ComposedAgent {
@@ -254,8 +260,9 @@ public struct ComposedAgent: Sendable {
       transcriptLocation: transcriptLocation,
       secretStore: secretStore,
       userDeviceTokens: userDeviceTokens,
-      modelStorage: ModelStorage(
-        cacheDirectory: home.modelCacheDirectory, tokenProvider: huggingFaceTokenProvider))
+      modelStorage: modelStorage
+        ?? ModelStorage(
+          cacheDirectory: home.modelCacheDirectory, tokenProvider: huggingFaceTokenProvider))
     await agent.registerSessionToolFactories(sessionToolFactories)
     return ComposedAgent(
       agent: agent, modelSource: modelSource, configuration: configuration)
