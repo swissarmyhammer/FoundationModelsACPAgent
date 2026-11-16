@@ -63,6 +63,26 @@ import Testing
     #expect(merged.tools.skills.marketplaces.contains(Self.plain))
   }
 
+  /// The `skills` tool of a session has the marketplace operations of the
+  /// registry of the agent (D190), thus the model and the `skills`
+  /// endpoint change the list of the agent.
+  @Test func theSkillsToolOfASessionHasTheMarketplaceOperations() async throws {
+    let composed = try await composeStubAgent(
+      name: "MarketplaceRegistryMountTests", label: "MarketplaceRegistryMountTests-tool")
+    _ = try await composed.agent.initialize(AgentClientHarness.makeInitializeRequest())
+    let folder = makeResolvedDirectory(label: "MarketplaceRegistryMountTests-tool-cwd")
+    let id = try await composed.agent.newSession(
+      AgentClientHarness.makeNewSessionRequest(cwd: folder)
+    ).sessionId
+
+    let surface = await composed.agent.sessions[id]?.surface
+    let skills = surface?.tools.first { $0.name == SkillOutputProtection.skillsToolName } as? SkillsCatalogTool
+    await composed.closeOpenSessions()
+
+    let nouns = Set((skills?.operations ?? []).map { $0.noun })
+    #expect(nouns.contains("marketplace"))
+  }
+
   // MARK: - The layers of a session
 
   /// A store of a test: it records its sources, its start and its stop,

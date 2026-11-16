@@ -1,6 +1,6 @@
 ---
-position_column: todo
-position_ordinal: '8280'
+position_column: done
+position_ordinal: fffff880
 title: Mount the marketplace registry of Extras over tools.skills.marketplaces
 ---
 testudoapp asks for the marketplace mount (D190).

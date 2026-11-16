@@ -138,6 +138,9 @@ enum AgentsComposition {
       profile: context.profile,
       skills: skills.registry,
       skillsSelectionModel: RoutedSelectionModel(profile: context.profile),
+      // The marketplace list of the agent (D190): the `skills` tool and its
+      // endpoint get the marketplace operations over it.
+      skillsMarketplaces: context.marketplaceMount?.registry,
       workingDirectory: context.workingDirectory,
       tools: runTools,
       inlineSettleGrace: context.inlineSettleGrace,
