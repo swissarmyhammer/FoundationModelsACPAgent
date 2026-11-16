@@ -31,28 +31,35 @@ struct AgentMCPServerSecrets: MCPServerSecrets {
     return key.keychainReference(server: server)
   }
 
-  /// Gives no reference: the agent does not ask the user for a secret
-  /// value through an elicitation yet (D101).
+  /// Asks the user for a value through a sensitive elicitation of the
+  /// tool call that runs now, writes it, and gives its reference (D101).
   ///
-  /// Router mails each answer that it delivers to a tool to the model as
-  /// well (`MailBody.elicitationAnswer`), with the accepted content as
-  /// text. That text goes into the model input and the session recording,
-  /// thus a secret value in the answer would leak. Until Router can keep
-  /// the content of a secret answer out of that mail, this port does not
-  /// ask. The registry then refuses the change with `secretDeclined`, and
-  /// the user gives the value through the app, whose `mcpServers` endpoint
-  /// writes it to the store with no elicitation.
+  /// The question is sensitive (`ElicitationRequest.sensitive`), thus
+  /// Router gives the full answer to this call only: the mail to the model
+  /// and the recording get a fixed text with no value, and the client gets
+  /// the flag in the `_meta` of the request (``ElicitationAskerMeta``). The
+  /// value goes to the store only; the model sees the reference.
   ///
   /// - Parameters:
   ///   - server: The name of the server.
   ///   - key: The header or env variable of the value.
-  /// - Returns: `nil`.
+  /// - Returns: The reference, or `nil` when the user declines or cancels,
+  ///   or when no tool call runs, so the agent cannot ask.
+  /// - Throws: The error of the elicitation or of the store.
   func request(server: String, key: MCPSecretKey) async throws -> String? {
-    nil
+    guard let context = ToolContext.current else {
+      return nil
+    }
+    let response = try await context.elicit(Self.question(server: server, key: key))
+    guard response.action == .accept,
+      case .string(let value)? = response.content?[Self.valueField], !value.isEmpty
+    else {
+      return nil
+    }
+    return try await store(value, server: server, key: key)
   }
 
-  /// The form that asks for one secret value. ``request(server:key:)``
-  /// sends it when Router can keep the answer out of the model input.
+  /// The sensitive form that asks for one secret value.
   ///
   /// - Parameters:
   ///   - server: The name of the server.
@@ -69,6 +76,7 @@ struct AgentMCPServerSecrets: MCPServerSecrets {
           valueField: .string(
             ElicitationStringSchema(title: "\(key)", description: "The secret value.", minLength: 1))
         ],
-        required: [valueField]))
+        required: [valueField]),
+      sensitive: true)
   }
 }

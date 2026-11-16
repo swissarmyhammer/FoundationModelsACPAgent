@@ -17,14 +17,21 @@ import FoundationModelsExtras
 ///   none, it is the tool of the run that posted the question, for example
 ///   `runCode`.
 ///
-/// A key is present only when its value is not empty, and with no key the
-/// request has no `_meta`.
+/// - `sensitive`: `true` when the answer holds a secret
+///   (`ElicitationRequest.sensitive`, D101). The client then hides the
+///   value as it is typed and keeps it out of its own logs and history.
+///
+/// A key is present only when its value is not empty (for `sensitive`:
+/// only when it is `true`), and with no key the request has no `_meta`.
 enum ElicitationAskerMeta {
   /// The key of the agent path.
   static let agentPathKey = "agentPath"
 
   /// The key of the source.
   static let sourceKey = "source"
+
+  /// The key of the sensitive flag.
+  static let sensitiveKey = "sensitive"
 
   /// The `_meta` value that names who asks `request`.
   ///
@@ -42,6 +49,9 @@ enum ElicitationAskerMeta {
     let source = request.source ?? tool
     if !source.isEmpty {
       members[sourceKey] = .string(source)
+    }
+    if request.sensitive {
+      members[sensitiveKey] = .bool(true)
     }
     return members.isEmpty ? nil : .object(members)
   }
