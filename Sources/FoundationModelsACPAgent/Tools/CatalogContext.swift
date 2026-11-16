@@ -133,6 +133,11 @@ public struct CatalogContext: Sendable {
   /// `sessions` GraphQL endpoint (ACPA-9, D118).
   public let sessionDirectory: (any SessionDirectory)?
 
+  /// The `models` endpoint of the agent (``RoutedACPAgent/modelsEndpoint``),
+  /// or `nil` for a catalog that has no agent. With an endpoint, the session
+  /// gets a top-level `models` tool over it.
+  public let modelsEndpoint: ModelsGraph?
+
   /// Makes a catalog context.
   ///
   /// - Parameters:
@@ -166,6 +171,8 @@ public struct CatalogContext: Sendable {
   ///     noun. Empty by default (``sessionOperationTools``).
   ///   - sessionDirectory: The session directory of the agent, or `nil`
   ///     (the default) for no `sessions` tool (``sessionDirectory``).
+  ///   - modelsEndpoint: The `models` endpoint of the agent, or `nil` (the
+  ///     default) for no `models` tool (``modelsEndpoint``).
   public init(
     workingDirectory: URL,
     additionalRoots: [URL] = [],
@@ -182,8 +189,10 @@ public struct CatalogContext: Sendable {
     settingsEndpoint: SettingsGraph? = nil,
     agentRunHost: AgentRunHost? = nil,
     sessionOperationTools: [SessionOperationMount] = [],
-    sessionDirectory: (any SessionDirectory)? = nil
+    sessionDirectory: (any SessionDirectory)? = nil,
+    modelsEndpoint: ModelsGraph? = nil
   ) {
+    self.modelsEndpoint = modelsEndpoint
     self.sessionOperationTools = sessionOperationTools
     self.sessionDirectory = sessionDirectory
     self.agentRunHost = agentRunHost

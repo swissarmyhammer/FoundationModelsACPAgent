@@ -253,7 +253,9 @@ public struct ComposedAgent: Sendable {
       environment: environment,
       transcriptLocation: transcriptLocation,
       secretStore: secretStore,
-      userDeviceTokens: userDeviceTokens)
+      userDeviceTokens: userDeviceTokens,
+      modelStorage: ModelStorage(
+        cacheDirectory: home.modelCacheDirectory, tokenProvider: huggingFaceTokenProvider))
     await agent.registerSessionToolFactories(sessionToolFactories)
     return ComposedAgent(
       agent: agent, modelSource: modelSource, configuration: configuration)

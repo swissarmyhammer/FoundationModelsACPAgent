@@ -1072,7 +1072,8 @@ extension RoutedACPAgent {
       settingsEndpoint: settingsEndpoint,
       agentRunHost: makeAgentRunHost(recordingRoot: context.transcriptRoot),
       sessionOperationTools: sessionOperationTools,
-      sessionDirectory: sessionDirectory)
+      sessionDirectory: sessionDirectory,
+      modelsEndpoint: modelsEndpoint)
   }
 
   /// Composes one session over an already-resolved configuration.

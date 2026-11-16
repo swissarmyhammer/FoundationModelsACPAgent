@@ -339,7 +339,7 @@ public enum ToolCatalog {
   /// `files` is not one of them (``filesGroupName``).
   static let endpointToolNames: Set<String> = [
     agentsToolName, SkillOutputProtection.skillsToolName, "sessions", "kanban", "rules",
-    SettingsGraph.endpointName, NoOpToolCall.runCodeToolName,
+    SettingsGraph.endpointName, ModelsGraph.endpointName, NoOpToolCall.runCodeToolName,
   ]
 
   /// The discovery half of `runCode`. The description of `runCode` tells the
@@ -464,7 +464,9 @@ public enum ToolCatalog {
       runCallJoins: runCallJoins)
     let tools =
       mounted.tools
-      + makeStandaloneTools(agents: agents, sessions: try makeSessionsTool(context: context))
+      + makeStandaloneTools(
+        agents: agents, sessions: try makeSessionsTool(context: context),
+        models: makeModelsTool(context: context))
     // The refresher stages through the staging of the surface, so a
     // refresh after the session agent is known keeps its selection.
     let staging = SessionRegistryStaging(wrapping: mounted.staging)
@@ -488,16 +490,39 @@ public enum ToolCatalog {
 
   /// The standalone tools that follow the Multitool session tools, in
   /// mount order: the `skills` tool of the agent environment, the `agents`
-  /// tool, then the `sessions` tool when the session has one.
+  /// tool, then the `sessions` tool and the `models` tool when the session
+  /// has them.
   ///
   /// - Parameters:
   ///   - agents: The `agents` mount of the session.
   ///   - sessions: The `sessions` tool of the session, or `nil` for none.
+  ///   - models: The `models` tool of the session, or `nil` for none.
   /// - Returns: The standalone tools, in mount order.
   static func makeStandaloneTools(
-    agents: AgentsMount, sessions: SessionsTool? = nil
+    agents: AgentsMount, sessions: SessionsTool? = nil, models: GraphQLTool? = nil
   ) -> [any FoundationModels.Tool] {
-    [agents.environment.skillsTool, agents.tool] + (sessions.map { [$0] } ?? [])
+    let optional: [(any FoundationModels.Tool)?] = [sessions, models]
+    return [agents.environment.skillsTool, agents.tool] + optional.compactMap { $0 }
+  }
+
+  /// The description of the `models` tool for the model.
+  static let modelsToolDescription =
+    "Read the models of the profile with GraphQL: `{ models { slot repo drafter sizeBytes state active "
+    + "restartRequired } }` gives the model of each slot (STANDARD, FLASH, EMBEDDING, DECISION), its "
+    + "download size and its disk state; `{ choices(slot: STANDARD) { repo sizeBytes state configValue } }` "
+    + "gives the models that a slot can take. The tool changes nothing: to change a slot, use the settings "
+    + "tool with the key path [\"profile\", \"<slot>\"] and the value [configValue]. A slot change applies at "
+    + "the next launch of the agent."
+
+  /// The `models` tool of a session: a GraphQL tool over the one `models`
+  /// endpoint of the agent (``CatalogContext/modelsEndpoint``). It is a
+  /// top-level tool, thus the session gives the `models` endpoint to its
+  /// clients, and the model can read it too.
+  ///
+  /// - Parameter context: The catalog context of the session.
+  /// - Returns: The tool, or `nil` when the context has no endpoint.
+  static func makeModelsTool(context: CatalogContext) -> GraphQLTool? {
+    context.modelsEndpoint.map { GraphQLTool(description: modelsToolDescription, endpoint: $0) }
   }
 
   /// The `sessions` tool of a session: a Multitool `SessionsTool` over the

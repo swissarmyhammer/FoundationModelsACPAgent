@@ -199,6 +199,13 @@ public actor RoutedACPAgent: Agent {
   /// sequence.
   nonisolated let settingsEndpoint: SettingsGraph
 
+  /// The one `models` endpoint of the agent (``ModelsGraph``): the model of
+  /// each slot, its choices, and their storage, over ``settingsStore``. The
+  /// initializer makes it after the profile resolves, with the profile of
+  /// this launch and the model that runs in each slot. Each session gives
+  /// it through its top-level `models` tool (``CatalogContext/modelsEndpoint``).
+  public nonisolated let modelsEndpoint: ModelsGraph
+
   /// The one `snapshots` endpoint of the agent over the snapshot store of
   /// ``hooks`` (MT-13), for the GraphQL tunnel (ACPA-13): a client reaches
   /// it with no session, because it has the server scope. Each session's
@@ -491,6 +498,9 @@ public actor RoutedACPAgent: Agent {
   ///     or none (the default) — see ``userDeviceTokens``. A host with no
   ///     HTTP server gives none: its stdio and in-process connections are
   ///     `userDevice` with no token.
+  ///   - modelStorage: The reader of the model storage of the `models`
+  ///     endpoint, or `nil` (the default) for a `ModelStorage` over
+  ///     ``AgentHome/modelCacheDirectory`` with the token of the environment.
   /// - Throws: `ToolModeError.openModeInSandbox` when `mode` is `open`
   ///   and `sandboxProbe` tells that the process is sandboxed, before any
   ///   other work; `ProfileResolutionError` when the profile does not
@@ -510,7 +520,8 @@ public actor RoutedACPAgent: Agent {
     inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
     transcriptLocation: TranscriptLocation? = nil,
     secretStore: (any SecretStore)? = nil,
-    userDeviceTokens: Set<String> = []
+    userDeviceTokens: Set<String> = [],
+    modelStorage: (any ModelStorageReading)? = nil
   ) async throws {
     try mode.validate(probe: sandboxProbe)
     self.toolMode = mode
@@ -546,6 +557,14 @@ public actor RoutedACPAgent: Agent {
     }
     residentProfile = try await configuration.profile.resolveResident(
       fallbackName: name, router: router, reporting: progress)
+    modelsEndpoint = ModelsGraph(
+      store: settingsStore,
+      storage: modelStorage ?? ModelStorage(cacheDirectory: home.modelCacheDirectory),
+      launched: configuration.profile,
+      active: [
+        .standard: residentProfile.standard.chosen, .flash: residentProfile.flash.chosen,
+        .embedding: residentProfile.embedding.chosen, .decision: residentProfile.decision.chosen,
+      ])
     let directoryRoots = recordingRootsOfTheDirectory()
     await router.sessionDirectory.useRecordingRoots { await directoryRoots() }
     // The directory restores a recorded root session through the agent (ACPA-9).
