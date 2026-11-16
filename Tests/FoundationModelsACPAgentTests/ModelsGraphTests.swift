@@ -57,16 +57,21 @@ import Testing
   static let standard = ProfileConfiguration.defaultStandard[0]
   static let standardDrafter = standard.drafter!
 
-  /// The builtin flash model.
+  /// The builtin flash model: the standard model, with its drafter.
   static let flash = ProfileConfiguration.defaultFlash[0]
 
-  /// A storage with answers for each builtin model and drafter: the
-  /// standard model complete, its drafter missing, the flash model complete.
+  /// A model with no drafter, which a test names in the flash slot.
+  static let plainFlash = ModelRef("mlx-community/Qwen3-4B-4bit")
+
+  /// A storage with answers for each builtin model and drafter, and for
+  /// ``plainFlash``: the standard model complete, its drafter missing, the
+  /// plain flash model complete. The builtin flash model is the standard
+  /// model, so it has the answer of the standard model.
   static func builtinStorage() -> FakeStorage {
     let storage = FakeStorage()
     storage.set(info(standard, total: 1_000, present: 1_000, state: .complete))
     storage.set(info(standardDrafter, total: 200, present: 0, state: .missing))
-    storage.set(info(flash, total: 300, present: 300, state: .complete))
+    storage.set(info(plainFlash, total: 300, present: 300, state: .complete))
     for ref in ProfileConfiguration.defaultEmbedding + ProfileConfiguration.defaultDecision {
       storage.set(info(ref, total: 50, present: 0, state: .missing))
     }
@@ -100,6 +105,13 @@ import Testing
     return try #require(reply.data?["models"] as? [[String: Any]])
   }
 
+  /// Names ``plainFlash`` in the flash slot at the user level, so the flash
+  /// row is a model with no drafter and not the builtin standard model.
+  static func namePlainFlash(in fixture: SettingsGraphFixture) async throws {
+    try await fixture.store.set(
+      .array([.string(plainFlash.stringValue)]), at: ["profile", "flash"], level: .user)
+  }
+
   /// The next event of a subscription, as an object.
   static func next(
     _ events: inout AsyncThrowingStream<String, Error>.AsyncIterator
@@ -115,7 +127,8 @@ import Testing
   // MARK: - models
 
   /// One row for each slot, in the profile order, with the first candidate
-  /// of each slot.
+  /// of each slot. The builtin flash row names the standard model and its
+  /// drafter.
   @Test func eachSlotHasOneRow() async throws {
     let fixture = try SettingsGraphFixture(label: "models-rows")
 
@@ -125,6 +138,16 @@ import Testing
     #expect(rows[0]["repo"] as? String == Self.standard.repo)
     #expect(rows[0]["drafter"] as? String == Self.standardDrafter.stringValue)
     #expect(rows[1]["repo"] as? String == Self.flash.repo)
+    #expect(rows[1]["drafter"] as? String == Self.standardDrafter.stringValue)
+  }
+
+  /// The row of a model with no drafter has no drafter.
+  @Test func aModelWithNoDrafterHasANullDrafter() async throws {
+    let fixture = try SettingsGraphFixture(label: "models-no-drafter")
+    try await Self.namePlainFlash(in: fixture)
+
+    let rows = try await Self.rows(Self.graph(fixture))
+
     #expect(rows[1]["drafter"] is NSNull)
   }
 
@@ -132,6 +155,7 @@ import Testing
   /// model with a missing drafter is partial.
   @Test func theSizeAndTheStateCoverTheDrafter() async throws {
     let fixture = try SettingsGraphFixture(label: "models-drafter")
+    try await Self.namePlainFlash(in: fixture)
 
     let rows = try await Self.rows(Self.graph(fixture))
 
@@ -179,10 +203,11 @@ import Testing
   /// same reference.
   @Test func theConfigValueIsTheSlotKeyEncoding() async throws {
     let fixture = try SettingsGraphFixture(label: "models-config")
+    try await Self.namePlainFlash(in: fixture)
 
     let rows = try await Self.rows(Self.graph(fixture))
 
-    #expect(rows[1]["configValue"] as? String == Self.flash.stringValue)
+    #expect(rows[1]["configValue"] as? String == Self.plainFlash.stringValue)
     let standardValue = try #require(rows[0]["configValue"] as? [String: Any])
     let data = try JSONSerialization.data(withJSONObject: standardValue)
     #expect(try JSONDecoder().decode(ModelRef.self, from: data) == Self.standard)
@@ -263,7 +288,8 @@ import Testing
   }
 
   /// A model that comes on disk while a subscriber is open gives a DISK
-  /// change that applies now.
+  /// change that applies now, for each slot that names it: the builtin
+  /// standard and flash slots name one model and one drafter.
   @Test func aModelOnDiskGivesADiskChange() async throws {
     let fixture = try SettingsGraphFixture(label: "models-disk-change")
     let storage = Self.builtinStorage()
@@ -275,7 +301,7 @@ import Testing
     storage.set(Self.info(Self.standardDrafter, total: 200, present: 200, state: .complete))
 
     let change = try await Self.next(&events)
-    #expect(change["changed"] as? [String] == ["standard"])
+    #expect(change["changed"] as? [String] == ["standard", "flash"])
     #expect(change["reason"] as? String == "DISK")
     #expect(change["appliesAt"] as? String == "NOW")
   }
