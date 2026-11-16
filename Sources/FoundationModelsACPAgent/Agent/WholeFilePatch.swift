@@ -9,7 +9,10 @@
 /// patch.
 ///
 /// The headers name the path as it is given, with no `a/` or `b/` prefix,
-/// because ACP requires an absolute path in a `git_patch`.
+/// because ACP requires it for a `git_patch`: "every path MUST be absolute
+/// ... and MUST NOT have a prefix such as Git's default `a/` and `b/`"
+/// (`DiffPatchFormat.gitPatch`). A reader of the patch, such as the diff
+/// view of a client, must accept this form; do not add git's prefixes.
 enum WholeFilePatch {
   /// The mode line of a new file. A display diff carries no mode, so a new
   /// file gets the mode of a regular file.
