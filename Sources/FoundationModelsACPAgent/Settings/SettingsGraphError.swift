@@ -53,6 +53,11 @@ public enum SettingsGraphError: CodedError, Equatable {
   /// for a reference. The value is the reference name.
   case unreadableSecret(reference: String)
 
+  /// `NULL_VALUE`: an `updateSetting` call gave `null` as the value. A
+  /// change removes a key with `clearSetting`, not with `null`. The value
+  /// is the dotted key path of the change.
+  case nullValue(keyPath: String)
+
   /// The code of the error, for example `UNKNOWN_SECTION`.
   public var code: String {
     switch self {
@@ -66,6 +71,7 @@ public enum SettingsGraphError: CodedError, Equatable {
     case .invalidValue: "INVALID_VALUE"
     case .noLevel: "NO_LEVEL"
     case .unreadableSecret: "SECRET_UNREADABLE"
+    case .nullValue: "NULL_VALUE"
     }
   }
 
@@ -97,6 +103,9 @@ public enum SettingsGraphError: CodedError, Equatable {
       "The level has no folder: \(detail)."
     case .unreadableSecret(let reference):
       "The secret store cannot tell if it has an item for the reference \"\(reference)\"."
+    case .nullValue(let keyPath):
+      "The value of \(keyPath) is null, and updateSetting does not take null. To remove the key from the "
+        + "level, call clearSetting with the same keyPath and level."
     }
   }
 

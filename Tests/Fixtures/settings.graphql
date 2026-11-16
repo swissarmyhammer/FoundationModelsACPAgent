@@ -130,8 +130,10 @@ input UpdateSettingInput {
   """
   keyPath: [String!]!
 
-  """The new value. A secret key takes only a keychain:<name> reference."""
-  value: JSON!
+  """
+  The new value. A secret key takes only a keychain:<name> reference. A whole number is an integer. Null is refused with NULL_VALUE: to remove the key, call clearSetting.
+  """
+  value: JSON
 
   """The level that the mutation changes."""
   level: SettingLevel!

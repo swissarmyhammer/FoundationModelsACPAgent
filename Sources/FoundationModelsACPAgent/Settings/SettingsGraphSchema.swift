@@ -244,8 +244,10 @@ struct SettingsGraphUpdateInput: Codable, Sendable {
   /// The key path.
   let keyPath: [String]
 
-  /// The new value.
-  let value: Map
+  /// The new value, or `nil` when the call gives `null`. The resolver
+  /// refuses `nil` with ``SettingsGraphError/nullValue(keyPath:)``, thus
+  /// the error tells the call to use `clearSetting`.
+  let value: Map?
 
   /// The level that gets the value.
   let level: SettingsGraphLevel
@@ -430,16 +432,20 @@ struct SettingsGraphResolver: Sendable {
   ///     and the working directory.
   /// - Returns: The merged setting after the change, or `nil` when no layer
   ///   has the key or when the read after the change failed as a whole.
-  /// - Throws: What ``SettingsGraphContext/workingDirectory(given:)`` and
+  /// - Throws: ``SettingsGraphError/nullValue(keyPath:)`` for a `null`
+  ///   value, and what ``SettingsGraphContext/workingDirectory(given:)`` and
   ///   ``SettingsEngine/set(_:at:level:cwd:)`` throw. The change is then not
   ///   saved.
   func updateSetting(
     context: SettingsGraphContext, arguments: SettingsGraphUpdateArguments
   ) async throws -> SettingsGraphSetting? {
     let input = arguments.input
+    guard let value = input.value, value != .null else {
+      throw SettingsGraphError.nullValue(keyPath: input.keyPath.joined(separator: "."))
+    }
     let cwd = try context.workingDirectory(given: input.cwd)
     try await engine.set(
-      YAMLValue(graphQLMap: input.value), at: input.keyPath, level: input.level, cwd: cwd)
+      YAMLValue(graphQLMap: value), at: input.keyPath, level: input.level, cwd: cwd)
     return await settingAfterChange(at: input.keyPath, cwd: cwd, context: context)
   }
 
@@ -679,7 +685,9 @@ struct SettingsGraphAPI: API {
         Input(SettingsGraphUpdateInput.self, as: "UpdateSettingInput") {
           InputField("keyPath", at: \.keyPath).description(Self.keyPathDescription)
           InputField("value", at: \.value)
-            .description("The new value. A secret key takes only a keychain:<name> reference.")
+            .description(
+              "The new value. A secret key takes only a keychain:<name> reference. A whole number is an "
+                + "integer. Null is refused with NULL_VALUE: to remove the key, call clearSetting.")
           InputField("level", at: \.level).description(Self.levelDescription)
           InputField("cwd", at: \.cwd).description(Self.cwdDescription)
         }
@@ -758,8 +766,8 @@ struct SettingsGraphAPI: API {
 // MARK: - JSON values
 
 extension YAMLValue {
-  /// Makes a settings value of a GraphQL `JSON` value. A JSON number keeps
-  /// its storage type: a whole number stays an integer.
+  /// Makes a settings value of a GraphQL `JSON` value. A whole number is an
+  /// integer, also when its storage type is `Double`.
   ///
   /// - Parameter map: The GraphQL value.
   init(graphQLMap map: Map) {
@@ -782,6 +790,13 @@ extension YAMLValue {
 
   /// Makes a settings value of a GraphQL number.
   ///
+  /// `Map.init(from:)` of the GraphQL package decodes each JSON number as a
+  /// `Double`, also a variable of the GraphQL tunnel and the value of an
+  /// input object. Thus a `Double` with no fraction, in the range of `Int`,
+  /// becomes an integer: a key of type `Int` takes it, and a key of type
+  /// `Double` decodes it too. A number with a fraction stays a `Double`,
+  /// and the check of a key of type `Int` refuses it.
+  ///
   /// - Parameter number: The number.
   private init(graphQLNumber number: Number) {
     switch number.storageType {
@@ -790,7 +805,8 @@ extension YAMLValue {
     case .int:
       self = .int(number.intValue)
     case .double, .unknown:
-      self = .double(number.doubleValue)
+      let double = number.doubleValue
+      self = Int(exactly: double).map(YAMLValue.int) ?? .double(double)
     }
   }
 

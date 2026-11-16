@@ -74,6 +74,7 @@ import Testing
     .invalidValue(detail: ""),
     .noLevel(detail: ""),
     .unreadableSecret(reference: referenceName),
+    .nullValue(keyPath: ""),
   ]
 
   /// Each error code and warning code that the endpoint can give: the code
@@ -342,6 +343,132 @@ import Testing
     #expect(set.codes.isEmpty)
     let changed = try await fixture.store.value(at: Self.codeFontSizeKeyPath, cwd: nil)
     #expect(changed?.value == .int(14) || changed?.value == .double(14))
+  }
+
+  // MARK: - Numbers and null
+
+  /// The key path of `compaction.toolOutputLimit`, a key of type `Int`.
+  private static let toolOutputLimitKeyPath = [
+    AgentConfiguration.CodingKeys.compaction.stringValue,
+    CompactionConfiguration.CodingKeys.toolOutputLimit.stringValue,
+  ]
+
+  /// A whole number for an `Int` key.
+  private static let wholeLimit = 3
+
+  /// A number with a fraction, which an `Int` key refuses.
+  private static let fractionLimit = 3.5
+
+  /// A fraction for the `Double` key `compaction.trigger`.
+  private static let fractionTrigger = 0.5
+
+  /// The variables of an update mutation of the user level, decoded from
+  /// JSON text as the GraphQL tunnel decodes them. Thus each number has
+  /// the storage type that `JSONDecoder` gives to `Map`.
+  ///
+  /// - Parameters:
+  ///   - keyPath: The key path.
+  ///   - valueJSON: The value as JSON text.
+  /// - Returns: The variables.
+  /// - Throws: An error of `JSONDecoder` for text that is not valid JSON.
+  private static func decodedVariables(keyPath: [String], valueJSON: String) throws
+    -> [String: Map]
+  {
+    var variables = try JSONDecoder().decode(
+      [String: Map].self, from: Data("{\"value\": \(valueJSON)}".utf8))
+    variables["keyPath"] = .array(keyPath.map(Map.string))
+    variables["level"] = .string(SettingsGraphFixture.userLevel)
+    return variables
+  }
+
+  /// A whole number from JSON variables sets an `Int` key, and the key
+  /// reads back as an `Int`.
+  @Test func aWholeNumberSetsAnIntKey() async throws {
+    let fixture = try SettingsGraphFixture(label: "int-whole")
+
+    _ = try await fixture.run(
+      SettingsGraphFixture.setMutation,
+      variables: Self.decodedVariables(
+        keyPath: Self.toolOutputLimitKeyPath, valueJSON: "\(Self.wholeLimit)"))
+
+    let stored = try await fixture.store.value(at: Self.toolOutputLimitKeyPath, cwd: nil)
+    #expect(stored?.value == .int(Self.wholeLimit))
+  }
+
+  /// A whole number as a literal of the document sets an `Int` key.
+  @Test func aWholeNumberLiteralSetsAnIntKey() async throws {
+    let fixture = try SettingsGraphFixture(label: "int-literal")
+
+    _ = try await fixture.run(
+      """
+      mutation {
+        updateSetting(
+          input: {keyPath: ["compaction", "toolOutputLimit"], value: \(Self.wholeLimit), level: USER}
+        ) { value }
+      }
+      """)
+
+    let stored = try await fixture.store.value(at: Self.toolOutputLimitKeyPath, cwd: nil)
+    #expect(stored?.value == .int(Self.wholeLimit))
+  }
+
+  /// A number with a fraction for an `Int` key is refused with
+  /// `INVALID_VALUE`.
+  @Test func aFractionForAnIntKeyIsRefused() async throws {
+    let fixture = try SettingsGraphFixture(label: "int-fraction")
+
+    let reply = try await fixture.run(
+      SettingsGraphFixture.setMutation,
+      variables: Self.decodedVariables(
+        keyPath: Self.toolOutputLimitKeyPath, valueJSON: "\(Self.fractionLimit)"))
+
+    #expect(reply.codes == [SettingsGraphError.invalidValue(detail: "").code])
+  }
+
+  /// A fraction still sets a `Double` key.
+  @Test func aFractionSetsADoubleKey() async throws {
+    let fixture = try SettingsGraphFixture(label: "double-fraction")
+
+    _ = try await fixture.run(
+      SettingsGraphFixture.setMutation,
+      variables: Self.decodedVariables(
+        keyPath: SettingsGraphFixture.triggerKeyPath, valueJSON: "\(Self.fractionTrigger)"))
+
+    let stored = try await fixture.store.value(at: SettingsGraphFixture.triggerKeyPath, cwd: nil)
+    #expect(stored?.value == .double(Self.fractionTrigger))
+  }
+
+  /// A `null` value is refused with `INVALID_VALUE`: a mutation removes a
+  /// key with `clearSetting`.
+  @Test func aNullValueIsRefused() async throws {
+    let fixture = try SettingsGraphFixture(label: "null-value")
+
+    let reply = try await fixture.run(
+      """
+      mutation {
+        updateSetting(input: {keyPath: ["compaction", "toolOutputLimit"], value: null, level: USER}) {
+          value
+        }
+      }
+      """)
+
+    #expect(reply.codes == [SettingsGraphError.nullValue(keyPath: "").code])
+  }
+
+  /// The message of a refused `null` value names `clearSetting`.
+  @Test func theMessageOfANullValueNamesClearSetting() async throws {
+    let fixture = try SettingsGraphFixture(label: "null-message")
+
+    let reply = try await fixture.run(
+      """
+      mutation {
+        updateSetting(input: {keyPath: ["compaction", "toolOutputLimit"], value: null, level: USER}) {
+          value
+        }
+      }
+      """)
+
+    #expect(reply.messages.contains { $0.contains(SettingsGraphFixture.clearField) })
   }
 
   // MARK: - Mutations
