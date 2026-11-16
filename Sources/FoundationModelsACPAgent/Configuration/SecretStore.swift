@@ -37,6 +37,14 @@ public protocol SecretWriter: Sendable {
   ///   - name: The name of the reference, without the `keychain:` prefix.
   /// - Throws: The error of the store.
   func setValue(_ value: String, forReference name: String) throws
+
+  /// Removes the value of a reference. A reference with no value is not an
+  /// error.
+  ///
+  /// - Parameter name: The name of the reference, without the `keychain:`
+  ///   prefix.
+  /// - Throws: The error of the store. It names only the reference.
+  func removeValue(forReference name: String) throws
 }
 
 /// A secret store in memory that a test can write: the store of a test of
@@ -70,6 +78,14 @@ public final class InMemoryWritableSecretStore: SecretStore, SecretWriter,
   ///   - name: The name of the reference.
   public func setValue(_ value: String, forReference name: String) throws {
     values.withLock { $0[name] = value }
+  }
+
+  /// Removes the value of a reference. A reference with no value is not an
+  /// error.
+  ///
+  /// - Parameter name: The name of the reference.
+  public func removeValue(forReference name: String) throws {
+    _ = values.withLock { $0.removeValue(forKey: name) }
   }
 
   /// The names of the references, and no value.

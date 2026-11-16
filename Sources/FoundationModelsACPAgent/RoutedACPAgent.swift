@@ -195,7 +195,9 @@ public actor RoutedACPAgent: Agent {
   /// it adds, edits, removes and turns on or off one server of `tools.mcp`
   /// at the USER level at a time. Its storage is the settings store
   /// (``SettingsMCPServerStorage``), and its secrets go to ``secretStore``
-  /// when that store can write (``SecretWriter``). Each session mounts the
+  /// when that store can write (``SecretWriter``). A save deletes each
+  /// item of the MCP scheme that no server uses, and a rename moves the
+  /// items of the server. Each session mounts the
   /// top-level `mcpServers` tool over it. A change applies to each session
   /// that starts after it.
   public nonisolated let mcpServerRegistry: MCPServerRegistry
@@ -536,7 +538,8 @@ public actor RoutedACPAgent: Agent {
       secretStore: self.secretStore)
     self.settingsEndpoint = try SettingsGraph(store: settingsStore)
     self.mcpServerRegistry = MCPServerRegistry(
-      storage: SettingsMCPServerStorage(store: settingsStore),
+      storage: SettingsMCPServerStorage(
+        store: settingsStore, secrets: self.secretStore as? any SecretStore & SecretWriter),
       reservedNames: ToolCatalog.reservedMCPServerNames,
       secrets: (self.secretStore as? any SecretWriter).map(AgentMCPServerSecrets.init(writer:)))
     self.mcpServersEndpoint = MCPServersGraph.endpoint(of: mcpServerRegistry)

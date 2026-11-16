@@ -171,6 +171,20 @@ extension KeychainSecretStore: SecretWriter {
       throw SecretStoreError.keychainFailure(reference: name, status: add)
     }
   }
+
+  /// Deletes the generic password item of `name` under ``service``. A
+  /// reference with no item is not an error.
+  ///
+  /// - Parameter name: The account of the item: the name of the reference.
+  /// - Throws: ``SecretStoreError/keychainFailure(reference:status:)``.
+  public func removeValue(forReference name: String) throws {
+    var query = try itemQuery(account: name)
+    query.removeValue(forKey: kSecUseKeychain)
+    let status = SecItemDelete(query as CFDictionary)
+    guard status == errSecSuccess || status == errSecItemNotFound else {
+      throw SecretStoreError.keychainFailure(reference: name, status: status)
+    }
+  }
 }
 
 extension KeychainSecretStore.Keychain {
