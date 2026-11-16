@@ -1087,7 +1087,9 @@ import Testing
   private static let unstartableCommand = "mcp-composition-tests-relative-command"
 
   /// The key a record would hold the client servers under.
-  private static let clientServerListKey = "mcpServers"
+  /// The key of a client server list in the frontmatter. The record can
+  /// name the `mcpServers` tool, which is not a server list.
+  private static let clientServerListKey = "mcpServers:"
 
   /// The `index.md` that `session/new` records for a session carries no
   /// client MCP server list and no name of a client server: a client

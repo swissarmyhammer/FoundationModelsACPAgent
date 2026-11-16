@@ -449,6 +449,9 @@ enum MCPComposition {
   /// records a refusal and its outcome for each name collision and
   /// unknown transport.
   ///
+  /// A config entry that is turned off (``MCPServerConfiguration/enabled``)
+  /// does not connect.
+  ///
   /// - Parameters:
   ///   - configEntries: The config-derived entries, in document order.
   ///   - clientServers: The client-supplied servers, in wire order.
@@ -457,10 +460,11 @@ enum MCPComposition {
     configEntries: [MCPServerConfiguration],
     clientServers: [FoundationModelsACP.MCPServer]
   ) -> Roster {
-    var entries = configEntries.map { Roster.Entry(configuration: $0, origin: .config) }
+    let enabledEntries = configEntries.filter(\.enabled)
+    var entries = enabledEntries.map { Roster.Entry(configuration: $0, origin: .config) }
     var refusals: [Refusal] = []
     var refusalOutcomes: [ServerOutcome] = []
-    var takenNames = Set(configEntries.map(\.name))
+    var takenNames = Set(enabledEntries.map(\.name))
     for clientServer in clientServers {
       let refusal: Refusal
       switch normalize(clientServer) {

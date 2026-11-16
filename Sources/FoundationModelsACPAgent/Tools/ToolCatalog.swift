@@ -340,6 +340,7 @@ public enum ToolCatalog {
   static let endpointToolNames: Set<String> = [
     agentsToolName, SkillOutputProtection.skillsToolName, "sessions", "kanban", "rules",
     SettingsGraph.endpointName, ModelsGraph.endpointName, NoOpToolCall.runCodeToolName,
+    mcpServersToolName,
   ]
 
   /// The discovery half of `runCode`. The description of `runCode` tells the
@@ -466,7 +467,8 @@ public enum ToolCatalog {
       mounted.tools
       + makeStandaloneTools(
         agents: agents, sessions: try makeSessionsTool(context: context),
-        models: makeModelsTool(context: context))
+        models: makeModelsTool(context: context),
+        mcpServers: try makeMCPServersTool(context: context))
     // The refresher stages through the staging of the surface, so a
     // refresh after the session agent is known keeps its selection.
     let staging = SessionRegistryStaging(wrapping: mounted.staging)
@@ -490,29 +492,31 @@ public enum ToolCatalog {
 
   /// The standalone tools that follow the Multitool session tools, in
   /// mount order: the `skills` tool of the agent environment, the `agents`
-  /// tool, then the `sessions` tool and the `models` tool when the session
-  /// has them.
+  /// tool, then the `sessions` tool, the `models` tool and the
+  /// `mcpServers` tool when the session has them.
   ///
   /// - Parameters:
   ///   - agents: The `agents` mount of the session.
   ///   - sessions: The `sessions` tool of the session, or `nil` for none.
   ///   - models: The `models` tool of the session, or `nil` for none.
+  ///   - mcpServers: The `mcpServers` tool of the session, or `nil` for none.
   /// - Returns: The standalone tools, in mount order.
   static func makeStandaloneTools(
-    agents: AgentsMount, sessions: SessionsTool? = nil, models: GraphQLTool? = nil
+    agents: AgentsMount, sessions: SessionsTool? = nil, models: GraphQLTool? = nil,
+    mcpServers: MCPServersTool? = nil
   ) -> [any FoundationModels.Tool] {
-    let optional: [(any FoundationModels.Tool)?] = [sessions, models]
+    let optional: [(any FoundationModels.Tool)?] = [sessions, models, mcpServers]
     return [agents.environment.skillsTool, agents.tool] + optional.compactMap { $0 }
   }
 
   /// The description of the `models` tool for the model.
   static let modelsToolDescription =
-    "Read the models of the profile with GraphQL: `{ models { slot repo drafter sizeBytes state active "
-    + "restartRequired } }` gives the model of each slot (STANDARD, FLASH, EMBEDDING, DECISION), its "
-    + "download size and its disk state; `{ choices(slot: STANDARD) { repo sizeBytes state configValue } }` "
-    + "gives the models that a slot can take. The tool changes nothing: to change a slot, use the settings "
-    + "tool with the key path [\"profile\", \"<slot>\"] and the value [configValue]. A slot change applies at "
-    + "the next launch of the agent."
+    "Read the model profiles with GraphQL: `{ profiles { name description selected active downloadBytes "
+    + "state fit } }` gives each builtin profile, its download size, its disk state and if it fits this "
+    + "Mac; `{ models { slot repo drafter sizeBytes state active } }` gives the model of each slot of the "
+    + "selected profile. The tool changes nothing: to select a profile, use the settings tool with the key "
+    + "path [\"profile\", \"preset\"] and the name of the profile. A profile change applies at the next "
+    + "launch of the agent."
 
   /// The `models` tool of a session: a GraphQL tool over the one `models`
   /// endpoint of the agent (``CatalogContext/modelsEndpoint``). It is a
@@ -524,6 +528,30 @@ public enum ToolCatalog {
   static func makeModelsTool(context: CatalogContext) -> GraphQLTool? {
     context.modelsEndpoint.map { GraphQLTool(description: modelsToolDescription, endpoint: $0) }
   }
+
+  /// The `mcpServers` tool of a session: a Multitool `MCPServersTool` over
+  /// the one MCP server registry of the agent
+  /// (``CatalogContext/mcpServerRegistry``). It is a top-level tool, thus
+  /// the session gives its `mcpServers` GraphQL endpoint. Each tool over
+  /// the same registry gives the same endpoint instance. The tool asks the
+  /// user to approve each new server and each new command, args or url.
+  ///
+  /// - Parameter context: The catalog context of the session.
+  /// - Returns: The tool, or `nil` when the context has no registry.
+  /// - Throws: The error of the operation table of `MCPServersTool`.
+  static func makeMCPServersTool(context: CatalogContext) throws -> MCPServersTool? {
+    try context.mcpServerRegistry.map { try MCPServersTool(registry: $0) }
+  }
+
+  /// The names that an MCP server cannot have: the top-level tools and the
+  /// tool groups of the agent.
+  static let reservedMCPServerNames: Set<String> = alwaysOnToolNames.union([
+    filesGroupName, "shell", "git", "web", "environment", codeContextTemplateGroup, mcpGroupName,
+    mcpServersToolName,
+  ])
+
+  /// The name of the `mcpServers` tool.
+  static let mcpServersToolName = "mcpServers"
 
   /// The `sessions` tool of a session: a Multitool `SessionsTool` over the
   /// session directory of the agent (``CatalogContext/sessionDirectory``).

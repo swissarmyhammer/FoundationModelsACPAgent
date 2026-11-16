@@ -28,7 +28,7 @@ extension RoutedACPAgent {
   /// The GraphQL endpoints that the agent holds one time for all its
   /// sessions and connections (EXTRAS-9 rule 1), with the server scope.
   nonisolated var agentGraphQLEndpoints: [any GraphQLEndpoint] {
-    [settingsEndpoint, snapshotsEndpoint, modelsEndpoint]
+    [settingsEndpoint, snapshotsEndpoint, modelsEndpoint, mcpServersEndpoint]
   }
 
   /// The handlers of the `_sah/graphql/*` methods for one connection. Each

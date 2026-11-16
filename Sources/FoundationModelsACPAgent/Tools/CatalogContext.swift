@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModelsACP
 import FoundationModelsExtras
+import FoundationModelsMultitool
 import FoundationModelsHooks
 import FoundationModelsRouter
 
@@ -138,6 +139,11 @@ public struct CatalogContext: Sendable {
   /// gets a top-level `models` tool over it.
   public let modelsEndpoint: ModelsGraph?
 
+  /// The MCP server registry of the agent (``RoutedACPAgent/mcpServerRegistry``),
+  /// or `nil` for no `mcpServers` tool. The tool adds, edits, removes and
+  /// turns on or off one server of `tools.mcp` at a time.
+  public let mcpServerRegistry: MCPServerRegistry?
+
   /// Makes a catalog context.
   ///
   /// - Parameters:
@@ -173,6 +179,8 @@ public struct CatalogContext: Sendable {
   ///     (the default) for no `sessions` tool (``sessionDirectory``).
   ///   - modelsEndpoint: The `models` endpoint of the agent, or `nil` (the
   ///     default) for no `models` tool (``modelsEndpoint``).
+  ///   - mcpServerRegistry: The MCP server registry of the agent, or `nil`
+  ///     (the default) for no `mcpServers` tool (``mcpServerRegistry``).
   public init(
     workingDirectory: URL,
     additionalRoots: [URL] = [],
@@ -190,9 +198,11 @@ public struct CatalogContext: Sendable {
     agentRunHost: AgentRunHost? = nil,
     sessionOperationTools: [SessionOperationMount] = [],
     sessionDirectory: (any SessionDirectory)? = nil,
-    modelsEndpoint: ModelsGraph? = nil
+    modelsEndpoint: ModelsGraph? = nil,
+    mcpServerRegistry: MCPServerRegistry? = nil
   ) {
     self.modelsEndpoint = modelsEndpoint
+    self.mcpServerRegistry = mcpServerRegistry
     self.sessionOperationTools = sessionOperationTools
     self.sessionDirectory = sessionDirectory
     self.agentRunHost = agentRunHost

@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// The port that gives the value of a secret reference (ACPA-18, D101).
 ///
@@ -21,6 +22,60 @@ public protocol SecretStore: Sendable {
   /// - Throws: ``SecretStoreError`` when the store cannot read the item. The
   ///   error names only the reference.
   func value(forReference name: String) throws -> String?
+}
+
+/// A store that can write the value of a secret reference (D101): a host
+/// that lets a person add a secret through the agent, such as the token of
+/// an MCP server, gives a store that conforms. The value goes to the store
+/// only; the configuration holds the reference `keychain:<name>`.
+public protocol SecretWriter: Sendable {
+  /// Writes the value of a reference. A value that the store has is
+  /// replaced.
+  ///
+  /// - Parameters:
+  ///   - value: The secret value.
+  ///   - name: The name of the reference, without the `keychain:` prefix.
+  /// - Throws: The error of the store.
+  func setValue(_ value: String, forReference name: String) throws
+}
+
+/// A secret store in memory that a test can write: the store of a test of
+/// a write through ``SecretWriter``. Its text forms show the names of the
+/// references and no value.
+public final class InMemoryWritableSecretStore: SecretStore, SecretWriter,
+  CustomStringConvertible
+{
+  /// The values, by the name of the reference.
+  private let values: Mutex<[String: String]>
+
+  /// Makes a store with these values.
+  ///
+  /// - Parameter values: The values, by the name of the reference.
+  public init(_ values: [String: String] = [:]) {
+    self.values = Mutex(values)
+  }
+
+  /// The value of a reference, or `nil`.
+  ///
+  /// - Parameter name: The name of the reference.
+  /// - Returns: The value.
+  public func value(forReference name: String) throws -> String? {
+    values.withLock { $0[name] }
+  }
+
+  /// Writes the value of a reference.
+  ///
+  /// - Parameters:
+  ///   - value: The secret value.
+  ///   - name: The name of the reference.
+  public func setValue(_ value: String, forReference name: String) throws {
+    values.withLock { $0[name] = value }
+  }
+
+  /// The names of the references, and no value.
+  public var description: String {
+    "InMemoryWritableSecretStore(references: \(values.withLock { $0.keys.sorted() }))"
+  }
 }
 
 /// Why a ``SecretStore`` did not give the value of a reference.

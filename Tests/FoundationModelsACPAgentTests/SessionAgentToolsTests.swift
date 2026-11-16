@@ -95,7 +95,8 @@ import Testing
   /// of `runCode`. `files` is not one of them: a session agent can deny it.
   /// The test keeps its own copy of the list.
   private static let alwaysOnNames: Set<String> = [
-    "agents", "skills", "sessions", "kanban", "rules", "settings", "models", "runCode", "searchTools",
+    "agents", "skills", "sessions", "kanban", "rules", "settings", "models", "mcpServers", "runCode",
+    "searchTools",
   ]
 
   /// The names of a surface for the unit tests of the selection, with no

@@ -144,6 +144,35 @@ public struct KeychainSecretStore: SecretStore, Equatable {
   }
 }
 
+extension KeychainSecretStore: SecretWriter {
+  /// Writes the generic password item of `name` under ``service``: an
+  /// update of the item when it exists, else a new item.
+  ///
+  /// - Parameters:
+  ///   - value: The secret value.
+  ///   - name: The account of the item: the name of the reference.
+  /// - Throws: ``SecretStoreError/keychainFailure(reference:status:)``.
+  public func setValue(_ value: String, forReference name: String) throws {
+    let data = Data(value.utf8)
+    var query = try itemQuery(account: name)
+    query.removeValue(forKey: kSecUseKeychain)
+    let update = SecItemUpdate(query as CFDictionary, [kSecValueData: data] as CFDictionary)
+    if update == errSecSuccess {
+      return
+    }
+    guard update == errSecItemNotFound else {
+      throw SecretStoreError.keychainFailure(reference: name, status: update)
+    }
+    var item = try itemQuery(account: name)
+    item.removeValue(forKey: kSecMatchSearchList)
+    item[kSecValueData] = data
+    let add = SecItemAdd(item as CFDictionary, nil)
+    guard add == errSecSuccess else {
+      throw SecretStoreError.keychainFailure(reference: name, status: add)
+    }
+  }
+}
+
 extension KeychainSecretStore.Keychain {
   /// The `SecKeychain` that a query names for this Keychain.
   ///

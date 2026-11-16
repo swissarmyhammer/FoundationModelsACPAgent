@@ -191,6 +191,19 @@ public actor RoutedACPAgent: Agent {
   /// it through its top-level `models` tool (``CatalogContext/modelsEndpoint``).
   public nonisolated let modelsEndpoint: ModelsGraph
 
+  /// The one MCP server registry of the agent (Multitool `MCPServerRegistry`):
+  /// it adds, edits, removes and turns on or off one server of `tools.mcp`
+  /// at the USER level at a time. Its storage is the settings store
+  /// (``SettingsMCPServerStorage``), and its secrets go to ``secretStore``
+  /// when that store can write (``SecretWriter``). Each session mounts the
+  /// top-level `mcpServers` tool over it. A change applies to each session
+  /// that starts after it.
+  public nonisolated let mcpServerRegistry: MCPServerRegistry
+
+  /// The `mcpServers` endpoint of ``mcpServerRegistry``. The agent holds it,
+  /// thus each session and the tunnel read one change log.
+  public nonisolated let mcpServersEndpoint: MCPServersGraph
+
   /// The one `snapshots` endpoint of the agent over the snapshot store of
   /// ``hooks`` (MT-13), for the GraphQL tunnel (ACPA-13): a client reaches
   /// it with no session, because it has the server scope. Each session's
@@ -522,6 +535,11 @@ public actor RoutedACPAgent: Agent {
       settingsFolders: settingsFolders,
       secretStore: self.secretStore)
     self.settingsEndpoint = try SettingsGraph(store: settingsStore)
+    self.mcpServerRegistry = MCPServerRegistry(
+      storage: SettingsMCPServerStorage(store: settingsStore),
+      reservedNames: ToolCatalog.reservedMCPServerNames,
+      secrets: (self.secretStore as? any SecretWriter).map(AgentMCPServerSecrets.init(writer:)))
+    self.mcpServersEndpoint = MCPServersGraph.endpoint(of: mcpServerRegistry)
     self.transcriptReader = RecordedSessionTranscriptReader(
       recordingRoots: Self.recordingRoots(known: knownRecordingRoots, store: settingsStore))
     // The sessions of one working directory share one key, so the

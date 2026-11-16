@@ -651,15 +651,25 @@ public struct MCPServerConfiguration: Codable, Equatable, Sendable, KeyCheckedSe
   /// How the server is reached.
   public var transport: Transport
 
+  /// True (the default) when the agent connects the server. A server that
+  /// is turned off stays in the file and does not connect.
+  public var enabled: Bool
+
   /// The YAML spelling of each key.
   public enum CodingKeys: String, CodingKey, CaseIterable {
-    case name, command, args, env, url, headers
+    case name, command, args, env, url, headers, enabled
   }
 
   /// Makes a server entry.
-  public init(name: String, transport: Transport) {
+  ///
+  /// - Parameters:
+  ///   - name: The name of the server.
+  ///   - transport: How the server is reached.
+  ///   - enabled: True (the default) when the agent connects the server.
+  public init(name: String, transport: Transport, enabled: Bool = true) {
     self.name = name
     self.transport = transport
+    self.enabled = enabled
   }
 
   /// Decodes the entry. Exactly one of `command` and `url` picks the
@@ -667,6 +677,7 @@ public struct MCPServerConfiguration: Codable, Equatable, Sendable, KeyCheckedSe
   public init(from decoder: any Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     name = try container.decode(String.self, forKey: .name)
+    enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
     let command = try container.decodeIfPresent(String.self, forKey: .command)
     let url = try container.decodeIfPresent(String.self, forKey: .url)
     switch (command, url) {
@@ -707,6 +718,9 @@ public struct MCPServerConfiguration: Codable, Equatable, Sendable, KeyCheckedSe
     case .http(let url, let headers):
       try container.encode(url, forKey: .url)
       try container.encode(encoder.writtenSecrets(headers), forKey: .headers)
+    }
+    if !enabled {
+      try container.encode(enabled, forKey: .enabled)
     }
   }
 
