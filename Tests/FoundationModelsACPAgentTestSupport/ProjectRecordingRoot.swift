@@ -1,14 +1,14 @@
 import Foundation
 import FoundationModelsACPAgent
 
-/// The `project` recording root of one working directory:
+/// The recording root of one working directory:
 /// `<workspace>/.<name>/transcripts/`.
 ///
 /// This calls the production API, and it never builds the path again. A
 /// test that writes the path itself can agree with the code today and
 /// disagree with it tomorrow, and then the test reads an empty directory
 /// and reports a recorder that does not write. The one construction is
-/// `TranscriptLocation.project.recordingRoot(...)`, and this is the one
+/// `TranscriptRoot.recordingRoot(...)`, and this is the one
 /// door onto it.
 ///
 /// - Parameters:
@@ -17,8 +17,5 @@ import FoundationModelsACPAgent
 /// - Returns: The recording root.
 /// - Throws: `DotfolderNameError` when `name` is refused.
 public func projectRecordingRoot(of workspace: URL, dotfolderName name: String) throws -> URL {
-  TranscriptLocation.project.recordingRoot(
-    workingDirectory: workspace,
-    name: try DotfolderName(name),
-    userDirectory: workspace)
+  TranscriptRoot.recordingRoot(workingDirectory: workspace, name: try DotfolderName(name))
 }

@@ -99,17 +99,22 @@ public enum SettingsStoreError: Error, Equatable, Sendable, CustomStringConverti
   /// user layer when the CLI finds no XDG folder.
   case noLayer(SettingsLevel)
 
-  /// The key path names a key that its section no longer has, such as
-  /// `profile.standard` (ACPA-21). The store writes no such key; a clear
-  /// of it works. `keyPath` is the dotted key path.
+  /// The key path names a key that the configuration no longer has, such
+  /// as `profile.standard` (ACPA-21) or `transcripts.location` (D187). The
+  /// store writes no such key; a clear of it works. `keyPath` is the
+  /// dotted key path of the retired key or section.
   case retiredKey(keyPath: String)
 
   /// A human-readable reason that names the level or the key.
   public var description: String {
     switch self {
-    case .retiredKey(let keyPath):
+    case .retiredKey(let keyPath)
+    where keyPath.hasPrefix(AgentConfiguration.CodingKeys.profile.stringValue):
       return "the key \"\(keyPath)\" is no longer used; select a profile with \"profile.preset\" "
         + "(one of: \(ModelProfiles.builtin.map(\.name).joined(separator: ", ")))"
+    case .retiredKey(let keyPath):
+      return "the key \"\(keyPath)\" is no longer used; each session records its full transcript "
+        + "in its project"
     case .noLayer(.user):
       return "the settings folders give no folder for the user level"
     case .noLayer(.session(let workingDirectory)):
@@ -185,11 +190,6 @@ public actor SettingsStore {
 
   /// The settings folders of the host. Each level path comes from them.
   public nonisolated let settingsFolders: SettingsFolders
-
-  /// The transcript location that the host gives in code, or `nil` when
-  /// the files decide. ``merged(for:)`` puts it over the files, as
-  /// ``ConfigurationLoader/transcriptLocation`` does.
-  public nonisolated let transcriptLocation: TranscriptLocation?
 
   /// The store that gives the value of each secret reference when
   /// ``merged(for:)`` resolves the configuration. The trees in memory and
@@ -270,8 +270,6 @@ public actor SettingsStore {
   ///
   /// - Parameters:
   ///   - settingsFolders: The settings folders of the host.
-  ///   - transcriptLocation: The transcript location that wins over the
-  ///     files, or `nil` (the default) to let the files decide.
   ///   - secretStore: The store that gives the value of each secret
   ///     reference, or `nil` (the default) for the login Keychain under the
   ///     service of the dotfolder name.
@@ -281,26 +279,23 @@ public actor SettingsStore {
   ///     ``defaultChangeCapacity``.
   public init(
     settingsFolders: SettingsFolders,
-    transcriptLocation: TranscriptLocation? = nil,
     secretStore: (any SecretStore)? = nil,
     changeCapacity: Int = SettingsStore.defaultChangeCapacity
   ) {
     self.settingsFolders = settingsFolders
-    self.transcriptLocation = transcriptLocation
     self.secretStore = secretStore ?? KeychainSecretStore.loginKeychain(for: settingsFolders.name)
     changeLog = ChangeLog(capacity: changeCapacity)
   }
 
   /// Makes the configuration loader of one working directory over the
-  /// settings folders, the transcript location and the secret store of
-  /// this store.
+  /// settings folders and the secret store of this store.
   ///
   /// - Parameter workingDirectory: The working directory of the session.
   /// - Returns: The loader.
   public nonisolated func makeConfigurationLoader(workingDirectory: URL) -> ConfigurationLoader {
     ConfigurationLoader(
       settingsFolders: settingsFolders, workingDirectory: workingDirectory,
-      transcriptLocation: transcriptLocation, secretStore: secretStore)
+      secretStore: secretStore)
   }
 
   // MARK: - Reads
@@ -311,8 +306,7 @@ public actor SettingsStore {
   /// The steps after the merge are the steps of
   /// ``ConfigurationLoader/load()``: the builtin layer goes under the
   /// defaults layer, the user level and the session level of `cwd`; then
-  /// the check, the decode, the resolve of each secret reference, and the
-  /// code override of ``transcriptLocation``.
+  /// the check, the decode, and the resolve of each secret reference.
   ///
   /// - Parameter cwd: The working directory of the session.
   /// - Returns: The decoded configuration, its warnings, and the layer that
@@ -512,17 +506,35 @@ public actor SettingsStore {
   ///   that the section no longer has. After an error, the level and its
   ///   file do not change.
   public func set(_ value: YAMLValue, at keyPath: [String], level: SettingsLevel) async throws {
-    if keyPath.count > 1, keyPath[0] == AgentConfiguration.CodingKeys.profile.stringValue,
-      ProfileConfiguration.retiredKeys.contains(keyPath[1])
-    {
-      throw SettingsStoreError.retiredKey(
-        keyPath: keyPath.prefix(2).joined(separator: LoadedConfiguration.keyPathSeparator))
+    if let retired = Self.retiredKeyPath(of: keyPath) {
+      throw SettingsStoreError.retiredKey(keyPath: retired)
     }
     let id = SettingsTreeDifference.id(of: keyPath)
     try await change(at: keyPath, level: level) { tree in
       let ids = tree.value(at: keyPath) == nil ? ChangedIDs(added: [id]) : ChangedIDs(changed: [id])
       return (tree: try tree.setting(value, at: keyPath), ids: ids)
     }
+  }
+
+  /// The dotted key path of the retired key or section that a key path
+  /// names, or `nil` when the key path names no retired key.
+  ///
+  /// - Parameter keyPath: The keys from the root.
+  /// - Returns: `profile.<key>` for a retired key of `profile`, the name of
+  ///   a retired section for a key path in it, else `nil`.
+  static func retiredKeyPath(of keyPath: [String]) -> String? {
+    guard let section = keyPath.first else {
+      return nil
+    }
+    if AgentConfiguration.retiredSections.contains(section) {
+      return section
+    }
+    if keyPath.count > 1, section == AgentConfiguration.CodingKeys.profile.stringValue,
+      ProfileConfiguration.retiredKeys.contains(keyPath[1])
+    {
+      return keyPath.prefix(2).joined(separator: LoadedConfiguration.keyPathSeparator)
+    }
+    return nil
   }
 
   /// Removes one key from one level, and writes the level to its

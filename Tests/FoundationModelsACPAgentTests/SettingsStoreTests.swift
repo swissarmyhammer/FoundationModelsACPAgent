@@ -23,8 +23,6 @@ import Testing
   /// tests.
   private static let builtinKeyPath = ["tools", "mcp"]
 
-  /// The key path of `recording.level`.
-  private static let recordingLevelKeyPath = ["recording", "level"]
 
   /// The dotted form of ``triggerKeyPath``, as the sources give it.
   private static let triggerSourceKey = "compaction.trigger"
@@ -38,8 +36,8 @@ import Testing
   /// The value of `compaction.trigger` that an outside write sets.
   private static let outsideTrigger = 0.8
 
-  /// A value of `recording.level` that does not decode.
-  private static let badRecordingLevel = "loud"
+  /// A value of `compaction.trigger` that does not decode.
+  private static let badTrigger = "loud"
 
   /// A key that the `compaction` section does not decode.
   private static let unknownCompactionKey = "bogus"
@@ -183,6 +181,21 @@ import Testing
   /// The store writes no slot model and no decision context (ACPA-21): a
   /// set of a key that `profile` no longer has is an error, and the user
   /// file does not change. A clear of such a key works, so a user can
+  /// The store writes no transcript location and no recording level
+  /// (D187): a set in the section `transcripts` or `recording` is an
+  /// error, and a clear works.
+  @Test func aSetOfARetiredTranscriptsKeyIsRefused() async throws {
+    let fixture = try Fixture(label: "retired-transcripts")
+
+    await #expect(throws: SettingsStoreError.retiredKey(keyPath: "transcripts")) {
+      try await fixture.store.set(.string("home"), at: ["transcripts", "location"], level: .user)
+    }
+    await #expect(throws: SettingsStoreError.retiredKey(keyPath: "recording")) {
+      try await fixture.store.set(.string("off"), at: ["recording", "level"], level: .user)
+    }
+    try await fixture.store.clear(at: ["recording", "level"], level: .user)
+  }
+
   /// remove it from an old file.
   @Test func aSetOfARetiredProfileKeyIsRefused() async throws {
     let fixture = try Fixture(label: "retired-set")
@@ -260,13 +273,12 @@ import Testing
 
     await #expect(throws: YAMLValueDecodingError.self) {
       try await fixture.store.set(
-        .string(Self.badRecordingLevel), at: Self.recordingLevelKeyPath, level: .user)
+        .string(Self.badTrigger), at: Self.triggerKeyPath, level: .user)
     }
 
     #expect(
       try textOnDisk(at: ConfigCommandFixture.configURL(in: userRoot)) == Self.userTriggerYAML)
-    let merged = try await fixture.store.merged(for: fixture.firstDirectory)
-    #expect(merged.configuration.recording.level == RecordingLevel.full)
+    #expect(try await fixture.mergedTrigger(for: fixture.firstDirectory) == Self.userTrigger)
   }
 
   /// A key that its section does not decode is refused with the schema

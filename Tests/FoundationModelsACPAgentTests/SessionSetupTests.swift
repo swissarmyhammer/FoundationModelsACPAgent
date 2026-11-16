@@ -51,8 +51,7 @@ import Testing
 
   // MARK: Harness
 
-  /// The project-local transcripts root of `cwd`, the default
-  /// `transcripts.location`.
+  /// The transcripts root of `cwd`, in the project (D187).
   ///
   /// - Parameter cwd: The session working directory.
   /// - Returns: `<cwd>/.<name>/transcripts/`.
@@ -60,7 +59,7 @@ import Testing
     cwd
       .appendingPathComponent(".\(AgentClientHarness.dotfolderName)", isDirectory: true)
       .appendingPathComponent(
-        TranscriptLocation.transcriptsDirectoryName, isDirectory: true)
+        TranscriptRoot.transcriptsDirectoryName, isDirectory: true)
   }
 
   // MARK: Identity

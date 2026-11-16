@@ -61,12 +61,8 @@ extension RoutedACPAgent {
       nextCursor: page.nextCursor.map(SessionListCursor.init(rawValue:)))
   }
 
-  /// The listable records of one project, read through the store the
-  /// project's own configuration names: the `transcripts.location` and
-  /// the user layer root both come from the project's dotfolder stack,
-  /// the same resolution `session/new` records under. A
-  /// ``transcriptLocation`` of the host wins over the stack, as it does
-  /// for `session/new`.
+  /// The listable records of one project, read from the recording root
+  /// in the project, where `session/new` records (D187).
   ///
   /// - Parameter workingDirectory: The project's absolute working
   ///   directory.
@@ -74,12 +70,7 @@ extension RoutedACPAgent {
   /// - Throws: Whatever the configuration load or the store read
   ///   throws.
   private func listableRecords(inProject workingDirectory: URL) throws -> [SessionRecord] {
-    let loader = makeConfigurationLoader(workingDirectory: workingDirectory)
-    let store = TranscriptStore(
-      location: try loader.load().configuration.transcripts.location,
-      name: name,
-      userDirectory: SessionSetup.userLayerRoot(of: loader.stack),
-      projectsDirectory: home.projectsDirectory)
+    let store = TranscriptStore(name: name, projectsDirectory: home.projectsDirectory)
     return try store.sessions(inProject: workingDirectory)
   }
 

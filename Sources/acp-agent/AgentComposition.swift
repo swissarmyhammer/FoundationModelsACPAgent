@@ -131,8 +131,7 @@ enum AgentComposition {
   }
 
   /// Composes the agent of the CLI through the public library helper
-  /// `ComposedAgent.compose(name:workingDirectory:home:mode:sandboxProbe:environment:modelSource:stubChunkGate:stubScript:transcriptLocation:secretStore:userDeviceTokens:huggingFaceTokenProvider:sessionToolFactories:reporting:)`.
-  /// The CLI gives no `transcriptLocation`: its config files decide.
+  /// `ComposedAgent.compose(name:workingDirectory:home:mode:sandboxProbe:environment:modelSource:stubChunkGate:stubScript:secretStore:userDeviceTokens:huggingFaceTokenProvider:sessionToolFactories:reporting:)`.
   ///
   /// The CLI adds its own choices only: ``dotfolderName``, the home that
   /// ``home(environment:)`` reads, and the model path and the stub gate

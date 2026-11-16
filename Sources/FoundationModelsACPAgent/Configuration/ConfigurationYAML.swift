@@ -101,13 +101,9 @@ public enum ConfigurationYAML {
   /// YAML spelling of the section's coding key.
   private static let sectionComments: [String: String] = [
     AgentConfiguration.CodingKeys.profile.stringValue:
-      "The model profile: the standard, flash, embedding and decision slots.",
+      "The model profile: preset selects a builtin profile (large, medium, small or tiny).",
     AgentConfiguration.CodingKeys.tools.stringValue:
       "The tool roster: each capability is on unless set to false.",
-    AgentConfiguration.CodingKeys.recording.stringValue:
-      "How much of each session is recorded: full or off.",
-    AgentConfiguration.CodingKeys.transcripts.stringValue:
-      "Where transcripts are written: project, home or an absolute path.",
     AgentConfiguration.CodingKeys.compaction.stringValue:
       "The token-budget thresholds of the self-folding session.",
     AgentConfiguration.CodingKeys.repetition.stringValue:
@@ -256,7 +252,7 @@ public enum ConfigurationYAML {
     switch schema {
     case .checked(let keys), .checkedWithRetired(let keys, _):
       knownKeys = keys
-    case .toolRoster, .scalar:
+    case .toolRoster, .scalar, .retired:
       return value
     }
     return mapping.merging(knownKeys.map { ($0, NSNull() as Any) }) { present, _ in present }

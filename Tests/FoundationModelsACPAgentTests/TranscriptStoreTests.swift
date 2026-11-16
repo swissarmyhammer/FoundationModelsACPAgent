@@ -92,15 +92,14 @@ import Testing
     let cacheDirectory = try makeTemporaryDirectory(label: "cache")
     let userDirectory = try makeTemporaryDirectory(label: "user")
     let name = try DotfolderName(agentName)
-    let root = TranscriptLocation.project.recordingRoot(
-      workingDirectory: workingDirectory, name: name, userDirectory: userDirectory)
+    let root = TranscriptRoot.recordingRoot(workingDirectory: workingDirectory, name: name)
     return ProjectFixture(
       recorded: try await makeRecordedProjectFixture(
         workingDirectory: workingDirectory, cacheDirectory: cacheDirectory, recordingRoot: root),
       cacheDirectory: cacheDirectory,
       userDirectory: userDirectory,
       store: TranscriptStore(
-        location: .project, name: name, userDirectory: userDirectory,
+        name: name,
         projectsDirectory: userDirectory.appendingPathComponent(
           projectsFolderName, isDirectory: true)))
   }

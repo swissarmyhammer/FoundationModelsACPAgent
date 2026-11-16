@@ -84,9 +84,8 @@ struct SkillTriggerSubject {
   // the idle terminator thus paid three to four minutes for a fact the
   // first minute already held.
 
-  /// The user-layer `config.yaml`: the transcripts record under the user
-  /// directory, outside the workspace, so a removed workspace keeps its
-  /// transcript. The shell and the code context stay off, because no
+  /// The user-layer `config.yaml`: the transcripts record in the
+  /// workspace (D187). The shell and the code context stay off, because no
   /// sample needs them and each one makes a prompt slower. The skills
   /// marketplace list is empty: the gate measures the skills of its own
   /// samples, and the skills of the default marketplace would change that
@@ -96,8 +95,6 @@ struct SkillTriggerSubject {
   /// unless `ACP_AGENT_SKILL_TRIGGER_PRESET` selects another one.
   static var userConfigYAML: String {
     """
-    transcripts:
-      location: home
     tools:
       shell: false
       codeContext: false

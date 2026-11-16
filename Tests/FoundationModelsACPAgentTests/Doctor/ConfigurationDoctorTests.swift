@@ -21,7 +21,7 @@ struct ConfigurationDoctorTests {
   /// A top-level section no schema section is named after.
   private static let unknownSectionName = "surprise"
 
-  /// A key the `recording` section does not decode.
+  /// A key the `compaction` section does not decode.
   private static let unknownKeyName = "loudness"
 
   /// The command a permission fix names.
@@ -106,7 +106,7 @@ struct ConfigurationDoctorTests {
   /// `acp-agent config show`.
   @Test func anUnknownKeyInAKnownSectionGivesOneError() async throws {
     let fixture = ConfigCommandFixture(label: "ConfigurationDoctorTests-key")
-    try fixture.writeProjectConfig("recording:\n  \(Self.unknownKeyName): full\n")
+    try fixture.writeProjectConfig("compaction:\n  \(Self.unknownKeyName): 0.5\n")
 
     let checks = try await Self.checks(in: fixture)
 

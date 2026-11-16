@@ -81,6 +81,26 @@ public enum ConfigurationWarning: Equatable, Sendable, CustomStringConvertible {
   /// ignores the key.
   case retiredKey(section: String, key: String)
 
+  /// A top-level section that the configuration no longer has, with a
+  /// body that is not a mapping (D187). The loader ignores it.
+  case retiredSection(name: String)
+
+  /// What replaces a key that is no longer used, for the message of the
+  /// warning.
+  ///
+  /// - Parameter section: The section of the key.
+  /// - Returns: The hint, with its leading separator, or empty.
+  private static func retiredHint(section: String) -> String {
+    if section == AgentConfiguration.CodingKeys.profile.stringValue {
+      return "; set \"profile.preset\" to one of: "
+        + ModelProfiles.builtin.map(\.name).joined(separator: ", ")
+    }
+    if AgentConfiguration.retiredSections.contains(section) {
+      return "; each session records its full transcript in its project, at .<name>/transcripts/"
+    }
+    return ""
+  }
+
   /// A human-readable message that names the section.
   public var description: String {
     switch self {
@@ -101,10 +121,11 @@ public enum ConfigurationWarning: Equatable, Sendable, CustomStringConvertible {
     case .retiredKey(let section, let key):
       return
         "\(ConfigurationLoader.configFileName): the key \"\(section).\(key)\" is no longer used and is ignored"
-        + (section == AgentConfiguration.CodingKeys.profile.stringValue
-          ? "; set \"profile.preset\" to one of: "
-            + ModelProfiles.builtin.map(\.name).joined(separator: ", ")
-          : "")
+        + Self.retiredHint(section: section)
+    case .retiredSection(let name):
+      return
+        "\(ConfigurationLoader.configFileName): the section \"\(name)\" is no longer used and is ignored"
+        + Self.retiredHint(section: name)
     }
   }
 }
@@ -132,7 +153,7 @@ extension ConfigurationWarning {
       "The secret store has no item for a secret reference of the configuration. The key is not set."
     case .unreadableSecret:
       "The secret store could not read the item for a secret reference of the configuration. The key is not set."
-    case .retiredKey:
+    case .retiredKey, .retiredSection:
       "The configuration has a key that is no longer used. The loader ignored the key."
     }
   }
@@ -149,6 +170,8 @@ extension ConfigurationWarning {
       keyPath
     case .retiredKey(let section, let key):
       section + LoadedConfiguration.keyPathSeparator + key
+    case .retiredSection(let name):
+      name
     }
   }
 }
@@ -202,16 +225,6 @@ public struct ConfigurationLoader: Sendable {
   /// ``SettingsFolders/Kind/configuration`` stack of ``settingsFolders``.
   public let stack: DotfolderStack
 
-  /// The transcript location that a host gives in code, or `nil` when
-  /// the files decide. When it is not `nil`, each ``load()`` puts it over
-  /// the `transcripts.location` of every layer.
-  ///
-  /// The override is not a layer, so ``LoadedConfiguration/sources`` does
-  /// not show it: the entry of `transcripts.location` names the file
-  /// layer that set the key, or no layer. `config show` does not show a
-  /// code override either; the `acp-agent` CLI never gives one.
-  public let transcriptLocation: TranscriptLocation?
-
   /// The store that gives the value of each secret reference
   /// `keychain:<name>` of the configuration (ACPA-18, D101). Each
   /// ``load()`` resolves the references through it after the decode.
@@ -228,9 +241,6 @@ public struct ConfigurationLoader: Sendable {
   ///     ``SettingsFolders/name`` is the dotfolder name of the loader.
   ///   - workingDirectory: The session working directory; the project
   ///     layer roots at `<workingDirectory>/.<name>/`.
-  ///   - transcriptLocation: The transcript location that wins over every
-  ///     layer, or `nil` (the default) to let the files decide — see
-  ///     ``transcriptLocation``.
   ///   - secretStore: The store that gives the value of each secret
   ///     reference, or `nil` (the default) for the login Keychain under
   ///     the service `name` (``KeychainSecretStore/loginKeychain(for:)``).
@@ -238,13 +248,11 @@ public struct ConfigurationLoader: Sendable {
   public init(
     settingsFolders: SettingsFolders,
     workingDirectory: URL,
-    transcriptLocation: TranscriptLocation? = nil,
     secretStore: (any SecretStore)? = nil
   ) {
     self.init(
       settingsFolders: settingsFolders, workingDirectory: workingDirectory,
-      transcriptLocation: transcriptLocation, secretStore: secretStore,
-      builtinLayer: BuiltinConfigurationFile.root)
+      secretStore: secretStore, builtinLayer: BuiltinConfigurationFile.root)
   }
 
   /// Builds the stack for `name`, over the builtin configuration file.
@@ -260,9 +268,6 @@ public struct ConfigurationLoader: Sendable {
   ///     a custom home in throwaway folders, so they never touch the real
   ///     home directory.
   ///   - environment: The environment the defaults layer is read from.
-  ///   - transcriptLocation: The transcript location that wins over every
-  ///     layer, or `nil` (the default) to let the files decide — see
-  ///     ``transcriptLocation``.
   ///   - secretStore: The store that gives the value of each secret
   ///     reference, or `nil` (the default) for the login Keychain under
   ///     the service `name` (``KeychainSecretStore/loginKeychain(for:)``).
@@ -272,13 +277,12 @@ public struct ConfigurationLoader: Sendable {
     workingDirectory: URL,
     home: AgentHome,
     environment: [String: String] = ProcessInfo.processInfo.environment,
-    transcriptLocation: TranscriptLocation? = nil,
     secretStore: (any SecretStore)? = nil
   ) {
     self.init(
       name: name, workingDirectory: workingDirectory, home: home,
-      environment: environment, transcriptLocation: transcriptLocation,
-      secretStore: secretStore, builtinLayer: BuiltinConfigurationFile.root)
+      environment: environment, secretStore: secretStore,
+      builtinLayer: BuiltinConfigurationFile.root)
   }
 
   /// Builds the stack for `name`, over the layer 1 tree that
@@ -289,8 +293,6 @@ public struct ConfigurationLoader: Sendable {
   ///   - workingDirectory: The session working directory.
   ///   - home: The home of the host, which gives the user layer.
   ///   - environment: The environment the defaults layer is read from.
-  ///   - transcriptLocation: The transcript location that wins over every
-  ///     layer, or `nil` to let the files decide.
   ///   - secretStore: The store that gives the value of each secret
   ///     reference, or `nil` for the login Keychain under the service
   ///     `name`.
@@ -300,14 +302,13 @@ public struct ConfigurationLoader: Sendable {
     workingDirectory: URL,
     home: AgentHome,
     environment: [String: String],
-    transcriptLocation: TranscriptLocation? = nil,
     secretStore: (any SecretStore)? = nil,
     builtinLayer: @escaping @Sendable () throws -> YAMLValue
   ) {
     self.init(
       settingsFolders: SettingsFolders(name: name, home: home, environment: environment),
-      workingDirectory: workingDirectory, transcriptLocation: transcriptLocation,
-      secretStore: secretStore, builtinLayer: builtinLayer)
+      workingDirectory: workingDirectory, secretStore: secretStore,
+      builtinLayer: builtinLayer)
   }
 
   /// Builds the configuration stack of `settingsFolders`, over the layer 1
@@ -316,8 +317,6 @@ public struct ConfigurationLoader: Sendable {
   /// - Parameters:
   ///   - settingsFolders: The settings folders of the host.
   ///   - workingDirectory: The session working directory.
-  ///   - transcriptLocation: The transcript location that wins over every
-  ///     layer, or `nil` to let the files decide.
   ///   - secretStore: The store that gives the value of each secret
   ///     reference, or `nil` for the login Keychain under the service
   ///     `name`.
@@ -325,14 +324,12 @@ public struct ConfigurationLoader: Sendable {
   init(
     settingsFolders: SettingsFolders,
     workingDirectory: URL,
-    transcriptLocation: TranscriptLocation?,
     secretStore: (any SecretStore)?,
     builtinLayer: @escaping @Sendable () throws -> YAMLValue
   ) {
     self.name = settingsFolders.name
     self.settingsFolders = settingsFolders
     self.stack = settingsFolders.stack(for: .configuration, workingDirectory: workingDirectory)
-    self.transcriptLocation = transcriptLocation
     self.secretStore = secretStore ?? KeychainSecretStore.loginKeychain(for: settingsFolders.name)
     self.builtinLayer = builtinLayer
   }
@@ -369,8 +366,7 @@ public struct ConfigurationLoader: Sendable {
   /// and returned as a warning. An unknown key inside a known section is
   /// an error. Each secret reference `keychain:<name>` then gets its value
   /// from ``secretStore``; a reference with no value is left out, and it
-  /// is logged and returned as a warning. A ``transcriptLocation`` that is
-  /// not `nil` then replaces the decoded `transcripts.location`.
+  /// is logged and returned as a warning.
   ///
   /// - Returns: The decoded configuration and the warnings.
   /// - Throws: `ConfigurationError` for a schema failure;
@@ -378,7 +374,7 @@ public struct ConfigurationLoader: Sendable {
   ///   rendered or parsed; ``BuiltinConfigurationFileError`` or
   ///   `YAMLValueParsingError` for a builtin file that cannot be read or
   ///   parsed; `YAMLValueDecodingError` for a value that does not decode,
-  ///   such as a `recording.level` other than `off` or `full`.
+  ///   such as a `theme` that is not a theme.
   public func load() throws -> LoadedConfiguration {
     let document = try LayeredYAMLDocument.load(
       Self.configFileName,
@@ -414,7 +410,7 @@ public struct ConfigurationLoader: Sendable {
       of: try Self.configuration(from: root), warnings: &secretWarnings)
     Self.log(secretWarnings)
     return LoadedConfiguration(
-      configuration: resolvingCodeOverride(of: resolvingDotfolderDefaults(of: decoded)),
+      configuration: resolvingDotfolderDefaults(of: decoded),
       warnings: schemaWarnings + secretWarnings,
       sources: sources)
   }
@@ -469,20 +465,6 @@ public struct ConfigurationLoader: Sendable {
     }
     resolved.tools.mcp = configuration.tools.mcp.resolvingSecrets(
       through: secretStore, warnings: &warnings)
-    return resolved
-  }
-
-  /// `configuration` with ``transcriptLocation`` over its
-  /// `transcripts.location` when the host gave one.
-  ///
-  /// - Parameter configuration: The decoded configuration.
-  /// - Returns: The configuration in effect.
-  private func resolvingCodeOverride(of configuration: AgentConfiguration) -> AgentConfiguration {
-    guard let transcriptLocation else {
-      return configuration
-    }
-    var resolved = configuration
-    resolved.transcripts.location = transcriptLocation
     return resolved
   }
 
@@ -613,6 +595,15 @@ public struct ConfigurationLoader: Sendable {
       return try ToolsConfiguration.schemaWarnings(inBody: body)
     case .scalar:
       return []
+    case .retired:
+      switch body {
+      case .null:
+        return []
+      case .dictionary(let keys):
+        return keys.keys.sorted().map { .retiredKey(section: name, key: $0) }
+      case .string, .int, .double, .bool, .array:
+        return [.retiredSection(name: name)]
+      }
     }
   }
 }

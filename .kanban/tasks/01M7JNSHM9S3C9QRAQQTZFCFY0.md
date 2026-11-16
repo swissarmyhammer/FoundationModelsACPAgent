@@ -1,7 +1,7 @@
 ---
 assignees:
 - claude-code
-position_column: todo
+position_column: done
 position_ordinal: '8480'
 title: 'D187: transcripts are always in the project; remove transcripts.location and recording.level'
 ---

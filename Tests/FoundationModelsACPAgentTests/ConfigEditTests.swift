@@ -36,11 +36,11 @@ struct ConfigEditTests {
 
   /// A project `config.yaml` that sets one key, so a case can say
   /// WHICH file the plan chose.
-  private static let projectYAML = "recording:\n  level: off\n"
+  private static let projectYAML = "theme: dark\n"
 
   /// A user `config.yaml` that sets one key, so a case can say WHICH
   /// file the plan chose.
-  private static let userYAML = "transcripts:\n  location: home\n"
+  private static let userYAML = "keymap: vim\n"
 
   // MARK: - Helpers
 

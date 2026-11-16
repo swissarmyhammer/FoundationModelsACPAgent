@@ -98,10 +98,8 @@ import Testing
     return try await makeRecordedProjectFixture(
       workingDirectory: workingDirectory,
       cacheDirectory: makeResolvedDirectory(label: "SessionListTests-\(label)-cache"),
-      recordingRoot: TranscriptLocation.project.recordingRoot(
-        workingDirectory: workingDirectory,
-        name: fixture.name,
-        userDirectory: fixture.userDirectory))
+      recordingRoot: TranscriptRoot.recordingRoot(
+        workingDirectory: workingDirectory, name: fixture.name))
   }
 
   /// The record date `position` steps after ``baseDate``.
@@ -306,44 +304,5 @@ import Testing
 
     #expect(response.sessions.isEmpty)
     #expect(response.nextCursor == nil)
-  }
-
-  // MARK: - The cross-project merge
-
-  @Test
-  func twoProjectsOverOneSharedRootListEachSessionOnce() async throws {
-    let fixture = try await Self.makeWireFixture()
-    let sharedRoot = makeResolvedDirectory(label: "SessionListTests-shared-root")
-    let firstProject = makeResolvedDirectory(label: "SessionListTests-shared-one")
-    let secondProject = makeResolvedDirectory(label: "SessionListTests-shared-two")
-    for project in [firstProject, secondProject] {
-      let dotfolder = project.appendingPathComponent(
-        ".\(AgentClientHarness.dotfolderName)", isDirectory: true)
-      try FileManager.default.createDirectory(
-        at: dotfolder, withIntermediateDirectories: true)
-      try "transcripts:\n  location: \(sharedRoot.path)\n".write(
-        to: dotfolder.appendingPathComponent(ConfigurationLoader.configFileName),
-        atomically: true,
-        encoding: .utf8)
-      try ProjectStore(directory: fixture.projectsDirectory).register(workingDirectory: project)
-    }
-    let recorder = try await makeRecordedProjectFixture(
-      workingDirectory: firstProject,
-      cacheDirectory: makeResolvedDirectory(label: "SessionListTests-shared-cache"),
-      recordingRoot: sharedRoot)
-    let firstSession = try await recorder.makeRecordedSession(
-      title: "one", updatedAt: Self.baseDate, in: firstProject)
-    let secondSession = try await recorder.makeRecordedSession(
-      title: "two", updatedAt: Self.steppedDate(1), in: secondProject)
-
-    let response = try await fixture.connection.listSessions(ListSessionsRequest())
-    await fixture.close()
-
-    #expect(
-      response.sessions.map(\.sessionId.rawValue)
-        == [secondSession, firstSession].map(\.description))
-    #expect(
-      response.sessions.map(\.cwd.rawValue)
-        == [secondProject, firstProject].map { $0.standardizedFileURL.path })
   }
 }

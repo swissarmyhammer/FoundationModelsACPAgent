@@ -151,20 +151,6 @@ public actor RoutedACPAgent: Agent {
     settingsFolders.home
   }
 
-  /// The transcript location that the host gave in code, or `nil` when
-  /// the config files decide.
-  ///
-  /// `session/new`, `session/resume` and `session/delete` read the
-  /// configuration of their `cwd` from ``settingsStore``, and
-  /// `session/list` loads it through
-  /// ``makeConfigurationLoader(workingDirectory:)``. The store and each
-  /// loader get this value. Thus `session/new`, `session/resume`,
-  /// `session/list` (with a `cwd` filter and across the project store of
-  /// the home) and `session/delete` all record or read under this
-  /// location, and it wins over the `transcripts.location` of every
-  /// config layer.
-  public nonisolated let transcriptLocation: TranscriptLocation?
-
   /// The store that gives the value of each secret reference
   /// `keychain:<name>` of the configuration (ACPA-18, D101).
   ///
@@ -174,10 +160,9 @@ public actor RoutedACPAgent: Agent {
   nonisolated let secretStore: any SecretStore
 
   /// The settings of the agent in memory (ACPA-17, D100(f)): one settings
-  /// object for each level, over ``settingsFolders``,
-  /// ``transcriptLocation`` and ``secretStore``. The session start paths
-  /// read the merged settings of their `cwd` from it, and not from a fresh
-  /// load of the files.
+  /// object for each level, over ``settingsFolders`` and ``secretStore``.
+  /// The session start paths read the merged settings of their `cwd` from
+  /// it, and not from a fresh load of the files.
   nonisolated let settingsStore: SettingsStore
 
   /// The reader that each session of the agent gives its tools, to read the transcript of a session
@@ -295,7 +280,7 @@ public actor RoutedACPAgent: Agent {
   /// opens or resumes after this call. A factory runs once for each
   /// composition of a session, with the context of that session, so a tool
   /// can be bound to the folder of its session. The composition of the
-  /// agent (``ComposedAgent/compose(name:workingDirectory:home:mode:sandboxProbe:environment:modelSource:stubChunkGate:stubScript:transcriptLocation:secretStore:userDeviceTokens:huggingFaceTokenProvider:sessionToolFactories:reporting:)``)
+  /// agent (``ComposedAgent/compose(name:workingDirectory:home:mode:sandboxProbe:environment:modelSource:stubChunkGate:stubScript:secretStore:userDeviceTokens:huggingFaceTokenProvider:sessionToolFactories:reporting:)``)
   /// calls it for its host.
   ///
   /// - Parameter factories: The factories to append, in order.
@@ -488,9 +473,6 @@ public actor RoutedACPAgent: Agent {
   ///   - inlineSettleGrace: The settle period of each session that the
   ///     agent makes, in seconds. Defaults to
   ///     ``CatalogContext/defaultInlineSettleGrace``.
-  ///   - transcriptLocation: The transcript location that wins over every
-  ///     config layer in each session request, or `nil` (the default) to
-  ///     let the config files decide — see ``transcriptLocation``.
   ///   - secretStore: The store that gives the value of each secret
   ///     reference, or `nil` (the default) for the login Keychain under
   ///     the service `name` — see ``secretStore``.
@@ -518,7 +500,6 @@ public actor RoutedACPAgent: Agent {
     agentName: String? = nil,
     environment: [String: String] = ProcessInfo.processInfo.environment,
     inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
-    transcriptLocation: TranscriptLocation? = nil,
     secretStore: (any SecretStore)? = nil,
     userDeviceTokens: Set<String> = [],
     modelStorage: (any ModelStorageSource)? = nil
@@ -536,10 +517,9 @@ public actor RoutedACPAgent: Agent {
     self.settingsFolders = SettingsFolders(name: name, home: home, environment: environment)
     self.environment = environment
     self.inlineSettleGrace = inlineSettleGrace
-    self.transcriptLocation = transcriptLocation
     self.secretStore = secretStore ?? KeychainSecretStore.loginKeychain(for: name)
     self.settingsStore = SettingsStore(
-      settingsFolders: settingsFolders, transcriptLocation: transcriptLocation,
+      settingsFolders: settingsFolders,
       secretStore: self.secretStore)
     self.settingsEndpoint = try SettingsGraph(store: settingsStore)
     self.transcriptReader = RecordedSessionTranscriptReader(

@@ -22,7 +22,7 @@ import Testing
   /// defaults, and MCP is on with no configured servers.
   @Test func noToolsSectionEnablesEveryToolWithDefaults() throws {
     let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig(
-      "recording:\n  level: full\n")
+      "theme: system\n")
 
     let tools = loaded.configuration.tools
     #expect(tools.files == .enabled(Self.loadedFilesDefaults))
@@ -194,7 +194,7 @@ import Testing
   /// reads the skills and the agents of `swissarmyhammer/skills` on `main`.
   @Test func theDefaultSkillsMarketplaceIsTheMainBranchOfTheSkillsRepository() throws {
     let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig(
-      "recording:\n  level: full\n")
+      "theme: system\n")
 
     #expect(loaded.configuration.tools.skills == Self.defaultSkillsOptions)
   }
@@ -320,7 +320,7 @@ import Testing
   @Test(arguments: switchOnlySections)
   func noKeyEnablesTheSectionWithDefaults(section: SwitchOnlySection) throws {
     let loaded = try ConfigurationLoaderTests.Fixture().loadProjectConfig(
-      "recording:\n  level: full\n")
+      "theme: system\n")
 
     let read = section.section(loaded.configuration.tools)
     #expect(read == .enabled(SwitchOnlyToolOptions()))

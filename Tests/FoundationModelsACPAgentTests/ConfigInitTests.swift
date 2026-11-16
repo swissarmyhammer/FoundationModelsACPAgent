@@ -102,7 +102,7 @@ struct ConfigInitTests {
       return keys
     case .toolRoster:
       return ToolsConfiguration.knownKeys
-    case .scalar:
+    case .scalar, .retired:
       return []
     }
   }
@@ -207,7 +207,7 @@ struct ConfigInitTests {
     let text = try textOnDisk(
       at: ConfigCommandFixture.configURL(in: fixture.projectDirectory))
 
-    for (section, schema) in AgentConfiguration.sectionSchemas {
+    for (section, schema) in AgentConfiguration.sectionSchemas where schema != .retired {
       #expect(text.contains("\(section):"), "the section \(section) is not in the file")
       for key in Self.knownKeys(of: schema) {
         #expect(text.contains("\(key):"), "the key \(section).\(key) is not in the file")
@@ -225,7 +225,7 @@ struct ConfigInitTests {
       at: ConfigCommandFixture.configURL(in: fixture.projectDirectory)
     ).split(separator: "\n").map(String.init)
 
-    for section in AgentConfiguration.sectionSchemas.keys {
+    for (section, schema) in AgentConfiguration.sectionSchemas where schema != .retired {
       let index = try #require(
         lines.firstIndex { $0.hasPrefix("\(section):") },
         "the section \(section) is not in the file")

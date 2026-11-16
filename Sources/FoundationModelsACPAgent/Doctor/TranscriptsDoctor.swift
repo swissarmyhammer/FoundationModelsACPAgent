@@ -3,16 +3,15 @@ import FoundationModelsExtras
 import FoundationModelsRouter
 
 /// The `doctor` component of the transcripts (cli-plan.md §5.12, row 3):
-/// the resolved recording root exists, or the nearest directory above it
-/// can be written, so Router can create it.
+/// the recording root of the project exists, or the nearest directory
+/// above it can be written, so Router can create it.
 ///
-/// With `recording.level: off` nothing is ever written there, so the
-/// component reports ``isApplicable`` as `false` and stays silent rather
-/// than checking a directory no session will use.
+/// Each session records its full transcript in its project, at
+/// `<cwd>/.<name>/transcripts/` (D187). No setting moves the transcripts
+/// or turns them off, so the component always applies.
 ///
-/// The component takes the resolved configuration and the stack the load
-/// read. It reads no process environment, so a test drives it over a
-/// temporary stack.
+/// The component reads no process environment, so a test drives it over a
+/// temporary working directory.
 public struct TranscriptsDoctor: Doctorable {
   // MARK: - Constants
 
@@ -26,26 +25,12 @@ public struct TranscriptsDoctor: Doctorable {
   /// file already blocks.
   private static let directorySubject = "transcripts directory"
 
-  /// The dotted key path of the location a fix names.
-  private static let locationKey =
-    AgentConfiguration.CodingKeys.transcripts.stringValue
-    + LoadedConfiguration.keyPathSeparator
-    + TranscriptsConfiguration.CodingKeys.location.stringValue
-
   // MARK: - Stored state
-
-  /// The resolved configuration, which names the location and the
-  /// recording level.
-  private let configuration: AgentConfiguration
-
-  /// The layer stack, which roots a `home` location under its user layer.
-  private let stack: DotfolderStack
 
   /// The dotfolder name, which names the project dotfolder.
   private let name: DotfolderName
 
-  /// The session working directory, which roots a `project` location and
-  /// gives the slug of a `home` one.
+  /// The session working directory, which roots the recording root.
   private let workingDirectory: URL
 
   // MARK: - Doctorable
@@ -56,56 +41,27 @@ public struct TranscriptsDoctor: Doctorable {
   /// The group its findings belong to.
   public let doctorCategory = TranscriptsDoctor.category
 
-  /// Whether anything will be recorded at all.
-  public var isApplicable: Bool {
-    configuration.recording.level != .off
-  }
-
-  /// Makes the component over one resolved configuration and the stack
-  /// that produced it.
+  /// Makes the component over one project.
   ///
   /// - Parameters:
-  ///   - configuration: The resolved configuration.
-  ///   - stack: The layer stack, whose user layer roots a `home` location.
-  ///   - name: The dotfolder name of that stack.
+  ///   - name: The dotfolder name.
   ///   - workingDirectory: The session working directory.
-  public init(
-    configuration: AgentConfiguration, stack: DotfolderStack, name: DotfolderName,
-    workingDirectory: URL
-  ) {
-    self.configuration = configuration
-    self.stack = stack
+  public init(name: DotfolderName, workingDirectory: URL) {
     self.name = name
     self.workingDirectory = workingDirectory
   }
 
-  /// Reports the one finding of the resolved recording root.
+  /// Reports the one finding of the recording root.
   ///
   /// - Returns: That finding.
   public func runHealthChecks() async -> [HealthCheck] {
-    [Self.check(of: recordingRoot)]
-  }
-
-  // MARK: - The recording root
-
-  /// The directory Router records each session under.
-  private var recordingRoot: URL {
-    configuration.transcripts.location.recordingRoot(
-      workingDirectory: workingDirectory, name: name, userDirectory: userDirectory)
-  }
-
-  /// The user layer root, which a `home` location writes under.
-  ///
-  /// `DotfolderStack` always appends a user layer, so the working
-  /// directory is a fallback no stack the loader builds ever reaches.
-  private var userDirectory: URL {
-    stack.layers.last { $0.source == .user }?.root ?? workingDirectory
+    [Self.check(of: TranscriptRoot.recordingRoot(workingDirectory: workingDirectory, name: name))]
   }
 
   /// The finding of one recording root: it exists and can be written, or
   /// the nearest directory above it can be written, so Router creates it.
   ///
-  /// - Parameter root: The resolved recording root.
+  /// - Parameter root: The recording root.
   /// - Returns: A pass, or the failure that says why the directory cannot
   ///   be used.
   private static func check(of root: URL) -> HealthCheck {
@@ -115,12 +71,11 @@ public struct TranscriptsDoctor: Doctorable {
   }
 
   /// The fix of a recording root that cannot be used: make the directory
-  /// writable, or point the configuration key somewhere else.
+  /// writable.
   ///
   /// - Parameter directory: The directory that stands in the way.
   /// - Returns: The fix text.
   private static func fix(naming directory: URL) -> String {
-    "make \(directory.path) writable, or set \(locationKey) in "
-      + "\(ConfigurationLoader.configFileName) to a directory that can be written"
+    "make \(directory.path) writable, so each session can record its transcript in the project"
   }
 }

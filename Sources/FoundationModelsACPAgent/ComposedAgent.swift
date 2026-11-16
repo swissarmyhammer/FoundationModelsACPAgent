@@ -11,7 +11,7 @@ import HuggingFace
 ///
 /// The work has two steps, and only the first one is slow or can fail:
 ///
-/// 1. ``compose(name:workingDirectory:home:mode:sandboxProbe:environment:modelSource:stubChunkGate:stubScript:transcriptLocation:secretStore:userDeviceTokens:huggingFaceTokenProvider:sessionToolFactories:reporting:)``
+/// 1. ``compose(name:workingDirectory:home:mode:sandboxProbe:environment:modelSource:stubChunkGate:stubScript:secretStore:userDeviceTokens:huggingFaceTokenProvider:sessionToolFactories:reporting:)``
 ///    loads the configuration, builds the router and resolves the profile.
 ///    It is `async` and `throws`. A host calls it one time, before it opens
 ///    a connection.
@@ -155,15 +155,6 @@ public struct ComposedAgent: Sendable {
   ///     plays the entry of the script that its first prompt matches, and
   ///     echoes when no entry matches. The script has its own `gate` step,
   ///     thus `stubChunkGate` is not read when a script is given.
-  ///   - transcriptLocation: The transcript location that wins over the
-  ///     `transcripts.location` of every config layer, or `nil` (the
-  ///     default) to let the config files decide. A host that runs the
-  ///     agent in its own process sets it here, and needs no config file
-  ///     for it. The start-up load and each later session request use
-  ///     it: `session/new`, `session/resume`, `session/list` and
-  ///     `session/delete` (``RoutedACPAgent/transcriptLocation``). The
-  ///     override is not a config layer, so `config show` and
-  ///     `LoadedConfiguration.sources` do not show it.
   ///   - secretStore: The store that gives the value of each secret
   ///     reference `keychain:<name>` of the configuration, or `nil` (the
   ///     default) for the login Keychain under the service `name`. An app
@@ -221,7 +212,6 @@ public struct ComposedAgent: Sendable {
     modelSource: ModelSource = .live,
     stubChunkGate: String? = nil,
     stubScript: String? = nil,
-    transcriptLocation: TranscriptLocation? = nil,
     secretStore: (any SecretStore)? = nil,
     userDeviceTokens: Set<String> = [],
     huggingFaceTokenProvider: TokenProvider = .environment,
@@ -234,8 +224,7 @@ public struct ComposedAgent: Sendable {
     try mode.validate(probe: sandboxProbe)
     let configuration = try ConfigurationLoader(
       settingsFolders: SettingsFolders(name: name, home: home, environment: environment),
-      workingDirectory: workingDirectory, transcriptLocation: transcriptLocation,
-      secretStore: secretStore
+      workingDirectory: workingDirectory, secretStore: secretStore
     ).load().configuration
     let hooks = AgentHooks(dataDirectory: home.hooksDirectory)
     let agent = try await RoutedACPAgent(
@@ -257,7 +246,6 @@ public struct ComposedAgent: Sendable {
       openTestudoDownloadURL: openTestudoDownloadURL,
       agentName: agentName,
       environment: environment,
-      transcriptLocation: transcriptLocation,
       secretStore: secretStore,
       userDeviceTokens: userDeviceTokens,
       modelStorage: modelStorage

@@ -62,8 +62,6 @@ struct ToolCallingTests {
   /// network.
   private static var userConfigYAML: String {
     """
-    transcripts:
-      location: home
     tools:
       shell: true
       codeContext: false

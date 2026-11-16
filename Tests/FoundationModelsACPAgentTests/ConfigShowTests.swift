@@ -17,11 +17,10 @@ struct ConfigShowTests {
   private static let builtinAnnotation = "# builtin"
 
   /// A project `config.yaml` that sets one key.
-  private static let recordingOffYAML = "recording:\n  level: off\n"
+  private static let themeDarkYAML = "theme: dark\n"
 
-  /// The number of keys ``recordingOffYAML`` sets: the section key, and
-  /// the value key under it.
-  private static let recordingOffKeyCount = 2
+  /// The number of keys ``themeDarkYAML`` sets: the one top-level key.
+  private static let themeDarkKeyCount = 1
 
   /// A user `config.yaml` that turns the web tool off.
   private static let webOffYAML = "tools:\n  web: false\n"
@@ -162,8 +161,10 @@ struct ConfigShowTests {
     let report = try Self.report([], in: fixture)
 
     #expect(report.standardOutput.contains("profile:"))
-    #expect(report.standardOutput.contains("recording:"))
-    #expect(report.standardOutput.contains("level: \"full\""))
+    #expect(report.standardOutput.contains("compaction:"))
+    #expect(report.standardOutput.contains("theme: \"system\""))
+    #expect(!report.standardOutput.contains("recording:"))
+    #expect(!report.standardOutput.contains("transcripts:"))
     #expect(report.standardErrorLines.isEmpty)
   }
 
@@ -226,16 +227,16 @@ struct ConfigShowTests {
     #expect(!report.standardOutput.contains("  standard:"))
   }
 
-  /// The comment above the `profile:` section names the decision slot
-  /// with the other slots.
-  @Test func theProfileCommentNamesTheDecisionSlot() throws {
+  /// The comment above the `profile:` section names the preset and the
+  /// builtin profiles.
+  @Test func theProfileCommentNamesThePreset() throws {
     let fixture = ConfigCommandFixture(label: "ConfigShowTests-profile-comment")
 
     let report = try Self.report([], in: fixture)
 
     #expect(
       report.standardOutput.contains(
-        "# The model profile: the standard, flash, embedding and decision slots.\nprofile:"))
+        "# The model profile: preset selects a builtin profile (large, medium, small or tiny).\nprofile:"))
   }
 
   /// With no file in any layer, the report shows `tools.files.exclude`
@@ -269,12 +270,12 @@ struct ConfigShowTests {
   /// value, not the default.
   @Test func aProjectKeyShowsItsMergedValue() throws {
     let fixture = ConfigCommandFixture(label: "ConfigShowTests-merged")
-    try fixture.writeProjectConfig(Self.recordingOffYAML)
+    try fixture.writeProjectConfig(Self.themeDarkYAML)
 
     let report = try Self.report([], in: fixture)
 
-    #expect(report.standardOutput.contains("level: \"off\""))
-    #expect(!report.standardOutput.contains("level: \"full\""))
+    #expect(report.standardOutput.contains("theme: \"dark\""))
+    #expect(!report.standardOutput.contains("theme: \"system\""))
   }
 
   /// `--cwd` selects the project layer: two workspaces with different
@@ -282,16 +283,16 @@ struct ConfigShowTests {
   @Test func cwdSelectsTheProjectLayer() throws {
     let first = ConfigCommandFixture(label: "ConfigShowTests-cwd-first")
     let second = ConfigCommandFixture(label: "ConfigShowTests-cwd-second")
-    try first.writeProjectConfig(Self.recordingOffYAML)
+    try first.writeProjectConfig(Self.themeDarkYAML)
     try second.writeProjectConfig(Self.triggerYAML)
 
     let firstReport = try Self.report([], in: first)
     let secondReport = try Self.report([], in: second)
 
-    #expect(firstReport.standardOutput.contains("level: \"off\""))
+    #expect(firstReport.standardOutput.contains("theme: \"dark\""))
     #expect(!firstReport.standardOutput.contains("trigger: \(Self.configuredTrigger)"))
     #expect(secondReport.standardOutput.contains("trigger: \(Self.configuredTrigger)"))
-    #expect(secondReport.standardOutput.contains("level: \"full\""))
+    #expect(secondReport.standardOutput.contains("theme: \"system\""))
   }
 
   // MARK: - --source
@@ -312,17 +313,16 @@ struct ConfigShowTests {
   /// `project` too: the project layer introduced it.
   @Test func aProjectKeyReportsProjectAndTheOthersBuiltin() throws {
     let fixture = ConfigCommandFixture(label: "ConfigShowTests-source-project")
-    try fixture.writeProjectConfig(Self.recordingOffYAML)
+    try fixture.writeProjectConfig(Self.themeDarkYAML)
 
     let report = try Self.report(["--source"], in: fixture)
 
     let keyLines = Self.keyLines(in: report.standardOutput)
     let projectLines = keyLines.filter { $0.hasSuffix("# project") }
     let builtinLines = keyLines.filter { $0.hasSuffix(Self.builtinAnnotation) }
-    #expect(projectLines.count == Self.recordingOffKeyCount)
-    #expect(projectLines.contains { $0.hasPrefix("recording:") })
-    #expect(projectLines.contains { $0.contains("level: \"off\"") })
-    #expect(builtinLines.count == keyLines.count - Self.recordingOffKeyCount)
+    #expect(projectLines.count == Self.themeDarkKeyCount)
+    #expect(projectLines.contains { $0.hasPrefix("theme: \"dark\"") })
+    #expect(builtinLines.count == keyLines.count - Self.themeDarkKeyCount)
     #expect(!report.standardOutput.contains("# user"))
   }
 
@@ -330,14 +330,14 @@ struct ConfigShowTests {
   /// key reports `project`.
   @Test func aUserKeyReportsUserAndAnOverrideReportsProject() throws {
     let fixture = ConfigCommandFixture(label: "ConfigShowTests-source-user")
-    try fixture.writeUserConfig("recording:\n  level: off\ntranscripts:\n  location: home\n")
-    try fixture.writeProjectConfig("recording:\n  level: full\n")
+    try fixture.writeUserConfig("theme: dark\nkeymap: vim\n")
+    try fixture.writeProjectConfig("theme: light\n")
 
     let report = try Self.report(["--source"], in: fixture)
 
     let keyLines = Self.keyLines(in: report.standardOutput)
-    #expect(keyLines.contains { $0.contains("level: \"full\"") && $0.hasSuffix("# project") })
-    #expect(keyLines.contains { $0.contains("location: \"home\"") && $0.hasSuffix("# user") })
+    #expect(keyLines.contains { $0.contains("theme: \"light\"") && $0.hasSuffix("# project") })
+    #expect(keyLines.contains { $0.contains("keymap: \"vim\"") && $0.hasSuffix("# user") })
   }
 
   /// A user `tools.web: false` reports `user` for that key and for its
@@ -360,7 +360,7 @@ struct ConfigShowTests {
   /// Without `--source` no key carries an annotation.
   @Test func withoutSourceNoKeyIsAnnotated() throws {
     let fixture = ConfigCommandFixture(label: "ConfigShowTests-no-source")
-    try fixture.writeProjectConfig(Self.recordingOffYAML)
+    try fixture.writeProjectConfig(Self.themeDarkYAML)
 
     let report = try Self.report([], in: fixture)
 
@@ -398,15 +398,14 @@ struct ConfigShowTests {
   /// layer of every key under `sources`.
   @Test func jsonWithSourceHoldsTheTreeAndTheSources() throws {
     let fixture = ConfigCommandFixture(label: "ConfigShowTests-json-source")
-    try fixture.writeProjectConfig(Self.recordingOffYAML)
+    try fixture.writeProjectConfig(Self.themeDarkYAML)
 
     let report = try Self.report(["--json", "--source"], in: fixture)
 
     let document = try JSONDecoder().decode(
       AnnotatedDocument.self, from: Data(report.standardOutput.utf8))
-    #expect(document.configuration.recording.level == .off)
-    #expect(document.sources["recording.level"] == "project")
-    #expect(document.sources["recording"] == "project")
+    #expect(document.configuration.theme == .dark)
+    #expect(document.sources["theme"] == "project")
     #expect(document.sources["compaction.trigger"] == "builtin")
     #expect(document.sources["tools.shell"] == "builtin")
   }

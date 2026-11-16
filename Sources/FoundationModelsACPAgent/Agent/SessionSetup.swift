@@ -569,10 +569,8 @@ struct LoadedSessionContext {
       loader: loader,
       loaded: loaded,
       userLayerRoot: userLayerRoot,
-      transcriptRoot: loaded.configuration.transcripts.location.recordingRoot(
-        workingDirectory: workingDirectory,
-        name: settingsStore.settingsFolders.name,
-        userDirectory: userLayerRoot))
+      transcriptRoot: TranscriptRoot.recordingRoot(
+        workingDirectory: workingDirectory, name: settingsStore.settingsFolders.name))
   }
 }
 
@@ -998,8 +996,8 @@ extension RoutedACPAgent {
   /// place where this agent makes a `ConfigurationLoader`.
   ///
   /// Each request path that reads the configuration of a `cwd` calls it.
-  /// So each read gets the same ``settingsFolders`` and ``transcriptLocation``.
-  /// A new path that calls it cannot miss the code override or the home of the host.
+  /// So each read gets the same ``settingsFolders``.
+  /// A new path that calls it cannot miss the home of the host.
   /// The loader comes from ``settingsStore``, so the store and the loader read the same folders.
   ///
   /// - Parameter workingDirectory: The working directory whose project

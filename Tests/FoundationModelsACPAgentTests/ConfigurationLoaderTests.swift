@@ -109,13 +109,13 @@ import Testing
     #expect(try Fixture().makeLoader().builtinConfiguration == expected)
   }
 
-  /// The in-code default values: recording is `full` and
-  /// transcripts are project-local.
-  @Test func inCodeDefaultsRecordFullTranscriptsInTheProject() {
+  /// The in-code default values: the theme follows the system, the keymap
+  /// is the standard one, and the preset is the default profile.
+  @Test func inCodeDefaultsAreTheBuiltinValues() {
     let configuration = AgentConfiguration()
 
-    #expect(configuration.recording.level == .full)
-    #expect(configuration.transcripts.location == .project)
+    #expect(configuration.theme == .system)
+    #expect(configuration.keymap == .cua)
     #expect(configuration.profile.name == nil)
     #expect(configuration.profile.preset == ModelProfiles.defaultName)
     #expect(!configuration.profile.presetProfile.standard.isEmpty)
@@ -129,21 +129,18 @@ import Testing
     let fixture = Fixture()
     fixture.writeConfig(
       """
-      recording:
-        level: off
-      transcripts:
-        location: home
+      theme: dark
+      keymap: vim
       """, in: fixture.userDirectory)
     fixture.writeConfig(
       """
-      recording:
-        level: full
+      theme: light
       """, in: fixture.projectDirectory)
 
     let loaded = try fixture.makeLoader().load()
 
-    #expect(loaded.configuration.recording.level == .full)
-    #expect(loaded.configuration.transcripts.location == .home)
+    #expect(loaded.configuration.theme == .light)
+    #expect(loaded.configuration.keymap == .vim)
     #expect(loaded.warnings.isEmpty)
   }
 
@@ -521,22 +518,21 @@ import Testing
     let fixture = Fixture()
     fixture.writeConfig(
       """
-      recording:
-        level: off
-      transcripts:
-        location: home
+      compaction:
+        trigger: 0.5
+        target: 0.3
       """, in: fixture.userDirectory)
     fixture.writeConfig(
       """
-      recording:
-        level: full
+      compaction:
+        trigger: 0.6
       """, in: fixture.projectDirectory)
 
     let loaded = try fixture.makeLoader().load()
 
-    #expect(loaded.sources["recording.level"] == .project)
-    #expect(loaded.sources["transcripts.location"] == .user)
-    #expect(loaded.sources["compaction.trigger"] == nil)
+    #expect(loaded.sources["compaction.trigger"] == .project)
+    #expect(loaded.sources["compaction.target"] == .user)
+    #expect(loaded.sources["compaction.toolOutputLimit"] == nil)
     #expect(loaded.sources["profile"] == nil)
   }
 
@@ -568,16 +564,16 @@ import Testing
   @Test func differentWorkingDirectoriesSeeDifferentProjectLayers() throws {
     let first = Fixture()
     let second = Fixture()
-    first.writeConfig("recording:\n  level: off\n", in: first.projectDirectory)
-    second.writeConfig("transcripts:\n  location: home\n", in: second.projectDirectory)
+    first.writeConfig("theme: dark\n", in: first.projectDirectory)
+    second.writeConfig("keymap: vim\n", in: second.projectDirectory)
 
     let firstLoaded = try first.makeLoader().load()
     let secondLoaded = try second.makeLoader().load()
 
-    #expect(firstLoaded.configuration.recording.level == .off)
-    #expect(firstLoaded.configuration.transcripts.location == .project)
-    #expect(secondLoaded.configuration.recording.level == .full)
-    #expect(secondLoaded.configuration.transcripts.location == .home)
+    #expect(firstLoaded.configuration.theme == .dark)
+    #expect(firstLoaded.configuration.keymap == .cua)
+    #expect(secondLoaded.configuration.theme == .system)
+    #expect(secondLoaded.configuration.keymap == .vim)
   }
 
   // MARK: - The user layer location
@@ -606,14 +602,14 @@ import Testing
     let fixture = Fixture()
     let xdgHome = fixture.root.appendingPathComponent("xdg", isDirectory: true)
     let xdgUserDirectory = xdgHome.appendingPathComponent(Self.agentName, isDirectory: true)
-    fixture.writeConfig("recording:\n  level: off\n", in: xdgUserDirectory)
+    fixture.writeConfig("theme: dark\n", in: xdgUserDirectory)
     let loader = try Self.makeXDGLoader(
       over: fixture, environment: ["XDG_CONFIG_HOME": xdgHome.path])
 
     let loaded = try loader.load()
 
     #expect(Self.userLayerPath(of: loader) == xdgUserDirectory.path)
-    #expect(loaded.configuration.recording.level == .off)
+    #expect(loaded.configuration.theme == .dark)
   }
 
   /// With the XDG home, a relative `$XDG_CONFIG_HOME` is invalid and
@@ -644,20 +640,33 @@ import Testing
 
   // MARK: - Schema errors and warnings
 
-  /// `recording.level` accepts only `off` and `full`. Any other value is an
-  /// error whose message names the two valid ones.
-  @Test func metadataRecordingLevelIsRejectedNamingTheValidLevels() throws {
+  /// An old layer with `recording.level` or `transcripts.location` loads
+  /// (D187): each key gives a warning, and no setting moves or turns off
+  /// the transcripts.
+  @Test func anOldLayerWithTranscriptKeysLoadsWithAWarning() throws {
     let fixture = Fixture()
-    fixture.writeConfig("recording:\n  level: metadata\n", in: fixture.projectDirectory)
 
-    let error = #expect(throws: (any Error).self) {
-      try fixture.makeLoader().load()
-    }
+    let loaded = try fixture.loadProjectConfig(
+      """
+      recording:
+        level: off
+      transcripts:
+        location: home
+      """)
 
-    let message = String(describing: error)
-    #expect(message.contains("metadata"))
-    #expect(message.contains("off"))
-    #expect(message.contains("full"))
+    #expect(
+      loaded.warnings == [
+        .retiredKey(section: "recording", key: "level"),
+        .retiredKey(section: "transcripts", key: "location"),
+      ])
+    #expect(loaded.configuration == (try Fixture().makeLoader().load().configuration))
+  }
+
+  /// An old section whose body is not a mapping also loads with a warning.
+  @Test func anOldScalarSectionLoadsWithAWarning() throws {
+    let loaded = try Fixture().loadProjectConfig("recording: off\n")
+
+    #expect(loaded.warnings == [.retiredSection(name: "recording")])
   }
 
   /// A `permissions:` section is unknown at the top level: it gives a
@@ -813,9 +822,9 @@ import Testing
   /// section and the key.
   @Test func unknownKeyInsideKnownSectionIsAnError() throws {
     let fixture = Fixture()
-    fixture.writeConfig("recording:\n  levle: full\n", in: fixture.userDirectory)
+    fixture.writeConfig("compaction:\n  triger: 0.5\n", in: fixture.userDirectory)
 
-    #expect(throws: ConfigurationError.unknownKey(section: "recording", key: "levle")) {
+    #expect(throws: ConfigurationError.unknownKey(section: "compaction", key: "triger")) {
       try fixture.makeLoader().load()
     }
   }
@@ -846,34 +855,6 @@ import Testing
   }
 
   // MARK: - Section values
-
-  /// `transcripts.location` reads `project`, `home`, or an absolute path.
-  @Test func transcriptLocationReadsTheThreeForms() throws {
-    let fixture = Fixture()
-    fixture.writeConfig(
-      "transcripts:\n  location: /var/transcripts\n", in: fixture.projectDirectory)
-
-    let loaded = try fixture.makeLoader().load()
-
-    #expect(
-      loaded.configuration.transcripts.location
-        == .path(URL(fileURLWithPath: "/var/transcripts", isDirectory: true)))
-  }
-
-  /// A relative `transcripts.location` is none of the three forms.
-  @Test func relativeTranscriptLocationIsRejected() throws {
-    let fixture = Fixture()
-    fixture.writeConfig("transcripts:\n  location: nearby\n", in: fixture.projectDirectory)
-
-    let error = #expect(throws: (any Error).self) {
-      try fixture.makeLoader().load()
-    }
-
-    let message = String(describing: error)
-    #expect(message.contains("nearby"))
-    #expect(message.contains("project"))
-    #expect(message.contains("home"))
-  }
 
   /// The `profile` and `compaction` sections decode their keys, and a key
   /// that is not set keeps its default.

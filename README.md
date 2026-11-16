@@ -793,14 +793,10 @@ code gives the local detail.
   devices write. `session/list` reads the `index.md` of each session folder,
   and lists a session after its first prompt. The projects folder of the
   home holds one file for each project that ran a session, and the
-  cross-project `session/list` reads it. The `transcripts.location` key of
-  `config.yaml` moves the root: `project` (the default), `home`, or an
-  absolute path. A host that runs the agent in its own process can set the
-  location in code, with no config file:
-  `ComposedAgent.compose(..., transcriptLocation: .path(directory))`. That
-  value wins over every config layer, in `session/new`, `session/resume`,
-  `session/list` and `session/delete`. It is not a config layer, so
-  `config show` does not show it.
+  cross-project `session/list` reads it. No setting moves the transcripts or
+  turns them off, so the agent always keeps the context of a project. An old
+  `config.yaml` with `transcripts.location` or `recording.level` loads with a
+  warning, and the agent ignores the key.
 - **No redaction.** The agent records each transcript verbatim. Redaction
   damages the record, and a partial redaction gives false confidence. To
   record less, set `recording.level: off` in the project layer. There is no

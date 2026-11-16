@@ -38,12 +38,6 @@ public struct AgentConfiguration: Codable, Equatable, Sendable {
   /// section codec, plus the `mcp:` server list.
   public var tools = ToolsConfiguration()
 
-  /// How much of each session is recorded.
-  public var recording = RecordingConfiguration()
-
-  /// Where transcripts are written.
-  public var transcripts = TranscriptsConfiguration()
-
   /// The thresholds of the self-folding session's token budget.
   public var compaction = CompactionConfiguration()
 
@@ -64,8 +58,16 @@ public struct AgentConfiguration: Codable, Equatable, Sendable {
 
   /// The YAML spelling of each top-level section.
   public enum CodingKeys: String, CodingKey, CaseIterable {
-    case profile, tools, recording, transcripts, compaction, repetition, theme, keymap, fonts
+    case profile, tools, compaction, repetition, theme, keymap, fonts
   }
+
+  /// The top-level sections that the configuration had before D187:
+  /// `recording` (`level`) and `transcripts` (`location`). Each session
+  /// records its full transcript in its project, at
+  /// `<cwd>/.<name>/transcripts/`, so no key moves or turns off the
+  /// transcripts. A layer that has one of these sections loads: each key
+  /// gives a warning, and the agent ignores it.
+  public static let retiredSections: Set<String> = ["recording", "transcripts"]
 
   /// The builtin configuration: every section at its default.
   public init() {}
@@ -76,12 +78,6 @@ public struct AgentConfiguration: Codable, Equatable, Sendable {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     profile = try container.decodeIfPresent(ProfileConfiguration.self, forKey: .profile) ?? profile
     tools = try container.decodeIfPresent(ToolsConfiguration.self, forKey: .tools) ?? tools
-    recording =
-      try container.decodeIfPresent(RecordingConfiguration.self, forKey: .recording)
-      ?? recording
-    transcripts =
-      try container.decodeIfPresent(TranscriptsConfiguration.self, forKey: .transcripts)
-      ?? transcripts
     compaction =
       try container.decodeIfPresent(CompactionConfiguration.self, forKey: .compaction)
       ?? compaction
@@ -107,6 +103,10 @@ extension AgentConfiguration {
     case toolRoster
     /// One value and no keys. The decode of the section checks the value.
     case scalar
+    /// A section that the configuration no longer has
+    /// (``AgentConfiguration/retiredSections``). Each key gives a warning,
+    /// and the decode ignores the section.
+    case retired
   }
 
   /// The schema of every top-level section, by its YAML spelling. A
@@ -116,8 +116,8 @@ extension AgentConfiguration {
     CodingKeys.profile.stringValue: .checkedWithRetired(
       known: ProfileConfiguration.knownKeys, retired: ProfileConfiguration.retiredKeys),
     CodingKeys.tools.stringValue: .toolRoster,
-    CodingKeys.recording.stringValue: .checked(RecordingConfiguration.knownKeys),
-    CodingKeys.transcripts.stringValue: .checked(TranscriptsConfiguration.knownKeys),
+    "recording": .retired,
+    "transcripts": .retired,
     CodingKeys.compaction.stringValue: .checked(CompactionConfiguration.knownKeys),
     CodingKeys.repetition.stringValue: .checked(RepetitionConfiguration.knownKeys),
     CodingKeys.theme.stringValue: .scalar,
@@ -374,123 +374,6 @@ extension JSONEncoder {
     let encoder = JSONEncoder()
     encoder.outputFormatting = .sortedKeys
     return encoder
-  }
-}
-
-// MARK: - recording
-
-/// The `recording:` section: how much of each session Router records.
-public struct RecordingConfiguration: Codable, Equatable, Sendable, KeyCheckedSection {
-  /// The spelling YAML gives the word `off` once it resolves it as a
-  /// boolean: `off`, `no` and `false` are one YAML 1.1 value, and the
-  /// merged tree hands that value on as this string.
-  private static let yamlBooleanOff = "false"
-
-  /// The recording level. `full` by default, because the full transcript
-  /// is the valuable record. There is no level between `full` and `off`.
-  public var level = RecordingLevel.full
-
-  /// The YAML spelling of each key.
-  public enum CodingKeys: String, CodingKey, CaseIterable {
-    case level
-  }
-
-  /// The default: record everything.
-  public init() {}
-
-  /// Decodes `level`, accepting exactly Router's two levels, `off` and
-  /// `full`. Any other value is an error that names both.
-  public init(from decoder: any Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    guard let rawLevel = try container.decodeIfPresent(String.self, forKey: .level) else {
-      return
-    }
-    if rawLevel == Self.yamlBooleanOff {
-      level = .off
-      return
-    }
-    guard let parsedLevel = RecordingLevel(rawValue: rawLevel) else {
-      let validLevels = RecordingLevel.allCases.map(\.rawValue).joined(separator: ", ")
-      throw DecodingError.dataCorruptedError(
-        forKey: .level, in: container,
-        debugDescription:
-          "recording.level must be one of: \(validLevels) (got \"\(rawLevel)\")")
-    }
-    level = parsedLevel
-  }
-}
-
-// MARK: - transcripts
-
-/// Where a session's transcripts are written.
-public enum TranscriptLocation: Equatable, Sendable, Codable {
-  /// `<cwd>/.<name>/transcripts/`, the project dotfolder. The default.
-  case project
-  /// A shared root under the home directory, with one slug per project.
-  case home
-  /// An absolute directory.
-  case path(URL)
-
-  /// The YAML word for `project`.
-  private static let projectWord = "project"
-
-  /// The YAML word for `home`.
-  private static let homeWord = "home"
-
-  /// The prefix that marks an absolute path.
-  private static let absolutePathPrefix = "/"
-
-  /// Decodes `project`, `home`, or an absolute path from one string.
-  public init(from decoder: any Decoder) throws {
-    let container = try decoder.singleValueContainer()
-    let word = try container.decode(String.self)
-    switch word {
-    case Self.projectWord:
-      self = .project
-    case Self.homeWord:
-      self = .home
-    case _ where word.hasPrefix(Self.absolutePathPrefix):
-      self = .path(URL(fileURLWithPath: word, isDirectory: true))
-    default:
-      throw DecodingError.dataCorruptedError(
-        in: container,
-        debugDescription:
-          "transcripts.location must be \(Self.projectWord), \(Self.homeWord), "
-          + "or an absolute path (got \"\(word)\")")
-    }
-  }
-
-  /// Encodes the same one string `init(from:)` reads.
-  public func encode(to encoder: any Encoder) throws {
-    var container = encoder.singleValueContainer()
-    switch self {
-    case .project:
-      try container.encode(Self.projectWord)
-    case .home:
-      try container.encode(Self.homeWord)
-    case .path(let url):
-      try container.encode(url.path)
-    }
-  }
-}
-
-/// The `transcripts:` section.
-public struct TranscriptsConfiguration: Codable, Equatable, Sendable, KeyCheckedSection {
-  /// Where transcripts are written. Project-local by default.
-  public var location = TranscriptLocation.project
-
-  /// The YAML spelling of each key.
-  public enum CodingKeys: String, CodingKey, CaseIterable {
-    case location
-  }
-
-  /// The default: project-local transcripts.
-  public init() {}
-
-  /// Decodes `location` when present and keeps the default otherwise.
-  public init(from decoder: any Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    location = try container.decodeIfPresent(TranscriptLocation.self, forKey: .location) ?? location
   }
 }
 

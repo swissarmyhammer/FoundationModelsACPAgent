@@ -354,7 +354,7 @@ import Testing
 
     #expect(result.text.contains("profile:"))
     #expect(result.text.contains("tools:"))
-    #expect(result.text.contains("recording:"))
+    #expect(result.text.contains("compaction:"))
     #expect(result.text.contains("#"))
   }
 
@@ -363,7 +363,7 @@ import Testing
   /// configuration the session was composed from.
   @Test
   func configExportProjectRoundTripsThroughTheLoader() async throws {
-    let seededConfig = "recording:\n  level: off\n"
+    let seededConfig = "theme: dark\n"
     let fixture = try await Fixture.make(
       label: "BuiltinCommandsTests-export", projectConfigYAML: seededConfig)
 
@@ -385,7 +385,7 @@ import Testing
     ).load()
     await fixture.close()
     #expect(reloaded.configuration == entry.configuration)
-    #expect(reloaded.configuration.recording.level == .off)
+    #expect(reloaded.configuration.theme == .dark)
   }
 
   /// `/config export project` writes no API key value: the file holds

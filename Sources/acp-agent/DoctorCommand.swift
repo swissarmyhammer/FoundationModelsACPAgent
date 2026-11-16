@@ -144,9 +144,7 @@ extension AcpAgentCommand {
           memoryBytes: memoryBytes,
           freeDiskBytes: freeDiskBytes ?? MachineFigures.freeDiskBytes(at: home.modelCacheDirectory)
         ),
-        TranscriptsDoctor(
-          configuration: outcome.configuration, stack: loader.stack,
-          name: loader.name, workingDirectory: workingDirectory),
+        TranscriptsDoctor(name: loader.name, workingDirectory: workingDirectory),
         RuntimeDoctor(workingDirectory: workingDirectory, settingsFolders: loader.settingsFolders),
       ]
     }

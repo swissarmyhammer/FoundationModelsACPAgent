@@ -468,7 +468,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     let transcriptsRoot =
       cwd
       .appendingPathComponent(".\(AgentClientHarness.dotfolderName)", isDirectory: true)
-      .appendingPathComponent(TranscriptLocation.transcriptsDirectoryName, isDirectory: true)
+      .appendingPathComponent(TranscriptRoot.transcriptsDirectoryName, isDirectory: true)
     return try RecordedSessionIndexFile.slices(under: transcriptsRoot, as: RecordSettleSlice.self)
       .map { $0.configuration?.inlineSettleGrace }
   }

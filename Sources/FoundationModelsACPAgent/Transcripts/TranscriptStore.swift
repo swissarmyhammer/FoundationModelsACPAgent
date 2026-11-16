@@ -70,33 +70,22 @@ public struct TranscriptStore: Sendable {
   /// at, which keeps the millisecond dates of the records lossless.
   private static let millisecondsPerSecond: Double = 1_000
 
-  /// Where a project's recording root resolves.
-  public let location: TranscriptLocation
-
   /// The validated dotfolder name; the project layer is `.<name>`.
   public let name: DotfolderName
-
-  /// The user layer root, `~/.config/<name>/` in production; tests
-  /// inject a value so they never touch the real home directory.
-  public let userDirectory: URL
 
   /// The folder of the project store, one file for each project
   /// (``AgentHome/projectsDirectory``).
   public let projectsDirectory: URL
 
-  /// Makes a store over the location inputs and the projects folder.
+  /// Makes a store over the dotfolder name and the projects folder. The
+  /// recording root of each project is in the project
+  /// (``TranscriptRoot/recordingRoot(workingDirectory:name:)``).
   ///
   /// - Parameters:
-  ///   - location: Where recording roots resolve.
   ///   - name: The validated dotfolder name.
-  ///   - userDirectory: The user layer root.
   ///   - projectsDirectory: The folder of the project store.
-  public init(
-    location: TranscriptLocation, name: DotfolderName, userDirectory: URL, projectsDirectory: URL
-  ) {
-    self.location = location
+  public init(name: DotfolderName, projectsDirectory: URL) {
     self.name = name
-    self.userDirectory = userDirectory
     self.projectsDirectory = projectsDirectory
   }
 
@@ -233,8 +222,7 @@ public struct TranscriptStore: Sendable {
 
   /// The project's resolved recording root.
   private func recordingRoot(inProject workingDirectory: URL) -> URL {
-    location.recordingRoot(
-      workingDirectory: workingDirectory, name: name, userDirectory: userDirectory)
+    TranscriptRoot.recordingRoot(workingDirectory: workingDirectory, name: name)
   }
 
   /// Every recorded event under the project's root, in `(ts, seq)`

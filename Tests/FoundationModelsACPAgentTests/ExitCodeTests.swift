@@ -38,7 +38,7 @@ import Testing
 
   /// A project `config.yaml` whose key no section declares, so the
   /// start-up load fails and the run never reaches the wire.
-  private static let misspelledKeyDocument = "recording:\n  levle: full\n"
+  private static let misspelledKeyDocument = "compaction:\n  triger: 0.5\n"
 
   /// The message of the usage error the ArgumentParser row throws.
   private static let usageErrorMessage = "--cwd cannot be combined with --resume"
