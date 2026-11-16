@@ -225,7 +225,7 @@ public struct ComposedAgent: Sendable {
     secretStore: (any SecretStore)? = nil,
     userDeviceTokens: Set<String> = [],
     huggingFaceTokenProvider: TokenProvider = .environment,
-    modelStorage: (any ModelStorageReading)? = nil,
+    modelStorage: (any ModelStorageSource)? = nil,
     sessionToolFactories: [SessionToolFactory] = [],
     reporting progress: ResolutionProgress? = nil
   ) async throws -> ComposedAgent {
@@ -419,11 +419,15 @@ public struct ComposedAgent: Sendable {
   ///     or `HF_HOME` of the process names a different folder.
   ///   - tokenProvider: The provider of the Hugging Face token of the host,
   ///     which each download sends.
+  ///   - offline: `true` to send no Hub request, `false` to ask the Hub for
+  ///     the files that the cache does not have, or `nil` (the default) to
+  ///     read `HF_HUB_OFFLINE`. A unit test gives `true`.
   /// - Returns: The live loader over that cache.
-  static func makeLiveModelLoader(modelCacheDirectory: URL, tokenProvider: TokenProvider)
-    -> LiveModelLoader
-  {
-    LiveModelLoader(cacheDirectory: modelCacheDirectory, tokenProvider: tokenProvider)
+  static func makeLiveModelLoader(
+    modelCacheDirectory: URL, tokenProvider: TokenProvider, offline: Bool? = nil
+  ) -> LiveModelLoader {
+    LiveModelLoader(
+      cacheDirectory: modelCacheDirectory, tokenProvider: tokenProvider, offline: offline)
   }
 
   /// Makes the loader of the stub path.

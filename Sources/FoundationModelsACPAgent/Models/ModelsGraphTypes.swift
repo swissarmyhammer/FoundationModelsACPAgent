@@ -56,7 +56,7 @@ enum ModelsGraphDiskState: String, Codable, CaseIterable, Sendable {
   /// The schema value of a state.
   ///
   /// - Parameter state: The state.
-  init(_ state: ModelsDiskState) {
+  init(_ state: ModelDiskState) {
     switch state {
     case .complete: self = .complete
     case .partial: self = .partial

@@ -521,7 +521,7 @@ public actor RoutedACPAgent: Agent {
     transcriptLocation: TranscriptLocation? = nil,
     secretStore: (any SecretStore)? = nil,
     userDeviceTokens: Set<String> = [],
-    modelStorage: (any ModelStorageReading)? = nil
+    modelStorage: (any ModelStorageSource)? = nil
   ) async throws {
     try mode.validate(probe: sandboxProbe)
     self.toolMode = mode

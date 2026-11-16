@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModelsACPAgent
 import FoundationModelsExtras
+import FoundationModelsRouter
 
 /// The download URL of OpenTestudo that the stub host gives in the cases of
 /// the `sandboxed` mode. The suites that test the OpenTestudo section share
@@ -40,7 +41,9 @@ public let openTestudoDownloadURL = URL(string: "https://example.test/opentestud
 ///   - agentName: The name of the agent to give to the composition, or
 ///     `nil` (the default) for none.
 ///   - modelStorage: The reader of the model storage of the `models`
-///     endpoint, or `nil` (the default) for the real `ModelStorage`.
+///     endpoint, or `nil` (the default) for a `ModelStorage` over the model
+///     cache of the home in offline mode: it reads only the disk, and sends
+///     no Hub request.
 /// - Returns: The composition.
 /// - Throws: `DotfolderNameError` when `name` is refused, the write error of
 ///   the defaults layer, or whatever the composition throws.
@@ -56,13 +59,14 @@ public func composeStubAgent(
   sandboxProbe: SandboxProbe = .live,
   openTestudoDownloadURL: URL? = nil,
   agentName: String? = nil,
-  modelStorage: (any ModelStorageReading)? = nil
+  modelStorage: (any ModelStorageSource)? = nil
 ) async throws -> ComposedAgent {
   let workspace = workspace ?? makeResolvedDirectory(label: "\(label)-repo")
+  let home = home ?? AgentHomeFixture.make(label: label)
   return try await ComposedAgent.compose(
     name: DotfolderName(name),
     workingDirectory: workspace,
-    home: home ?? AgentHomeFixture.make(label: label),
+    home: home,
     mode: mode,
     sandboxProbe: sandboxProbe,
     openTestudoDownloadURL: openTestudoDownloadURL,
@@ -71,5 +75,14 @@ public func composeStubAgent(
     modelSource: .stub,
     secretStore: secretStore,
     userDeviceTokens: userDeviceTokens,
-    modelStorage: modelStorage)
+    modelStorage: modelStorage ?? offlineModelStorage(of: home))
+}
+
+/// The model storage of a test: a `ModelStorage` over the model cache of
+/// `home` in offline mode. It reads only the disk, and sends no Hub request.
+///
+/// - Parameter home: The home of the agent.
+/// - Returns: The storage.
+public func offlineModelStorage(of home: AgentHome) -> ModelStorage {
+  ModelStorage(cacheDirectory: home.modelCacheDirectory, offline: true)
 }

@@ -34,13 +34,15 @@ import Testing
     let synced = makeResolvedDirectory(label: "\(Self.label)-synced")
     let projects = makeResolvedDirectory(label: "\(Self.label)-projects")
     let workspace = makeResolvedDirectory(label: "\(Self.label)-repo")
+    let home = AgentHomeFixture.make(label: Self.label, synced: synced, projects: projects)
     let composed = try await ComposedAgent.compose(
       name: DotfolderName(Self.dotfolderName),
       workingDirectory: workspace,
-      home: AgentHomeFixture.make(label: Self.label, synced: synced, projects: projects),
+      home: home,
       mode: .open,
       environment: try StubAgentDefaultsLayer.makeEnvironment(name: Self.dotfolderName, base: [:]),
-      modelSource: .stub)
+      modelSource: .stub,
+      modelStorage: offlineModelStorage(of: home))
     let harness = await AgentClientHarness.makeRecording(agent: composed.agent)
     _ = try await harness.client.initialize(AgentClientHarness.makeInitializeRequest())
 

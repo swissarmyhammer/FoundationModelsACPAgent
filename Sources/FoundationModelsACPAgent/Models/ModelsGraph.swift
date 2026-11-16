@@ -80,7 +80,7 @@ public final class ModelsGraph: GraphQLEndpoint, Sendable {
   ///   - diskPollInterval: The time between two reads of the disk while a
   ///     subscriber is open.
   public init(
-    store: SettingsStore, storage: any ModelStorageReading,
+    store: SettingsStore, storage: any ModelStorageSource,
     launched: ProfileConfiguration? = nil, active: [ModelSlot: ModelRef] = [:],
     diskPollInterval: Duration = ModelsGraph.defaultDiskPollInterval
   ) {
@@ -282,8 +282,8 @@ struct ModelsGraphAPI: API {
           Argument("slot", at: \.slot).description("The slot.")
         }
         .description(
-          "The models that the slot can take: its candidates in the settings, then the builtin candidates of "
-            + "the slot. To select one, give [configValue] to the settings endpoint at the key path "
+          "The models that the slot can take: its candidates in the settings, then the builtin choices of "
+            + "the router for the slot. To select one, give [configValue] to the settings endpoint at the key path "
             + "[\"profile\", \"<slot>\"].")
         Field("cursor", at: ModelsGraphResolver.cursor)
           .description("The cursor of the newest change. Read the models, then subscribe after this cursor.")

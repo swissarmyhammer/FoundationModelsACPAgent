@@ -98,13 +98,15 @@ import Testing
         in: workspace.appendingPathComponent(".\(dotfolderName)", isDirectory: true))
     }
     let environment = try StubAgentDefaultsLayer.makeEnvironment(name: dotfolderName, base: [:])
+    let home = AgentHomeFixture.make(label: label)
     let composed = try await ComposedAgent.compose(
       name: DotfolderName(dotfolderName),
       workingDirectory: workspace,
-      home: AgentHomeFixture.make(label: label), mode: .open,
+      home: home, mode: .open,
       environment: environment,
       modelSource: .stub,
-      transcriptLocation: transcriptLocation)
+      transcriptLocation: transcriptLocation,
+      modelStorage: offlineModelStorage(of: home))
     let harness = await AgentClientHarness.makeRecording(agent: composed.agent)
     _ = try await harness.client.initialize(AgentClientHarness.makeInitializeRequest())
     return ComposedFixture(composed: composed, harness: harness, workspace: workspace)

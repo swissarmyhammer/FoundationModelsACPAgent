@@ -16,7 +16,7 @@ import Testing
   // MARK: - Fixture
 
   /// A storage reader with fixed answers, which makes no network request.
-  final class FakeStorage: ModelStorageReading, Sendable {
+  final class FakeStorage: ModelStorageSource, Sendable {
     /// The answer for each reference, by its text form. A reference with no
     /// answer throws ``Missing``.
     private let answers: Mutex<[String: ModelStorageInfo]>
@@ -166,6 +166,25 @@ import Testing
     #expect(rows[1]["state"] as? String == "COMPLETE")
   }
 
+  /// The state follows the rule of Router: MISSING only when the model and
+  /// its drafter are both missing, else PARTIAL when one part is not
+  /// complete.
+  @Test func missingNeedsTheModelAndTheDrafterMissing() async throws {
+    let fixture = try SettingsGraphFixture(label: "models-missing")
+    let storage = Self.builtinStorage()
+    storage.set(Self.info(Self.standard, total: 1_000, present: 0, state: .missing))
+    storage.set(
+      Self.info(
+        Self.standardDrafter, total: 200, present: 0, state: .partial(presentBytes: 0, totalBytes: 200)))
+    let partial = try await Self.rows(Self.graph(fixture, storage: storage))
+
+    storage.set(Self.info(Self.standardDrafter, total: 200, present: 0, state: .missing))
+    let missing = try await Self.rows(Self.graph(fixture, storage: storage))
+
+    #expect(partial[0]["state"] as? String == "PARTIAL")
+    #expect(missing[0]["state"] as? String == "MISSING")
+  }
+
   /// A model whose read fails has no size, the state MISSING, and the
   /// error text.
   @Test func aFailedReadGivesNoSizeAndTheError() async throws {
@@ -243,7 +262,7 @@ import Testing
   // MARK: - choices
 
   /// The choices of a slot are its candidates in the settings, then the
-  /// builtin candidates, with no copy.
+  /// builtin choices of Router (`ModelChoices.builtin(for:)`), with no copy.
   @Test func theChoicesAreTheCandidatesThenTheBuiltins() async throws {
     let fixture = try SettingsGraphFixture(label: "models-choices")
     let other = ModelRef("org/other-flash")
@@ -256,7 +275,15 @@ import Testing
 
     #expect(reply.codes.isEmpty, "\(reply.text)")
     let choices = try #require(reply.data?["choices"] as? [[String: Any]])
-    #expect(choices.map { $0["repo"] as? String } == ["org/other-flash", Self.flash.repo])
+    // The text form names no drafter. Router keeps a reference with a
+    // drafter and the same reference with no drafter as two choices.
+    var seen = Set<ModelRef>()
+    let named = ModelRef(Self.flash.stringValue)
+    let expected = ([other, named] + ModelChoices.builtin(for: .flash)).filter {
+      seen.insert($0).inserted
+    }
+    #expect(choices.map { $0["repo"] as? String } == expected.map(\.repo))
+    #expect(choices.map { $0["repo"] as? String }.contains("mlx-community/Qwen3-14B-4bit"))
     #expect(choices[1]["state"] as? String == "COMPLETE")
   }
 

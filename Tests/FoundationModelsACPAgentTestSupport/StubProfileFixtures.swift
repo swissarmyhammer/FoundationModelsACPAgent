@@ -116,7 +116,8 @@ public func makeStubAgent(
     environment: StubAgentDefaultsLayer.makeEnvironment(name: name, base: environment),
     inlineSettleGrace: inlineSettleGrace,
     secretStore: secretStore,
-    userDeviceTokens: userDeviceTokens)
+    userDeviceTokens: userDeviceTokens,
+    modelStorage: offlineModelStorage(of: home))
 }
 
 // MARK: - The defaults layer of a stub agent
