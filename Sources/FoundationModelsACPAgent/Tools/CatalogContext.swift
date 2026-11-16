@@ -144,6 +144,12 @@ public struct CatalogContext: Sendable {
   /// turns on or off one server of `tools.mcp` at a time.
   public let mcpServerRegistry: MCPServerRegistry?
 
+  /// The marketplace registry of the agent and the list of the session
+  /// after a change of it, or `nil` for marketplace layers that do not
+  /// follow a registry (D190). With a mount, the skills of the session
+  /// follow each change of the registry (``SessionMarketplaces``).
+  public let marketplaceMount: MarketplaceMount?
+
   /// Makes a catalog context.
   ///
   /// - Parameters:
@@ -181,6 +187,8 @@ public struct CatalogContext: Sendable {
   ///     default) for no `models` tool (``modelsEndpoint``).
   ///   - mcpServerRegistry: The MCP server registry of the agent, or `nil`
   ///     (the default) for no `mcpServers` tool (``mcpServerRegistry``).
+  ///   - marketplaceMount: The marketplace registry of the agent, or `nil`
+  ///     (the default) for no registry (``marketplaceMount``).
   public init(
     workingDirectory: URL,
     additionalRoots: [URL] = [],
@@ -199,8 +207,10 @@ public struct CatalogContext: Sendable {
     sessionOperationTools: [SessionOperationMount] = [],
     sessionDirectory: (any SessionDirectory)? = nil,
     modelsEndpoint: ModelsGraph? = nil,
-    mcpServerRegistry: MCPServerRegistry? = nil
+    mcpServerRegistry: MCPServerRegistry? = nil,
+    marketplaceMount: MarketplaceMount? = nil
   ) {
+    self.marketplaceMount = marketplaceMount
     self.modelsEndpoint = modelsEndpoint
     self.mcpServerRegistry = mcpServerRegistry
     self.sessionOperationTools = sessionOperationTools

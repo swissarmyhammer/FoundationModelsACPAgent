@@ -2,6 +2,7 @@ import Foundation
 import FoundationModels
 import FoundationModelsACP
 import FoundationModelsExtras
+import FoundationModelsSkills
 import FoundationModelsHooks
 import FoundationModelsMultitool
 import FoundationModelsRouter
@@ -201,6 +202,14 @@ public actor RoutedACPAgent: Agent {
   /// top-level `mcpServers` tool over it. A change applies to each session
   /// that starts after it.
   public nonisolated let mcpServerRegistry: MCPServerRegistry
+
+  /// The one marketplace registry of the agent (Extras
+  /// `MarketplaceRegistry`, D190): it adds, edits and removes one
+  /// marketplace of `tools.skills.marketplaces` at the USER level at a time
+  /// (``SettingsMarketplaceSourceStorage``). Each session follows its
+  /// changes (``SessionMarketplaces``), and its `skills` tool and endpoint
+  /// change the list through it.
+  public nonisolated let marketplaceRegistry: MarketplaceRegistry
 
   /// The `mcpServers` endpoint of ``mcpServerRegistry``. The agent holds it,
   /// thus each session and the tunnel read one change log.
@@ -543,6 +552,8 @@ public actor RoutedACPAgent: Agent {
       reservedNames: ToolCatalog.reservedMCPServerNames,
       secrets: (self.secretStore as? any SecretWriter).map(AgentMCPServerSecrets.init(writer:)))
     self.mcpServersEndpoint = MCPServersGraph.endpoint(of: mcpServerRegistry)
+    self.marketplaceRegistry = MarketplaceRegistry(
+      storage: SettingsMarketplaceSourceStorage(store: settingsStore))
     self.transcriptReader = RecordedSessionTranscriptReader(
       recordingRoots: Self.recordingRoots(known: knownRecordingRoots, store: settingsStore))
     // The sessions of one working directory share one key, so the

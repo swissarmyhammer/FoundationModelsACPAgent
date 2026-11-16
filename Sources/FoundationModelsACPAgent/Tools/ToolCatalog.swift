@@ -255,6 +255,7 @@ public struct SessionSurface: Sendable {
     await stopAgentRuns()
     await agents?.registry.stopWatching()
     await agents?.environment.skills.stopWatching()
+    await agents?.marketplaces?.stop()
     await codeContextLease?.release()
     await shellStoreLease?.release()
     await serverPool.shutdownAll()
@@ -921,25 +922,38 @@ public enum ToolCatalog {
       sessionAgent: nil)
   }
 
-  /// Makes and starts the marketplace store of the `tools.skills.marketplaces`
-  /// list of the session (see ``makeSkillsSource(context:)``).
+  /// Makes the marketplace layers of the session over a started store of
+  /// the `tools.skills.marketplaces` list (see ``makeSkillsSource(context:)``).
   ///
   /// A session starts the store before it resolves its session agent,
   /// because the agent registry reads the marketplace layers of the store.
   ///
+  /// With a marketplace mount (``CatalogContext/marketplaceMount``), the
+  /// layers follow the marketplace registry of the agent: each change makes
+  /// a new store from the list of the mount, and the skills and the agents
+  /// of the running session follow (D190).
+  ///
   /// - Parameter context: The session whose configuration gives the list.
-  /// - Returns: The started store, or `nil` when the list is empty.
-  static func startSkillsMarketplaces(context: CatalogContext) async -> MarketplaceStore? {
-    let options = context.configuration.tools.skills
-    guard !options.marketplaces.isEmpty else {
+  /// - Returns: The layers, or `nil` when the list is empty and the context
+  ///   has no mount.
+  static func startSkillsMarketplaces(context: CatalogContext) async -> SessionMarketplaces? {
+    let list = context.configuration.tools.skills.marketplaces
+    guard !list.isEmpty || context.marketplaceMount != nil else {
       return nil
     }
-    let store = MarketplaceStore(
-      sources: options.marketplaces, layout: SkillMarketplaceLayout.skills,
-      cacheDirectory: context.settingsFolders.home.skillsMarketplaceCacheDirectory,
-      policy: MarketplacePolicy(), transport: LibGit2Transport(), environment: context.environment)
-    await store.start()
-    return store
+    let cacheDirectory = context.settingsFolders.home.skillsMarketplaceCacheDirectory
+    let environment = context.environment
+    let marketplaces = SessionMarketplaces { sources in
+      MarketplaceStore(
+        sources: sources, layout: SkillMarketplaceLayout.skills, cacheDirectory: cacheDirectory,
+        policy: MarketplacePolicy(), transport: LibGit2Transport(), environment: environment)
+    }
+    let changes = context.marketplaceMount?.registry.changes()
+    await marketplaces.replace(with: list)
+    if let changes, let mount = context.marketplaceMount {
+      marketplaces.follow(changes, sources: mount.sources)
+    }
+    return marketplaces
   }
 
   /// Builds the skills registry of the session over the dotfolder stack
@@ -953,12 +967,12 @@ public enum ToolCatalog {
   /// - Parameters:
   ///   - context: The session whose working directory roots the stack's
   ///     project layer.
-  ///   - marketplaces: The started marketplace store
+  ///   - marketplaces: The marketplace layers of the session
   ///     (``startSkillsMarketplaces(context:)``), or `nil` for none.
   ///   - sessionAgent: The session agent, or `nil` for the builtin floor.
   /// - Returns: The skills source.
   static func makeSkillsSource(
-    context: CatalogContext, marketplaces: MarketplaceStore?, sessionAgent: AgentDefinition?
+    context: CatalogContext, marketplaces: SessionMarketplaces?, sessionAgent: AgentDefinition?
   ) -> SkillsSource {
     let stack = context.settingsFolders.stack(
       for: .skills, workingDirectory: context.workingDirectory)

@@ -1,8 +1,8 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '8280'
+position_column: done
+position_ordinal: fffff680
 title: 'MCP servers: remove and move the Keychain items that no entry uses'
 ---
 TestudoApp (41b1982) changes MCP servers only through the `mcpServers` mutations. The app does not delete the unused Keychain items now. The agent must do it.

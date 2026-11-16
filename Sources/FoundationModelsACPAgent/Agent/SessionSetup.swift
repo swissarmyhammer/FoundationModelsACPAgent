@@ -1072,7 +1072,21 @@ extension RoutedACPAgent {
       sessionOperationTools: sessionOperationTools,
       sessionDirectory: sessionDirectory,
       modelsEndpoint: modelsEndpoint,
-      mcpServerRegistry: mcpServerRegistry)
+      mcpServerRegistry: mcpServerRegistry,
+      marketplaceMount: marketplaceMount(workingDirectory: workingDirectory))
+  }
+
+  /// The marketplace mount of a session: the registry of the agent, and
+  /// the merged `tools.skills.marketplaces` of the working directory after
+  /// a change, so a list of the project layer stays (D190).
+  ///
+  /// - Parameter workingDirectory: The working directory of the session.
+  /// - Returns: The mount.
+  func marketplaceMount(workingDirectory: URL) -> MarketplaceMount {
+    let store = settingsStore
+    return MarketplaceMount(registry: marketplaceRegistry) {
+      try await store.merged(for: workingDirectory).configuration.tools.skills.marketplaces
+    }
   }
 
   /// Composes one session over an already-resolved configuration.

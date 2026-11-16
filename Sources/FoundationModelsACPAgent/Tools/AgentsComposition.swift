@@ -34,6 +34,10 @@ struct AgentsMount: Sendable {
   /// `subagent_update`. The agent binds its outlet when it mounts the root
   /// session, and the stop of the runs ends the queue.
   let announcer: SubagentAnnouncer
+
+  /// The marketplace layers of the session, or `nil`. The shutdown of the
+  /// surface stops them.
+  var marketplaces: SessionMarketplaces? = nil
 }
 
 /// The composition of the standalone `agents` tool of FoundationModelsAgents
@@ -155,7 +159,7 @@ enum AgentsComposition {
     bindHolds(of: runCallJoins, tool: tool, runner: runner, announcer: announcer)
     return AgentsMount(
       tool: tool, runner: runner, registry: registry, environment: environment,
-      announcer: announcer)
+      announcer: announcer, marketplaces: skills.marketplaces)
   }
 
   /// Tells the holds of the surface which tool starts a child, and how to find the run of a call.
@@ -246,10 +250,10 @@ enum AgentsComposition {
   ///   - context: The session whose working directory roots the project layer
   ///     of the stack. Its settings folders give the defaults layer and the
   ///     user layer of the stack.
-  ///   - marketplaces: The started skills marketplace store, or `nil`.
+  ///   - marketplaces: The marketplace layers of the session, or `nil`.
   /// - Returns: The registry.
   static func makeAgentRegistry(
-    context: CatalogContext, marketplaces: MarketplaceStore?
+    context: CatalogContext, marketplaces: SessionMarketplaces?
   ) -> AgentRegistry {
     let stack = context.settingsFolders.stack(
       for: .agents, workingDirectory: context.workingDirectory)
@@ -271,11 +275,11 @@ enum AgentsComposition {
   ///
   /// - Parameters:
   ///   - context: The session whose folders give the stack.
-  ///   - marketplaces: The started skills marketplace store, or `nil`.
+  ///   - marketplaces: The marketplace layers of the session, or `nil`.
   /// - Returns: The loaded registry.
   /// - Throws: Whatever `AgentRegistry.load()` throws.
   static func loadedAgentRegistry(
-    context: CatalogContext, marketplaces: MarketplaceStore?
+    context: CatalogContext, marketplaces: SessionMarketplaces?
   ) async throws -> AgentRegistry {
     let registry = makeAgentRegistry(context: context, marketplaces: marketplaces)
     try await registry.load()

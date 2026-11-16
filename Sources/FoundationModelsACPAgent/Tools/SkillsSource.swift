@@ -10,17 +10,18 @@ public struct SkillsSource: Sendable {
   /// The watched skills registry of the session.
   public let registry: SkillsRegistry
 
-  /// The started marketplace store of the `tools.skills.marketplaces`
-  /// list, or `nil` when the list is empty.
-  public let marketplaces: MarketplaceStore?
+  /// The marketplace layers of the session
+  /// (``ToolCatalog/startSkillsMarketplaces(context:)``), or `nil` when the
+  /// list is empty and the session follows no marketplace registry.
+  public let marketplaces: SessionMarketplaces?
 
   /// Makes a skills source.
   ///
   /// - Parameters:
   ///   - registry: The watched skills registry of the session.
-  ///   - marketplaces: The started marketplace store, or `nil` when the
-  ///     session has no marketplace.
-  public init(registry: SkillsRegistry, marketplaces: MarketplaceStore?) {
+  ///   - marketplaces: The marketplace layers of the session, or `nil`
+  ///     when the session has no marketplace.
+  public init(registry: SkillsRegistry, marketplaces: SessionMarketplaces?) {
     self.registry = registry
     self.marketplaces = marketplaces
   }
