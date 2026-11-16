@@ -94,6 +94,10 @@ import Testing
     "statusline:\n  preset: 3\n",
     "statusline:\n  format: [a]\n",
     "statusline:\n  time: yes\n",
+    "statusline:\n  time:\n    utc_time_offset: 1\n",
+    "statusline:\n  agent:\n    symbol: x\n",
+    "statusline:\n  directory:\n    substitutions:\n      - from: a\n        into: b\n",
+    "statusline:\n  languages:\n    languages: {name: swift}\n",
   ])
   func aWrongValueIsAProblem(text: String) throws {
     let root = try YAMLValue.parse(text)
@@ -101,6 +105,45 @@ import Testing
     #expect(throws: (any Error).self) {
       try root.decoded(as: AgentConfiguration.self)
     }
+  }
+
+  /// A list of the schema passes, with the keys of its elements.
+  @Test func aListOfTheSchemaPasses() throws {
+    let root = try YAMLValue.parse(
+      """
+      statusline:
+        languages:
+          maximum: 3
+          languages:
+            - name: swift
+              symbol: S
+              detect_extensions: [swift]
+        context:
+          thresholds:
+            - below: 50
+              style: green
+      """)
+
+    let decoded = try root.decoded(as: AgentConfiguration.self)
+
+    guard case .object(let fields) = decoded.statusline.value else {
+      Issue.record("statusline is not a mapping")
+      return
+    }
+    #expect(fields["languages"] != nil)
+  }
+
+  /// The key paths have the shape of `StatusLineDefinition.settingsKeys` of
+  /// AgentViewKit: each key, with `*` for each element of a list.
+  @Test func theKeyPathsHaveTheShapeOfAgentViewKit() {
+    let keys = StatusLineConfiguration.settingsKeys
+
+    #expect(keys.contains(["preset"]))
+    #expect(keys.contains(["directory", "truncation_length"]))
+    #expect(keys.contains(["languages", "languages", "*", "symbol"]))
+    #expect(keys.contains(["git_branch", "ignore_branches"]))
+    #expect(!keys.contains(["agent", "symbol"]))
+    #expect(keys == keys.sorted { $0.joined(separator: ".") < $1.joined(separator: ".") })
   }
 
   /// The tool description names the presets and the modules.
