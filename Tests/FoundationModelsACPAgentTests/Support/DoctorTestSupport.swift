@@ -51,15 +51,17 @@ extension Array where Element == HealthCheck {
 }
 
 extension StubModelResolver {
-  /// A lookup table that finds every reference of `references`, each one
-  /// already in the cache.
+  /// A lookup table that finds every reference of `references` and the
+  /// MTP drafter of each, each one already in the cache. Two slots can name the same model (the
+  /// `standard` and `flash` defaults do), so a reference can come twice;
+  /// it gets one entry.
   ///
   /// - Parameter references: The references the table names.
   /// - Returns: The table.
   static func foundLookups(of references: [ModelRef]) -> [String: ModelLookup] {
-    Dictionary(
-      uniqueKeysWithValues: references.map {
-        ($0.stringValue, ModelLookup.found(downloadBytes: 0))
-      })
+    let withDrafters = references.flatMap { [$0] + ($0.drafter.map { [$0] } ?? []) }
+    return Dictionary(
+      withDrafters.map { ($0.stringValue, ModelLookup.found(downloadBytes: 0)) },
+      uniquingKeysWith: { first, _ in first })
   }
 }

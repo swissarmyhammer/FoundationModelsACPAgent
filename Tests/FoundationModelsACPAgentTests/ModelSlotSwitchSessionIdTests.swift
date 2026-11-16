@@ -249,7 +249,8 @@ import Testing
         ])
     }
     let fixture = try await ScriptedPromptFixture.make(
-      loader: loader, label: "ModelSlotSwitchSessionIdTests-open")
+      loader: loader, configuration: ScriptedPromptFixture.distinctFlashConfiguration,
+      label: "ModelSlotSwitchSessionIdTests-open")
     _ = try await fixture.harness.connection.prompt(
       AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "first"))
     try await ScriptedPromptFixture.waitForRunning(fixture.collector)

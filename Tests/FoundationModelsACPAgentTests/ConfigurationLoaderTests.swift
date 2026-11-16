@@ -162,18 +162,18 @@ import Testing
     #expect(profile.embedding.map(\.stringValue) == [Self.defaultEmbeddingModel])
   }
 
-  /// The `standard` default decodes with MTP (multi-token prediction): its
-  /// target names the MTP head of the same build as its drafter. Router
-  /// loads a drafter only when the profile names it, so a default with no
-  /// drafter decodes plain. The `flash` and `embedding` defaults name no
-  /// drafter.
-  @Test func theStandardDefaultNamesItsMTPDrafter() throws {
+  /// The `standard` and `flash` defaults decode with MTP (multi-token
+  /// prediction): each target names the MTP head of the same build as its
+  /// drafter. Router loads a drafter only when the profile names it, so a
+  /// default with no drafter decodes plain. The `embedding` default names
+  /// no drafter.
+  @Test func theStandardAndFlashDefaultsNameTheirMTPDrafter() throws {
     let fixture = Fixture()
 
     let profile = try fixture.makeLoader().load().configuration.profile
 
     #expect(profile.standard.map { $0.drafter?.stringValue } == [Self.defaultStandardDrafter])
-    #expect(profile.flash.allSatisfy { $0.drafter == nil })
+    #expect(profile.flash.map { $0.drafter?.stringValue } == [Self.defaultStandardDrafter])
     #expect(profile.embedding.allSatisfy { $0.drafter == nil })
   }
 
@@ -282,8 +282,10 @@ import Testing
   /// The MTP drafter of the `standard` slot default.
   private static let defaultStandardDrafter = "mlx-community/Qwen3.8-27B-MTP-4bit"
 
-  /// The `flash` slot default of the builtin configuration.
-  private static let defaultFlashModel = "mlx-community/Qwen3-4B-4bit"
+  /// The `flash` slot default of the builtin configuration: the model of
+  /// the `standard` default. Router shares one container between the two
+  /// slots when they name the same model.
+  private static let defaultFlashModel = "mlx-community/Qwen3.8-27B-4bit"
 
   /// The `embedding` slot default of the builtin configuration.
   private static let defaultEmbeddingModel = "erjigit17/embeddinggemma-300m-ane-coreml"

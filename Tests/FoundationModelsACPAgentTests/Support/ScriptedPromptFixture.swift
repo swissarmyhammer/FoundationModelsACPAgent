@@ -214,6 +214,11 @@ struct ScriptedPromptFixture {
   ///
   /// - Parameters:
   ///   - loader: The model loader the agent resolves against.
+  ///   - configuration: The agent configuration whose `profile` section
+  ///     the agent resolves. The in-code default by default, whose
+  ///     `standard` and `flash` slots share one container. A suite whose
+  ///     loader plays a different script on each slot gives
+  ///     ``distinctFlashConfiguration``.
   ///   - label: The directory label of the calling suite, so a
   ///     leftover directory says where it came from.
   ///   - capabilities: The client capabilities `initialize` announces.
@@ -260,6 +265,7 @@ struct ScriptedPromptFixture {
   /// - Throws: Whatever the construction or the handshake throws.
   static func make(
     loader: any ModelLoader,
+    configuration: AgentConfiguration = AgentConfiguration(),
     label: String,
     capabilities: ClientCapabilities = ACPClient.advertisedCapabilities,
     workingDirectory: URL? = nil,
@@ -289,6 +295,7 @@ struct ScriptedPromptFixture {
       recordingsDirectory: makeResolvedDirectory(label: "\(label)-recordings"),
       userDirectory: userDirectory,
       loader: loader,
+      configuration: configuration,
       tracer: tracer,
       inlineSettleGrace: inlineSettleGrace,
       secretStore: secretStore
@@ -323,6 +330,21 @@ struct ScriptedPromptFixture {
       harness: harness, collector: collector, sessionId: sessionId, session: session, cwd: cwd,
       newSessionConfigOptions: configOptions)
   }
+
+  /// An agent configuration whose `flash` slot names a model of its own.
+  ///
+  /// The default `flash` slot names the `standard` model, and Router then
+  /// shares one container between the two slots: the loader makes the
+  /// container of the `standard` slot only, and a call on the `flash` slot
+  /// runs on it. A suite whose loader plays a different script on each slot
+  /// gives this configuration, so each slot loads its own container. The
+  /// project layer cannot do it: the agent resolves its profile once, at
+  /// construction, before any session reads its project layer.
+  static let distinctFlashConfiguration: AgentConfiguration = {
+    var configuration = AgentConfiguration()
+    configuration.profile.flash = ["mlx-community/Qwen3-4B-4bit"]
+    return configuration
+  }()
 
   /// Writes `yaml` as the project-layer `config.yaml` of `cwd`, the
   /// file the session's configuration load reads. The project layer

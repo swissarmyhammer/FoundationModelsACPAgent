@@ -38,13 +38,16 @@ import Testing
     return loader
   }
 
-  /// Wires the shared fixture over the per-slot scripted loader.
+  /// Wires the shared fixture over the per-slot scripted loader, with a
+  /// `flash` model of its own, so each slot loads its own container.
   ///
   /// - Parameter label: The directory label of the calling test.
   /// - Returns: The fixture.
   /// - Throws: Whatever the construction or the handshake throws.
   private static func makeFixture(label: String) async throws -> ScriptedPromptFixture {
-    try await ScriptedPromptFixture.make(loader: makeSlotLoader(), label: label)
+    try await ScriptedPromptFixture.make(
+      loader: makeSlotLoader(),
+      configuration: ScriptedPromptFixture.distinctFlashConfiguration, label: label)
   }
 
   /// The `session/set_config_option` request for the model option.
@@ -237,7 +240,8 @@ import Testing
         ])
     }
     let fixture = try await ScriptedPromptFixture.make(
-      loader: loader, label: "ConfigOptionsTests-switch-open")
+      loader: loader, configuration: ScriptedPromptFixture.distinctFlashConfiguration,
+      label: "ConfigOptionsTests-switch-open")
 
     _ = try await fixture.harness.connection.prompt(
       AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: "first"))

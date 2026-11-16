@@ -72,7 +72,7 @@ approximately 15 GB alone, so a 16 GB machine is too small.
 | Slot | Default model | MTP drafter |
 |---|---|---|
 | `standard` | `mlx-community/Qwen3.8-27B-4bit` | `mlx-community/Qwen3.8-27B-MTP-4bit` |
-| `flash` | `mlx-community/Qwen3-4B-4bit` | none |
+| `flash` | `mlx-community/Qwen3.8-27B-4bit` (the `standard` model, shared) | `mlx-community/Qwen3.8-27B-MTP-4bit` |
 | `embedding` | `erjigit17/embeddinggemma-300m-ane-coreml` | none |
 | `decision` | `h2oai/h2o-lightning-4b-gguf/h2o-lightning-4b-Q4_K_M.gguf@61f8d8b7a8c2d84426d0d143ca187f65d235934b` | none |
 

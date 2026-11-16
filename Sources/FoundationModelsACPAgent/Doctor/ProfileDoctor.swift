@@ -170,10 +170,17 @@ public struct ProfileDoctor: Doctorable {
   /// the slot.
   private static let drafterKey = "drafter"
 
+  /// What stands between the keys of the slots that name one reference.
+  private static let sharedKeySeparator = ", "
+
   /// Every reference of every slot, in slot order and then in preference
   /// order. The MTP drafter of a reference comes after it, under the key
   /// `<slot>.drafter`: a drafter is a checkpoint of its own, which must
   /// resolve and which the next run downloads.
+  ///
+  /// A reference that several slots name comes once, at its first place,
+  /// under the keys of all those slots. The `standard` and `flash` defaults
+  /// name one model: it is checked once, and its download counts once.
   private var slotReferences: [SlotReference] {
     let slots = [
       (Self.standardKey, configuration.profile.standard),
@@ -181,7 +188,7 @@ public struct ProfileDoctor: Doctorable {
       (Self.embeddingKey, configuration.profile.embedding),
       (Self.decisionKey, configuration.profile.decision),
     ]
-    return slots.flatMap { key, references in
+    let named = slots.flatMap { key, references in
       references.flatMap { reference in
         [SlotReference(key: key, reference: reference, isDrafter: false)]
           + (reference.drafter.map {
@@ -191,6 +198,26 @@ public struct ProfileDoctor: Doctorable {
                 reference: $0, isDrafter: true)
             ]
           } ?? [])
+      }
+    }
+    var order: [String] = []
+    var keys: [String: [String]] = [:]
+    var first: [String: SlotReference] = [:]
+    for entry in named {
+      let text = entry.reference.stringValue
+      if first[text] == nil {
+        order.append(text)
+        first[text] = entry
+      }
+      if !(keys[text, default: []].contains(entry.key)) {
+        keys[text, default: []].append(entry.key)
+      }
+    }
+    return order.compactMap { text in
+      first[text].map {
+        SlotReference(
+          key: keys[text, default: [$0.key]].joined(separator: Self.sharedKeySeparator),
+          reference: $0.reference, isDrafter: $0.isDrafter)
       }
     }
   }
@@ -460,12 +487,15 @@ public struct ProfileDoctor: Doctorable {
       category: Self.category)
   }
 
+  /// A model that fits a 16 GB machine, which the fix of a machine below
+  /// the floor names.
+  static let smallerModel: [ModelRef] = ["mlx-community/Qwen3-4B-4bit"]
+
   /// The fix of a machine below the floor: name a smaller model in the
-  /// standard slot. The `flash` default is the smaller model this
-  /// package already ships, and it fits a 16 GB machine.
+  /// standard and flash slots.
   private static let smallerProfileFix =
-    "set \(standardKey) in \(ConfigurationLoader.configFileName) to a smaller model, "
-    + "such as \(describe(ProfileConfiguration.defaultFlash)), with \(editCommand)"
+    "set \(standardKey) and \(flashKey) in \(ConfigurationLoader.configFileName) to a smaller model, "
+    + "such as \(describe(smallerModel)), with \(editCommand)"
 
   // MARK: - The free disk
 

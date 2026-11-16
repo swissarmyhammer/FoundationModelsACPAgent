@@ -278,9 +278,10 @@ public struct FontRoleConfiguration: Codable, Equatable, Sendable, KeyCheckedSec
 /// and Router's `JointFit` measures the four models together against the
 /// memory budget. Thus a 16 GB machine is too small.
 ///
-/// The `standard` default decodes with MTP (multi-token prediction): its
-/// reference names the MTP head of its build as the `drafter`. Router loads a
-/// drafter only when a reference names one, so no other default speculates.
+/// The `standard` and `flash` defaults are one model that decodes with MTP
+/// (multi-token prediction): its reference names the MTP head of its build
+/// as the `drafter`. Router loads a drafter only when a reference names one,
+/// so no other default speculates.
 public struct ProfileConfiguration: Codable, Equatable, Sendable, KeyCheckedSection {
   /// The default candidates of the `standard` slot.
   ///
@@ -304,8 +305,12 @@ public struct ProfileConfiguration: Codable, Equatable, Sendable, KeyCheckedSect
       drafter: "mlx-community/Qwen3.8-27B-MTP-4bit")
   ]
 
-  /// The default candidates of the `flash` slot.
-  public static let defaultFlash: [ModelRef] = ["mlx-community/Qwen3-4B-4bit"]
+  /// The default candidates of the `flash` slot: the model of the
+  /// `standard` slot. Router shares one container between the two slots
+  /// when they name the same model, so the profile loads one 27B model and
+  /// not a second, smaller one. The flash sessions then get the same model
+  /// and the same MTP drafter as the standard sessions.
+  public static let defaultFlash: [ModelRef] = defaultStandard
 
   /// The default candidates of the `embedding` slot.
   public static let defaultEmbedding: [ModelRef] = [

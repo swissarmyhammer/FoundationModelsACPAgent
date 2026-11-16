@@ -41,6 +41,11 @@ import Tracing
 ///     layer of `config.yaml` is this folder, the user layer of the skills
 ///     is its `_skills` folder, and no stack reads the real home directory.
 ///   - loader: The loader the router loads through.
+///   - configuration: The agent configuration whose `profile` section the
+///     agent resolves at construction. The in-code default by default, whose
+///     `standard` and `flash` slots name one model, so Router loads one
+///     container for both. A suite that must tell the two slots apart gives
+///     a configuration whose `flash` slot names a model of its own.
 ///   - tracer: The tracer of each Router session, or `nil` (the default) to
 ///     read `InstrumentationSystem.tracer` at call time. A suite that
 ///     captures the Router spans gives the tracer of its capture — see
@@ -78,6 +83,7 @@ public func makeStubAgent(
   recordingsDirectory: URL? = nil,
   userDirectory: URL? = nil,
   loader: any ModelLoader = StubModelLoader(),
+  configuration: AgentConfiguration = AgentConfiguration(),
   tracer: (any Tracer)? = nil,
   inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
   environment: [String: String] = [:],
@@ -103,6 +109,7 @@ public func makeStubAgent(
     name: DotfolderName(name),
     router: router,
     hooks: hooks,
+    configuration: configuration,
     home: home,
     mode: mode,
     sandboxProbe: sandboxProbe,
@@ -114,7 +121,7 @@ public func makeStubAgent(
 
 // MARK: - The defaults layer of a stub agent
 
-/// The defaults layer that ``makeStubAgent(name:cacheDirectory:recordingsDirectory:userDirectory:loader:tracer:inlineSettleGrace:environment:secretStore:userDeviceTokens:mode:sandboxProbe:prepareRouter:)``
+/// The defaults layer that ``makeStubAgent(name:cacheDirectory:recordingsDirectory:userDirectory:loader:configuration:tracer:inlineSettleGrace:environment:secretStore:userDeviceTokens:mode:sandboxProbe:prepareRouter:)``
 /// gives each agent: the lowest layer of the configuration stack, below the
 /// user layer and the project layer.
 ///

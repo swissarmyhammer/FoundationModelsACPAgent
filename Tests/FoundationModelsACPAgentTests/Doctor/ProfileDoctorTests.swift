@@ -39,10 +39,11 @@ struct ProfileDoctorTests {
   /// How ``smallDiskBytes`` is stated in a message.
   private static let smallDiskText = "1.0 GB"
 
-  /// How the download of the five scripted references of the shipped
-  /// profile, each of ``downloadBytes``, is stated in a message: the four
-  /// slot models and the MTP drafter of the standard slot.
-  private static let wholeDownloadText = "50.0 GB"
+  /// How the download of the four scripted references of the shipped
+  /// profile, each of ``downloadBytes``, is stated in a message: the model
+  /// of the standard and flash slots (one download), its MTP drafter, the
+  /// embedding model and the decision model.
+  private static let wholeDownloadText = "40.0 GB"
 
   /// The words the message of a reference the cache already holds
   /// carries.
@@ -166,6 +167,22 @@ struct ProfileDoctorTests {
     #expect(checks.findings(.error).count == Self.oneFinding)
   }
 
+  /// A model that two slots name is checked once, under both slot keys.
+  /// The `standard` and `flash` defaults name the same model, and the
+  /// next run downloads it one time.
+  @Test func aModelThatTwoSlotsNameIsCheckedOnceUnderBothKeys() async throws {
+    let shared = ProfileConfiguration.defaultStandard[0]
+    let shapeName = "the shape of \(shared.stringValue)"
+
+    let checks = await Self.doctor().runHealthChecks()
+
+    let shapeRows = checks.filter { $0.name.hasSuffix(shapeName) }
+    #expect(shapeRows.count == Self.oneFinding)
+    let row = try #require(shapeRows.first)
+    #expect(row.name.contains(Self.standardKey))
+    #expect(row.name.contains(Self.flashKey))
+  }
+
   // MARK: - The resolve check
 
   /// A reference the resolver does not find is one `.error` that names
@@ -281,6 +298,8 @@ struct ProfileDoctorTests {
     #expect(failure.message.contains(Self.smallMemoryText))
     #expect(failure.message.contains(Self.memoryFloorText))
     #expect(fix.contains(Self.standardKey))
+    #expect(fix.contains(Self.flashKey))
+    #expect(!fix.contains(ProfileConfiguration.defaultStandard[0].repo))
   }
 
   // MARK: - The free disk

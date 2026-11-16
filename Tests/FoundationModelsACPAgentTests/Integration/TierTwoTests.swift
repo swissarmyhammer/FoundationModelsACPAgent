@@ -311,7 +311,9 @@ import Testing
   ///     `nil` to let every slot play the prompt script. The
   ///     composition proof passes a recording librarian here, because
   ///     `ToolCatalog.sessionSurface` hands `profile.flash` to
-  ///     `searchTools`.
+  ///     `searchTools`. The agent then resolves
+  ///     ``ScriptedPromptFixture/distinctFlashConfiguration``, so the
+  ///     flash slot loads a container of its own.
   ///   - tapsWire: Whether the harness records the raw wire lines.
   ///     Only the prompt-order proof reads them.
   /// - Returns: The fixture and the collected sequence at idle.
@@ -328,14 +330,17 @@ import Testing
   ) async throws -> (fixture: ScriptedPromptFixture, updates: [UpdateSessionNotification]) {
     let script = try makeToolPromptScript(code: code)
     var loader = makeScriptedModelLoader(script: script)
+    var configuration = AgentConfiguration()
     if let flashContainer {
       let scriptedContainer = loader.makeLLMContainer
       loader.makeLLMContainer = { slot in
         slot == .flash ? flashContainer : scriptedContainer(slot)
       }
+      configuration = ScriptedPromptFixture.distinctFlashConfiguration
     }
     let fixture = try await ScriptedPromptFixture.make(
       loader: loader,
+      configuration: configuration,
       label: label,
       workingDirectory: workingDirectory,
       projectConfigYAML: projectConfigYAML,
