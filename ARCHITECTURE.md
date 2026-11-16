@@ -37,7 +37,9 @@ lives. All of it is in `Sources/FoundationModelsACPAgent/Agent/`.
   A user `session/close` cancels the runs, and a shutdown only stops them.
 - **The cold resume.** `SessionResume` is the entry. `SessionResumeNested` restores the
   interrupted children through the runner of FoundationModelsAgents. `SessionResumeOpenCalls`
-  rebuilds the join of the open `agents` calls. `SessionResumeReplay` replays the tree before the
+  rebuilds the join of the open `agents` calls. `SessionResumeBackgroundCalls` ends or joins
+  again each open call whose run was in the background, from the journal of the session.
+  `SessionResumeReplay` replays the tree before the
   response. `SessionResumeChildSync` sends the current snapshots of the children after the
   response. `SessionResumeRedrive` starts the restored runs after the snapshots.
 - **The hot resume.** `SessionResumeHot` lets a new connection take a live tree, with no

@@ -241,6 +241,9 @@ extension RoutedACPAgent {
     // The root is in the table with its project hook key. So each recorded nested session
     // restores under it, the caller before the child, and takes the same key.
     await restoreNestedSessions(of: params.sessionId, composition: composition)
+    // Each open call whose run was in the background ends, or joins its run again, so no row
+    // of the replay stays busy for ever.
+    await restoreBackgroundCalls(of: params.sessionId, recordedId: rootId)
 
     // The restore of the nested sessions can add the open calls of the root to its history.
     try await replayHistory(
