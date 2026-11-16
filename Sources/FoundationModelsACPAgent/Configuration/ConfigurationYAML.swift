@@ -114,6 +114,8 @@ public enum ConfigurationYAML {
       "The key bindings of the editor of a host: cua, vim or emacs.",
     AgentConfiguration.CodingKeys.fonts.stringValue:
       "The font family and size of each role of a host: ui, display and code.",
+    AgentConfiguration.CodingKeys.statusline.stringValue:
+      "The status line of the chat header of a host: a preset, and changes to its modules.",
   ]
 
   /// The comment printed at the top of the document.

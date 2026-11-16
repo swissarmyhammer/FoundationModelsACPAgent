@@ -56,9 +56,13 @@ public struct AgentConfiguration: Codable, Equatable, Sendable {
   /// it: it keeps the section in the settings stack for the host.
   public var fonts = FontsConfiguration()
 
+  /// The status line of the chat header of a host (``StatusLineConfiguration``).
+  /// The agent does not read it.
+  public var statusline = StatusLineConfiguration()
+
   /// The YAML spelling of each top-level section.
   public enum CodingKeys: String, CodingKey, CaseIterable {
-    case profile, tools, compaction, repetition, theme, keymap, fonts
+    case profile, tools, compaction, repetition, theme, keymap, fonts, statusline
   }
 
   /// The top-level sections that the configuration had before D187:
@@ -87,6 +91,9 @@ public struct AgentConfiguration: Codable, Equatable, Sendable {
     theme = try container.decodeIfPresent(AgentTheme.self, forKey: .theme) ?? theme
     keymap = try container.decodeIfPresent(AgentKeymap.self, forKey: .keymap) ?? keymap
     fonts = try container.decodeIfPresent(FontsConfiguration.self, forKey: .fonts) ?? fonts
+    statusline =
+      try container.decodeIfPresent(StatusLineConfiguration.self, forKey: .statusline)
+      ?? statusline
   }
 }
 
@@ -123,6 +130,7 @@ extension AgentConfiguration {
     CodingKeys.theme.stringValue: .scalar,
     CodingKeys.keymap.stringValue: .scalar,
     CodingKeys.fonts.stringValue: .checked(FontsConfiguration.knownKeys),
+    CodingKeys.statusline.stringValue: .checked(StatusLineConfiguration.topKeys),
   ]
 }
 

@@ -42,6 +42,19 @@ keymap: cua
 #       size: 12
 fonts: {}
 
+# The status line of the chat header of a host. The agent does not read it.
+# preset selects a builtin line: default, minimal or full. format is the
+# format string of the line. A module key changes one module of the preset.
+# The modules are directory, git_branch, git_status, git_state, languages,
+# session, agent, model, context and time, for example:
+#
+#   statusline:
+#     preset: minimal
+#     directory:
+#       truncation_length: 3
+statusline:
+  preset: default
+
 tools:
   # The files tools: read, write, search and edit the files of the session.
   files:

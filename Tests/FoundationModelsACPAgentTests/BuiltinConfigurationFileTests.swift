@@ -148,7 +148,7 @@ import Testing
   /// The file names each key that the agent keeps only for a host, thus a
   /// person who reads the file finds the choices of the host.
   @Test(arguments: [
-    AgentConfiguration.CodingKeys.theme, .keymap, .fonts,
+    AgentConfiguration.CodingKeys.theme, .keymap, .fonts, .statusline,
   ])
   func theFileNamesEachHostKey(section: AgentConfiguration.CodingKeys) throws {
     let root = try BuiltinConfigurationFile.root()
