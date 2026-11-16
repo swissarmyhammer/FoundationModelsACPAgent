@@ -14,7 +14,7 @@ import FoundationModelsSkills
 ///
 /// With no list in the settings, a load gives
 /// ``SkillsToolOptions/defaultMarketplaces``: the list that a session reads.
-/// The first save then writes the full list.
+/// The first save then writes the full list, and a reset clears it again.
 struct SettingsMarketplaceSourceStorage: MarketplaceSourceStorage {
   /// The key path of the list.
   static let keyPath = [
@@ -45,6 +45,23 @@ struct SettingsMarketplaceSourceStorage: MarketplaceSourceStorage {
   /// - Throws: What ``SettingsStore/set(_:at:level:)`` throws.
   func saveSources(_ sources: [MarketplaceSource]) async throws {
     try await store.set(.array(sources.map(\.yamlValue)), at: Self.keyPath, level: .user)
+  }
+
+  /// Clears `tools.skills.marketplaces` at the USER level, and gives the
+  /// list that applies after that: the list of the defaults layer, else
+  /// ``SkillsToolOptions/defaultMarketplaces``.
+  ///
+  /// The registry of the agent has no working directory, thus the answer
+  /// has no project list. Each session reads its merged list again after
+  /// the change (``MarketplaceMount``), so a project list still applies
+  /// in its session.
+  ///
+  /// - Returns: The list after the reset.
+  /// - Throws: What ``SettingsStore/clear(at:level:)`` throws, or the load
+  ///   error of the list.
+  func resetSources() async throws -> [MarketplaceSource] {
+    try await store.clear(at: Self.keyPath, level: .user)
+    return try await loadSources()
   }
 }
 

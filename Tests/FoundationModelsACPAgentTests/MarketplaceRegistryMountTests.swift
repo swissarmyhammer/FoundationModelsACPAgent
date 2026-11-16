@@ -47,6 +47,35 @@ import Testing
     #expect(try await storage.loadSources() == SkillsToolOptions.defaultMarketplaces)
   }
 
+  /// A reset clears the user list, and gives the list that applies after
+  /// that: the default list.
+  @Test func aResetClearsTheUserListAndGivesTheDefaultList() async throws {
+    let fixture = try SettingsGraphFixture(label: "marketplace-storage-reset")
+    let storage = SettingsMarketplaceSourceStorage(store: fixture.store)
+    try await storage.saveSources([Self.plain])
+
+    let reset = try await storage.resetSources()
+
+    #expect(reset == SkillsToolOptions.defaultMarketplaces)
+    #expect(try await storage.loadSources() == SkillsToolOptions.defaultMarketplaces)
+    let text = try String(
+      contentsOf: ConfigCommandFixture.configURL(in: try fixture.userRoot), encoding: .utf8)
+    #expect(!text.contains("https://example.com/b.git"))
+  }
+
+  /// A reset of the registry of the agent gives the default entries.
+  @Test func aResetOfTheRegistryGivesTheDefaultEntries() async throws {
+    let composed = try await composeStubAgent(
+      name: "MarketplaceRegistryMountTests", label: "MarketplaceRegistryMountTests-reset")
+    let registry = composed.agent.marketplaceRegistry
+    try await registry.add(Self.plain)
+
+    let entries = try await registry.reset()
+    await composed.closeOpenSessions()
+
+    #expect(!entries.map(\.source).contains(Self.plain))
+  }
+
   // MARK: - The agent
 
   /// The registry of the agent writes the user settings, and the merged
