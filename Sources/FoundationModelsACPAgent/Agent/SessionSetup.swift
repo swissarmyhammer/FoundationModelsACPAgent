@@ -717,6 +717,7 @@ extension RoutedACPAgent {
     ) { span in
       let response = try await createSession(params, from: caller)
       span.attributes[ACPAgentTelemetry.AttributeKey.sessionId] = response.sessionId.rawValue
+      await recordUse(of: response.sessionId)
       return response
     }
   }
@@ -1070,7 +1071,8 @@ extension RoutedACPAgent {
       snapshotStore: hooks.snapshotStore,
       settingsEndpoint: settingsEndpoint,
       agentRunHost: makeAgentRunHost(recordingRoot: context.transcriptRoot),
-      sessionOperationTools: sessionOperationTools)
+      sessionOperationTools: sessionOperationTools,
+      sessionDirectory: sessionDirectory)
   }
 
   /// Composes one session over an already-resolved configuration.

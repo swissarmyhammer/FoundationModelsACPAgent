@@ -139,7 +139,9 @@ extension RoutedACPAgent {
       sessionId: params.sessionId, meta: params.meta,
       logger: ACPAgentTelemetry.logger(.sessionResume)
     ) { _ in
-      try await restoreSession(params, from: caller)
+      let response = try await restoreSession(params, from: caller)
+      await recordUse(of: params.sessionId)
+      return response
     }
   }
 

@@ -334,8 +334,9 @@ public enum ToolCatalog {
   /// The tools that give an endpoint (D90 (c)). The `tools:` and
   /// `disallowedTools:` keys of a session agent cannot remove them
   /// (``SessionToolSelection``). `settings` and `kanban` are nouns in the
-  /// registry of `runCode`; `sessions` and `rules` are not mounted yet
-  /// (ACPA-9). `files` is not one of them (``filesGroupName``).
+  /// registry of `runCode`; `sessions` is a top-level tool
+  /// (``makeSessionsTool(context:)``); `rules` is not mounted yet (ACPA-9).
+  /// `files` is not one of them (``filesGroupName``).
   static let endpointToolNames: Set<String> = [
     agentsToolName, SkillOutputProtection.skillsToolName, "sessions", "kanban", "rules",
     SettingsGraph.endpointName, NoOpToolCall.runCodeToolName,
@@ -461,7 +462,9 @@ public enum ToolCatalog {
         registry: built.registry, mcpServerNames: mcpServerNames, selection: selection,
         embedder: embedder, mounted: mounted.tools),
       runCallJoins: runCallJoins)
-    let tools = mounted.tools + makeStandaloneTools(agents: agents)
+    let tools =
+      mounted.tools
+      + makeStandaloneTools(agents: agents, sessions: try makeSessionsTool(context: context))
     // The refresher stages through the staging of the surface, so a
     // refresh after the session agent is known keeps its selection.
     let staging = SessionRegistryStaging(wrapping: mounted.staging)
@@ -484,13 +487,31 @@ public enum ToolCatalog {
   }
 
   /// The standalone tools that follow the Multitool session tools, in
-  /// mount order: the `skills` tool of the agent environment, then the
-  /// `agents` tool.
+  /// mount order: the `skills` tool of the agent environment, the `agents`
+  /// tool, then the `sessions` tool when the session has one.
   ///
-  /// - Parameter agents: The `agents` mount of the session.
+  /// - Parameters:
+  ///   - agents: The `agents` mount of the session.
+  ///   - sessions: The `sessions` tool of the session, or `nil` for none.
   /// - Returns: The standalone tools, in mount order.
-  static func makeStandaloneTools(agents: AgentsMount) -> [any FoundationModels.Tool] {
-    [agents.environment.skillsTool, agents.tool]
+  static func makeStandaloneTools(
+    agents: AgentsMount, sessions: SessionsTool? = nil
+  ) -> [any FoundationModels.Tool] {
+    [agents.environment.skillsTool, agents.tool] + (sessions.map { [$0] } ?? [])
+  }
+
+  /// The `sessions` tool of a session: a Multitool `SessionsTool` over the
+  /// session directory of the agent (``CatalogContext/sessionDirectory``).
+  /// It is a top-level tool, thus the session gives its `sessions` GraphQL
+  /// endpoint: the Pinned and Recent lists of the server and the switch to
+  /// a session (ACPA-9, D118). Each tool over the same directory gives the
+  /// same endpoint instance, thus all sessions share one cursor sequence.
+  ///
+  /// - Parameter context: The catalog context of the session.
+  /// - Returns: The tool, or `nil` when the context has no directory.
+  /// - Throws: The error of the operation table of `SessionsTool`.
+  static func makeSessionsTool(context: CatalogContext) throws -> SessionsTool? {
+    try context.sessionDirectory.map { try SessionsTool(directory: $0) }
   }
 
   /// The `settings` tool of a session: a ``SettingsTool`` over the one

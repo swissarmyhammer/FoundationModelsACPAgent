@@ -60,6 +60,11 @@ public actor RoutedACPAgent: Agent {
   /// change to the `index.md` of the session folder.
   nonisolated let sessionDirectory: RouterSessionDirectory
 
+  /// The function that records that a client opened a session
+  /// (``recordUse(of:)``). By default it calls `markUsed(_:)` of
+  /// ``sessionDirectory``.
+  var sessionUseRecorder: SessionUseRecorder
+
   /// The recording roots that this agent composed a session under. The session directory reads
   /// them with the roots of the project store (``recordingRootsOfTheDirectory()``), so it finds
   /// the recorded nested sessions of a session that it restores.
@@ -514,6 +519,7 @@ public actor RoutedACPAgent: Agent {
     self.agentName = agentName
     self.name = name
     self.sessionDirectory = router.sessionDirectory
+    self.sessionUseRecorder = Self.makeSessionUseRecorder(directory: router.sessionDirectory)
     self.hooks = hooks
     self.userDeviceTokens = userDeviceTokens
     self.settingsFolders = SettingsFolders(name: name, home: home, environment: environment)

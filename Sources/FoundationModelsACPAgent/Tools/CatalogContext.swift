@@ -127,6 +127,12 @@ public struct CatalogContext: Sendable {
   /// the `settings` tool. Empty for a catalog that has no such tool.
   public let sessionOperationTools: [SessionOperationMount]
 
+  /// The session directory of the agent (``RoutedACPAgent/sessionDirectory``),
+  /// or `nil` for a catalog that has no agent. With a directory, the session
+  /// gets a top-level `sessions` tool over it, which also gives the
+  /// `sessions` GraphQL endpoint (ACPA-9, D118).
+  public let sessionDirectory: (any SessionDirectory)?
+
   /// Makes a catalog context.
   ///
   /// - Parameters:
@@ -158,6 +164,8 @@ public struct CatalogContext: Sendable {
   ///     that mark nothing and cannot restore (``agentRunHost``).
   ///   - sessionOperationTools: The tools of the host for this session, by
   ///     noun. Empty by default (``sessionOperationTools``).
+  ///   - sessionDirectory: The session directory of the agent, or `nil`
+  ///     (the default) for no `sessions` tool (``sessionDirectory``).
   public init(
     workingDirectory: URL,
     additionalRoots: [URL] = [],
@@ -173,9 +181,11 @@ public struct CatalogContext: Sendable {
     snapshotStore: SnapshotStore? = nil,
     settingsEndpoint: SettingsGraph? = nil,
     agentRunHost: AgentRunHost? = nil,
-    sessionOperationTools: [SessionOperationMount] = []
+    sessionOperationTools: [SessionOperationMount] = [],
+    sessionDirectory: (any SessionDirectory)? = nil
   ) {
     self.sessionOperationTools = sessionOperationTools
+    self.sessionDirectory = sessionDirectory
     self.agentRunHost = agentRunHost
     self.snapshotStore = snapshotStore
     self.settingsEndpoint = settingsEndpoint
