@@ -8,15 +8,15 @@ import FoundationModelsACP
 /// AgentViewKit schema. It keeps a copy, and a test of AgentViewKit checks
 /// that ``StatusLineConfiguration/settingsKeys`` is the same as its own
 /// `StatusLineDefinition.settingsKeys`.
-public indirect enum StatusLineSchema: Equatable, Sendable {
+public indirect enum StatusLineSettingsSchema: Equatable, Sendable {
   /// A value with no keys below it.
   case value
 
   /// A mapping with these keys.
-  case object([String: StatusLineSchema])
+  case object([String: StatusLineSettingsSchema])
 
   /// A list whose elements have this shape.
-  case list(StatusLineSchema)
+  case list(StatusLineSettingsSchema)
 }
 
 /// The top-level `statusline` section: the status line of the chat header
@@ -69,23 +69,23 @@ public struct StatusLineConfiguration: Codable, Equatable, Sendable {
   ///
   /// - Parameter keys: The other keys of the module.
   /// - Returns: The schema of the module.
-  private static func module(_ keys: [String: StatusLineSchema] = [:]) -> StatusLineSchema {
+  private static func module(_ keys: [String: StatusLineSettingsSchema] = [:]) -> StatusLineSettingsSchema {
     .object(
-      Dictionary(uniqueKeysWithValues: commonModuleKeys.map { ($0, StatusLineSchema.value) })
+      Dictionary(uniqueKeysWithValues: commonModuleKeys.map { ($0, StatusLineSettingsSchema.value) })
         .merging(keys) { _, new in new })
   }
 
   /// Each key as a plain value.
   ///
   /// - Parameter names: The keys.
-  /// - Returns: The keys with the shape ``StatusLineSchema/value``.
-  private static func values(_ names: String...) -> [String: StatusLineSchema] {
-    Dictionary(uniqueKeysWithValues: names.map { ($0, StatusLineSchema.value) })
+  /// - Returns: The keys with the shape ``StatusLineSettingsSchema/value``.
+  private static func values(_ names: String...) -> [String: StatusLineSettingsSchema] {
+    Dictionary(uniqueKeysWithValues: names.map { ($0, StatusLineSettingsSchema.value) })
   }
 
   /// The shape of the keys of the section: a copy of
   /// `StatusLineDefinition.settingsSchema` of AgentViewKit.
-  public static let settingsSchema: StatusLineSchema = .object(
+  public static let settingsSchema: StatusLineSettingsSchema = .object(
     values(presetKey, formatKey).merging([
       "directory": module(
         values(
@@ -133,7 +133,7 @@ public struct StatusLineConfiguration: Codable, Equatable, Sendable {
   ///   - schema: The shape.
   ///   - prefix: The key path of the shape.
   /// - Returns: The key paths.
-  private static func keyPaths(of schema: StatusLineSchema, prefix: [String]) -> [[String]] {
+  private static func keyPaths(of schema: StatusLineSettingsSchema, prefix: [String]) -> [[String]] {
     switch schema {
     case .value:
       return []
@@ -214,7 +214,7 @@ public struct StatusLineConfiguration: Codable, Equatable, Sendable {
   ///   - schema: The shape.
   ///   - path: The key path of the value.
   /// - Returns: The problem text, or `nil`.
-  private static func problem(in value: JSONValue, schema: StatusLineSchema, path: [String])
+  private static func problem(in value: JSONValue, schema: StatusLineSettingsSchema, path: [String])
     -> String?
   {
     let name = path.joined(separator: ".")
