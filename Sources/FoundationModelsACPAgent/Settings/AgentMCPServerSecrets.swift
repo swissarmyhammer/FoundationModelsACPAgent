@@ -31,30 +31,28 @@ struct AgentMCPServerSecrets: MCPServerSecrets {
     return key.keychainReference(server: server)
   }
 
-  /// Asks the user for a value through an elicitation of the tool call
-  /// that runs now, writes it, and gives its reference. The answer goes to
-  /// the store only: the model sees the reference.
+  /// Gives no reference: the agent does not ask the user for a secret
+  /// value through an elicitation yet (D101).
+  ///
+  /// Router mails each answer that it delivers to a tool to the model as
+  /// well (`MailBody.elicitationAnswer`), with the accepted content as
+  /// text. That text goes into the model input and the session recording,
+  /// thus a secret value in the answer would leak. Until Router can keep
+  /// the content of a secret answer out of that mail, this port does not
+  /// ask. The registry then refuses the change with `secretDeclined`, and
+  /// the user gives the value through the app, whose `mcpServers` endpoint
+  /// writes it to the store with no elicitation.
   ///
   /// - Parameters:
   ///   - server: The name of the server.
   ///   - key: The header or env variable of the value.
-  /// - Returns: The reference, or `nil` when the user declines, or when no
-  ///   tool call runs, so the agent cannot ask.
-  /// - Throws: The error of the elicitation or of the store.
+  /// - Returns: `nil`.
   func request(server: String, key: MCPSecretKey) async throws -> String? {
-    guard let context = ToolContext.current else {
-      return nil
-    }
-    let response = try await context.elicit(Self.question(server: server, key: key))
-    guard response.action == .accept,
-      case .string(let value)? = response.content?[Self.valueField], !value.isEmpty
-    else {
-      return nil
-    }
-    return try await store(value, server: server, key: key)
+    nil
   }
 
-  /// The form that asks for one secret value.
+  /// The form that asks for one secret value. ``request(server:key:)``
+  /// sends it when Router can keep the answer out of the model input.
   ///
   /// - Parameters:
   ///   - server: The name of the server.

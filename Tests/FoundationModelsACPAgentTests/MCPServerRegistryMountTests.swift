@@ -89,9 +89,10 @@ import Testing
     #expect(try secrets.value(forReference: "mcp.remote.header.Authorization") == "token-1")
   }
 
-  /// With no tool call, the port cannot ask the user, and it gives no
-  /// reference.
-  @Test func aRequestWithNoToolCallGivesNoReference() async throws {
+  /// The port does not ask the user for a secret value: Router mails the
+  /// content of an elicitation answer to the model, so the value would
+  /// leak into the model input. It gives no reference.
+  @Test func aRequestGivesNoReference() async throws {
     let port = AgentMCPServerSecrets(writer: InMemoryWritableSecretStore())
 
     #expect(try await port.request(server: "remote", key: .env("TOKEN")) == nil)
