@@ -84,7 +84,8 @@ import Tracing
 
   /// Opens one session in a directory that holds the named pipe, sends the
   /// prompt that starts the background run, and waits until the `runCode`
-  /// call of the prompt completed with its pending answer.
+  /// call of the prompt returned its pending answer: the call stays
+  /// `in_progress` with the background marker.
   ///
   /// - Parameters:
   ///   - label: The directory label of the proof.
@@ -101,11 +102,11 @@ import Tracing
     _ = try await fixture.harness.connection.prompt(
       AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: startRunMarker))
     _ = try await ScriptedPromptFixture.waitForUpdatesBeforeSettle(
-      of: fixture.collector, toReach: "the completed runCode call"
+      of: fixture.collector, toReach: "the runCode call that returned its pending answer"
     ) { updates in
       updates.contains { notification in
         guard case .toolCallUpdate(let update) = notification.update else { return false }
-        return update.status == .value(.completed)
+        return update.marksBackgroundRun
       }
     }
     return fixture

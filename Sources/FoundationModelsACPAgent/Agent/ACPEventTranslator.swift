@@ -82,6 +82,10 @@ struct ACPEventTranslator {
   /// The text of a terminal event that carries no outcome.
   private static let missingOutcomeNoteText = "the run ended with no recorded outcome"
 
+  /// The content of a tool call whose run continues in the background after the call returned
+  /// its pending envelope. The client shows it in place of the envelope JSON.
+  static let backgroundRunText = "Running in the background"
+
   // MARK: - The wiring
 
   /// The id of the session this translator reports for, in the logs.
@@ -212,6 +216,27 @@ struct ACPEventTranslator {
   /// statuses.
   private var settledToolCallIds: Set<String> = []
 
+  /// The completion tokens of the runs that continue in the background, and that did not settle.
+  ///
+  /// A background tool returns its pending envelope when its run continues past the settle
+  /// period. Router then sends `toolStatus(.completed)`, because the SDK recorded an output. That
+  /// status only tells that the call returned. A run goes into this set when it posts its envelope
+  /// as progress, or when its call returns the envelope. While it is in the set, its call stays
+  /// `in_progress`. The settlement of the run removes it and sends the final status with the
+  /// result text (``projectSettlement(of:)``).
+  private var detachedRuns: Set<String> = []
+
+  /// The completion tokens of the runs of the `agents` calls. An `agents` call carries the link to
+  /// its child in `_meta.sah.agentRun`, so it gets no ``BackgroundRunMeta`` marker.
+  private var agentRunTokens: Set<String> = []
+
+  /// The wire ids of the calls whose run continues in the background and did not settle. The end
+  /// of a failed or a cancelled prompt does not close these calls, because the settlement of each
+  /// run gives its final status later.
+  var openDetachedCallIds: Set<ToolCallId> {
+    Set(detachedRuns.map(runCallId))
+  }
+
   /// The diff items and the terminal items that each tool call keeps to its
   /// end (task ^f9wmtse). Each content replace that is not a display event
   /// sends them first, so the completion of a `runCode` call keeps the
@@ -320,6 +345,9 @@ struct ACPEventTranslator {
       // first write for a run is final, and the close record carries
       // the id of its open record.
       runCallJoins.record(record, toolCallID: toolCallID)
+      if record.closedAt == nil, runCallJoins.holds.holdsCalls(of: record.tool) {
+        agentRunTokens.insert(record.correlationID)
+      }
       ACPAgentTelemetry.logger(.promptExecution).debug(
         "The prompt recorded a tool invocation.", metadata: runMetadata(record.correlationID))
     case .entryRecorded(let id, let kind):
@@ -585,19 +613,28 @@ struct ACPEventTranslator {
   /// update that then carries no content and no raw output tells the
   /// client nothing, so it does not go.
   ///
+  /// A `completed` status whose output is the pending envelope of the run
+  /// of the call is not the end of the call: the run continues in the
+  /// background. The call stays `in_progress`
+  /// (``projectDetachedReturn(of:envelope:)``).
+  ///
   /// - Parameters:
   ///   - id: Apple's `Transcript.ToolCall.id`.
   ///   - status: Router's status, derived from the transcript diff.
   ///   - summary: Router's one-line result summary, or `nil`.
   ///   - output: The segments of the answering `.toolOutput` entry,
   ///     or `nil` before completion.
-  private func projectToolStatus(
+  private mutating func projectToolStatus(
     id: String,
     status: FoundationModelsRouter.ToolCallStatus,
     summary: String?,
     output: [SegmentPayload]?
   ) async {
     let toolCallId = ToolCallId(rawValue: id)
+    if status == .completed, let envelope = detachedEnvelope(of: toolCallId, in: output) {
+      await projectDetachedReturn(of: toolCallId, envelope: envelope)
+      return
+    }
     let update = ToolCallUpdate(
       toolCallId: toolCallId,
       content: keptDisplayItems.content(
@@ -608,6 +645,83 @@ struct ACPEventTranslator {
       update.status != .unchanged || update.content != .unchanged || update.rawOutput != .unchanged
     else {
       return
+    }
+    await send(.toolCallUpdate(update))
+  }
+
+  /// The pending envelope that a call returned in place of its result, when the run of the
+  /// envelope goes on the wire id of the call.
+  ///
+  /// The run of an envelope that has no join to the call settles on another wire id. Such a call
+  /// keeps the SDK status, so it never stays `in_progress` with no settlement to end it.
+  ///
+  /// - Parameters:
+  ///   - toolCallId: The wire id of the call.
+  ///   - output: The segments of the output of the call, or `nil`.
+  /// - Returns: The envelope, or `nil` when the output is not a pending envelope of this call.
+  private func detachedEnvelope(
+    of toolCallId: ToolCallId, in output: [SegmentPayload]?
+  ) -> PendingRunEnvelope? {
+    guard let envelope = Self.pendingEnvelope(in: output),
+      runCallId(envelope.completionToken) == toolCallId
+    else {
+      return nil
+    }
+    return envelope
+  }
+
+  /// The pending envelope in the output of a call, or `nil` when no segment is an envelope.
+  ///
+  /// A text segment holds the rendered envelope as the tool returned it. The SDK records the
+  /// `String` output of a tool as a structured segment: a JSON string literal whose value is the
+  /// rendered envelope. Each form must match the rendered form exactly
+  /// (`PendingRunEnvelope.makeDecoded(fromRendered:)`).
+  ///
+  /// - Parameter output: The segments of the output of the call, or `nil`.
+  /// - Returns: The envelope, or `nil`.
+  private static func pendingEnvelope(in output: [SegmentPayload]?) -> PendingRunEnvelope? {
+    for payload in output ?? [] {
+      let text: String?
+      switch payload {
+      case .text(_, let content):
+        text = content
+      case .structure(_, _, let contentJSON):
+        text = try? JSONDecoder().decode(String.self, from: Data(contentJSON.utf8))
+      default:
+        text = nil
+      }
+      if let text, let envelope = PendingRunEnvelope.makeDecoded(fromRendered: text) {
+        return envelope
+      }
+    }
+    return nil
+  }
+
+  /// Sends the update of a call that returned its pending envelope: the call stays `in_progress`,
+  /// because its run continues in the background. The update carries the completion token of the
+  /// run in ``BackgroundRunMeta``, and readable text in place of the envelope JSON. The
+  /// settlement of the run later gives the final status on the same wire id.
+  ///
+  /// A run that settled before its call returned already sent its final status and its result,
+  /// so the late envelope sends nothing.
+  ///
+  /// - Parameters:
+  ///   - toolCallId: The wire id of the call.
+  ///   - envelope: The envelope that the call returned.
+  private mutating func projectDetachedReturn(
+    of toolCallId: ToolCallId, envelope: PendingRunEnvelope
+  ) async {
+    guard !settledToolCallIds.contains(toolCallId.rawValue) else {
+      return
+    }
+    let token = envelope.completionToken
+    detachedRuns.insert(token)
+    var update = ToolCallUpdate(toolCallId: toolCallId)
+    update.content = keptDisplayItems.content(
+      for: toolCallId, adding: .value([Self.textItem(Self.backgroundRunText)]))
+    update.status = .value(.inProgress)
+    if !agentRunTokens.contains(token) {
+      update.meta = .value(BackgroundRunMeta.meta(completionToken: token))
     }
     await send(.toolCallUpdate(update))
   }
@@ -803,16 +917,22 @@ struct ACPEventTranslator {
         "A run completed with no outcome.", metadata: runMetadata(operationEvent.correlationID))
       status = .unknown(Self.unknownOutcomeStatusWireValue)
     }
-    var items = Self.contents(
-      of: shellSnapshot(operationEvent.correlationID),
-      run: operationEvent.correlationID)
+    let snapshot = shellSnapshot(operationEvent.correlationID)
+    var items = Self.contents(of: snapshot, run: operationEvent.correlationID)
+    // A run in the background has no SDK output after its settlement: its call returned the
+    // envelope. So the settlement replaces the readable text of the background run with the
+    // result text. A shell run shows its result through its `Terminal` item.
+    let wasDetached = detachedRuns.remove(operationEvent.correlationID) != nil
+    if wasDetached, snapshot == nil, !operationEvent.detail.isEmpty {
+      items.append(Self.textItem(operationEvent.detail))
+    }
     if let note = Self.note(for: operationEvent.outcome) {
       items.append(Self.textItem(note))
     }
     let toolCallId = runCallId(operationEvent.correlationID)
     settledToolCallIds.insert(toolCallId.rawValue)
     let content = keptDisplayItems.content(
-      for: toolCallId, adding: items.isEmpty ? .unchanged : .value(items))
+      for: toolCallId, adding: items.isEmpty && !wasDetached ? .unchanged : .value(items))
     keptDisplayItems.append(contentsOf: items.filter(Self.isTerminal), to: toolCallId)
     await send(
       runCallUpdate(
@@ -844,11 +964,20 @@ struct ACPEventTranslator {
   /// `in_progress`, because the run is still open, and the settlement of
   /// the run later gives its terminal status.
   ///
+  /// A background run posts its pending envelope as a progress event just before its call
+  /// returns the envelope. That event sends readable text in place of the envelope JSON, and the
+  /// run goes into ``detachedRuns``.
+  ///
   /// - Parameter operationEvent: The `.progress` event of the run.
   private mutating func projectProgress(of operationEvent: OperationEvent) async {
     if let plan = operationEvent.plan {
       await send(.planUpdate(Self.planUpdate(for: plan)))
       return
+    }
+    var text = operationEvent.detail
+    if PendingRunEnvelope.makeDecoded(fromRendered: text) != nil {
+      detachedRuns.insert(operationEvent.correlationID)
+      text = Self.backgroundRunText
     }
     await send(
       runCallUpdate(
@@ -857,7 +986,7 @@ struct ACPEventTranslator {
         op: operationEvent.op,
         content: keptDisplayItems.content(
           for: runCallId(operationEvent.correlationID),
-          adding: .value([Self.textItem(operationEvent.detail)])),
+          adding: .value([Self.textItem(text)])),
         status: .value(.inProgress)))
   }
 

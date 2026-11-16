@@ -190,9 +190,10 @@ import Testing
   /// A real Router stream of a background run that fails after the call
   /// answered with its pending envelope. The order on the wire is: the
   /// progress of the run, the text of the model, the SDK `toolCall` and the
-  /// two `toolStatus` events (the last one `completed`), and then the
-  /// settlement (`failed`). The settlement comes last, so the client ends
-  /// `failed`.
+  /// two `toolStatus` events (the last one stays `in_progress`, because the
+  /// call returned its envelope), and then the settlement (`failed`). The
+  /// one final status is the status of the settlement, so the client ends
+  /// `failed` and never shows `completed`.
   @Test
   func aRealBackgroundRunThatFailsLaterEndsFailedOnTheClient() async throws {
     let release = WatchedValue(false)
@@ -201,17 +202,17 @@ import Testing
       tools: [LateFailingTool(release: release)],
       label: "SettledRunStatusProjectionTests-background"
     ) { update in
-      // The run fails only after the client got the `completed` status
-      // of the call: a fixed order, with no clock.
+      // The run fails only after the client got the background marker of
+      // the call that returned: a fixed order, with no clock.
       guard case .toolCallUpdate(let call) = update,
         call.toolCallId.rawValue == Self.scriptedCallId,
-        call.status == .value(.completed)
+        call.marksBackgroundRun
       else { return }
       release.update { $0 = true }
     }
 
     let statuses = try updates.wireStatuses(ofToolCall: Self.scriptedCallId)
-    #expect(Array(statuses.suffix(2)) == [Self.completedWireValue, Self.failedWireValue])
+    #expect(statuses.filter { $0 != Self.inProgressWireValue } == [Self.failedWireValue])
     #expect(updates.clientStatus(ofToolCall: Self.scriptedCallId) == .failed)
   }
 

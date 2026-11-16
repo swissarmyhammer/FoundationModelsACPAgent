@@ -206,6 +206,7 @@ actor SessionProjector {
       }
       // No settlement comes after the last input, so no host waits for one.
       settlements.close()
+      await state.closeDetachedCalls()
       await state.endOpenPrompts(stop: .cancelled)
       // Router ended each open question before the end of the feed.
       // A round trip that is still in flight is a defect.
@@ -705,6 +706,17 @@ private struct ProjectionState {
     }
   }
 
+  /// Cancels the call of each run that continues in the background and did not settle: the end
+  /// of the inbox. No settlement can come after the end, so such a call must not stay
+  /// `in_progress`. At an orderly shutdown the interruption filter keeps the final status out,
+  /// and the call keeps its `paused` status.
+  mutating func closeDetachedCalls() async {
+    let open = translator.openDetachedCallIds.sorted { $0.rawValue < $1.rawValue }
+    for toolCallId in open {
+      await send(.toolCallUpdate(ToolCallUpdate(toolCallId: toolCallId, status: .value(.cancelled))))
+    }
+  }
+
   /// Ends each open prompt with `stop`: the end of the inbox.
   ///
   /// - Parameter stop: Why the prompts stopped.
@@ -723,6 +735,10 @@ private struct ProjectionState {
   /// Then the end of the prompt in its owner (the
   /// `idle` when no other prompt is open).
   /// Last, the end work of the prompt.
+  ///
+  /// A call whose run continues in the background stays open at the end of a failed or a
+  /// cancelled prompt: the settlement of its run gives its final status later. The end of the
+  /// inbox closes such a call (``closeDetachedCalls()``).
   ///
   /// - Parameters:
   ///   - mailId: The mail of the prompt.
@@ -759,7 +775,9 @@ private struct ProjectionState {
         modelName: ending.prompt.modelName)
     }
     if let status = PromptExecution.closingStatus(for: stop) {
-      for toolCallId in await ending.toolCalls.unfinishedToolCallIds() {
+      let kept = translator.openDetachedCallIds
+      for toolCallId in await ending.toolCalls.unfinishedToolCallIds()
+      where !kept.contains(toolCallId) {
         await send(.toolCallUpdate(ToolCallUpdate(toolCallId: toolCallId, status: .value(status))))
       }
     }

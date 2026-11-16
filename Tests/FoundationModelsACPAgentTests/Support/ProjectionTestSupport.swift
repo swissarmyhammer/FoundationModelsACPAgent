@@ -891,3 +891,16 @@ func terminalIds(in content: PatchField<[ToolCallContent]>) -> [String] {
     return nil
   }
 }
+
+extension ToolCallUpdate {
+  /// Whether the update tells that the call returned its pending envelope: it carries
+  /// `_meta.sah.backgroundRun.completionToken`, and the run of the call continues in the
+  /// background. A test that waits for the return of a background call waits for this update,
+  /// because the call stays `in_progress` until its run settles.
+  var marksBackgroundRun: Bool {
+    guard case .value(let meta) = meta else {
+      return false
+    }
+    return BackgroundRunMeta.completionToken(in: meta) != nil
+  }
+}

@@ -282,7 +282,7 @@ import Testing
         guard notification.sessionId == sessionB,
           case .toolCallUpdate(let update) = notification.update
         else { return false }
-        return update.status == .value(.completed)
+        return update.marksBackgroundRun
       }
     }
     try await fixture.prompt(sessionA, text: Self.holdModelMarker)
