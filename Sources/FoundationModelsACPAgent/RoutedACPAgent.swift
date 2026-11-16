@@ -548,6 +548,8 @@ public actor RoutedACPAgent: Agent {
       fallbackName: name, router: router, reporting: progress)
     let directoryRoots = recordingRootsOfTheDirectory()
     await router.sessionDirectory.useRecordingRoots { await directoryRoots() }
+    // The directory restores a recorded root session through the agent (ACPA-9).
+    await router.sessionDirectory.use(launcher: AgentSessionLauncher(agent: self))
   }
 
   // MARK: - The order rule

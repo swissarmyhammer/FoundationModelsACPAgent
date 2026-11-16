@@ -20,8 +20,8 @@ comments:
     - Store them in one machine-local usage store for each server: `AgentHome.local` (App Group container in TestudoApp), for example `<local>/sessions/usage.json`. Keep the pinned ids, and the lastUsedAt and recording root of each id. A cap on recent entries never drops a pin.
     - Proposed: Extras `SessionUsageStore` (protocol + JSON file), Router `RouterSessionDirectory.use(usageStore:)`, ACPAgent makes the store and gives it. Sent to foundationmodelsextras-0a and testudoapp-75.
   timestamp: 2026-11-15T20:49:54.269268+00:00
-position_column: todo
-position_ordinal: '8480'
+position_column: done
+position_ordinal: fffff080
 title: Mount the sessions tool and fill restoreSession (ACPA-9)
 ---
 From TestudoApp (testudoapp-75), Step 2 (session management and settings, D184; ACPA-9). Plan: TestudoApp `features/packages/foundationmodels-acpagent.md` ACPA-9.

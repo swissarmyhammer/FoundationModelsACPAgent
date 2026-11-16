@@ -201,51 +201,13 @@ extension RoutedACPAgent {
       await tearDownSession(params.sessionId, entry: live)
     }
 
-    // The replaced entry's surface is released before the new one is
-    // composed, never after: its lease on the shared code context of
-    // the working directory goes back first, so the new composition
-    // leases the context that another session of the folder keeps
-    // open, or opens it again when the replaced entry held the last
-    // lease. The retained history of the entry goes over to the
-    // resumed session.
-    let keptHistory = sessions[params.sessionId]?.history
-    await releaseReplacedSession(params.sessionId)
-
-    let composition = try await composeResumedSession(
-      from: context, workingDirectory: workingDirectory, additionalRoots: additionalRoots,
-      params: params, userPresence: userPresence)
-    // The hooks see the key of the working directory, as for
-    // `session/new`, so the resumed session shares the one snapshot
-    // timeline of its folder. The endpoints map the session to that key.
-    let hookLineage = HookLineage(workingDirectory: workingDirectory, origin: .resumed)
-    let claims = await claimedRuns(of: rootId, in: composition)
-    let restored = try await restoreRecordedSession(
-      rootId, sessionId: params.sessionId, composition: composition, userPresence: userPresence,
-      hookLineage: hookLineage, claimingRuns: claims)
-    SnapshotSessionKeys.shared.record(hookLineage.sessionKey, for: params.sessionId)
-    let history = resumedHistory(
-      kept: keptHistory, directory: restored.session.recordingDirectory, rootId: rootId,
-      sessionId: params.sessionId)
-
-    // The mount gives Router the new root set, unless the session is
-    // replay-only: a replay-only session runs no prompt, so its
-    // `index.md` stays as the session left it. A session that recorded
-    // a title keeps it; the first prompt of one with none sets it.
-    let activation = try await activateSession(
-      restored.session,
-      composition: composition,
-      placement: SessionPlacement(
-        workingDirectory: workingDirectory, additionalRoots: additionalRoots,
-        userPresence: userPresence),
-      titleRecorded: restored.session.facts.title != nil,
-      history: history)
-
-    // The root is in the table with its project hook key. So each recorded nested session
-    // restores under it, the caller before the child, and takes the same key.
-    await restoreNestedSessions(of: params.sessionId, composition: composition)
-    // Each open call whose run was in the background ends, or joins its run again, so no row
-    // of the replay stays busy for ever.
-    await restoreBackgroundCalls(of: params.sessionId, recordedId: rootId)
+    let cold = try await restoreColdRoot(
+      rootId, sessionId: params.sessionId, context: context, workingDirectory: workingDirectory,
+      additionalRoots: additionalRoots, clientMCPServers: params.mcpServers ?? [],
+      userPresence: userPresence)
+    let restored = cold.restored
+    let activation = cold.activation
+    let history = cold.history
 
     // The restore of the nested sessions can add the open calls of the root to its history.
     try await replayHistory(
@@ -271,6 +233,80 @@ extension RoutedACPAgent {
       await releaseRestoredWork(of: params.sessionId)
     }
     return response
+  }
+
+
+  /// The part of a cold resume that needs no client: it releases a replaced
+  /// entry, composes the session, restores the recorded root, activates it,
+  /// and restores its nested sessions and its open background calls. A
+  /// `session/resume` of a session that is not live and the launcher of the
+  /// session directory (``AgentSessionLauncher``) both use it.
+  ///
+  /// It does not take the session for a connection, it replays nothing, and
+  /// it holds no restored work: the caller does these steps.
+  ///
+  /// - Parameters:
+  ///   - rootId: The recorded root session's id.
+  ///   - sessionId: The wire session id.
+  ///   - context: The resolved configuration of the working directory.
+  ///   - workingDirectory: The recorded working directory.
+  ///   - additionalRoots: The additional roots of the session, in order.
+  ///   - clientMCPServers: The MCP servers of the client, in wire order.
+  ///   - userPresence: The user presence of the session.
+  /// - Returns: The restored session, its activation, and its history.
+  /// - Throws: Whatever the composition, the restore or the activation
+  ///   throws.
+  func restoreColdRoot(
+    _ rootId: ULID, sessionId: SessionId, context: LoadedSessionContext, workingDirectory: URL,
+    additionalRoots: [URL], clientMCPServers: [FoundationModelsACP.MCPServer],
+    userPresence: UserPresence
+  ) async throws -> ColdRestore {
+    // The replaced entry's surface is released before the new one is
+    // composed, never after: its lease on the shared code context of
+    // the working directory goes back first, so the new composition
+    // leases the context that another session of the folder keeps
+    // open, or opens it again when the replaced entry held the last
+    // lease. The retained history of the entry goes over to the
+    // resumed session.
+    let keptHistory = sessions[sessionId]?.history
+    await releaseReplacedSession(sessionId)
+
+    let composition = try await composeResumedSession(
+      from: context, workingDirectory: workingDirectory, additionalRoots: additionalRoots,
+      sessionId: sessionId, clientMCPServers: clientMCPServers, userPresence: userPresence)
+    // The hooks see the key of the working directory, as for
+    // `session/new`, so the resumed session shares the one snapshot
+    // timeline of its folder. The endpoints map the session to that key.
+    let hookLineage = HookLineage(workingDirectory: workingDirectory, origin: .resumed)
+    let claims = await claimedRuns(of: rootId, in: composition)
+    let restored = try await restoreRecordedSession(
+      rootId, sessionId: sessionId, composition: composition, userPresence: userPresence,
+      hookLineage: hookLineage, claimingRuns: claims)
+    SnapshotSessionKeys.shared.record(hookLineage.sessionKey, for: sessionId)
+    let history = resumedHistory(
+      kept: keptHistory, directory: restored.session.recordingDirectory, rootId: rootId,
+      sessionId: sessionId)
+
+    // The mount gives Router the new root set, unless the session is
+    // replay-only: a replay-only session runs no prompt, so its
+    // `index.md` stays as the session left it. A session that recorded
+    // a title keeps it; the first prompt of one with none sets it.
+    let activation = try await activateSession(
+      restored.session,
+      composition: composition,
+      placement: SessionPlacement(
+        workingDirectory: workingDirectory, additionalRoots: additionalRoots,
+        userPresence: userPresence),
+      titleRecorded: restored.session.facts.title != nil,
+      history: history)
+
+    // The root is in the table with its project hook key. So each recorded nested session
+    // restores under it, the caller before the child, and takes the same key.
+    await restoreNestedSessions(of: sessionId, composition: composition)
+    // Each open call whose run was in the background ends, or joins its run again, so no row
+    // of the replay stays busy for ever.
+    await restoreBackgroundCalls(of: sessionId, recordedId: rootId)
+    return ColdRestore(restored: restored, activation: activation, history: history)
   }
 
   // MARK: - The pre-checks
@@ -403,7 +439,8 @@ extension RoutedACPAgent {
   ///   - context: The resolved per-cwd configuration.
   ///   - workingDirectory: The validated session working directory.
   ///   - additionalRoots: The requested additional roots, in wire order.
-  ///   - params: The resume request.
+  ///   - sessionId: The wire session id.
+  ///   - clientMCPServers: The MCP servers of the client, in wire order.
   ///   - userPresence: The user presence of the session.
   /// - Returns: The full composition, or the replay-only composition.
   /// - Throws: Whatever ``composeSession(from:workingDirectory:additionalRoots:clientMCPServers:userPresence:)``
@@ -412,7 +449,8 @@ extension RoutedACPAgent {
     from context: LoadedSessionContext,
     workingDirectory: URL,
     additionalRoots: [URL],
-    params: ResumeSessionRequest,
+    sessionId: SessionId,
+    clientMCPServers: [FoundationModelsACP.MCPServer],
     userPresence: UserPresence
   ) async throws -> SessionComposition {
     guard
@@ -421,16 +459,16 @@ extension RoutedACPAgent {
     else {
       ACPAgentTelemetry.logger(.sessionResume).notice(
         "A directory of the resumed session does not exist. The session is replay-only.",
-        metadata: ACPAgentTelemetry.sessionMetadata(params.sessionId))
+        metadata: ACPAgentTelemetry.sessionMetadata(sessionId))
       return .replayOnly(from: context)
     }
     return try await composeSession(
       from: context,
       workingDirectory: workingDirectory,
       additionalRoots: additionalRoots,
-      clientMCPServers: params.mcpServers ?? [],
+      clientMCPServers: clientMCPServers,
       userPresence: userPresence,
-      resuming: params.sessionId)
+      resuming: sessionId)
   }
 
   /// Restores the recorded root session with the freshly assembled
@@ -729,4 +767,17 @@ extension SessionComposition {
       agent: nil,
       isReplayOnly: true)
   }
+}
+
+/// What ``RoutedACPAgent/restoreColdRoot(_:sessionId:context:workingDirectory:additionalRoots:clientMCPServers:userPresence:)``
+/// gives: the restored session, its activation and its history.
+struct ColdRestore {
+  /// The restored Router session and its reports.
+  let restored: RestoredSession
+
+  /// The activation of the session: its commands and its options.
+  let activation: SessionActivation
+
+  /// The history of the session before the replay.
+  let history: SessionMergeEngine
 }
