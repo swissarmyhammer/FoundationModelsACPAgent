@@ -27,8 +27,15 @@ comments:
     - note: the kanban tool writes to the board of the main checkout, so the commit holds no .kanban changes.
     - next: review
   timestamp: 2026-11-17T11:55:42.074464+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m7mp6np4jbntvdz4hw85r7fd
+  text: |-
+    ### review — clean
+    - evidence: review sha 8fd614a~1..8fd614a, 7 validators, 0 findings. Full suite on main: 2223 tests pass (1 known issue).
+    - next: done.
+  timestamp: 2026-11-17T12:02:44.036991+00:00
+position_column: done
+position_ordinal: fffffb80
 title: 'doctor: price a GGUF reference by its file path, not the whole repository'
 ---
 `HubModelResolver.missingBytes` (Sources/FoundationModelsACPAgent/Doctor/ModelResolver.swift) sums every file of the repository tree that no snapshot holds. A reference that names one GGUF file inside its repository (`owner/name/file.gguf@rev`, such as Router's default decision candidate `h2oai/h2o-lightning-4b-gguf/h2o-lightning-4b-Q4_K_M.gguf@61f8d8b…`) downloads only that file (and its split shards / projector), but the doctor prices every quantization in the repository. Since the decision slot joined `ProfileDoctor.slotReferences`, the default profile's disk row overstates the next download, and the "on disk" row can say a cached decision file still downloads (the other quants are not on disk).
