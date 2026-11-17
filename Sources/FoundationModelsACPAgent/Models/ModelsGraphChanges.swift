@@ -4,9 +4,8 @@ import FoundationModelsRouter
 import Synchronization
 
 // The change feed of the `models` endpoint (EXTRAS-9 rule 9): one change log
-// of each endpoint, fed by the changes of `profile.preset` in the settings
-// store, and by a watch of the disk state of the models of the builtin
-// profiles.
+// of each endpoint, fed by the changes of `profile` in the settings store,
+// and by a watch of the disk state of the models of the available profiles.
 
 /// One change of the `models` endpoint.
 struct ModelsGraphChangeEvent: Sendable {
@@ -97,6 +96,11 @@ final class ModelsGraphChangeFeed: Sendable {
   /// starts is never lost.
   let settingsWatch: Task<AsyncStream<SettingsChange>, Never>
 
+  /// The start of the watch of the profile store: it gives the stream of
+  /// the changes of the profile files when the store watches the user
+  /// layer. A new subscriber waits for it, as for ``settingsWatch``.
+  let profileWatch: Task<AsyncStream<ProfileChange>, Never>
+
   /// The tasks that feed the log. The feed cancels them when it goes.
   private let tasks: Mutex<[Task<Void, Never>]>
 
@@ -118,15 +122,27 @@ final class ModelsGraphChangeFeed: Sendable {
       return changes
     }
     self.settingsWatch = settingsWatch
+    let profiles = engine.profileStore
+    let profileWatch = Task {
+      let changes = await profiles.changes()
+      await profiles.startWatching(cwd: nil)
+      return changes
+    }
+    self.profileWatch = profileWatch
     let settings = Task {
       await Self.recordSettingsChanges(
         await settingsWatch.value, into: log, rebasing: watch, clearing: engine.fitCache)
+    }
+    let profileFiles = Task {
+      for await _ in await profileWatch.value {
+        await Self.recordProfileChange(into: log, rebasing: watch, clearing: engine.fitCache)
+      }
     }
     let disk = Task {
       await Self.recordDiskChanges(
         of: watch, engine: engine, every: diskPollInterval, into: log)
     }
-    tasks = Mutex([settings, disk])
+    tasks = Mutex([settings, profileFiles, disk])
   }
 
   deinit {
@@ -134,8 +150,7 @@ final class ModelsGraphChangeFeed: Sendable {
   }
 
   /// Tells if a change of the settings can change the selected profile: a
-  /// change of `profile.preset`, of the whole profile section, or of a
-  /// whole file.
+  /// change of `profile`, of a key under it, or of a whole file.
   ///
   /// - Parameter keyPath: The changed key path, or `nil` for a change of a
   ///   whole file.
@@ -144,11 +159,11 @@ final class ModelsGraphChangeFeed: Sendable {
     guard let keyPath else {
       return true
     }
-    return ProfileConfiguration.presetKeyPath.starts(with: keyPath)
-      || keyPath.starts(with: ProfileConfiguration.presetKeyPath)
+    return ProfileConfiguration.keyPath.starts(with: keyPath)
+      || keyPath.starts(with: ProfileConfiguration.keyPath)
   }
 
-  /// Logs a change for each change of `profile.preset` at the user level.
+  /// Logs a change for each change of `profile` at the user level.
   /// The change names each slot, because each slot can have a new model.
   ///
   /// - Parameters:
@@ -165,10 +180,25 @@ final class ModelsGraphChangeFeed: Sendable {
       guard change.level == .user, changesProfile(change.keyPath) else {
         continue
       }
-      await fitCache.clear()
-      await log.append(ModelsGraphChangeEvent(slots: ModelSlot.allCases, reason: .profile))
-      await watch.rebase()
+      await recordProfileChange(into: log, rebasing: watch, clearing: fitCache)
     }
+  }
+
+  /// Logs one PROFILE change that names each slot, because each slot can
+  /// have a new model: a change of the selected profile or of a profile
+  /// file.
+  ///
+  /// - Parameters:
+  ///   - log: The change log.
+  ///   - watch: The disk watch, which takes its base state again.
+  ///   - fitCache: The fit estimates, which the change clears.
+  private static func recordProfileChange(
+    into log: ChangeLog<ModelsGraphChangeEvent>, rebasing watch: ModelsDiskWatch,
+    clearing fitCache: ProfileFitCache
+  ) async {
+    await fitCache.clear()
+    await log.append(ModelsGraphChangeEvent(slots: ModelSlot.allCases, reason: .profile))
+    await watch.rebase()
   }
 
   /// Logs a change when the disk state of a model of a builtin profile

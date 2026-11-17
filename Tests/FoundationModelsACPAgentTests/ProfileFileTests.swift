@@ -120,6 +120,26 @@ import Testing
     #expect(throws: Never.self) { try Self.decode("kvBits: 8\n") }
   }
 
+  /// `kvBits: 8` gives an 8-bit KV cache.
+  @Test func eightKVBitsGiveAnEightBitKVCache() throws {
+    #expect(try Self.decode("kvBits: 8\n").kvCacheQuantization == .bits8)
+  }
+
+  /// No `kvBits` gives an unquantized KV cache: `large` names none.
+  @Test func noKVBitsGiveAnUnquantizedKVCache() throws {
+    #expect(try Self.decode("").kvCacheQuantization == nil)
+  }
+
+  /// A `kvBits` other than 8 or 4 is an error that names the file.
+  @Test func sixKVBitsAreAnErrorThatNamesTheFile() {
+    do {
+      _ = try Self.decode("kvBits: 6\n")
+      Issue.record("expected a ProfileFileError")
+    } catch {
+      #expect(String(describing: error).contains(Self.path))
+    }
+  }
+
   /// A key that a profile does not have is an error that names the file and
   /// the key.
   @Test func anUnknownKeyIsAnError() {

@@ -50,6 +50,7 @@ private struct ParkingDownloadLoader: ModelLoader {
     ref: ModelRef,
     slot: ModelSlot,
     context: Int,
+    kvCache: KVCacheQuantization?,
     reporting: @escaping @Sendable (DownloadProgress) -> Void
   ) async throws -> any LoadedLLMContainer {
     // The bytes that reach the disk before the transfer stops. Nothing
@@ -64,7 +65,7 @@ private struct ParkingDownloadLoader: ModelLoader {
     // The transfer stops until a cancel: only the cancel ends it.
     try await waitForCancellation()
     return try await stub.loadLLM(
-      ref: ref, slot: slot, context: context, reporting: reporting)
+      ref: ref, slot: slot, context: context, kvCache: kvCache, reporting: reporting)
   }
 
   func loadEmbedder(

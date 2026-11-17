@@ -91,11 +91,53 @@ enum ModelsGraphProfileFit: String, Codable, CaseIterable, Sendable {
 
 /// The `ModelChangeReason` enum of the schema.
 enum ModelsGraphChangeReason: String, Codable, CaseIterable, Sendable {
-  /// The value of `profile.preset` in the settings changed.
+  /// The value of `profile` in the settings changed.
   case profile = "PROFILE"
 
   /// The files of a model on disk changed, for example a download ended.
   case disk = "DISK"
+}
+
+/// The `ProfileLayer` enum of the schema: the layer of a profile file.
+enum ModelsGraphProfileLayer: String, Codable, CaseIterable, Sendable {
+  /// The project layer of a working directory.
+  case project = "PROJECT"
+
+  /// The user layer.
+  case user = "USER"
+
+  /// The bundled profiles, which are read-only.
+  case bundled = "BUNDLED"
+
+  /// The schema value of a layer.
+  ///
+  /// - Parameter layer: The layer.
+  init(_ layer: ProfileLayer) {
+    switch layer {
+    case .project: self = .project
+    case .user: self = .user
+    case .bundled: self = .bundled
+    }
+  }
+
+  /// The settings level of a change of this layer.
+  ///
+  /// - Parameter cwd: The working directory of the project layer, or `nil`.
+  /// - Returns: The level.
+  /// - Throws: ``ModelsGraphError/readOnlyLayer`` for the bundled layer, and
+  ///   ``ModelsGraphError/missingWorkingDirectory`` for the project layer
+  ///   with no working directory.
+  func level(cwd: URL?) throws -> SettingsLevel {
+    switch self {
+    case .user:
+      return .user
+    case .bundled:
+      throw ModelsGraphError.readOnlyLayer
+    case .project:
+      guard let cwd else { throw ModelsGraphError.missingWorkingDirectory }
+      return .session(cwd)
+    }
+  }
 }
 
 /// The `ModelChangeApplies` enum of the schema: when a change takes effect.
@@ -201,15 +243,18 @@ struct ModelsGraphProfileModel: Sendable {
   var storageError: String? { model.storageError }
 }
 
-/// The `ModelProfile` object: one builtin profile that the user can select.
+/// The `ModelProfile` object: one profile that the user can select.
 struct ModelsGraphProfile: Sendable {
-  /// The name of the profile: the value of `profile.preset`.
+  /// The name of the profile: the value of `profile`.
   let name: String
+
+  /// The layer of the file of the profile.
+  let layer: ModelsGraphProfileLayer
 
   /// The description of the profile.
   let description: String
 
-  /// True when `profile.preset` at the user level names this profile.
+  /// True when `profile` at the user level names this profile.
   let selected: Bool
 
   /// True when the running agent launched with this profile.
@@ -243,6 +288,40 @@ struct ModelsGraphProfile: Sendable {
 
   /// The readable reason of a fit that failed, or `nil`.
   let fitError: String?
+}
+
+/// The arguments of `Query.profiles`.
+struct ModelsGraphProfilesArguments: Codable, Sendable {
+  /// The absolute path of the working directory whose project layer the
+  /// list reads, or `nil` for the user layer and the bundled profiles.
+  let cwd: String?
+}
+
+/// The arguments of `Mutation.saveProfile`.
+struct ModelsGraphSaveProfileArguments: Codable, Sendable {
+  /// The name of the profile: the name of its file.
+  let name: String
+
+  /// The keys of the profile file. Each key is optional.
+  let profile: Map
+
+  /// The layer of the file.
+  let layer: ModelsGraphProfileLayer
+
+  /// The working directory of the project layer, or `nil`.
+  let cwd: String?
+}
+
+/// The arguments of `Mutation.deleteProfile`.
+struct ModelsGraphDeleteProfileArguments: Codable, Sendable {
+  /// The name of the profile.
+  let name: String
+
+  /// The layer of the file.
+  let layer: ModelsGraphProfileLayer
+
+  /// The working directory of the project layer, or `nil`.
+  let cwd: String?
 }
 
 /// The arguments of `Subscription.changes`.

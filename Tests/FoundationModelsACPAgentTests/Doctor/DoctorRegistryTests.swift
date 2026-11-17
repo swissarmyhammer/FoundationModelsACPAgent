@@ -91,6 +91,23 @@ struct DoctorRegistryTests {
     #expect(checks.contains { $0.message.contains(home.local.standardizedFileURL.path) })
   }
 
+  /// A profile file of the project layer that does not decode is a
+  /// finding of the profile component that names the file.
+  @Test func aBadProfileFileIsAFinding() async throws {
+    let fixture = ConfigCommandFixture(label: "DoctorRegistryTests-bad-profile")
+    let profiles = fixture.projectDirectory.appendingPathComponent(ProfileFile.folderName)
+    try FileManager.default.createDirectory(at: profiles, withIntermediateDirectories: true)
+    let file = profiles.appendingPathComponent("custom.yaml")
+    try "slots: []\n".write(to: file, atomically: true, encoding: .utf8)
+
+    let report = await DoctorRunner(components: Self.components(in: fixture)).run()
+
+    #expect(
+      report.checks.contains {
+        $0.category == ProfileDoctor.category && $0.status == .warning && $0.message.contains(file.path)
+      })
+  }
+
   // MARK: - The fix rule
 
   /// Every finding these components report that is not `ok` carries a

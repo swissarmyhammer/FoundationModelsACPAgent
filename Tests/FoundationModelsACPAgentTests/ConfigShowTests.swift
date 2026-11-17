@@ -213,40 +213,27 @@ struct ConfigShowTests {
         "identicalToolCallLimit: \(RepetitionDetection.defaultIdenticalToolCallLimit)"))
   }
 
-  /// With no file in any layer, the report shows `profile.preset` with the
-  /// default profile, and no slot key and no `decisionContext` (ACPA-21).
-  @Test func noFilesShowThePresetAndNoSlotKey() throws {
-    let fixture = ConfigCommandFixture(label: "ConfigShowTests-preset")
+  /// With no file in any layer, the report shows `profile: large`, the
+  /// name of the default profile, and no slot key.
+  @Test func noFilesShowTheDefaultProfileName() throws {
+    let fixture = ConfigCommandFixture(label: "ConfigShowTests-profile")
 
     let report = try Self.report([], in: fixture)
 
-    #expect(report.standardOutput.contains("  preset: \"\(ModelProfiles.defaultName)\"\n")
-      || report.standardOutput.contains("  preset: \(ModelProfiles.defaultName)\n"))
-    #expect(!report.standardOutput.contains("  decision:"))
-    #expect(!report.standardOutput.contains("decisionContext"))
+    #expect(report.standardOutput.contains("\nprofile: \"\(BundledProfiles.defaultName)\"\n"))
     #expect(!report.standardOutput.contains("  standard:"))
   }
 
-  /// With no file in any layer, the report shows `profile.kvBits` as
-  /// `null`, so a person can see the key and set 8 or 4.
-  @Test func noFilesShowTheKVBitsAsNull() throws {
-    let fixture = ConfigCommandFixture(label: "ConfigShowTests-kv-bits")
-
-    let report = try Self.report([], in: fixture)
-
-    #expect(report.standardOutput.contains("  kvBits: null\n"))
-  }
-
-  /// The comment above the `profile:` section names the preset and the
-  /// builtin profiles.
-  @Test func theProfileCommentNamesThePreset() throws {
+  /// The comment above the `profile` key says that it names a profile
+  /// file.
+  @Test func theProfileCommentNamesTheProfileFiles() throws {
     let fixture = ConfigCommandFixture(label: "ConfigShowTests-profile-comment")
 
     let report = try Self.report([], in: fixture)
 
     #expect(
       report.standardOutput.contains(
-        "# The model profile: preset selects a builtin profile (large, medium, small or tiny).\nprofile:"))
+        "# The model profile: the name of a profile file (profiles/<name>.yaml), such as large or small.\nprofile:"))
   }
 
   /// With no file in any layer, the report shows `tools.files.exclude`

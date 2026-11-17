@@ -55,18 +55,21 @@ import Testing
 
   /// The builtin standard model and its drafter: the models of the
   /// profile `large`.
-  static let standard = ModelProfiles.defaultProfile.standard[0]
+  static let standard = BundledProfiles.defaultProfile.standard[0]
   static let standardDrafter = standard.drafter!
 
   /// The builtin flash model: the standard model, with its drafter.
-  static let flash = ModelProfiles.defaultProfile.flash[0]
+  static let flash = BundledProfiles.defaultProfile.flash[0]
 
-  /// The model of the profile `tiny`, with no drafter.
-  static let tinyModel = ModelRef("mlx-community/Qwen3-4B-4bit")
+  /// The model of the profile `small`, with its drafter.
+  static let smallModel = BundledProfiles.named("small")!.standard[0]
 
-  /// A storage with answers for each model and drafter of the builtin
+  /// The drafter of the model of `small`.
+  static let smallDrafter = smallModel.drafter!
+
+  /// A storage with answers for each model and drafter of the bundled
   /// profiles: the standard model complete, its drafter missing, the model
-  /// of `tiny` complete, each other model missing.
+  /// of `small` complete, its drafter missing, each other model missing.
   static func builtinStorage() -> FakeStorage {
     let storage = FakeStorage()
     for ref in ModelsEngine.builtinModels {
@@ -74,7 +77,8 @@ import Testing
     }
     storage.set(info(standard, total: 1_000, present: 1_000, state: .complete))
     storage.set(info(standardDrafter, total: 200, present: 0, state: .missing))
-    storage.set(info(tinyModel, total: 300, present: 300, state: .complete))
+    storage.set(info(smallModel, total: 300, present: 300, state: .complete))
+    storage.set(info(smallDrafter, total: 100, present: 0, state: .missing))
     return storage
   }
 
@@ -139,9 +143,9 @@ import Testing
     try #require(rows.first { $0["name"] as? String == name })
   }
 
-  /// Selects a builtin profile at the user level.
+  /// Selects a profile at the user level.
   static func select(_ name: String, in fixture: SettingsGraphFixture) async throws {
-    try await fixture.store.set(.string(name), at: ["profile", "preset"], level: .user)
+    try await fixture.store.set(.string(name), at: ["profile"], level: .user)
   }
 
   /// The next event of a subscription, as an object.
@@ -173,17 +177,17 @@ import Testing
     #expect(rows[1]["drafter"] as? String == Self.standardDrafter.stringValue)
   }
 
-  /// The rows follow `profile.preset`: the slots of `tiny` name a model
-  /// with no drafter.
-  @Test func theRowsFollowThePreset() async throws {
-    let fixture = try SettingsGraphFixture(label: "models-preset")
-    try await Self.select("tiny", in: fixture)
+  /// The rows follow `profile`: the slots of `small` name its model and
+  /// its drafter.
+  @Test func theRowsFollowTheSelectedProfile() async throws {
+    let fixture = try SettingsGraphFixture(label: "models-selected-rows")
+    try await Self.select("small", in: fixture)
 
     let rows = try await Self.rows(Self.graph(fixture))
 
-    #expect(rows[0]["repo"] as? String == Self.tinyModel.repo)
-    #expect(rows[1]["repo"] as? String == Self.tinyModel.repo)
-    #expect(rows[1]["drafter"] is NSNull)
+    #expect(rows[0]["repo"] as? String == Self.smallModel.repo)
+    #expect(rows[1]["repo"] as? String == Self.smallModel.repo)
+    #expect(rows[1]["drafter"] as? String == Self.smallDrafter.stringValue)
   }
 
   /// The size adds the model and its drafter; the state of a complete
@@ -227,7 +231,7 @@ import Testing
 
     let rows = try await Self.rows(Self.graph(fixture, storage: storage))
 
-    let embedding = ModelProfiles.defaultProfile.embedding[0]
+    let embedding = BundledProfiles.defaultProfile.embedding[0]
     #expect(rows[2]["repo"] as? String == embedding.repo)
     #expect(rows[2]["sizeBytes"] is NSNull)
     #expect(rows[2]["state"] as? String == "MISSING")
@@ -240,14 +244,14 @@ import Testing
     let fixture = try SettingsGraphFixture(label: "models-restart")
     let graph = Self.graph(
       fixture, launched: ProfileConfiguration(), active: [.standard: Self.standard, .flash: Self.flash])
-    try await Self.select("medium", in: fixture)
+    try await Self.select("small", in: fixture)
 
     let rows = try await Self.rows(graph)
 
     #expect(rows[0]["restartRequired"] as? Bool == true)
     #expect(rows[1]["restartRequired"] as? Bool == true)
     #expect(rows[2]["restartRequired"] as? Bool == false)
-    #expect(rows[1]["repo"] as? String == "mlx-community/Qwen3-14B-4bit")
+    #expect(rows[1]["repo"] as? String == Self.smallModel.repo)
     #expect(rows[1]["active"] as? String == Self.flash.stringValue)
   }
 
@@ -263,7 +267,7 @@ import Testing
 
   // MARK: - profiles
 
-  /// One row for each builtin profile, in the order of the list, each with
+  /// One row for each bundled profile, in the order of the list, each with
   /// a model for each slot. With no agent, `large` is selected and no
   /// profile is active; with no estimate, the fit is UNKNOWN.
   @Test func eachBuiltinProfileHasOneRow() async throws {
@@ -271,8 +275,8 @@ import Testing
 
     let rows = try await Self.profiles(Self.graph(fixture))
 
-    #expect(rows.map { $0["name"] as? String } == ModelProfiles.builtin.map(\.name))
-    #expect(rows.map { $0["description"] as? String } == ModelProfiles.builtin.map(\.description))
+    #expect(rows.map { $0["name"] as? String } == BundledProfiles.all.map(\.name))
+    #expect(rows.map { $0["description"] as? String } == BundledProfiles.all.map(\.description))
     #expect(rows.allSatisfy { ($0["models"] as? [[String: Any]])?.count == 4 })
     #expect(rows.map { $0["selected"] as? Bool } == rows.map { $0["name"] as? String == "large" })
     #expect(rows.allSatisfy { $0["active"] as? Bool == false && $0["restartRequired"] as? Bool == false })
@@ -292,11 +296,11 @@ import Testing
     #expect(large["downloadBytes"] as? Double == 1_300)
     #expect(large["presentBytes"] as? Double == 1_000)
     #expect(large["state"] as? String == "PARTIAL")
-    let tiny = try Self.profile("tiny", in: rows)
-    #expect(tiny["downloadBytes"] as? Double == 400)
-    let medium = try Self.profile("medium", in: rows)
-    #expect(medium["presentBytes"] as? Double == 0)
-    #expect(medium["state"] as? String == "MISSING")
+    // The model 300 and its drafter 100, the embedding and the decision
+    // models 50 each.
+    let small = try Self.profile("small", in: rows)
+    #expect(small["downloadBytes"] as? Double == 500)
+    #expect(small["presentBytes"] as? Double == 300)
   }
 
   /// A profile whose each model is on disk is COMPLETE, and a size that is
@@ -307,15 +311,15 @@ import Testing
     for ref in ModelsEngine.builtinModels + ModelsEngine.builtinModels.compactMap(\.drafter) {
       storage.set(Self.info(ref, total: 10, present: 10, state: .complete))
     }
-    storage.set(Self.info(Self.tinyModel, total: nil, present: 10, state: .complete))
+    storage.set(Self.info(Self.smallModel, total: nil, present: 10, state: .complete))
 
     let rows = try await Self.profiles(Self.graph(fixture, storage: storage))
 
     #expect(try Self.profile("large", in: rows)["state"] as? String == "COMPLETE")
-    #expect(try Self.profile("tiny", in: rows)["downloadBytes"] is NSNull)
+    #expect(try Self.profile("small", in: rows)["downloadBytes"] is NSNull)
   }
 
-  /// `selected` follows `profile.preset` at the user level. With a running
+  /// `selected` follows `profile` at the user level. With a running
   /// agent of an other profile, the selected profile needs a restart, and
   /// the profile of the launch is active.
   @Test func selectedFollowsThePreset() async throws {
@@ -339,7 +343,7 @@ import Testing
     let fit = StubFit([
       "large": ProfileFitReport(
         fits: false, requiredBytes: nil, budgetBytes: 32, failure: "needs 40, has 32"),
-      "tiny": ProfileFitReport(fits: true, requiredBytes: 20, budgetBytes: 32),
+      "small": ProfileFitReport(fits: true, requiredBytes: 20, budgetBytes: 32),
     ])
     let graph = Self.graph(fixture, fit: fit)
 
@@ -351,16 +355,16 @@ import Testing
     #expect(large["requiredBytes"] is NSNull)
     #expect(large["budgetBytes"] as? Double == 32)
     #expect(large["fitError"] as? String == "needs 40, has 32")
-    let tiny = try Self.profile("tiny", in: rows)
-    #expect(tiny["fit"] as? String == "FITS")
-    #expect(tiny["requiredBytes"] as? Double == 20)
-    #expect(tiny["fitError"] is NSNull)
-    #expect(fit.calls.withLock { $0 } == ModelProfiles.builtin.map(\.name))
+    let small = try Self.profile("small", in: rows)
+    #expect(small["fit"] as? String == "FITS")
+    #expect(small["requiredBytes"] as? Double == 20)
+    #expect(small["fitError"] is NSNull)
+    #expect(fit.calls.withLock { $0 } == BundledProfiles.all.map(\.name))
   }
 
-  /// A preset that names no builtin profile is refused by the settings
-  /// store, and the error names the profiles.
-  @Test func anUnknownPresetIsRefused() async throws {
+  /// A name that no layer has is refused by the settings store, and the
+  /// error names the profiles.
+  @Test func anUnknownProfileNameIsRefused() async throws {
     let fixture = try SettingsGraphFixture(label: "models-unknown")
 
     let error = await #expect(throws: (any Error).self) {
@@ -372,16 +376,16 @@ import Testing
 
   // MARK: - changes
 
-  /// A write of `profile.preset` at the user level gives a PROFILE change
-  /// of each slot that applies at the next launch.
-  @Test func aPresetWriteGivesAProfileChange() async throws {
+  /// A write of `profile` at the user level gives a PROFILE change of each
+  /// slot that applies at the next launch.
+  @Test func aProfileWriteGivesAProfileChange() async throws {
     let fixture = try SettingsGraphFixture(label: "models-profile-change")
     let graph = Self.graph(fixture)
     var events = try await graph.subscribe(
       query: Self.changesDocument, variables: [:], operationName: nil, viewer: nil
     ).makeAsyncIterator()
 
-    try await Self.select("medium", in: fixture)
+    try await Self.select("small", in: fixture)
 
     let change = try await Self.next(&events)
     #expect(change["changed"] as? [String] == ["standard", "flash", "embedding", "decision"])
@@ -389,10 +393,9 @@ import Testing
     #expect(change["appliesAt"] as? String == "NEXT_LAUNCH")
   }
 
-  /// Only a change that can change `profile.preset` changes the profile.
-  @Test func onlyAPresetChangeChangesTheProfile() {
+  /// Only a change that can change `profile` changes the profile.
+  @Test func onlyAProfileChangeChangesTheProfile() {
     #expect(!ModelsGraphChangeFeed.changesProfile(["theme"]))
-    #expect(!ModelsGraphChangeFeed.changesProfile(["profile", "name"]))
     #expect(ModelsGraphChangeFeed.changesProfile(["profile", "preset"]))
     #expect(ModelsGraphChangeFeed.changesProfile(["profile"]))
     #expect(ModelsGraphChangeFeed.changesProfile(nil))
@@ -428,7 +431,7 @@ import Testing
       query: Self.changesDocument, variables: [:], operationName: nil, viewer: nil
     ).makeAsyncIterator()
 
-    storage.set(Self.info("mlx-community/Qwen3-14B-4bit", total: 50, present: 50, state: .complete))
+    storage.set(Self.info(Self.smallDrafter, total: 100, present: 100, state: .complete))
 
     let change = try await Self.next(&events)
     #expect(change["changed"] as? [String] == [])

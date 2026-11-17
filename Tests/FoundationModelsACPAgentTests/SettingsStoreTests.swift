@@ -211,6 +211,34 @@ import Testing
     #expect(!FileManager.default.fileExists(atPath: userFile.path))
   }
 
+  /// A set of the old `profile.preset` key is refused: a profile is
+  /// selected with the scalar key `profile`.
+  @Test func aSetOfTheOldPresetKeyIsRefused() async throws {
+    let fixture = try Fixture(label: "retired-preset")
+
+    await #expect(throws: SettingsStoreError.retiredKey(keyPath: "profile.preset")) {
+      try await fixture.store.set(.string("small"), at: ["profile", "preset"], level: .user)
+    }
+  }
+
+  /// A set of `profile` to the name of a profile selects it.
+  @Test func aSetOfTheProfileNameSelectsIt() async throws {
+    let fixture = try Fixture(label: "profile-name")
+
+    try await fixture.store.set(.string("small"), at: ["profile"], level: .user)
+
+    #expect(try await fixture.store.merged(for: fixture.firstDirectory).configuration.profile.name == "small")
+  }
+
+  /// A set of `profile` to a name that no layer has is refused.
+  @Test func aSetOfAnUnknownProfileNameIsRefused() async throws {
+    let fixture = try Fixture(label: "profile-unknown")
+
+    await #expect(throws: ProfileStoreError.self) {
+      try await fixture.store.set(.string("huge"), at: ["profile"], level: .user)
+    }
+  }
+
   /// directory that does not set the key, and writes `<user>/config.yaml`.
   @Test func aUserSetChangesEachSessionAndWritesTheUserFile() async throws {
     let fixture = try Fixture(label: "user-set")

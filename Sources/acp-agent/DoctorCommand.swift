@@ -142,7 +142,8 @@ extension AcpAgentCommand {
             ?? SystemModelResolver(
               environment: environment, modelCacheDirectory: home.modelCacheDirectory),
           memoryBytes: memoryBytes,
-          freeDiskBytes: freeDiskBytes ?? MachineFigures.freeDiskBytes(at: home.modelCacheDirectory)
+          freeDiskBytes: freeDiskBytes ?? MachineFigures.freeDiskBytes(at: home.modelCacheDirectory),
+          fileErrors: loader.profileLayers.list(cwd: workingDirectory).compactMap(\.error)
         ),
         TranscriptsDoctor(name: loader.name, workingDirectory: workingDirectory),
         RuntimeDoctor(workingDirectory: workingDirectory, settingsFolders: loader.settingsFolders),

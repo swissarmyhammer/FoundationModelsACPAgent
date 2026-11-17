@@ -110,17 +110,16 @@ import Testing
   }
 
   /// The in-code default values: the theme follows the system, the keymap
-  /// is the standard one, and the preset is the default profile.
+  /// is the standard one, and the profile is the default profile.
   @Test func inCodeDefaultsAreTheBuiltinValues() {
     let configuration = AgentConfiguration()
 
     #expect(configuration.theme == .system)
     #expect(configuration.keymap == .cua)
-    #expect(configuration.profile.name == nil)
-    #expect(configuration.profile.preset == ModelProfiles.defaultName)
-    #expect(!configuration.profile.presetProfile.standard.isEmpty)
-    #expect(!configuration.profile.presetProfile.flash.isEmpty)
-    #expect(!configuration.profile.presetProfile.embedding.isEmpty)
+    #expect(configuration.profile.name == BundledProfiles.defaultName)
+    #expect(!configuration.profile.definition.standard.isEmpty)
+    #expect(!configuration.profile.definition.flash.isEmpty)
+    #expect(!configuration.profile.definition.embedding.isEmpty)
   }
 
   /// A project-layer key overrides the same user-layer key. A user-layer
@@ -146,7 +145,7 @@ import Testing
 
   // MARK: - The builtin default models
 
-  /// The empty stack — no `config.yaml` in any layer — gives the preset
+  /// The empty stack — no `config.yaml` in any layer — gives the profile
   /// `large` and its three model references of cli-plan.md §7 exactly.
   /// This is what a person gets on a first run with no configuration, so a
   /// wrong id here stops that run.
@@ -154,9 +153,9 @@ import Testing
     let fixture = Fixture()
 
     let configured = try fixture.makeLoader().load().configuration.profile
-    let profile = configured.presetProfile
+    let profile = configured.definition
 
-    #expect(configured.preset == "large")
+    #expect(configured.name == "large")
     #expect(profile.standard.map(\.stringValue) == [Self.defaultStandardModel])
     #expect(profile.flash.map(\.stringValue) == [Self.defaultFlashModel])
     #expect(profile.embedding.map(\.stringValue) == [Self.defaultEmbeddingModel])
@@ -170,7 +169,7 @@ import Testing
   @Test func theStandardAndFlashDefaultsNameTheirMTPDrafter() throws {
     let fixture = Fixture()
 
-    let profile = try fixture.makeLoader().load().configuration.profile.presetProfile
+    let profile = try fixture.makeLoader().load().configuration.profile.definition
 
     #expect(profile.standard.map { $0.drafter?.stringValue } == [Self.defaultStandardDrafter])
     #expect(profile.flash.map { $0.drafter?.stringValue } == [Self.defaultStandardDrafter])
@@ -277,22 +276,22 @@ import Testing
   }
 
   /// The `standard` slot default of the builtin configuration.
-  private static let defaultStandardModel = "mlx-community/Qwen3.8-27B-4bit"
+  private static let defaultStandardModel = "mlx-community/Qwen3.8-27B-8bit"
 
   /// The MTP drafter of the `standard` slot default.
-  private static let defaultStandardDrafter = "mlx-community/Qwen3.8-27B-MTP-4bit"
+  private static let defaultStandardDrafter = "mlx-community/Qwen3.8-27B-MTP-8bit"
 
   /// The `flash` slot default of the builtin configuration: the model of
   /// the `standard` default. Router shares one container between the two
   /// slots when they name the same model.
-  private static let defaultFlashModel = "mlx-community/Qwen3.8-27B-4bit"
+  private static let defaultFlashModel = "mlx-community/Qwen3.8-27B-8bit"
 
   /// The `embedding` slot default of the builtin configuration.
   private static let defaultEmbeddingModel = "erjigit17/embeddinggemma-300m-ane-coreml"
 
   /// Every model reference the builtin defaults name, over the three slots.
   private static var defaultModelReferences: [ModelRef] {
-    let profile = AgentConfiguration().profile.presetProfile
+    let profile = AgentConfiguration().profile.definition
     return profile.standard + profile.flash + profile.embedding
   }
 
@@ -856,15 +855,13 @@ import Testing
 
   // MARK: - Section values
 
-  /// The `profile` and `compaction` sections decode their keys, and a key
-  /// that is not set keeps its default.
+  /// The `profile` and `compaction` sections decode, and a key that is not
+  /// set keeps its default.
   @Test func profileAndCompactionSectionsDecode() throws {
     let fixture = Fixture()
     fixture.writeConfig(
       """
-      profile:
-        name: pair
-        preset: medium
+      profile: small
       compaction:
         trigger: \(Self.configuredTrigger)
         toolOutputLimit: \(Self.configuredToolOutputLimit)
@@ -873,9 +870,8 @@ import Testing
     let loaded = try fixture.makeLoader().load()
     let defaults = AgentConfiguration()
 
-    #expect(loaded.configuration.profile.name == "pair")
-    #expect(loaded.configuration.profile.preset == "medium")
-    #expect(loaded.configuration.profile.presetProfile.name == "medium")
+    #expect(loaded.configuration.profile.name == "small")
+    #expect(loaded.configuration.profile.definition.name == "small")
     #expect(loaded.configuration.compaction.trigger == Self.configuredTrigger)
     #expect(loaded.configuration.compaction.target == defaults.compaction.target)
     #expect(loaded.configuration.compaction.toolOutputLimit == Self.configuredToolOutputLimit)
@@ -1001,55 +997,97 @@ import Testing
     }
   }
 
-  /// The model configuration is by profile (D189): `profile.preset` names
-  /// one builtin profile, and the slot models come from it.
-  @Test func thePresetSelectsTheModelsOfTheProfile() throws {
+  /// `profile: <name>` selects the profile file of that name, and the slot
+  /// models come from it.
+  @Test func theNameSelectsTheModelsOfTheProfile() throws {
+    let fixture = Fixture()
+
+    let loaded = try fixture.loadProjectConfig("profile: small\n")
+
+    let small = try #require(BundledProfiles.named("small"))
+    #expect(loaded.configuration.profile.definition.name == "small")
+    #expect(loaded.configuration.profile.definition.standard == small.standard)
+    #expect(loaded.warnings.isEmpty)
+  }
+
+  /// A profile file of the project layer is selected by its name.
+  @Test func theNameSelectsAProjectProfileFile() throws {
+    let fixture = Fixture()
+    let profiles = fixture.projectDirectory.appendingPathComponent(ProfileFile.folderName)
+    try FileManager.default.createDirectory(at: profiles, withIntermediateDirectories: true)
+    try "standard:\n  - \(Self.configuredStandardModel)\n".write(
+      to: profiles.appendingPathComponent("custom.yaml"), atomically: true, encoding: .utf8)
+
+    let loaded = try fixture.loadProjectConfig("profile: custom\n")
+
+    #expect(loaded.configuration.profile.definition.standard == [ModelRef(Self.configuredStandardModel)])
+  }
+
+  /// A selected profile file that does not decode is a load error.
+  @Test func aBadSelectedProfileFileIsAnError() throws {
+    let fixture = Fixture()
+    let profiles = fixture.projectDirectory.appendingPathComponent(ProfileFile.folderName)
+    try FileManager.default.createDirectory(at: profiles, withIntermediateDirectories: true)
+    try "slots: []\n".write(
+      to: profiles.appendingPathComponent("custom.yaml"), atomically: true, encoding: .utf8)
+
+    #expect(throws: ProfileFileError.self) { try fixture.loadProjectConfig("profile: custom\n") }
+  }
+
+  /// A name that no layer has is an error that lists every available name.
+  /// Thus the settings store refuses the write.
+  @Test func anUnknownNameIsAnErrorThatListsTheProfiles() throws {
+    let fixture = Fixture()
+
+    #expect(throws: ProfileStoreError.unknownProfile(name: "huge", available: ["large", "small"])) {
+      try fixture.loadProjectConfig("profile: huge\n")
+    }
+  }
+
+  /// The old map form loads: `preset` gives the name, with no warning.
+  @Test func theOldPresetGivesTheName() throws {
     let fixture = Fixture()
 
     let loaded = try fixture.loadProjectConfig("profile:\n  preset: small\n")
 
-    let small = try #require(ModelProfiles.named("small"))
-    #expect(loaded.configuration.profile.presetProfile.name == "small")
-    #expect(loaded.configuration.profile.presetProfile.standard == small.standard)
-    #expect(loaded.configuration.profile.presetProfile.standard != AgentConfiguration().profile.presetProfile.standard)
+    #expect(loaded.configuration.profile.name == "small")
     #expect(loaded.warnings.isEmpty)
   }
 
-  /// A preset that is not a builtin profile is an error, and the error
-  /// names each profile. Thus the settings store refuses the write.
-  @Test func anUnknownPresetIsAnErrorThatNamesTheProfiles() throws {
-    let fixture = Fixture()
-    fixture.writeConfig("profile:\n  preset: huge\n", in: fixture.projectDirectory)
-
-    let error = #expect(throws: (any Error).self) { try fixture.makeLoader().load() }
-
-    let message = String(describing: try #require(error))
-    #expect(message.contains("huge"))
-    for profile in ModelProfiles.builtin {
-      #expect(message.contains(profile.name))
-    }
-  }
-
-  /// An old layer that still names a slot model or `decisionContext`
-  /// loads: each such key gives a warning, and the agent ignores it.
-  @Test func anOldLayerWithSlotKeysLoadsWithAWarning() throws {
+  /// Each other key of the old map form gives a warning, and the agent
+  /// ignores it.
+  @Test func theOtherKeysOfTheOldMapFormGiveWarnings() throws {
     let fixture = Fixture()
 
     let loaded = try fixture.loadProjectConfig(
       """
       profile:
+        name: pair
+        description: a label
         standard:
           - \(Self.configuredStandardModel)
         decisionContext: 4096
+        kvBits: 8
       """)
 
     #expect(
       loaded.warnings == [
         .retiredKey(section: "profile", key: "decisionContext"),
+        .retiredKey(section: "profile", key: "description"),
+        .retiredKey(section: "profile", key: "kvBits"),
+        .retiredKey(section: "profile", key: "name"),
         .retiredKey(section: "profile", key: "standard"),
       ])
     #expect(loaded.configuration.profile == AgentConfiguration().profile)
-    #expect(loaded.configuration.profile.presetProfile.decisionContext == ProfileDefinition.defaultDecisionContext)
+  }
+
+  /// An unknown key of the old map form is an error.
+  @Test func anUnknownKeyOfTheOldMapFormIsAnError() throws {
+    let fixture = Fixture()
+
+    #expect(throws: ConfigurationError.unknownKey(section: "profile", key: "slots")) {
+      try fixture.loadProjectConfig("profile:\n  slots: []\n")
+    }
   }
 
   /// The empty stack gives Router's decision candidates: the config
@@ -1057,7 +1095,7 @@ import Testing
   @Test func theEmptyStackGivesRouterDecisionCandidates() throws {
     let fixture = Fixture()
 
-    let profile = try fixture.makeLoader().load().configuration.profile.presetProfile
+    let profile = try fixture.makeLoader().load().configuration.profile.definition
 
     #expect(profile.decision == ProfileDefinition.defaultDecisionCandidates)
   }
@@ -1066,48 +1104,9 @@ import Testing
   @Test func theEmptyStackGivesRouterDecisionContext() throws {
     let fixture = Fixture()
 
-    let profile = try fixture.makeLoader().load().configuration.profile.presetProfile
+    let profile = try fixture.makeLoader().load().configuration.profile.definition
 
     #expect(profile.decisionContext == ProfileDefinition.defaultDecisionContext)
-  }
-
-  /// The empty stack sets no KV-cache bits: every model keeps an
-  /// unquantized KV cache.
-  @Test func theEmptyStackSetsNoKVBits() throws {
-    let fixture = Fixture()
-
-    let profile = try fixture.makeLoader().load().configuration.profile
-
-    #expect(profile.kvBits == nil)
-  }
-
-  /// A project `profile.kvBits` of 8 or 4 decodes as that many bits.
-  @Test(arguments: [8, 4])
-  func theProjectKVBitsDecode(bits: Int) throws {
-    let fixture = Fixture()
-
-    let loaded = try fixture.loadProjectConfig(
-      """
-      profile:
-        kvBits: \(bits)
-      """)
-
-    #expect(loaded.configuration.profile.kvBits == bits)
-  }
-
-  /// A `profile.kvBits` other than 8 or 4 is a settings error: the KV
-  /// cache quantizes to those two widths only.
-  @Test(arguments: [6, 16, 0])
-  func aKVBitsOtherThanEightOrFourIsAnError(bits: Int) throws {
-    let fixture = Fixture()
-
-    #expect(throws: YAMLValueDecodingError.self) {
-      try fixture.loadProjectConfig(
-        """
-        profile:
-          kvBits: \(bits)
-        """)
-    }
   }
 
   /// The `compaction.trigger` the section test writes; it differs from the

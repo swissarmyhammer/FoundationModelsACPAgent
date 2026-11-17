@@ -346,6 +346,16 @@ public actor ProfileStore {
     return file
   }
 
+  /// The text of the file of a profile: each key of the profile but its
+  /// name (``ProfileFile/text(of:)``).
+  ///
+  /// - Parameter profile: The profile.
+  /// - Returns: The YAML text.
+  /// - Throws: The encoding error.
+  public static func text(of profile: ProfileDefinition) throws -> String {
+    try ProfileFile.text(of: profile)
+  }
+
   /// Tells if a name is a plain file name: not empty, with no `/`, and not
   /// starting with a dot.
   ///

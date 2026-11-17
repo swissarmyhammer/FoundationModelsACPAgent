@@ -83,3 +83,25 @@ The endpoint does not read the files. The store does.
 
 The dependency direction is one way: the endpoint depends on the engine, and the engine depends on
 the store. The store does not depend on the endpoint.
+
+## Profiles
+
+A model profile is a file, `profiles/<name>.yaml`. `ProfileStore` (in
+`Sources/FoundationModelsACPAgent/Configuration/`) sits beside `SettingsStore`, with the same
+layers and folders: the project layer of a working directory, then the user layer, then the
+profiles that ship in the resources of the library (`BundledProfiles`). The first layer that has a
+name wins, as a whole file. `ProfileFile` decodes one file as Router's `ProfileDefinition`, with
+each key that the file leaves out taken from the bundled `large`.
+
+- **The selection.** `profile: <name>` in `config.yaml` selects a profile. `ConfigurationLoader`
+  reads the file of the name for the working directory of the load, thus the resolved profile
+  rides in the loaded configuration, and the agent resolves it with Router at its launch.
+- **The reads.** `ProfileLayers` reads the disk at each call, and needs no cache. The loader, the
+  `models` engine, the doctor and the CLI read through it.
+- **The writes.** `ProfileStore` saves and deletes the file of the user layer or of a project
+  layer, after a decode checks it, and sends a change on its `changes()` stream. The `models`
+  endpoint and `acp-agent profiles` write through it. A child agent run cannot save, delete or
+  select a profile (D193, `ChildAgentRun`).
+
+The dependency direction is one way: the `models` endpoint and the CLI depend on the store, and the
+store depends on the settings folders. The store does not depend on an endpoint.

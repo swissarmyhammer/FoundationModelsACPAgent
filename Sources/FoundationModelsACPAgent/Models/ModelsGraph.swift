@@ -5,20 +5,26 @@ import GraphQL
 import Graphiti
 
 /// The `models` GraphQL endpoint (D183 (c), D100 (d), ACPA-21, D189): the
-/// builtin profiles that the user can select, the model of each slot of the
+/// profiles that the user can select, the model of each slot of the
 /// selected profile, and the download size, the disk state and the fit of
 /// each of them, for the Models pane of the settings.
 ///
-/// - `Query.profiles` gives one row for each builtin profile, in the order of
-///   the list. A row shows the name, the description, if the profile is
-///   selected and if it is active, the model of each slot, the download size
-///   and the bytes on disk of its different models (each counted one time),
-///   its disk state, and its fit against the memory budget of the machine.
+/// - `Query.profiles(cwd:)` gives one row for each profile file that reads:
+///   the project layer of `cwd`, the user layer, then the bundled profiles,
+///   the first layer of a name winning (``ProfileStore``). A row shows the
+///   name, the layer, the description, if the profile is selected and if it
+///   is active, the model of each slot, the download size and the bytes on
+///   disk of its different models (each counted one time), its disk state,
+///   and its fit against the memory budget of the machine.
+/// - `Mutation.saveProfile(name:profile:layer:cwd:)` and
+///   `Mutation.deleteProfile(name:layer:cwd:)` change a profile file of the
+///   user layer or of a project layer through the profile store. A child
+///   agent run cannot call them (D193).
 /// - `Query.models` gives one row for each slot of the selected profile:
 ///   `STANDARD`, `FLASH`, `EMBEDDING` and `DECISION`. It is read-only.
-/// - `Subscription.changes(after:)` gives a change when `profile.preset`
-///   changes at the user level (`reason: PROFILE`, `appliesAt: NEXT_LAUNCH`),
-///   or when the disk state of a model of a builtin profile changes
+/// - `Subscription.changes(after:)` gives a change when `profile`
+///   changes at the user level or a profile file changes (`reason: PROFILE`,
+///   `appliesAt: NEXT_LAUNCH`), or when the disk state of a model of a profile changes
 ///   (`reason: DISK`, `appliesAt: NOW`). `Query.cursor` gives the cursor of
 ///   the newest change.
 ///
@@ -26,8 +32,8 @@ import Graphiti
 /// resolves its profile one time, when it starts, and each session of the
 /// running agent keeps the models of that launch.
 ///
-/// The endpoint writes nothing. A client selects a profile through the
-/// `settings` endpoint: `updateSetting(keyPath: ["profile", "preset"],
+/// The endpoint writes no setting. A client selects a profile through the
+/// `settings` endpoint: `updateSetting(keyPath: ["profile"],
 /// value: "<name>", level: USER)`.
 ///
 /// No read of the endpoint downloads a model or loads a model. The agent
@@ -75,6 +81,8 @@ public final class ModelsGraph: GraphQLEndpoint, Sendable {
   ///   - store: The settings store. The endpoint reads the user level.
   ///   - storage: The reader of the model storage. Give the cache folder and
   ///     the token provider of the model loads.
+  ///   - profiles: The profile store, or `nil` (the default) for a store
+  ///     over the settings folders of `store`.
   ///   - launched: The profile section that the running agent resolved at its
   ///     launch, or `nil` (the default) when no agent runs yet.
   ///   - active: The model that runs in each slot, or none (the default).
@@ -84,14 +92,42 @@ public final class ModelsGraph: GraphQLEndpoint, Sendable {
   ///     also before the agent exists.
   ///   - diskPollInterval: The time between two reads of the disk while a
   ///     subscriber is open.
-  public init(
-    store: SettingsStore, storage: any ModelStorageSource,
+  public convenience init(
+    store: SettingsStore, storage: any ModelStorageSource, profiles: ProfileStore? = nil,
     launched: ProfileConfiguration? = nil, active: [ModelSlot: ModelRef] = [:],
     fitEstimator: (any ProfileFitEstimating)? = nil,
     diskPollInterval: Duration = ModelsGraph.defaultDiskPollInterval
   ) {
+    self.init(
+      store: store, storage: storage, profiles: profiles, launched: launched, active: active,
+      fitEstimator: fitEstimator, diskPollInterval: diskPollInterval,
+      isChildRun: ChildAgentRun.isCurrent)
+  }
+
+  /// Makes the endpoint with a given test of a child agent run.
+  ///
+  /// - Parameters:
+  ///   - store: The settings store.
+  ///   - storage: The reader of the model storage.
+  ///   - profiles: The profile store, or `nil` for a store over the
+  ///     settings folders of `store`.
+  ///   - launched: The profile section of the launch, or `nil`.
+  ///   - active: The model that runs in each slot.
+  ///   - fitEstimator: The source of the fit estimate, or `nil`.
+  ///   - diskPollInterval: The time between two reads of the disk.
+  ///   - isChildRun: Tells if a call runs in a child agent run. A test gives
+  ///     its own answer.
+  init(
+    store: SettingsStore, storage: any ModelStorageSource, profiles: ProfileStore? = nil,
+    launched: ProfileConfiguration? = nil, active: [ModelSlot: ModelRef] = [:],
+    fitEstimator: (any ProfileFitEstimating)? = nil,
+    diskPollInterval: Duration = ModelsGraph.defaultDiskPollInterval,
+    isChildRun: @escaping @Sendable () -> Bool
+  ) {
     engine = ModelsEngine(
-      store: store, storage: storage, launched: launched, active: active,
+      store: store,
+      profileStore: profiles ?? ProfileStore(settingsFolders: store.settingsFolders),
+      isChildRun: isChildRun, storage: storage, launched: launched, active: active,
       fitEstimator: fitEstimator)
     feed = ModelsGraphChangeFeed(
       engine: engine, diskPollInterval: diskPollInterval, capacity: Self.changeLogCapacity)
@@ -184,10 +220,42 @@ struct ModelsGraphResolver: Sendable {
   }
 
   /// `Query.profiles`.
-  func profiles(context: ModelsGraphContext, arguments _: NoArguments) async throws
+  func profiles(context: ModelsGraphContext, arguments: ModelsGraphProfilesArguments) async throws
     -> [ModelsGraphProfile]
   {
-    try await context.engine.profiles()
+    try await context.engine.profiles(cwd: Self.workingDirectory(arguments.cwd))
+  }
+
+  /// `Mutation.saveProfile`.
+  func saveProfile(context: ModelsGraphContext, arguments: ModelsGraphSaveProfileArguments)
+    async throws -> ModelsGraphProfile
+  {
+    try await context.engine.saveProfile(
+      name: arguments.name, keys: YAMLValue(graphQLMap: arguments.profile), layer: arguments.layer,
+      cwd: Self.workingDirectory(arguments.cwd))
+  }
+
+  /// `Mutation.deleteProfile`.
+  func deleteProfile(context: ModelsGraphContext, arguments: ModelsGraphDeleteProfileArguments)
+    async throws -> Bool
+  {
+    try await context.engine.deleteProfile(
+      name: arguments.name, layer: arguments.layer, cwd: Self.workingDirectory(arguments.cwd))
+    return true
+  }
+
+  /// The URL of the working directory of a call.
+  ///
+  /// - Parameter path: The path that the call gave, or `nil`.
+  /// - Returns: The directory URL, or `nil` when the call gave none.
+  /// - Throws: ``ModelsGraphError/relativeWorkingDirectory(path:)`` for a
+  ///   path that is not absolute.
+  private static func workingDirectory(_ path: String?) throws -> URL? {
+    guard let path else { return nil }
+    guard SessionSetup.isAbsolute(path) else {
+      throw ModelsGraphError.relativeWorkingDirectory(path: path)
+    }
+    return URL(fileURLWithPath: path, isDirectory: true)
   }
 
   /// `Query.cursor`.
@@ -202,6 +270,7 @@ struct ModelsGraphResolver: Sendable {
   {
     let feed = context.feed
     _ = await feed.settingsWatch.value
+    _ = await feed.profileWatch.value
     await feed.watch.subscribe()
     let inner = await feed.log.changes(after: arguments.after)
     return AsyncThrowingStream { continuation in
@@ -239,6 +308,10 @@ struct ModelsGraphAPI: API {
   /// A type of the schema.
   typealias SchemaType = TypeComponent<ModelsGraphResolver, ModelsGraphContext>
 
+  /// The text of the description of a `cwd` argument.
+  static let cwdDescription =
+    "The absolute path of the working directory whose PROJECT layer applies, or null for none."
+
   /// The text of the description of a profile change.
   static let appliesText =
     "A profile change applies at the next launch of the agent: the agent resolves its profile when it starts, "
@@ -270,10 +343,16 @@ struct ModelsGraphAPI: API {
         }
         .description("The fit of a profile against the memory budget of the machine.")
         Enum(ModelsGraphChangeReason.self, as: "ModelChangeReason") {
-          Value(.profile).description("The value of profile.preset in the settings changed.")
+          Value(.profile).description("The value of profile in the settings changed.")
           Value(.disk).description("The files of a model on disk changed, for example a download ended.")
         }
         .description("Why the slots of a change changed.")
+        Enum(ModelsGraphProfileLayer.self, as: "ProfileLayer") {
+          Value(.project).description("The project layer of a working directory: <cwd>/.<name>/profiles/.")
+          Value(.user).description("The user layer: the profiles folder of the user settings.")
+          Value(.bundled).description("The bundled profiles of the agent. They are read-only.")
+        }
+        .description("The layer of a profile file. The first layer that has a name wins, as a whole file.")
         Enum(ModelsGraphChangeApplies.self, as: "ModelChangeApplies") {
           Value(.nextLaunch).description(appliesText)
           Value(.now).description("Now: the change is a fact of the disk.")
@@ -285,17 +364,43 @@ struct ModelsGraphAPI: API {
         changeType()
       }
       .addQuery {
-        Field("profiles", at: ModelsGraphResolver.profiles)
-          .description(
-            "One row for each builtin profile, in order, from the largest to the smallest. To select one, give "
-              + "its name to the settings endpoint: updateSetting(keyPath: [\"profile\", \"preset\"], "
-              + "value: \"<name>\", level: USER). No read downloads or loads a model.")
+        Field("profiles", at: ModelsGraphResolver.profiles) {
+          Argument("cwd", at: \.cwd).description(cwdDescription)
+        }
+        .description(
+          "One row for each profile file that reads: the PROJECT layer of cwd, the USER layer, then the "
+            + "BUNDLED profiles; the first layer of a name wins. To select one, give its name to the settings "
+            + "endpoint: updateSetting(keyPath: [\"profile\"], value: \"<name>\", level: USER). "
+            + "No read downloads or loads a model.")
         Field("models", at: ModelsGraphResolver.models)
           .description(
-            "One row for each slot of the profile that profile.preset selects at the USER level: the first "
+            "One row for each slot of the profile that profile selects at the USER level: the first "
               + "candidate of the slot, and its storage. Read-only. No read downloads or loads a model.")
         Field("cursor", at: ModelsGraphResolver.cursor)
           .description("The cursor of the newest change. Read the models, then subscribe after this cursor.")
+      }
+      .addMutation {
+        Field("saveProfile", at: ModelsGraphResolver.saveProfile) {
+          Argument("name", at: \.name).description("The name of the profile: the name of its file.")
+          Argument("profile", at: \.profile)
+            .description(
+              "The keys of the profile file: description, standard, flash, embedding, decision, context, "
+                + "decisionContext, kvBits. Each key is optional; a key left out takes the value of the "
+                + "bundled profile large. A slot is a list of models: a string owner/name[/path][@revision], "
+                + "or an object {repo, drafter}.")
+          Argument("layer", at: \.layer).description("USER or PROJECT. BUNDLED is read-only.")
+          Argument("cwd", at: \.cwd).description(cwdDescription)
+        }
+        .description(
+          "Writes the file of a profile after a check that it decodes, and gives its row. " + appliesText)
+        Field("deleteProfile", at: ModelsGraphResolver.deleteProfile) {
+          Argument("name", at: \.name).description("The name of the profile.")
+          Argument("layer", at: \.layer).description("USER or PROJECT. BUNDLED is read-only.")
+          Argument("cwd", at: \.cwd).description(cwdDescription)
+        }
+        .description(
+          "Deletes the file of a profile from a layer; a lower layer with the name applies again. True "
+            + "when the file went. " + appliesText)
       }
       .addSubscription {
         SubscriptionField(
@@ -311,8 +416,9 @@ struct ModelsGraphAPI: API {
             .description("The cursor to resume after. None: the changes from now.")
         }
         .description(
-          "A change when profile.preset changes at the USER level (reason PROFILE, appliesAt NEXT_LAUNCH), "
-            + "or when the disk state of a model of a builtin profile changes (reason DISK, appliesAt NOW). "
+          "A change when profile changes at the USER level or a profile file changes (reason PROFILE, "
+            + "appliesAt NEXT_LAUNCH), or when the disk state of a model of a profile changes (reason DISK, "
+            + "appliesAt NOW). "
             + "Read the profiles and the models again. "
             + "RESYNC_REQUIRED ends it when a change after the cursor is lost: read the models and the cursor "
             + "again.")
@@ -366,9 +472,10 @@ struct ModelsGraphAPI: API {
   /// The `ModelProfile` type.
   private static func profileType() -> SchemaType {
     Type(ModelsGraphProfile.self, as: "ModelProfile") {
-      Field("name", at: \.name).description("The name: the value of profile.preset that selects the profile.")
+      Field("name", at: \.name).description("The name: the value of profile that selects the profile.")
+      Field("layer", at: \.layer).description("The layer of the file of the profile.")
       Field("description", at: \.description).description("One sentence about the profile.")
-      Field("selected", at: \.selected).description("True when profile.preset at the USER level names the profile.")
+      Field("selected", at: \.selected).description("True when profile at the USER level names the profile.")
       Field("active", at: \.active)
         .description("True when the running agent launched with the profile. False when no agent runs.")
       Field("restartRequired", at: \.restartRequired)
@@ -390,7 +497,7 @@ struct ModelsGraphAPI: API {
       Field("fitError", at: \.fitError)
         .description("Why the profile does not fit: the budget is too small, or a model could not be sized. Null when it fits.")
     }
-    .description("One builtin profile: the models of the four slots, which the user selects together.")
+    .description("One profile: the models of the four slots, which the user selects together.")
   }
 
   /// The `ModelChange` type.
@@ -398,7 +505,7 @@ struct ModelsGraphAPI: API {
     Type(ModelsGraphChange.self, as: "ModelChange") {
       Field("cursor", at: \.cursor).description("The cursor that resumes the subscription after this change.")
       Field("at", at: \.at).description("The time of the change.")
-      Field("added", at: \.added).description("None: the four slots and the builtin profiles are always there.")
+      Field("added", at: \.added).description("None: the four slots are always there. Read the profiles again.")
       Field("changed", at: \.changed)
         .description(
           "The slots of the selected profile that changed, by their key: standard, flash, embedding or decision. "

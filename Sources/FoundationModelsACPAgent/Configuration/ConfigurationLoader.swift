@@ -77,8 +77,8 @@ public enum ConfigurationWarning: Equatable, Sendable, CustomStringConvertible {
   case unreadableSecret(keyPath: String, reference: String)
 
   /// A key that the section had before and does not decode now, such as
-  /// `profile.standard` or `profile.decisionContext` (ACPA-21). The loader
-  /// ignores the key.
+  /// `profile.standard` or `profile.kvBits` of the old map form of
+  /// `profile`. The loader ignores the key.
   case retiredKey(section: String, key: String)
 
   /// A top-level section that the configuration no longer has, with a
@@ -92,8 +92,7 @@ public enum ConfigurationWarning: Equatable, Sendable, CustomStringConvertible {
   /// - Returns: The hint, with its leading separator, or empty.
   private static func retiredHint(section: String) -> String {
     if section == AgentConfiguration.CodingKeys.profile.stringValue {
-      return "; set \"profile.preset\" to one of: "
-        + ModelProfiles.builtin.map(\.name).joined(separator: ", ")
+      return "; set \"profile\" to the name of a profile, such as \(BundledProfiles.defaultName)"
     }
     if AgentConfiguration.retiredSections.contains(section) {
       return "; each session records its full transcript in its project, at .<name>/transcripts/"
@@ -230,6 +229,16 @@ public struct ConfigurationLoader: Sendable {
   /// ``load()`` resolves the references through it after the decode.
   public let secretStore: any SecretStore
 
+  /// The working directory of the stack: the project layer of the
+  /// configuration and of the profile files.
+  public let workingDirectory: URL
+
+  /// The profile files of the layers of ``settingsFolders``. Each load
+  /// reads the file of the selected profile from them.
+  public var profileLayers: ProfileLayers {
+    ProfileLayers(settingsFolders: settingsFolders)
+  }
+
   /// Gives the tree of layer 1, under the dotfolder stack.
   private let builtinLayer: @Sendable () throws -> YAMLValue
 
@@ -330,6 +339,7 @@ public struct ConfigurationLoader: Sendable {
     self.name = settingsFolders.name
     self.settingsFolders = settingsFolders
     self.stack = settingsFolders.stack(for: .configuration, workingDirectory: workingDirectory)
+    self.workingDirectory = workingDirectory
     self.secretStore = secretStore ?? KeychainSecretStore.loginKeychain(for: settingsFolders.name)
     self.builtinLayer = builtinLayer
   }
@@ -374,7 +384,10 @@ public struct ConfigurationLoader: Sendable {
   ///   rendered or parsed; ``BuiltinConfigurationFileError`` or
   ///   `YAMLValueParsingError` for a builtin file that cannot be read or
   ///   parsed; `YAMLValueDecodingError` for a value that does not decode,
-  ///   such as a `theme` that is not a theme.
+  ///   such as a `theme` that is not a theme;
+  ///   ``ProfileStoreError/unknownProfile(name:available:)`` for a
+  ///   `profile` that no layer has; ``ProfileFileError`` for a selected
+  ///   profile file that does not decode.
   public func load() throws -> LoadedConfiguration {
     let document = try LayeredYAMLDocument.load(
       Self.configFileName,
@@ -407,7 +420,7 @@ public struct ConfigurationLoader: Sendable {
     Self.log(schemaWarnings)
     var secretWarnings: [ConfigurationWarning] = []
     let decoded = resolvingSecrets(
-      of: try Self.configuration(from: root), warnings: &secretWarnings)
+      of: try resolvingProfile(of: Self.configuration(from: root)), warnings: &secretWarnings)
     Self.log(secretWarnings)
     return LoadedConfiguration(
       configuration: resolvingDotfolderDefaults(of: decoded),
@@ -415,19 +428,38 @@ public struct ConfigurationLoader: Sendable {
       sources: sources)
   }
 
-  /// Checks that a merged dotfolder tree passes the schema and decodes, as
-  /// ``load()`` checks it. The check writes no log record and reads no
-  /// secret, because a secret reference stays a reference in the tree.
+  /// Checks that a merged dotfolder tree passes the schema and decodes, and
+  /// that its profile reads, as ``load()`` checks it. The check writes no
+  /// log record and reads no secret, because a secret reference stays a
+  /// reference in the tree.
   ///
   /// ``SettingsStore`` calls it before it writes a change to a file.
   ///
   /// - Parameter dotfolderRoot: The merged tree of the dotfolder layers.
-  /// - Throws: `ConfigurationError` for a schema failure, or
-  ///   `YAMLValueDecodingError` for a value that does not decode.
+  /// - Throws: `ConfigurationError` for a schema failure,
+  ///   `YAMLValueDecodingError` for a value that does not decode, or what
+  ///   ``resolvingProfile(of:)`` throws.
   func check(dotfolderRoot: YAMLValue) throws {
     let root = try layeredRoot(over: dotfolderRoot)
     _ = try Self.schemaWarnings(in: root)
-    _ = try Self.configuration(from: root)
+    _ = try resolvingProfile(of: Self.configuration(from: root))
+  }
+
+  /// `configuration` with the profile file of its profile name, read from
+  /// the layers of the working directory of this loader.
+  ///
+  /// - Parameter configuration: The decoded configuration.
+  /// - Returns: The configuration with its profile resolved.
+  /// - Throws: ``ProfileStoreError/unknownProfile(name:available:)`` when no
+  ///   layer has the name, with every available name;
+  ///   ``ProfileFileError`` when its file does not decode.
+  private func resolvingProfile(of configuration: AgentConfiguration) throws
+    -> AgentConfiguration
+  {
+    var resolved = configuration
+    resolved.profile.resolved = try profileLayers.read(
+      configuration.profile.name, cwd: workingDirectory)
+    return resolved
   }
 
   /// Writes one log record for each warning, in the order of `warnings`.

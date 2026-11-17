@@ -568,7 +568,7 @@ public actor RoutedACPAgent: Agent {
       progress = await ResolutionProgress()
     }
     residentProfile = try await configuration.profile.resolveResident(
-      fallbackName: name, router: router, reporting: progress)
+      router: router, reporting: progress)
     modelsEndpoint = ModelsGraph(
       store: settingsStore,
       storage: modelStorage ?? ModelStorage(cacheDirectory: home.modelCacheDirectory),

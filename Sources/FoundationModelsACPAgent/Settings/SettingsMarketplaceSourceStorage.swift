@@ -37,7 +37,7 @@ struct SettingsMarketplaceSourceStorage: MarketplaceSourceStorage {
 
   /// Tells if the call runs in a child agent run: a tool call whose session
   /// has a parent session. A test gives its own answer.
-  var isChildRun: @Sendable () -> Bool = { ToolContext.current?.parentSessionID != nil }
+  var isChildRun: @Sendable () -> Bool = ChildAgentRun.isCurrent
 
   /// The sources of `tools.skills.marketplaces` at the USER level, in their
   /// stored order, or the default list when the settings have no list.

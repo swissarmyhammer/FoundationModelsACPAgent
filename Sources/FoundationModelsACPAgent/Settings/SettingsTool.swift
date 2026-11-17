@@ -69,7 +69,9 @@ public struct SettingsTool: GraphQLEndpointTool, OperationDescribing {
     `updateSetting(input: {keyPath:, value:, level:})` or `clearSetting(input: {keyPath:, level:})`, \
     where level is USER or SESSION. SESSION changes the settings of the session folder only. In a \
     session, do not give `cwd`: the session folder applies. A secret key takes only a keychain:<name> \
-    reference. \(StatusLineConfiguration.help)
+    reference. Select a model profile with the key path ["profile"] and the name of a profile, \
+    such as "large" or "small"; the models tool lists the profiles, and a change applies at the next \
+    launch. \(StatusLineConfiguration.help)
     """
 
   /// The name of the tool: `settings`.

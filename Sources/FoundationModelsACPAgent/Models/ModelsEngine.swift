@@ -3,7 +3,7 @@ import FoundationModelsExtras
 import FoundationModelsRouter
 
 /// The `models` endpoint reads the four slots of Router's `ModelSlot` in the
-/// profile that `profile.preset` selects (ACPA-21).
+/// profile that `profile` selects.
 extension ModelSlot: @retroactive CaseIterable {
   /// The four slots, in the order of the profile section.
   public static let allCases: [ModelSlot] = [.standard, .flash, .embedding, .decision]
@@ -23,10 +23,8 @@ extension ModelSlot: @retroactive CaseIterable {
 }
 
 extension ProfileConfiguration {
-  /// The key path of `profile.preset` in the settings.
-  static let presetKeyPath = [
-    AgentConfiguration.CodingKeys.profile.stringValue, CodingKeys.preset.stringValue,
-  ]
+  /// The key path of `profile` in the settings.
+  static let keyPath = [AgentConfiguration.CodingKeys.profile.stringValue]
 }
 
 /// The storage of one model and its MTP drafter, as one row of the
@@ -59,10 +57,10 @@ struct ModelsReport: Sendable {
   var state: ModelDiskState { summary?.state ?? .missing }
 }
 
-/// The reads of the `models` endpoint: the profile that `profile.preset`
-/// selects at the user level, the profile that the agent launched with, the
-/// model that runs in each slot, the storage of each model, and the fit of
-/// each builtin profile.
+/// The reads of the `models` endpoint: the profile that `profile` selects at
+/// the user level, the profile that the agent launched with, the model that
+/// runs in each slot, the storage of each model, and the fit of each profile
+/// of the user layer and the bundled profiles.
 ///
 /// No read downloads a model or loads a model. Thus a host can make the
 /// endpoint before the first download.
@@ -70,6 +68,14 @@ struct ModelsEngine: Sendable {
   /// The settings store. The engine reads the user level over the builtin
   /// layers, as the Settings scene of the app does.
   let store: SettingsStore
+
+  /// The profile store. The engine lists, saves and deletes the profile
+  /// files through it.
+  let profileStore: ProfileStore
+
+  /// Tells if the call runs in a child agent run, which cannot save or
+  /// delete a profile (D193).
+  let isChildRun: @Sendable () -> Bool
 
   /// The reader of the model storage.
   let storage: any ModelStorageSource
@@ -88,19 +94,31 @@ struct ModelsEngine: Sendable {
   /// The fit estimates that the engine read, by the name of the profile.
   let fitCache = ProfileFitCache()
 
-  /// The profile that `profile.preset` selects in the settings now, at the
-  /// user level.
+  /// The profile files of the layers of the profile store.
+  var profileLayers: ProfileLayers {
+    profileStore.layers
+  }
+
+  /// The profile that `profile` selects in the settings now, at the user
+  /// level.
   ///
   /// - Returns: The profile. The default profile when no layer has a
-  ///   value that names a builtin profile.
+  ///   value that names a profile that reads.
   /// - Throws: What the store throws for a level file.
   func selectedProfile() async throws -> ProfileDefinition {
-    guard let setting = try await store.value(at: ProfileConfiguration.presetKeyPath, cwd: nil),
-      let name: String = try? setting.value.decoded(), let profile = ModelProfiles.named(name)
+    guard let setting = try await store.value(at: ProfileConfiguration.keyPath, cwd: nil),
+      let selection: ProfileConfiguration = try? setting.value.decoded(),
+      let profile = try? profileLayers.read(selection.name, cwd: nil)
     else {
-      return ModelProfiles.defaultProfile
+      return BundledProfiles.defaultProfile
     }
     return profile
+  }
+
+  /// Each profile of the user layer and the bundled profiles that reads, in
+  /// the order of the list.
+  var availableProfiles: [ProfileDefinition] {
+    profileLayers.list(cwd: nil).compactMap(\.profile)
   }
 
   /// The candidates of a slot in the selected profile.
@@ -124,11 +142,11 @@ struct ModelsEngine: Sendable {
     guard let launched else {
       return false
     }
-    return slot.candidates(in: launched.presetProfile) != candidates
+    return slot.candidates(in: launched.definition) != candidates
   }
 
-  /// The name of the profile that `profile.preset` selects now, at the
-  /// user level.
+  /// The name of the profile that `profile` selects now, at the user
+  /// level.
   ///
   /// - Returns: The name.
   /// - Throws: What the store throws for a level file.
@@ -136,26 +154,82 @@ struct ModelsEngine: Sendable {
     try await selectedProfile().name
   }
 
-  /// One row of each builtin profile, in the order of the list.
+  /// One row of each available profile that reads, in the order of the
+  /// list.
   ///
+  /// - Parameter cwd: The working directory of the project layer, or `nil`
+  ///   for the user layer and the bundled profiles.
   /// - Returns: The rows.
   /// - Throws: What the store throws for a level file.
-  func profiles() async throws -> [ModelsGraphProfile] {
+  func profiles(cwd: URL?) async throws -> [ModelsGraphProfile] {
     let selected = try await selectedName()
     var rows: [ModelsGraphProfile] = []
-    for profile in ModelProfiles.builtin {
-      rows.append(await row(of: profile, selected: selected))
+    for entry in profileLayers.list(cwd: cwd) {
+      guard let profile = entry.profile else { continue }
+      rows.append(await row(of: profile, layer: entry.layer, selected: selected))
     }
     return rows
+  }
+
+  /// Saves a profile file through the profile store, and gives its row.
+  ///
+  /// - Parameters:
+  ///   - name: The name of the profile.
+  ///   - keys: The keys of the profile file.
+  ///   - layer: The layer of the file.
+  ///   - cwd: The working directory of the project layer, or `nil`.
+  /// - Returns: The row of the saved profile.
+  /// - Throws: ``ModelsGraphError``, or what the store throws.
+  func saveProfile(name: String, keys: YAMLValue, layer: ModelsGraphProfileLayer, cwd: URL?)
+    async throws -> ModelsGraphProfile
+  {
+    try refuseChildRun()
+    let level = try layer.level(cwd: cwd)
+    guard case .dictionary = keys else {
+      throw ModelsGraphError.invalidProfile(detail: "the profile must be an object of keys")
+    }
+    let text = try ConfigurationYAML.levelText(of: keys)
+    try await ModelsGraphError.withCodedErrors {
+      try await profileStore.save(text: text, as: name, level: level)
+    }
+    let profile = try await ModelsGraphError.withCodedErrors { try profileLayers.read(name, cwd: cwd) }
+    return await row(of: profile, layer: ProfileLayer(level), selected: try await selectedName())
+  }
+
+  /// Deletes a profile file through the profile store.
+  ///
+  /// - Parameters:
+  ///   - name: The name of the profile.
+  ///   - layer: The layer of the file.
+  ///   - cwd: The working directory of the project layer, or `nil`.
+  /// - Throws: ``ModelsGraphError``, or what the store throws.
+  func deleteProfile(name: String, layer: ModelsGraphProfileLayer, cwd: URL?) async throws {
+    try refuseChildRun()
+    let level = try layer.level(cwd: cwd)
+    try await ModelsGraphError.withCodedErrors {
+      try await profileStore.delete(name, level: level)
+    }
+  }
+
+  /// Refuses a profile change from a child agent run (D193).
+  ///
+  /// - Throws: ``ModelsGraphError/childRun`` in a child run.
+  private func refuseChildRun() throws {
+    if isChildRun() {
+      throw ModelsGraphError.childRun
+    }
   }
 
   /// The row of one profile.
   ///
   /// - Parameters:
   ///   - profile: The profile.
+  ///   - layer: The layer of its file.
   ///   - selected: The name of the selected profile.
   /// - Returns: The row.
-  private func row(of profile: ProfileDefinition, selected: String) async -> ModelsGraphProfile {
+  private func row(of profile: ProfileDefinition, layer: ProfileLayer, selected: String) async
+    -> ModelsGraphProfile
+  {
     var models: [ModelsGraphProfileModel] = []
     var reports: [String: ModelsReport] = [:]
     for slot in ModelSlot.allCases {
@@ -171,9 +245,9 @@ struct ModelsEngine: Sendable {
     let sizes = parts.map(\.sizeBytes)
     let present = parts.reduce(Int64(0)) { $0 + $1.presentBytes }
     let estimate = await fit(of: profile)
-    let launchedName = launched?.presetProfile.name
+    let launchedName = launched?.definition.name
     return ModelsGraphProfile(
-      name: profile.name, description: profile.description,
+      name: profile.name, layer: ModelsGraphProfileLayer(layer), description: profile.description,
       selected: profile.name == selected,
       active: profile.name == launchedName,
       restartRequired: launchedName != nil && profile.name == selected && selected != launchedName,
@@ -232,23 +306,32 @@ struct ModelsEngine: Sendable {
     }
   }
 
-  /// Each different model of the builtin profiles, in the order of the
+  /// Each different model of the bundled profiles, in the order of the
   /// profiles and their slots.
   static var builtinModels: [ModelRef] {
+    models(of: BundledProfiles.all)
+  }
+
+  /// Each different model of some profiles, in the order of the profiles
+  /// and their slots.
+  ///
+  /// - Parameter profiles: The profiles.
+  /// - Returns: The models.
+  static func models(of profiles: [ProfileDefinition]) -> [ModelRef] {
     var seen = Set<String>()
-    return ModelProfiles.builtin.flatMap { profile in
+    return profiles.flatMap { profile in
       ModelSlot.allCases.flatMap { $0.candidates(in: profile) }
     }.filter { seen.insert($0.stringValue).inserted }
   }
 
-  /// A short text of the disk state of each model of the builtin profiles,
-  /// by the text form of the model. The change feed compares two of them
-  /// to find a model that came on disk.
+  /// A short text of the disk state of each model of the available
+  /// profiles, by the text form of the model. The change feed compares two
+  /// of them to find a model that came on disk.
   ///
   /// - Returns: The text of each model.
   func diskFingerprint() async -> [String: String] {
     var texts: [String: String] = [:]
-    for ref in Self.builtinModels {
+    for ref in Self.models(of: availableProfiles) {
       let report = await report(of: ref)
       texts[ref.stringValue] = "\(report.state):\(report.presentBytes)"
     }

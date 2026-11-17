@@ -70,8 +70,8 @@ struct ProfileDoctorTests {
   private static let standardDrafterKey = "large.standard.drafter"
 
   /// The key that each fix names: the user selects a different profile
-  /// (ACPA-21).
-  private static let presetKey = "profile.preset"
+  /// with `profile: <name>`.
+  private static let presetKey = "\"profile: "
 
   /// The key of the flash slot of the default profile.
   private static let flashKey = "large.flash"
@@ -156,8 +156,8 @@ struct ProfileDoctorTests {
   @Test func aMalformedReferenceIsNeverLookedUp() async {
     let resolver = StubModelResolver(
       namedLookups: StubModelResolver.foundLookups(
-        of: ModelProfiles.defaultProfile.flash + ModelProfiles.defaultProfile.embedding
-          + ModelProfiles.defaultProfile.decision),
+        of: BundledProfiles.defaultProfile.flash + BundledProfiles.defaultProfile.embedding
+          + BundledProfiles.defaultProfile.decision),
       lookup: .notFound)
 
     let checks = await Self.doctor(
@@ -172,7 +172,7 @@ struct ProfileDoctorTests {
   /// The `standard` and `flash` defaults name the same model, and the
   /// next run downloads it one time.
   @Test func aModelThatTwoSlotsNameIsCheckedOnceUnderBothKeys() async throws {
-    let shared = ModelProfiles.defaultProfile.standard[0]
+    let shared = BundledProfiles.defaultProfile.standard[0]
     let shapeName = "the shape of \(shared.stringValue)"
 
     let checks = await Self.doctor().runHealthChecks()
@@ -189,7 +189,7 @@ struct ProfileDoctorTests {
   /// A reference the resolver does not find is one `.error` that names
   /// the slot and the reference, and whose fix names `config edit`.
   @Test func aReferenceThatIsNotFoundGivesOneErrorWithTheEditFix() async throws {
-    let reference = ModelProfiles.defaultProfile.standard[0]
+    let reference = BundledProfiles.defaultProfile.standard[0]
     let resolver = StubModelResolver(namedLookups: [reference.stringValue: .notFound])
 
     let checks = await Self.doctor(resolver: resolver).runHealthChecks()
@@ -205,7 +205,7 @@ struct ProfileDoctorTests {
   /// reference the resolver does not find is one `.error` that names the
   /// decision slot.
   @Test func aDecisionReferenceThatIsNotFoundGivesOneErrorThatNamesTheSlot() async throws {
-    let reference = ModelProfiles.defaultProfile.decision[0]
+    let reference = BundledProfiles.defaultProfile.decision[0]
     let resolver = StubModelResolver(namedLookups: [reference.stringValue: .notFound])
 
     let checks = await Self.doctor(resolver: resolver).runHealthChecks()
@@ -217,7 +217,7 @@ struct ProfileDoctorTests {
   /// A network failure is one `.warning` and no `.error`: an offline
   /// machine with a warm cache still works.
   @Test func aNetworkFailureGivesOneWarningAndNoError() async throws {
-    let reference = ModelProfiles.defaultProfile.standard[0]
+    let reference = BundledProfiles.defaultProfile.standard[0]
     let resolver = StubModelResolver(
       namedLookups: [
         reference.stringValue: .unreachable(reason: Self.unreachableReason)
@@ -240,7 +240,7 @@ struct ProfileDoctorTests {
   /// limit would fail the test.
   @Test
   func aResolverThatDoesNotAnswerInTimeWarnsInsideTheNamedTimeout() async throws {
-    let reference = ModelProfiles.defaultProfile.standard[0]
+    let reference = BundledProfiles.defaultProfile.standard[0]
     let resolver = StubModelResolver(silentReferences: [reference.stringValue])
 
     let checks = await Self.doctor(
@@ -287,6 +287,23 @@ struct ProfileDoctorTests {
     #expect(note.status == .ok)
   }
 
+  // MARK: - The profile files
+
+  /// A profile file that does not decode is one `.warning` that names the
+  /// file, and whose fix names the profile delete.
+  @Test func aBadProfileFileGivesOneWarning() async throws {
+    let error = ProfileFileError.unknownKey(path: "/tmp/profiles/custom.yaml", key: "slots")
+    let doctor = ProfileDoctor(
+      configuration: AgentConfiguration(), resolver: StubModelResolver(),
+      memoryBytes: DoctorMachineFigures.generousMemoryBytes,
+      freeDiskBytes: DoctorMachineFigures.generousDiskBytes, fileErrors: [error])
+
+    let warning = try await doctor.runHealthChecks().singleFinding(.warning)
+
+    #expect(warning.message == error.description)
+    #expect(warning.fix?.contains("acp-agent profiles") == true)
+  }
+
   // MARK: - The memory fit
 
   /// A memory figure below the floor is one `.error` that states both
@@ -300,7 +317,7 @@ struct ProfileDoctorTests {
     #expect(failure.message.contains(Self.memoryFloorText))
     #expect(fix.contains(Self.presetKey))
     #expect(fix.contains(ProfileDoctor.smallerProfileName))
-    #expect(!fix.contains(ModelProfiles.defaultProfile.standard[0].repo))
+    #expect(!fix.contains(BundledProfiles.defaultProfile.standard[0].repo))
   }
 
   // MARK: - The free disk
@@ -353,7 +370,7 @@ struct ProfileDoctorTests {
   /// drafter the Hub does not have is one `.error` that names the drafter
   /// key of the slot and the drafter.
   @Test func aDrafterThatIsNotFoundGivesOneErrorThatNamesTheDrafterKey() async throws {
-    let target = ModelProfiles.defaultProfile.standard[0]
+    let target = BundledProfiles.defaultProfile.standard[0]
     let resolver = StubModelResolver(
       namedLookups: [Self.missingDrafter.stringValue: .notFound])
 

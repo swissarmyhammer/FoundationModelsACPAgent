@@ -53,6 +53,11 @@ public enum SettingsGraphError: CodedError, Equatable {
   /// for a reference. The value is the reference name.
   case unreadableSecret(reference: String)
 
+  /// `CHILD_RUN`: a child agent run tried to select a profile, or to
+  /// clear the selected profile (D193). The profile is configuration of the
+  /// user.
+  case childRunProfile
+
   /// `NULL_VALUE`: an `updateSetting` call gave `null` as the value. A
   /// change removes a key with `clearSetting`, not with `null`. The value
   /// is the dotted key path of the change.
@@ -72,6 +77,7 @@ public enum SettingsGraphError: CodedError, Equatable {
     case .noLevel: "NO_LEVEL"
     case .unreadableSecret: "SECRET_UNREADABLE"
     case .nullValue: "NULL_VALUE"
+    case .childRunProfile: ChildAgentRun.refusalCode
     }
   }
 
@@ -103,6 +109,8 @@ public enum SettingsGraphError: CodedError, Equatable {
       "The level has no folder: \(detail)."
     case .unreadableSecret(let reference):
       "The secret store cannot tell if it has an item for the reference \"\(reference)\"."
+    case .childRunProfile:
+      ChildAgentRun.profileRefusal
     case .nullValue(let keyPath):
       "The value of \(keyPath) is null, and updateSetting does not take null. To remove the key from the "
         + "level, call clearSetting with the same keyPath and level."
@@ -123,6 +131,10 @@ public enum SettingsGraphError: CodedError, Equatable {
     case let error as ConfigurationError:
       SettingsGraphError.invalidValue(detail: error.description)
     case let error as YAMLValueDecodingError:
+      SettingsGraphError.invalidValue(detail: error.description)
+    case let error as ProfileStoreError:
+      SettingsGraphError.invalidValue(detail: error.description)
+    case let error as ProfileFileError:
       SettingsGraphError.invalidValue(detail: error.description)
     case let error as SettingsStoreError:
       SettingsGraphError.noLevel(detail: error.description)

@@ -100,7 +100,7 @@ public enum SettingsStoreError: Error, Equatable, Sendable, CustomStringConverti
   case noLayer(SettingsLevel)
 
   /// The key path names a key that the configuration no longer has, such
-  /// as `profile.standard` (ACPA-21) or `transcripts.location` (D187). The
+  /// as `profile.preset` or `transcripts.location` (D187). The
   /// store writes no such key; a clear of it works. `keyPath` is the
   /// dotted key path of the retired key or section.
   case retiredKey(keyPath: String)
@@ -110,8 +110,8 @@ public enum SettingsStoreError: Error, Equatable, Sendable, CustomStringConverti
     switch self {
     case .retiredKey(let keyPath)
     where keyPath.hasPrefix(AgentConfiguration.CodingKeys.profile.stringValue):
-      return "the key \"\(keyPath)\" is no longer used; select a profile with \"profile.preset\" "
-        + "(one of: \(ModelProfiles.builtin.map(\.name).joined(separator: ", ")))"
+      return "the key \"\(keyPath)\" is no longer used; select a profile with the key \"profile\" "
+        + "and the name of a profile, such as \(BundledProfiles.defaultName)"
     case .retiredKey(let keyPath):
       return "the key \"\(keyPath)\" is no longer used; each session records its full transcript "
         + "in its project"
@@ -502,9 +502,10 @@ public actor SettingsStore {
   ///   error is the message of the parser with no line of the parsed text
   ///   (``SettingsLoadError/parserMessage(_:hidingLinesOf:)``), because a
   ///   rendered line can hold a secret value.
-  ///   ``SettingsStoreError/retiredKey(keyPath:)`` for a key of `profile`
-  ///   that the section no longer has. After an error, the level and its
-  ///   file do not change.
+  ///   ``SettingsStoreError/retiredKey(keyPath:)`` for a key under
+  ///   `profile`; ``ProfileStoreError`` or ``ProfileFileError`` for a
+  ///   `profile` name whose file no layer has or does not decode. After an
+  ///   error, the level and its file do not change.
   public func set(_ value: YAMLValue, at keyPath: [String], level: SettingsLevel) async throws {
     if let retired = Self.retiredKeyPath(of: keyPath) {
       throw SettingsStoreError.retiredKey(keyPath: retired)
@@ -520,8 +521,9 @@ public actor SettingsStore {
   /// names, or `nil` when the key path names no retired key.
   ///
   /// - Parameter keyPath: The keys from the root.
-  /// - Returns: `profile.<key>` for a retired key of `profile`, the name of
-  ///   a retired section for a key path in it, else `nil`.
+  /// - Returns: `profile.<key>` for a key under `profile`, which is one
+  ///   name now and has no key of its own, the name of a retired section
+  ///   for a key path in it, else `nil`.
   static func retiredKeyPath(of keyPath: [String]) -> String? {
     guard let section = keyPath.first else {
       return nil
@@ -529,9 +531,7 @@ public actor SettingsStore {
     if AgentConfiguration.retiredSections.contains(section) {
       return section
     }
-    if keyPath.count > 1, section == AgentConfiguration.CodingKeys.profile.stringValue,
-      ProfileConfiguration.retiredKeys.contains(keyPath[1])
-    {
+    if keyPath.count > 1, section == AgentConfiguration.CodingKeys.profile.stringValue {
       return keyPath.prefix(2).joined(separator: LoadedConfiguration.keyPathSeparator)
     }
     return nil

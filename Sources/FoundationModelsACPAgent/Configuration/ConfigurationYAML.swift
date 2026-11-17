@@ -101,7 +101,7 @@ public enum ConfigurationYAML {
   /// YAML spelling of the section's coding key.
   private static let sectionComments: [String: String] = [
     AgentConfiguration.CodingKeys.profile.stringValue:
-      "The model profile: preset selects a builtin profile (large, medium, small or tiny).",
+      "The model profile: the name of a profile file (profiles/<name>.yaml), such as large or small.",
     AgentConfiguration.CodingKeys.tools.stringValue:
       "The tool roster: each capability is on unless set to false.",
     AgentConfiguration.CodingKeys.compaction.stringValue:

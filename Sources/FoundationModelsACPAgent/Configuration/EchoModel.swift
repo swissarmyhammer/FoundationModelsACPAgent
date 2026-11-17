@@ -317,12 +317,15 @@ public struct StubModelLoader: ModelLoader {
   ///   - ref: The model reference, which the stub ignores.
   ///   - slot: The slot being loaded.
   ///   - context: The context size, which the stub ignores.
+  ///   - kvCache: The KV-cache quantization of the profile, which the stub
+  ///     ignores.
   ///   - reporting: The receiver of the progress. It gets one complete report.
   /// - Returns: The container that ``makeLLMContainer`` makes for `slot`.
   public func loadLLM(
     ref: ModelRef,
     slot: ModelSlot,
     context: Int,
+    kvCache: KVCacheQuantization?,
     reporting: @escaping @Sendable (DownloadProgress) -> Void
   ) async throws -> any LoadedLLMContainer {
     reporting(Self.completeProgress)

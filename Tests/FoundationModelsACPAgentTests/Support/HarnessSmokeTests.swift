@@ -206,7 +206,7 @@ final class PathRecordingTool: Tool, Sendable {
     let recorder = PathRecordingTool()
     let loader = makeScriptedModelLoader(script: Self.script)
     let container = try await loader.loadLLM(
-      ref: "stub/standard", slot: .standard, context: Self.scriptedContextWindow,
+      ref: "stub/standard", slot: .standard, context: Self.scriptedContextWindow, kvCache: nil,
       reporting: { _ in })
     let backend = container.makeSession(instructions: nil, tools: [recorder])
 

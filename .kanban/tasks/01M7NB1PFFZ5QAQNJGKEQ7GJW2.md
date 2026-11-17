@@ -32,6 +32,10 @@ comments:
     - `small`: Qwen3.8-27B-4bit + MTP-4bit, for standard and flash.
     Both have today's embedding and decision, and neither sets kvBits. medium and tiny are dropped. The default model moves to 8-bit, which needs mlx-swift-lm ^fgqcbvj (the 8-bit MTP drafter) for a real load.
   timestamp: 2026-11-17T18:15:07.907112+00:00
+- actor: claude-code
+  id: 01m7ndymvpxpsdr1e7ace0a8y9
+  text: 'Progress: committed 5e3934c (bundled large/small + ProfileFile decode) and cb775fa (ProfileStore). Then in one working tree: `profile: <name>` (scalar; old map form: preset gives the name, other keys warn), loader reads the selected file for its cwd (unknown name lists every name), kvBits key + makeRouter/makeLiveModelLoader kvBits path removed, Router 63e4c70 + Extras 1c69b4f (loadLLM kvCache arg; profile kvBits now decodes for real), settings child-run guard (CHILD_RUN), models endpoint layer field + saveProfile/deleteProfile + profile-store change feed, CLI `acp-agent profiles list|show|save|delete`, doctor warning per bad profile file, README/ARCHITECTURE. Discovery: ModelsGraphTests.aModelOfAnOtherProfileGivesADiskChangeWithNoSlot hung forever (awaits a DISK change of a model no profile names any more) — that one hang stalled whole filtered runs; fixed to use small''s drafter. Child-run guards were proven by disabling them: 4 tests failed, restored.'
+  timestamp: 2026-11-17T18:57:46.870095+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'Profiles are files: `profile: <name>`, named profile files per layer, builtins bundled with ACPAgent'

@@ -64,56 +64,84 @@ the composition the `acp-agent` CLI builds every mode on.
 
 ## The machine, and the models
 
-The agent needs a Mac with **32 GB** of memory for the default profile,
-`large`. The default profile fills
-four model slots at one time, and Router's `JointFit` prices the four
-models together against the memory of the machine. A 27B model at 4 bits is
-approximately 15 GB alone, so a 16 GB machine is too small.
+The agent needs a Mac with **32 GB** of memory for the profile `small`; the
+default profile, `large`, needs more. A profile fills four model slots at one
+time, and Router's `JointFit` prices the four models together against the
+memory of the machine. A 27B model at 4 bits is approximately 15 GB alone, so a
+16 GB machine is too small.
 
-| Slot | Default model | MTP drafter |
+| Slot | Model of `large` (the default) | MTP drafter |
 |---|---|---|
-| `standard` | `mlx-community/Qwen3.8-27B-4bit` | `mlx-community/Qwen3.8-27B-MTP-4bit` |
-| `flash` | `mlx-community/Qwen3.8-27B-4bit` (the `standard` model, shared) | `mlx-community/Qwen3.8-27B-MTP-4bit` |
+| `standard` | `mlx-community/Qwen3.8-27B-8bit` | `mlx-community/Qwen3.8-27B-MTP-8bit` |
+| `flash` | `mlx-community/Qwen3.8-27B-8bit` (the `standard` model, shared) | `mlx-community/Qwen3.8-27B-MTP-8bit` |
 | `embedding` | `erjigit17/embeddinggemma-300m-ane-coreml` | none |
 | `decision` | `h2oai/h2o-lightning-4b-gguf/h2o-lightning-4b-Q4_K_M.gguf@61f8d8b7a8c2d84426d0d143ca187f65d235934b` | none |
 
-These four are the models of the builtin profile `large`. The model
-configuration is by profile: `profile.preset` selects one builtin profile, and
-the profile decides the model of each slot and the context of the decision
-slot. No key of `config.yaml` names the model of a slot.
+The model configuration is by profile. A profile is a file,
+`profiles/<name>.yaml`, and `profile: <name>` in `config.yaml` selects one.
+The agent ships two profiles:
 
-| `profile.preset` | `standard` and `flash` |
+| `profile` | `standard` and `flash` |
 |---|---|
-| `large` (the default) | `mlx-community/Qwen3.8-27B-4bit` with its MTP drafter |
-| `medium` | `mlx-community/Qwen3-14B-4bit` |
-| `small` | `mlx-community/Qwen3-8B-4bit` |
-| `tiny` | `mlx-community/Qwen3-4B-4bit` |
+| `large` (the default) | `mlx-community/Qwen3.8-27B-8bit` with its MTP drafter `mlx-community/Qwen3.8-27B-MTP-8bit` |
+| `small` | `mlx-community/Qwen3.8-27B-4bit` with its MTP drafter `mlx-community/Qwen3.8-27B-MTP-4bit` |
 
-Each profile has the same `embedding` and `decision` models. A smaller
-profile fits a Mac with less memory:
+The two have the same `embedding` and `decision` models. `small` fits a Mac
+with less memory:
 
 ```yaml
-profile:
-  preset: small
+profile: small
 ```
 
-A name that is not a builtin profile is an error, and the error names the
-profiles. An old `config.yaml` that still has `profile.standard`,
-`profile.flash`, `profile.embedding`, `profile.decision` or
-`profile.decisionContext` loads: each such key gives a warning, and the agent
-ignores it. A change of `profile.preset` applies at the next launch of the
-agent.
+### Profile files
 
-`profile.kvBits` quantizes the KV cache of every model, as
-`GenerateParameters(kvBits: 8)` does. It takes `8` or `4`; any other value is
-an error. With no `kvBits`, every KV cache stays unquantized. MLX models
-quantize the cache affinely, and GGUF models use llama.cpp's `q8_0` or `q4_0`:
+A profile file is in the `profiles` folder of a layer: the project layer
+`<cwd>/.<name>/profiles/`, then the user layer, then the profiles that ship
+with the agent. The first layer that has a name wins, as a whole file: the
+layers do not merge. A user or project file of the name `large` overrides the
+shipped `large`, and a delete of that file brings the shipped one back. The
+shipped profiles are read-only.
+
+A file is Router's `ProfileDefinition` in YAML. The name of the file is the
+name of the profile:
 
 ```yaml
-profile:
-  preset: large
-  kvBits: 8
+# ~/.config/acp-agent/profiles/coder.yaml
+description: Qwen3 4B, for a quick test.
+standard:
+  - mlx-community/Qwen3-4B-4bit
+flash:
+  - mlx-community/Qwen3-4B-4bit
 ```
+
+The keys are `description`, `standard`, `flash`, `embedding`, `decision`,
+`context`, `decisionContext` and `kvBits`. Each key is optional. A key that the
+file leaves out takes its value from the shipped profile `large` — not from the
+selected profile, and not from another layer. The merge is by key: a slot of
+the file replaces the slot of `large` as a whole. Thus `decision` defaults to
+Router's `h2o-lightning-4b` GGUF at a decision context of 16384 tokens, and a
+file with only `kvBits: 8` has the models of `large`. A slot is a list of
+models, each a string `owner/name[/path][@revision]` or a mapping
+`{repo, drafter}`. `kvBits` quantizes the KV cache of each language model of
+the profile: `8` or `4`, and no key for an unquantized cache; any other value is
+an error. `context` overrides the working context in tokens; a file
+should usually leave it out, because the context comes from the model. A
+`name` key must be the name of the file. An unknown key, or a value that does
+not decode, is an error that names the file and the key.
+
+`profile` names a profile of any layer. A name that no layer has is an error
+that lists every available name. An old `config.yaml` with the map form of
+`profile` loads: `preset` gives the name, and each other key (`name`,
+`description`, `standard`, `flash`, `embedding`, `decision`,
+`decisionContext`, `kvBits`) gives a warning and is ignored.
+
+A change of a profile, or of the selected profile, applies at the next launch
+of the agent. `acp-agent profiles` lists, shows, saves and deletes the
+profile files. The `models` tool and the `models` GraphQL endpoint list each
+profile with its layer, and save and delete a profile file
+(`saveProfile`, `deleteProfile`); the `settings` tool selects one with the
+key path `["profile"]`. A child agent run cannot save, delete or select a
+profile.
 
 The `decision` model is Router's `ProfileDefinition.defaultDecisionCandidates`:
 one GGUF file of a Hub repository, at a pinned revision, which loads with
@@ -146,6 +174,10 @@ subcommand, so `acp-agent "write a haiku"` runs a prompt.
 | `acp-agent config edit` | Open the nearest `config.yaml` in `$EDITOR`. |
 | `acp-agent instructions eject` | Write `Instructions.md` into a layer. |
 | `acp-agent doctor` | Check that this configuration will actually work. |
+| `acp-agent profiles list` | List each profile with its layer (`project`, `user` or `bundled`) and the path of its file. A file that does not decode goes to stderr. `--json` gives the same data as one JSON array. |
+| `acp-agent profiles show <name>` | Print the profile of a name as the text of a profile file, with each key that the file leaves out from `large`. |
+| `acp-agent profiles save <name> <file>` | Check a profile file and save it to the user layer, or to the project layer with `--project`. |
+| `acp-agent profiles delete <name>` | Delete the profile file of a name from the user layer, or from the project layer with `--project`. |
 | `acp-agent snapshots list` | List each snapshot folder, with its checkpoint count, the time of its last checkpoint, and `recorded` or `unrecorded`. `--json` gives the same data as one JSON array. |
 | `acp-agent snapshots remove <key>...` | Remove the snapshot folders of the named session keys. A key with no snapshot folder goes to stderr, and the exit status is 1. `--unrecorded` removes each folder that no recorded session has. |
 

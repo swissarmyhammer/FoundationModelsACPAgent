@@ -62,6 +62,10 @@ struct SettingsEngine: Sendable {
   /// The store of the settings.
   let store: SettingsStore
 
+  /// Tells if the call runs in a child agent run. A child run cannot
+  /// select the profile (D193). A test gives its own answer.
+  var isChildRun: @Sendable () -> Bool = ChildAgentRun.isCurrent
+
   // MARK: - Reads
 
   /// Reads the merged value of one key for a session, or of the user level
@@ -224,6 +228,7 @@ struct SettingsEngine: Sendable {
     async throws
   {
     let storeLevel = try Self.checkedLevel(level, cwd: cwd, keyPath: keyPath)
+    try refuseChildRunProfileChange(at: keyPath)
     try SettingsSecretKeys.requireReferences(in: value, at: keyPath)
     try await SettingsGraphError.withCodedErrors {
       try await store.set(value, at: keyPath, level: storeLevel)
@@ -242,8 +247,22 @@ struct SettingsEngine: Sendable {
   /// - Throws: What ``set(_:at:level:cwd:)`` throws.
   func clear(at keyPath: [String], level: SettingsGraphLevel, cwd: String?) async throws {
     let storeLevel = try Self.checkedLevel(level, cwd: cwd, keyPath: keyPath)
+    try refuseChildRunProfileChange(at: keyPath)
     try await SettingsGraphError.withCodedErrors {
       try await store.clear(at: keyPath, level: storeLevel)
+    }
+  }
+
+  /// Refuses a change of `profile` from a child agent run (D193). The
+  /// selected profile is configuration of the user, as the marketplaces
+  /// are. A read still works.
+  ///
+  /// - Parameter keyPath: The key path of the change.
+  /// - Throws: ``SettingsGraphError/childRunProfile`` for a change of
+  ///   `profile` in a child run.
+  private func refuseChildRunProfileChange(at keyPath: [String]) throws {
+    if keyPath.first == AgentConfiguration.CodingKeys.profile.stringValue, isChildRun() {
+      throw SettingsGraphError.childRunProfile
     }
   }
 

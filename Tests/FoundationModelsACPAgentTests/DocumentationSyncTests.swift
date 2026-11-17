@@ -157,22 +157,21 @@ import Testing
   /// that keeps the README saying it.
   static let memoryFloorText = "32 GB"
 
-  /// Every model the default profile names, over the four slots, in
-  /// slot order, and the MTP drafter of each reference that names one.
-  /// The list is the default profile of Router (`ModelProfiles`), so a
-  /// changed default fails the README test until the README changes too.
+  /// Every model of each bundled profile, over the four slots, in slot
+  /// order, and the MTP drafter of each reference that names one. The
+  /// list is the bundled profile files (``BundledProfiles``), so a changed
+  /// profile fails the README test until the README changes too.
   static var defaultProfileModels: [String] {
-    guard let profile = ModelProfiles.named(ModelProfiles.defaultName) else {
-      return []
-    }
-    return (profile.standard + profile.flash + profile.embedding + profile.decision).flatMap {
-      reference in
-      [reference.stringValue] + (reference.drafter.map { [$0.stringValue] } ?? [])
+    BundledProfiles.all.flatMap { profile in
+      (profile.standard + profile.flash + profile.embedding + profile.decision).flatMap {
+        reference in
+        [reference.stringValue] + (reference.drafter.map { [$0.stringValue] } ?? [])
+      }
     }
   }
 
-  /// The README names every default model id, exactly as
-  /// ``ProfileConfiguration`` gives them.
+  /// The README names every model id of the bundled profiles, exactly as
+  /// their files give them.
   @Test func readmeNamesEveryDefaultProfileModel() throws {
     let readme = try Self.readmeText()
 

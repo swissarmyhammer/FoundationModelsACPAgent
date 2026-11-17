@@ -20,39 +20,14 @@ public struct ProfileResolutionError: Error, Equatable, Sendable, CustomStringCo
 }
 
 extension ProfileConfiguration {
-  /// Maps this decoded section to Router's authored profile: the profile
-  /// that ``preset`` names (ACPA-21, D189).
-  ///
-  /// The four candidate lists, the description and the context of the
-  /// decision slot come from the preset. The configured ``name`` is a label
-  /// only: it wins over the name of the preset; a section without one falls
-  /// back to the dotfolder name. The name has three consumers: the
-  /// configuration stack, the transcript root and this default.
-  ///
-  /// `context` stays `nil` on purpose: the context size comes from the
-  /// model, so resolution derives the working context from each
-  /// candidate's native maximum.
-  ///
-  /// - Parameter fallbackName: The dotfolder name the profile's name
-  ///   falls back to when ``name`` is not set.
-  /// - Returns: The authored profile to resolve.
-  public func definition(fallbackName: DotfolderName) -> ProfileDefinition {
-    var definition = presetProfile
-    definition.name = name ?? fallbackName.rawValue
-    definition.context = nil
-    return definition
-  }
-
-  /// Resolves this section to a resident profile through
-  /// `Router.resolve(profile:reporting:)`.
+  /// Resolves the selected profile (``definition``) to a resident profile
+  /// through `Router.resolve(profile:reporting:)`.
   ///
   /// Every failure — Router's internal `ResolutionFailure` and each
   /// download or load error alike — is caught as `any Error` and
   /// reported as one readable ``ProfileResolutionError``.
   ///
   /// - Parameters:
-  ///   - fallbackName: The dotfolder name the profile's name falls back
-  ///     to when ``name`` is not set.
   ///   - router: The router that resolves the profile and owns its
   ///     residency.
   ///   - reporting: The UI-bindable progress the resolution drives.
@@ -60,11 +35,10 @@ extension ProfileConfiguration {
   ///   strongly: every `RoutedModel` holds its owning profile weakly.
   /// - Throws: ``ProfileResolutionError`` for every resolution failure.
   public func resolveResident(
-    fallbackName: DotfolderName,
     router: Router,
     reporting: ResolutionProgress
   ) async throws(ProfileResolutionError) -> LanguageModelProfile {
-    let definition = definition(fallbackName: fallbackName)
+    let definition = definition
     do {
       return try await router.resolve(profile: definition, reporting: reporting)
     } catch {

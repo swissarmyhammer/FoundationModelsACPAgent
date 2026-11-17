@@ -20,6 +20,7 @@ struct FailingModelLoader: ModelLoader {
     ref: ModelRef,
     slot: ModelSlot,
     context: Int,
+    kvCache: KVCacheQuantization?,
     reporting: @escaping @Sendable (DownloadProgress) -> Void
   ) async throws -> any LoadedLLMContainer {
     throw ScriptedLoadFailure()
@@ -37,21 +38,12 @@ struct FailingModelLoader: ModelLoader {
 }
 
 /// Profile resolution: the mapping from the
-/// `profile` config section to Router's `ProfileDefinition`, the dotfolder
-/// name fallback, the resolution at agent construction over a scripted
+/// `profile` config key to Router's `ProfileDefinition`, the resolution at agent construction over a scripted
 /// loader, the readable failure report, and the strongly held resident
 /// profile.
 @Suite struct ProfileResolutionTests {
-  /// The dotfolder name each test maps and resolves against.
+  /// The dotfolder name each test resolves against.
   static let dotfolderWord = "coding"
-
-  /// The validated dotfolder name of ``dotfolderWord``.
-  ///
-  /// - Returns: The validated name.
-  /// - Throws: `DotfolderNameError` when ``dotfolderWord`` is refused.
-  static func makeDotfolderName() throws -> DotfolderName {
-    try DotfolderName(dotfolderWord)
-  }
 
   /// A throwaway cache directory for one router.
   ///
@@ -76,71 +68,45 @@ struct FailingModelLoader: ModelLoader {
       loader: loader)
   }
 
-  // MARK: - The mapping matrix
+  // MARK: - The mapping
 
-  /// With no configured `profile.name`, the definition's name falls back
-  /// to the dotfolder name.
-  @Test func defaultNameFallsBackToTheDotfolderName() throws {
-    let definition = ProfileConfiguration().definition(
-      fallbackName: try Self.makeDotfolderName())
-
-    #expect(definition.name == Self.dotfolderWord)
+  /// The definition has the name of the selected profile.
+  @Test func theDefinitionHasTheNameOfTheProfile() {
+    #expect(ProfileConfiguration().definition.name == BundledProfiles.defaultName)
   }
 
-  /// A configured `profile.name` wins over the dotfolder name.
-  @Test func configuredNameWinsOverTheDotfolderName() throws {
-    var configuration = ProfileConfiguration()
-    configuration.name = "custom"
-
-    let definition = configuration.definition(
-      fallbackName: try Self.makeDotfolderName())
-
-    #expect(definition.name == "custom")
-  }
-
-  /// The definition is the profile that `profile.preset` names: each slot,
-  /// the description and the decision context come from the preset
-  /// (ACPA-21). The configured description is a label only.
-  @Test func theDefinitionIsThePresetProfile() throws {
+  /// The definition is the profile that `profile` names: each slot, the
+  /// description and the decision context come from its file.
+  @Test func theDefinitionIsTheSelectedProfile() throws {
     let fixture = ConfigurationLoaderTests.Fixture()
-    let loaded = try fixture.loadProjectConfig(
-      """
-      profile:
-        description: a label only
-        preset: medium
-      """)
+    let loaded = try fixture.loadProjectConfig("profile: small\n")
 
-    let definition = loaded.configuration.profile.definition(
-      fallbackName: try Self.makeDotfolderName())
+    let definition = loaded.configuration.profile.definition
 
-    let medium = try #require(ModelProfiles.named("medium"))
-    #expect(definition.description == medium.description)
-    #expect(definition.standard == medium.standard)
-    #expect(definition.flash == medium.flash)
-    #expect(definition.embedding == medium.embedding)
-    #expect(definition.decision == medium.decision)
-    #expect(definition.decisionContext == medium.decisionContext)
+    let small = try #require(BundledProfiles.named("small"))
+    #expect(definition.description == small.description)
+    #expect(definition.standard == small.standard)
+    #expect(definition.flash == small.flash)
+    #expect(definition.embedding == small.embedding)
+    #expect(definition.decision == small.decision)
+    #expect(definition.decisionContext == small.decisionContext)
   }
 
-  /// The config has no context key, because the context size comes from
-  /// the model. So the mapping passes `nil` — not the initializer's 8192
-  /// default — and the ladder applies.
-  @Test func contextStaysNilSoTheLadderApplies() throws {
-    let definition = ProfileConfiguration().definition(
-      fallbackName: try Self.makeDotfolderName())
-
-    #expect(definition.context == nil)
+  /// A bundled profile has no context key, because the context size comes
+  /// from the model. So the definition has `nil`, and the ladder applies.
+  @Test func contextStaysNilSoTheLadderApplies() {
+    #expect(ProfileConfiguration().definition.context == nil)
   }
 
   // MARK: - Construction
 
   /// Agent construction with the in-code default configuration resolves
   /// through the scripted loader, and the resident profile carries the
-  /// dotfolder name as its definition name.
+  /// name of the default profile as its definition name.
   @Test func constructionResolvesThroughTheScriptedLoader() async throws {
     let agent = try await Self.makeAgent()
 
-    #expect(agent.residentProfile.definitionName == Self.dotfolderWord)
+    #expect(agent.residentProfile.definitionName == BundledProfiles.defaultName)
   }
 
   /// A scripted resolution failure surfaces as a `ProfileResolutionError`
@@ -150,7 +116,7 @@ struct FailingModelLoader: ModelLoader {
       _ = try await Self.makeAgent(loader: FailingModelLoader())
       Issue.record("expected a ProfileResolutionError")
     } catch let error as ProfileResolutionError {
-      #expect(error.description.contains(Self.dotfolderWord))
+      #expect(error.description.contains(BundledProfiles.defaultName))
       #expect(error.description.contains(ScriptedLoadFailure.message))
     } catch {
       Issue.record("expected a ProfileResolutionError, got \(error)")

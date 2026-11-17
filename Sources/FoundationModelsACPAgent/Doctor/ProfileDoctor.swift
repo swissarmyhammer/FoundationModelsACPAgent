@@ -69,10 +69,10 @@ public struct ProfileDoctor: Doctorable {
   private static let diskCheckName = "the free disk"
 
   /// The fix of a model of the profile that does not resolve or does not
-  /// load: the user selects a different builtin profile (ACPA-21).
+  /// load: the user selects a different profile, or edits the profile file.
   private static let selectFix =
-    "select a different profile with \"profile.preset\" in \(ConfigurationLoader.configFileName), "
-    + "with \(editCommand)"
+    "select a different profile with \"profile: <name>\" in \(ConfigurationLoader.configFileName), "
+    + "with \(editCommand), or change the models of the profile file"
 
   /// The key of one slot in the rows: the name of the profile, then the
   /// slot, for example `large.standard`.
@@ -88,11 +88,14 @@ public struct ProfileDoctor: Doctorable {
   // MARK: - Stored state
 
   /// The profile whose models the checks read: the profile that
-  /// `profile.preset` selects.
+  /// `profile` selects.
   private let profile: ProfileDefinition
 
   /// How the checks reach the Hub and the model cache.
   private let resolver: any ModelResolver
+
+  /// The error of each profile file of the layers that does not decode.
+  private let fileErrors: [ProfileFileError]
 
   /// The memory of the machine, in bytes.
   private let memoryBytes: Int64
@@ -121,13 +124,17 @@ public struct ProfileDoctor: Doctorable {
   ///   - freeDiskBytes: The free disk of the model cache, in bytes.
   ///   - timeoutSeconds: How long one resolver call may take. The
   ///     default is ``resolveTimeoutSeconds``.
+  ///   - fileErrors: The error of each profile file of the layers that does
+  ///     not decode (``ProfileLayers/list(cwd:)``). Each one is a finding.
+  ///     The default is none.
   public init(
     configuration: AgentConfiguration, resolver: any ModelResolver, memoryBytes: Int64,
-    freeDiskBytes: Int64, timeoutSeconds: Double = ProfileDoctor.resolveTimeoutSeconds
+    freeDiskBytes: Int64, timeoutSeconds: Double = ProfileDoctor.resolveTimeoutSeconds,
+    fileErrors: [ProfileFileError] = []
   ) {
     self.init(
-      profile: configuration.profile.presetProfile, resolver: resolver, memoryBytes: memoryBytes,
-      freeDiskBytes: freeDiskBytes, timeoutSeconds: timeoutSeconds)
+      profile: configuration.profile.definition, resolver: resolver, memoryBytes: memoryBytes,
+      freeDiskBytes: freeDiskBytes, timeoutSeconds: timeoutSeconds, fileErrors: fileErrors)
   }
 
   /// Makes the component over one profile, one resolver and the two
@@ -140,19 +147,24 @@ public struct ProfileDoctor: Doctorable {
   ///   - freeDiskBytes: The free disk of the model cache, in bytes.
   ///   - timeoutSeconds: How long one resolver call may take. The
   ///     default is ``resolveTimeoutSeconds``.
+  ///   - fileErrors: The error of each profile file that does not decode.
+  ///     The default is none.
   public init(
     profile: ProfileDefinition, resolver: any ModelResolver, memoryBytes: Int64,
-    freeDiskBytes: Int64, timeoutSeconds: Double = ProfileDoctor.resolveTimeoutSeconds
+    freeDiskBytes: Int64, timeoutSeconds: Double = ProfileDoctor.resolveTimeoutSeconds,
+    fileErrors: [ProfileFileError] = []
   ) {
     self.profile = profile
     self.resolver = resolver
+    self.fileErrors = fileErrors
     self.memoryBytes = memoryBytes
     self.freeDiskBytes = freeDiskBytes
     self.timeoutSeconds = timeoutSeconds
   }
 
-  /// Reports the rows of each slot reference, in slot order, and then
-  /// the memory row and the disk row.
+  /// Reports the rows of each slot reference, in slot order, then the
+  /// memory row and the disk row, then one row for each profile file that
+  /// does not decode.
   ///
   /// - Returns: The findings, in that order.
   public func runHealthChecks() async -> [HealthCheck] {
@@ -161,7 +173,27 @@ public struct ProfileDoctor: Doctorable {
     let rows = references.enumerated().flatMap { position, entry in
       Self.checks(of: entry, lookup: lookups[position])
     }
-    return rows + [memoryCheck, diskCheck(lookups: lookups)]
+    return rows + [memoryCheck, diskCheck(lookups: lookups)] + fileErrors.map(Self.check(of:))
+  }
+
+  // MARK: - The profile files
+
+  /// The check that states one profile file that does not decode.
+  private static let fileCheckName = "the profile files"
+
+  /// The fix of a profile file that does not decode.
+  private static let fileFix =
+    "correct the file, or delete it with acp-agent profiles delete <name>"
+
+  /// The finding of one profile file that does not decode. The selected
+  /// profile does not load at all with a bad file, and the configuration
+  /// component reports that as an error; this finding names each bad
+  /// file, also one that no setting selects.
+  ///
+  /// - Parameter error: The error of the file.
+  /// - Returns: A finding with the ``HealthStatus/warning`` status.
+  private static func check(of error: ProfileFileError) -> HealthCheck {
+    .warning(name: fileCheckName, message: error.description, fix: fileFix, category: category)
   }
 
   // MARK: - The slots
@@ -491,16 +523,14 @@ public struct ProfileDoctor: Doctorable {
       category: Self.category)
   }
 
-  /// The smallest builtin profile, which the fix of a machine below the
+  /// The smaller bundled profile, which the fix of a machine below the
   /// floor names.
-  static var smallerProfileName: String {
-    ModelProfiles.builtin.last?.name ?? ModelProfiles.defaultName
-  }
+  static let smallerProfileName = "small"
 
-  /// The fix of a machine below the floor: select a smaller profile.
+  /// The fix of a machine below the floor: select the smaller profile.
   private static var smallerProfileFix: String {
-    "set \"profile.preset\" in \(ConfigurationLoader.configFileName) to a smaller profile, "
-      + "such as \(smallerProfileName), with \(editCommand)"
+    "set \"profile: \(smallerProfileName)\" in \(ConfigurationLoader.configFileName), "
+      + "with \(editCommand)"
   }
 
   // MARK: - The free disk
@@ -545,8 +575,8 @@ public struct ProfileDoctor: Doctorable {
   /// The fix of a volume that is too small: make space, or name smaller
   /// models.
   private static let diskFix =
-    "make space on the volume of the model cache, or set \"profile.preset\" in "
-    + "\(ConfigurationLoader.configFileName) to a smaller profile, with \(editCommand)"
+    "make space on the volume of the model cache, or set \"profile: \(smallerProfileName)\" in "
+    + "\(ConfigurationLoader.configFileName), with \(editCommand)"
 
   // MARK: - The shared shapes
 

@@ -30,8 +30,8 @@ extension KeyCheckedSection {
 /// file `Instructions.md`. There is no context-size key: the context comes
 /// from the model, and the profile decides the context of the decision slot.
 public struct AgentConfiguration: Codable, Equatable, Sendable {
-  /// The model profile: the builtin profile that selects the models of the
-  /// `standard`, `flash`, `embedding` and `decision` slots.
+  /// The model profile: the name of the profile file that selects the
+  /// models of the `standard`, `flash`, `embedding` and `decision` slots.
   public var profile = ProfileConfiguration()
 
   /// The tool roster: per-tool enable and disable through the
@@ -253,7 +253,7 @@ public struct FontRoleConfiguration: Codable, Equatable, Sendable, KeyCheckedSec
 
   /// Decodes `family` and `size` when present, and refuses each other key.
   public init(from decoder: any Decoder) throws {
-    let unknown = try decoder.container(keyedBy: AnyFontKey.self).allKeys
+    let unknown = try decoder.container(keyedBy: AnyCodingKey.self).allKeys
       .map(\.stringValue).filter { !Self.knownKeys.contains($0) }.sorted()
     if let first = unknown.first {
       let choices = CodingKeys.allCases.map(\.stringValue).joined(separator: ", ")
@@ -270,136 +270,103 @@ public struct FontRoleConfiguration: Codable, Equatable, Sendable, KeyCheckedSec
         forKey: .size, in: container, debugDescription: "a font size must be more than 0")
     }
   }
-
-  /// A coding key that holds each key of a role, to find the unknown keys.
-  private struct AnyFontKey: CodingKey {
-    let stringValue: String
-    var intValue: Int? { nil }
-    init(stringValue: String) { self.stringValue = stringValue }
-    init?(intValue: Int) { nil }
-  }
 }
 
 // MARK: - profile
 
-/// The `profile:` section: the builtin profile that the agent resolves, and
-/// the name of the profile (ACPA-21, D189).
+/// The `profile` key: the name of the profile file that selects the models
+/// of the agent, such as `profile: large`.
 ///
-/// The model configuration is by profile. `preset` names one profile of
-/// ``ModelProfiles/builtin``, and that profile decides the model of each
-/// slot and the context of the decision slot. The section has no slot key
-/// and no context key. An old layer that still has one of
-/// ``retiredKeys`` loads: the loader gives a warning for each such key, and
-/// the agent ignores it.
+/// A profile is a file, `profiles/<name>.yaml`, in the project layer, the
+/// user layer or the bundled resources (``ProfileStore``). The loader reads
+/// the file of the name for the working directory of the load, and an
+/// unknown name is an error that lists every available name.
 ///
-/// The default profile is a coding profile that operates on a 32 GB machine
-/// (cli-plan.md §7). A 27B model at 4 bits is approximately 15 GB on its own,
-/// and Router's `JointFit` measures the four models together against the
-/// memory budget.
-public struct ProfileConfiguration: Codable, Equatable, Sendable, KeyCheckedSection {
-  /// The default one-line description of the profile's intent.
-  public static let defaultDescription = "Local coding assistant."
+/// The old map form of the section loads: its `preset` key gives the name,
+/// and each other key (``retiredKeys``) gives a warning and is ignored.
+public struct ProfileConfiguration: Codable, Equatable, Sendable {
+  /// The key of the old map form that gives the name.
+  public static let presetKey = "preset"
 
-  /// The keys of the section before ACPA-21: the model of each slot and the
-  /// context of the decision slot. A layer that has one of them gives a
-  /// warning, and the agent ignores the key.
+  /// The known keys of the old map form: ``presetKey``.
+  public static let knownKeys: Set<String> = [presetKey]
+
+  /// The keys of the old map form that the agent no longer reads. A layer
+  /// that has one of them gives a warning, and the agent ignores the key.
   public static let retiredKeys: Set<String> = [
-    "standard", "flash", "embedding", "decision", "decisionContext",
+    "name", "description", "standard", "flash", "embedding", "decision", "decisionContext",
+    "kvBits",
   ]
 
-  /// The profile's name, or `nil` to fall back to the dotfolder name. It is
-  /// a label only: it does not select the models.
-  public var name: String?
+  /// The name of the selected profile.
+  public var name = BundledProfiles.defaultName
 
-  /// A short description of the profile's intent. It is a label only: the
-  /// resolved profile has the description of the preset.
-  public var description = ProfileConfiguration.defaultDescription
+  /// The profile that the loader read for ``name``, or a profile that a
+  /// test sets in code. It is not a key of the settings. `nil` gives the
+  /// bundled profile of the name.
+  var resolved: ProfileDefinition?
 
-  /// The name of the builtin profile that selects the models: one name of
-  /// ``ModelProfiles/builtin``.
-  public var preset = ModelProfiles.defaultName
-
-  /// A profile that wins over ``preset``, for a test only. It is not a
-  /// key of the settings: no layer can set it. A suite that needs models
-  /// that no builtin profile has, such as a `flash` model that differs from
-  /// the `standard` model, sets it in code.
-  var testProfile: ProfileDefinition?
-
-  /// The KV-cache widths, in bits, that `kvBits` accepts: Router's
-  /// `KVCacheQuantization` has an 8-bit and a 4-bit case.
-  public static let validKVBits: Set<Int> = [8, 4]
-
-  /// The KV-cache bits of every model, 8 or 4, like
-  /// `GenerateParameters(kvBits: 8)`. `nil` keeps every KV cache
-  /// unquantized. MLX models quantize the cache affinely; GGUF models use
-  /// llama.cpp's `q8_0` or `q4_0`.
-  public var kvBits: Int?
-
-  /// The YAML spelling of each key.
-  public enum CodingKeys: String, CodingKey, CaseIterable {
-    case name, description, preset, kvBits
-  }
-
-  /// The default coding profile.
+  /// The default profile.
   public init() {}
 
-  /// Decodes each present key and keeps the default for each absent one.
+  /// The profile of a name.
   ///
-  /// - Throws: `DecodingError` when `preset` names no builtin profile. The
-  ///   error names each profile.
+  /// - Parameter name: The name of the profile.
+  public init(name: String) {
+    self.name = name
+  }
+
+  /// Decodes the name: a string, or the old map form, whose `preset` gives
+  /// the name and whose other keys are ignored.
+  ///
+  /// - Throws: `DecodingError` when the value is neither a string nor a
+  ///   mapping, or when `preset` is not a string.
   public init(from decoder: any Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    name = try container.decodeIfPresent(String.self, forKey: .name)
-    description = try container.decodeIfPresent(String.self, forKey: .description) ?? description
-    if let preset = try container.decodeIfPresent(String.self, forKey: .preset) {
-      guard ModelProfiles.named(preset) != nil else {
-        let names = ModelProfiles.builtin.map(\.name).joined(separator: ", ")
-        throw DecodingError.dataCorruptedError(
-          forKey: .preset, in: container,
-          debugDescription: "profile.preset must be one of: \(names) (got \"\(preset)\")")
-      }
-      self.preset = preset
+    if let name = try? decoder.singleValueContainer().decode(String.self) {
+      self.name = name
+      return
     }
-    kvBits = try container.decodeIfPresent(Int.self, forKey: .kvBits)
-    if let kvBits, !Self.validKVBits.contains(kvBits) {
-      throw DecodingError.dataCorruptedError(
-        forKey: .kvBits, in: container,
-        debugDescription: "profile.kvBits must be 8 or 4, or absent for no quantization (got \(kvBits))")
-    }
+    let container = try decoder.container(keyedBy: AnyCodingKey.self)
+    name = try container.decodeIfPresent(String.self, forKey: AnyCodingKey(stringValue: Self.presetKey))
+      ?? name
   }
 
-  /// The builtin profile that ``preset`` names. A value that names no
-  /// profile, which only code can set, gives the default profile.
-  public var presetProfile: ProfileDefinition {
-    testProfile ?? ModelProfiles.named(preset) ?? ModelProfiles.defaultProfile
+  /// Encodes the name as one string.
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(name)
   }
 
-  /// Two sections are equal when their keys are equal and their test
-  /// profiles have the same encoding. `ProfileDefinition` is not
-  /// `Equatable`.
+  /// The selected profile: the profile that the loader read, else the
+  /// bundled profile of the name, else the default profile.
+  public var definition: ProfileDefinition {
+    resolved ?? BundledProfiles.named(name) ?? BundledProfiles.defaultProfile
+  }
+
+  /// Two sections are equal when their names are equal and their profiles
+  /// have the same encoding. `ProfileDefinition` is not `Equatable`.
   public static func == (lhs: ProfileConfiguration, rhs: ProfileConfiguration) -> Bool {
-    lhs.name == rhs.name && lhs.description == rhs.description && lhs.preset == rhs.preset
-      && lhs.kvBits == rhs.kvBits
-      && encoding(of: lhs.testProfile) == encoding(of: rhs.testProfile)
+    lhs.name == rhs.name && encoding(of: lhs.definition) == encoding(of: rhs.definition)
   }
 
-  /// The JSON encoding of a test profile, or `nil` for none.
+  /// The JSON encoding of a profile, with sorted keys.
   ///
   /// - Parameter profile: The profile.
-  /// - Returns: The encoding.
-  private static func encoding(of profile: ProfileDefinition?) -> Data? {
-    profile.flatMap { try? JSONEncoder.sortedKeys.encode($0) }
+  /// - Returns: The encoding, or `nil` when it fails.
+  private static func encoding(of profile: ProfileDefinition) -> Data? {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = .sortedKeys
+    return try? encoder.encode(profile)
   }
 }
 
-extension JSONEncoder {
-  /// An encoder with sorted keys, so that two equal values give the same
-  /// data.
-  fileprivate static var sortedKeys: JSONEncoder {
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = .sortedKeys
-    return encoder
-  }
+/// A coding key that holds any key of a mapping: the unknown keys of a font
+/// role, and the `preset` key of the old map form of `profile`.
+private struct AnyCodingKey: CodingKey {
+  let stringValue: String
+  var intValue: Int? { nil }
+  init(stringValue: String) { self.stringValue = stringValue }
+  init?(intValue: Int) { nil }
 }
 
 // MARK: - compaction

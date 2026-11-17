@@ -38,10 +38,10 @@ struct LocalModelPathTests {
     configuration.setTestSlot(\.embedding, [reference])
     let resolver = StubModelResolver(
       namedLookups: StubModelResolver.foundLookups(
-        of: ModelProfiles.defaultProfile.standard
-          + ModelProfiles.defaultProfile.flash
-          + ModelProfiles.defaultProfile.decision
-          + ModelProfiles.defaultProfile.standard.compactMap(\.drafter)),
+        of: BundledProfiles.defaultProfile.standard
+          + BundledProfiles.defaultProfile.flash
+          + BundledProfiles.defaultProfile.decision
+          + BundledProfiles.defaultProfile.standard.compactMap(\.drafter)),
       lookup: .notFound)
     return await ProfileDoctor(
       configuration: configuration, resolver: resolver,
