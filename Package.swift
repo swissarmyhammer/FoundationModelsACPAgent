@@ -13,6 +13,12 @@ private let packageName = "FoundationModelsACPAgent"
 /// `acp-agent` binary finds it as the unit tests do.
 private let builtinConfigurationResource = "Resources/builtin.config.yaml"
 
+/// The folder of the bundled profile files (`large.yaml`, `small.yaml`), a
+/// resource of the library target. `BundledProfiles` reads each file through
+/// `Bundle.module`, under the user layer and the project layer of the
+/// profiles.
+private let bundledProfilesResource = "Resources/profiles"
+
 /// The name of the unit test target, under `Tests/`.
 private let testTargetName = "\(packageName)Tests"
 
@@ -447,8 +453,9 @@ let package = Package(
             name: packageName,
             dependencies: familyProducts + [mcpSDKProduct, huggingFaceProduct] + telemetryAPIProducts
                 + graphQLProducts,
-            // The builtin configuration — see `builtinConfigurationResource`.
-            resources: [.copy(builtinConfigurationResource)]
+            // The builtin configuration and the bundled profiles — see
+            // `builtinConfigurationResource` and `bundledProfilesResource`.
+            resources: [.copy(builtinConfigurationResource), .copy(bundledProfilesResource)]
         ),
         // The agent CLI (cli-plan.md §5, §8): the ArgumentParser subcommand
         // tree over `AgentComposition`. A library target, so the entry point
