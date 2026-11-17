@@ -186,7 +186,7 @@ public enum SettingsStoreError: Error, Equatable, Sendable, CustomStringConverti
 public actor SettingsStore {
   /// The working directory of the stack that gives the user layer and the
   /// defaults layer. These layers are the same for each working directory.
-  private static let placeholderDirectory = URL(fileURLWithPath: "/", isDirectory: true)
+  static let placeholderDirectory = URL(fileURLWithPath: "/", isDirectory: true)
 
   /// The settings folders of the host. Each level path comes from them.
   public nonisolated let settingsFolders: SettingsFolders
