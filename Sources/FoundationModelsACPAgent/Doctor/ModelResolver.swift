@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsExtras
 import FoundationModelsRouter
 
 /// What one lookup of a model reference gave (cli-plan.md §5.12, the
@@ -72,6 +73,9 @@ public struct SystemModelResolver: ModelResolver {
   /// The subdirectory of a repository cache that holds one directory per
   /// revision.
   private static let snapshotsDirectoryName = "snapshots"
+
+  /// The separator of the segments of a path inside a repository.
+  private static let pathSeparator = "/"
 
   // MARK: - Stored state
 
@@ -168,7 +172,7 @@ public struct SystemModelResolver: ModelResolver {
       guard let entries = Self.entries(inTree: raw.treeJSON) else {
         return .notFound
       }
-      return .found(downloadBytes: missingBytes(of: entries, repo: repo))
+      return .found(downloadBytes: missingBytes(of: entries, under: reference.path, repo: repo))
     } catch {
       return .unreachable(reason: String(describing: error))
     }
@@ -196,20 +200,50 @@ public struct SystemModelResolver: ModelResolver {
 
   // MARK: - The cache
 
-  /// The bytes of `entries` that no snapshot of `repo` already holds.
+  /// The bytes of the files that `path` selects in `entries` and that no
+  /// snapshot of `repo` already holds.
   ///
   /// - Parameters:
   ///   - entries: The files of the repository.
+  ///   - path: The path of the reference inside the repository, or `nil`
+  ///     for its root. See ``selectedEntries(of:under:)``.
   ///   - repo: The repository id.
   /// - Returns: The bytes the next run must still download.
-  private func missingBytes(of entries: [TreeEntry], repo: String) -> Int64 {
+  private func missingBytes(of entries: [TreeEntry], under path: String?, repo: String) -> Int64 {
     let snapshots = snapshotDirectories(of: repo)
-    return entries.reduce(0) { total, entry in
+    return Self.selectedEntries(of: entries, under: path).reduce(0) { total, entry in
       guard let size = entry.size, !Self.isOnDisk(entry.path, under: snapshots) else {
         return total
       }
       return total + size
     }
+  }
+
+  /// The files of `entries` that the next run downloads for a reference
+  /// with `path`.
+  ///
+  /// A reference with no path downloads the whole tree. A path selects the
+  /// files of one GGUF model as the Extras GGUF loader selects them: the
+  /// shards of the model and its image projector. When the path holds no
+  /// model that ``GGUFFileSet/select(from:under:)`` accepts, the files are
+  /// the path itself and each file under it. A lookup never throws, thus
+  /// that refusal gives this smaller price and not an error.
+  ///
+  /// - Parameters:
+  ///   - entries: The files of the repository.
+  ///   - path: The path of the reference inside the repository, or `nil`
+  ///     for its root.
+  /// - Returns: The files to price.
+  private static func selectedEntries(of entries: [TreeEntry], under path: String?) -> [TreeEntry] {
+    guard let path else { return entries }
+    let paths = entries.map(\.path)
+    let selected: Set<String>
+    if let fileSet = try? GGUFFileSet.select(from: paths, under: path) {
+      selected = Set(fileSet.files)
+    } else {
+      selected = Set(paths.filter { $0 == path || $0.hasPrefix(path + pathSeparator) })
+    }
+    return entries.filter { selected.contains($0.path) }
   }
 
   /// The snapshot directories the cache holds for `repo`, one per
