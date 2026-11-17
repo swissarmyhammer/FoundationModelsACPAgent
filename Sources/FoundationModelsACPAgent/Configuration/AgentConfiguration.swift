@@ -325,9 +325,19 @@ public struct ProfileConfiguration: Codable, Equatable, Sendable, KeyCheckedSect
   /// the `standard` model, sets it in code.
   var testProfile: ProfileDefinition?
 
+  /// The KV-cache widths, in bits, that `kvBits` accepts: Router's
+  /// `KVCacheQuantization` has an 8-bit and a 4-bit case.
+  public static let validKVBits: Set<Int> = [8, 4]
+
+  /// The KV-cache bits of every model, 8 or 4, like
+  /// `GenerateParameters(kvBits: 8)`. `nil` keeps every KV cache
+  /// unquantized. MLX models quantize the cache affinely; GGUF models use
+  /// llama.cpp's `q8_0` or `q4_0`.
+  public var kvBits: Int?
+
   /// The YAML spelling of each key.
   public enum CodingKeys: String, CodingKey, CaseIterable {
-    case name, description, preset
+    case name, description, preset, kvBits
   }
 
   /// The default coding profile.
@@ -350,6 +360,12 @@ public struct ProfileConfiguration: Codable, Equatable, Sendable, KeyCheckedSect
       }
       self.preset = preset
     }
+    kvBits = try container.decodeIfPresent(Int.self, forKey: .kvBits)
+    if let kvBits, !Self.validKVBits.contains(kvBits) {
+      throw DecodingError.dataCorruptedError(
+        forKey: .kvBits, in: container,
+        debugDescription: "profile.kvBits must be 8 or 4, or absent for no quantization (got \(kvBits))")
+    }
   }
 
   /// The builtin profile that ``preset`` names. A value that names no
@@ -363,6 +379,7 @@ public struct ProfileConfiguration: Codable, Equatable, Sendable, KeyCheckedSect
   /// `Equatable`.
   public static func == (lhs: ProfileConfiguration, rhs: ProfileConfiguration) -> Bool {
     lhs.name == rhs.name && lhs.description == rhs.description && lhs.preset == rhs.preset
+      && lhs.kvBits == rhs.kvBits
       && encoding(of: lhs.testProfile) == encoding(of: rhs.testProfile)
   }
 

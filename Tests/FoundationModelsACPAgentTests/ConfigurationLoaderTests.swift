@@ -1071,6 +1071,45 @@ import Testing
     #expect(profile.decisionContext == ProfileDefinition.defaultDecisionContext)
   }
 
+  /// The empty stack sets no KV-cache bits: every model keeps an
+  /// unquantized KV cache.
+  @Test func theEmptyStackSetsNoKVBits() throws {
+    let fixture = Fixture()
+
+    let profile = try fixture.makeLoader().load().configuration.profile
+
+    #expect(profile.kvBits == nil)
+  }
+
+  /// A project `profile.kvBits` of 8 or 4 decodes as that many bits.
+  @Test(arguments: [8, 4])
+  func theProjectKVBitsDecode(bits: Int) throws {
+    let fixture = Fixture()
+
+    let loaded = try fixture.loadProjectConfig(
+      """
+      profile:
+        kvBits: \(bits)
+      """)
+
+    #expect(loaded.configuration.profile.kvBits == bits)
+  }
+
+  /// A `profile.kvBits` other than 8 or 4 is a settings error: the KV
+  /// cache quantizes to those two widths only.
+  @Test(arguments: [6, 16, 0])
+  func aKVBitsOtherThanEightOrFourIsAnError(bits: Int) throws {
+    let fixture = Fixture()
+
+    #expect(throws: YAMLValueDecodingError.self) {
+      try fixture.loadProjectConfig(
+        """
+        profile:
+          kvBits: \(bits)
+        """)
+    }
+  }
+
   /// The `compaction.trigger` the section test writes; it differs from the
   /// default so the decode is observable.
   private static let configuredTrigger = 0.7

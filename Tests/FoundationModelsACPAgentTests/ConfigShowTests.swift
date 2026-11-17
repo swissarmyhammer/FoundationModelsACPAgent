@@ -227,6 +227,16 @@ struct ConfigShowTests {
     #expect(!report.standardOutput.contains("  standard:"))
   }
 
+  /// With no file in any layer, the report shows `profile.kvBits` as
+  /// `null`, so a person can see the key and set 8 or 4.
+  @Test func noFilesShowTheKVBitsAsNull() throws {
+    let fixture = ConfigCommandFixture(label: "ConfigShowTests-kv-bits")
+
+    let report = try Self.report([], in: fixture)
+
+    #expect(report.standardOutput.contains("  kvBits: null\n"))
+  }
+
   /// The comment above the `profile:` section names the preset and the
   /// builtin profiles.
   @Test func theProfileCommentNamesThePreset() throws {

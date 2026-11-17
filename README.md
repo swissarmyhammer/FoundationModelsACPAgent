@@ -104,6 +104,17 @@ profiles. An old `config.yaml` that still has `profile.standard`,
 ignores it. A change of `profile.preset` applies at the next launch of the
 agent.
 
+`profile.kvBits` quantizes the KV cache of every model, as
+`GenerateParameters(kvBits: 8)` does. It takes `8` or `4`; any other value is
+an error. With no `kvBits`, every KV cache stays unquantized. MLX models
+quantize the cache affinely, and GGUF models use llama.cpp's `q8_0` or `q4_0`:
+
+```yaml
+profile:
+  preset: large
+  kvBits: 8
+```
+
 The `decision` model is Router's `ProfileDefinition.defaultDecisionCandidates`:
 one GGUF file of a Hub repository, at a pinned revision, which loads with
 llama.cpp. It runs at a context of its own, Router's
