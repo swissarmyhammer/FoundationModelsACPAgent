@@ -130,6 +130,29 @@ struct ModelCacheDirectoryTests {
     #expect(Self.folder(in: loader, at: Self.liveLoaderCachePath) == defaultFolder)
   }
 
+  /// The live loader stores each KV cache at the bits of
+  /// `profile.kvBits`: 8 gives `.bits8` and 4 gives `.bits4`.
+  @Test(arguments: [(8, KVCacheQuantization.bits8), (4, .bits4)])
+  func theLiveLoaderQuantizesTheKVCacheAtTheConfiguredBits(
+    bits: Int, quantization: KVCacheQuantization
+  ) {
+    let loader = ComposedAgent.makeLiveModelLoader(
+      modelCacheDirectory: Self.makeFolder(named: "kv-\(bits)"), tokenProvider: .environment,
+      offline: true, kvBits: bits)
+
+    #expect(loader.kvCacheQuantization == quantization)
+  }
+
+  /// With no `profile.kvBits`, the live loader keeps each KV cache
+  /// unquantized.
+  @Test func theLiveLoaderOfNoKVBitsKeepsTheKVCacheUnquantized() {
+    let loader = ComposedAgent.makeLiveModelLoader(
+      modelCacheDirectory: Self.makeFolder(named: "kv-none"), tokenProvider: .environment,
+      offline: true, kvBits: nil)
+
+    #expect(loader.kvCacheQuantization == nil)
+  }
+
   // MARK: - The resolver
 
   /// A given folder is the hub cache of the resolver, also when `HF_HOME`

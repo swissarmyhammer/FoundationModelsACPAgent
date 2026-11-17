@@ -236,7 +236,8 @@ public struct ComposedAgent: Sendable {
         recordingInto: try makeRecordingsDirectory(),
         hooks: hooks.dispatcher,
         home: home,
-        huggingFaceTokenProvider: huggingFaceTokenProvider),
+        huggingFaceTokenProvider: huggingFaceTokenProvider,
+        kvBits: configuration.profile.kvBits),
       hooks: hooks,
       configuration: configuration,
       reporting: progress,
@@ -364,6 +365,9 @@ public struct ComposedAgent: Sendable {
   ///     the host. The live path gives it to the loader, for each download,
   ///     and to the `HuggingFaceMetadataSource` of the router, for each
   ///     sizing request. The stub path ignores it.
+  ///   - kvBits: `profile.kvBits`, the KV-cache bits of every model of the
+  ///     live path, or `nil` for an unquantized cache. The stub path
+  ///     ignores it.
   /// - Returns: A router over `LiveModelLoader` for ``ModelSource/live``,
   ///   or the library's `EchoModel` router — stub machine, stub
   ///   metadata, echo loader — for ``ModelSource/stub``.
@@ -377,7 +381,8 @@ public struct ComposedAgent: Sendable {
     recordingInto recordingsDirectory: URL,
     hooks: HookDispatcher,
     home: AgentHome,
-    huggingFaceTokenProvider: TokenProvider
+    huggingFaceTokenProvider: TokenProvider,
+    kvBits: Int? = nil
   ) throws -> Router {
     switch modelSource {
     case .live:
@@ -386,7 +391,8 @@ public struct ComposedAgent: Sendable {
         recordingsDir: recordingsDirectory,
         metadataSource: HuggingFaceMetadataSource(tokenProvider: huggingFaceTokenProvider),
         loader: makeLiveModelLoader(
-          modelCacheDirectory: home.modelCacheDirectory, tokenProvider: huggingFaceTokenProvider),
+          modelCacheDirectory: home.modelCacheDirectory, tokenProvider: huggingFaceTokenProvider,
+          kvBits: kvBits),
         hooks: hooks)
     case .stub:
       EchoModel.makeRouter(
@@ -410,12 +416,29 @@ public struct ComposedAgent: Sendable {
   ///   - offline: `true` to send no Hub request, `false` to ask the Hub for
   ///     the files that the cache does not have, or `nil` (the default) to
   ///     read `HF_HUB_OFFLINE`. A unit test gives `true`.
+  ///   - kvBits: The KV-cache bits of every model, `profile.kvBits`: 8, 4,
+  ///     or `nil` (the default) for an unquantized cache.
   /// - Returns: The live loader over that cache.
   static func makeLiveModelLoader(
-    modelCacheDirectory: URL, tokenProvider: TokenProvider, offline: Bool? = nil
+    modelCacheDirectory: URL, tokenProvider: TokenProvider, offline: Bool? = nil,
+    kvBits: Int? = nil
   ) -> LiveModelLoader {
     LiveModelLoader(
-      cacheDirectory: modelCacheDirectory, tokenProvider: tokenProvider, offline: offline)
+      cacheDirectory: modelCacheDirectory, tokenProvider: tokenProvider, offline: offline,
+      kvCacheQuantization: kvCacheQuantization(bits: kvBits))
+  }
+
+  /// The KV-cache quantization of `profile.kvBits`.
+  ///
+  /// - Parameter bits: 8, 4, or `nil`. The configuration decode refuses any
+  ///   other value, so only code can give one, and it gets no quantization.
+  /// - Returns: `.bits8`, `.bits4`, or `nil`.
+  static func kvCacheQuantization(bits: Int?) -> KVCacheQuantization? {
+    switch bits {
+    case 8: .bits8
+    case 4: .bits4
+    default: nil
+    }
   }
 
   /// Makes the loader of the stub path.
