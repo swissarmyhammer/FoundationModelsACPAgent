@@ -1,7 +1,7 @@
 ---
 assignees:
 - claude-code
-position_column: todo
+position_column: doing
 position_ordinal: '80'
 title: 'doctor: price a GGUF reference by its file path, not the whole repository'
 ---
