@@ -36,6 +36,15 @@ comments:
   id: 01m7ndymvpxpsdr1e7ace0a8y9
   text: 'Progress: committed 5e3934c (bundled large/small + ProfileFile decode) and cb775fa (ProfileStore). Then in one working tree: `profile: <name>` (scalar; old map form: preset gives the name, other keys warn), loader reads the selected file for its cwd (unknown name lists every name), kvBits key + makeRouter/makeLiveModelLoader kvBits path removed, Router 63e4c70 + Extras 1c69b4f (loadLLM kvCache arg; profile kvBits now decodes for real), settings child-run guard (CHILD_RUN), models endpoint layer field + saveProfile/deleteProfile + profile-store change feed, CLI `acp-agent profiles list|show|save|delete`, doctor warning per bad profile file, README/ARCHITECTURE. Discovery: ModelsGraphTests.aModelOfAnOtherProfileGivesADiskChangeWithNoSlot hung forever (awaits a DISK change of a model no profile names any more) — that one hang stalled whole filtered runs; fixed to use small''s drafter. Child-run guards were proven by disabling them: 4 tests failed, restored.'
   timestamp: 2026-11-17T18:57:46.870095+00:00
+- actor: claude-code
+  id: 01m7neagv5z2gx2vt5g4ghethz
+  text: |-
+    ### implement — changed
+    - evidence: commits 5e3934c, cb775fa, f98ee74 (49 files in f98ee74). `swift build -c release` complete; `swift test`: 2278 tests in 242 suites passed (1 known issue, pre-existing in HarnessSmokeTests). Router 63e4c70 + Extras 1c69b4f via `swift package update` (Package.resolved is gitignored).
+    - decisions: bundled = large (8-bit) + small (4-bit) per user; profile name = file name (ProfileDefinition.name is "large", not the dotfolder name; /status shows it); `context` in a file is honored; reuse SettingsLevel (.user/.session) as the write layer and a new ProfileLayer {project,user,bundled} for reads; models endpoint takes an optional `cwd` for the PROJECT layer; Query.profiles skips files that do not decode (CLI list and doctor report them); doctor reports a bad file as a warning (the selected bad file already fails the load as an error); any `profile.<key>` set is refused; profile files are not template-rendered.
+    - open: doctor memory floor stays 32 GB though large is now 8-bit (README says 32 GB for small, large needs more) — needs a measured figure; pre-existing compiler warnings in AgentSessionLauncherTests and MarketplaceRegistryMountTests (not touched).
+    - next: /review
+  timestamp: 2026-11-17T19:04:15.973401+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'Profiles are files: `profile: <name>`, named profile files per layer, builtins bundled with ACPAgent'
