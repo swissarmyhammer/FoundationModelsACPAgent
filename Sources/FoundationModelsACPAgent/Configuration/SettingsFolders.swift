@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsExtras
+import FoundationModelsMultitool
 
 /// The one list of folders that each settings stack of the agent comes from
 /// (ACPA-16, D98): `config.yaml` and `Instructions.md`, the skills, the
@@ -9,7 +10,9 @@ import FoundationModelsExtras
 ///
 /// 1. The built-in level: the defaults layer that the environment variable
 ///    `<NAME>_DEFAULTS_DIR` names (the dotfolder name of the kind in upper
-///    case). It has no layer when the variable is not set. The builtin file
+///    case). When the variable is not set, the skills stack has the folder
+///    of the built-in skills of Multitool (`BuiltinSkills.directory`, D200)
+///    as this layer, and each other kind has no layer. The builtin file
 ///    `builtin.config.yaml` is not a layer of the stack:
 ///    ``ConfigurationLoader`` puts it under the stack.
 /// 2. The user level, which the ``AgentHome`` of the host gives (task
@@ -90,6 +93,7 @@ public struct SettingsFolders: Sendable {
     let dotfolder = dotfolderName(of: kind)
     return DotfolderStack(
       name: dotfolder, workingDirectory: workingDirectory,
+      defaultsDirectory: Self.builtinDirectory(of: kind),
       userDirectory: home.userLayerRoot(
         dotfolder: dotfolder, folderInRoot: Self.folderInRoot(of: kind)),
       environment: environment)
@@ -109,6 +113,26 @@ public struct SettingsFolders: Sendable {
       ToolCatalog.agentsDotfolderName
     case .rules:
       Self.rulesDotfolderName
+    }
+  }
+
+  /// The built-in defaults layer of `kind`: the folder that the stack uses
+  /// as its defaults layer when the environment names no
+  /// `<NAME>_DEFAULTS_DIR`.
+  ///
+  /// Only the skills have a built-in layer: the skills that Multitool ships
+  /// (D200). A write never goes to this layer (D175), thus a skill with
+  /// the same name in the user layer or in the project layer replaces a
+  /// built-in skill.
+  ///
+  /// - Parameter kind: The kind of settings.
+  /// - Returns: The folder, or `nil` for no built-in layer.
+  private static func builtinDirectory(of kind: Kind) -> URL? {
+    switch kind {
+    case .skills:
+      BuiltinSkills.directory
+    case .configuration, .agents, .rules:
+      nil
     }
   }
 

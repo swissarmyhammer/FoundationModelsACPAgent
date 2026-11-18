@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsRouter
+import FoundationModelsSkills
 import Testing
 
 @testable import FoundationModelsACPAgent
@@ -22,6 +23,10 @@ import Testing
 
   /// The path of the script that the scripted stub choice carries.
   private static let scriptPath = "/tmp/stub-script.json"
+
+  /// The id of the skill that Multitool ships in its built-in skills
+  /// folder.
+  private static let builtinSkillID = "sessions"
 
   // MARK: - The model choice
 
@@ -87,6 +92,23 @@ import Testing
     #expect(
       composed.agent.secretStore as? KeychainSecretStore
         == KeychainSecretStore(service: "acp-agent", synchronizable: false))
+  }
+
+  // MARK: - The built-in skills
+
+  /// The skills stack of the CLI has the built-in skills of Multitool, thus
+  /// a registry over it gives the `sessions` skill from the `defaults`
+  /// layer.
+  @Test func theSkillsStackOfTheCLIGivesTheBuiltinSkill() throws {
+    let home = makeResolvedDirectory(label: "AgentCompositionTests-skills-home")
+    let workspace = makeResolvedDirectory(label: "AgentCompositionTests-skills-repo")
+    let loader = try AgentComposition.makeConfigurationLoader(
+      workingDirectory: workspace, environment: [AgentComposition.homeVariable: home.path])
+
+    let registry = SkillsRegistry(
+      stack: loader.settingsFolders.stack(for: .skills, workingDirectory: workspace), mode: .open)
+
+    #expect(registry.records().first { $0.id == Self.builtinSkillID }?.layer == .defaults)
   }
 
   // MARK: - The tool mode

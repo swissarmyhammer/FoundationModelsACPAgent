@@ -2,6 +2,8 @@ import Foundation
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsAgents
 import FoundationModelsExtras
+import FoundationModelsMultitool
+import FoundationModelsSkills
 import Testing
 
 @testable import FoundationModelsACPAgent
@@ -59,6 +61,19 @@ struct SettingsFoldersTests {
 
   /// The text of the project `Instructions.md`.
   private static let projectInstructions = "The instructions of the project."
+
+  /// The id of the skill that Multitool ships in ``BuiltinSkills/directory``.
+  private static let builtinSkillID = "sessions"
+
+  /// The number of copies of the built-in skill when the user layer
+  /// holds a copy too: the built-in copy and the user copy.
+  private static let builtinAndUserCopyCount = 2
+
+  /// The file name of the skill file of a skill folder.
+  private static let skillFileName = "SKILL.md"
+
+  /// The description of the user copy of the built-in skill.
+  private static let userBuiltinSkillDescription = "The user copy of the built-in skill."
 
   /// The id of the agent that only the synced root holds.
   private static let rootAgentID = "planner"
@@ -147,6 +162,10 @@ struct SettingsFoldersTests {
     /// The dotfolder name of the project layer, with no leading dot.
     let projectDotfolder: String
 
+    /// The built-in defaults layer that the stack has when the environment
+    /// names no defaults folder, or `nil` for no built-in layer.
+    var builtinDefaults: URL? = nil
+
     /// The name of the case in the test report.
     var testDescription: String { "\(kind)" }
   }
@@ -156,7 +175,8 @@ struct SettingsFoldersTests {
     KindCase(kind: .configuration, userPathInRoot: "", projectDotfolder: dotfolderName),
     KindCase(
       kind: .skills, userPathInRoot: SettingsFolders.skillsFolderName,
-      projectDotfolder: ToolCatalog.skillsDotfolderName),
+      projectDotfolder: ToolCatalog.skillsDotfolderName,
+      builtinDefaults: BuiltinSkills.directory),
     KindCase(kind: .agents, userPathInRoot: "", projectDotfolder: ToolCatalog.agentsDotfolderName),
     KindCase(
       kind: .rules, userPathInRoot: SettingsFolders.rulesFolderName,
@@ -184,8 +204,9 @@ struct SettingsFoldersTests {
 
   // MARK: - The layers with a root
 
-  /// With a root, the stack of each kind is the user layer in the root
-  /// under the project dotfolder of the working directory.
+  /// With a root, the stack of each kind is the built-in layer of the kind,
+  /// when it has one, under the user layer in the root, under the project
+  /// dotfolder of the working directory.
   @Test(arguments: kindCases)
   func withARootTheLayersAreTheRootAndTheProjectDotfolder(kindCase: KindCase) throws {
     let fixture = Fixture(label: "root-\(kindCase.kind)")
@@ -193,7 +214,8 @@ struct SettingsFoldersTests {
     let stack = try fixture.settingsFolders(hasRoot: true)
       .stack(for: kindCase.kind, workingDirectory: fixture.workingDirectory)
 
-    let expected = DotfolderStack(layers: [
+    let builtin = kindCase.builtinDefaults.map { [DotfolderStack.Layer(source: .defaults, root: $0)] }
+    let expected = DotfolderStack(layers: (builtin ?? []) + [
       DotfolderStack.Layer(
         source: .user, root: Self.expectedUserLayer(of: kindCase, in: fixture.root)),
       DotfolderStack.Layer(
@@ -204,15 +226,20 @@ struct SettingsFoldersTests {
 
   /// With a root, no layer of any kind is in the XDG config home or in the
   /// home directory, also when the environment names an XDG config home.
+  ///
+  /// The built-in layer of a kind is in the bundle of its library. That
+  /// bundle can be in the home directory, for example in the build folder
+  /// of a checkout, thus the test does not examine the built-in layer.
   @Test(arguments: kindCases)
   func withARootNoLayerIsInTheConfigHomeOrTheHomeDirectory(kindCase: KindCase) throws {
     let fixture = Fixture(label: "no-home-\(kindCase.kind)")
     let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
+    let builtin = kindCase.builtinDefaults?.standardizedFileURL.path
 
     let stack = try fixture.settingsFolders(hasRoot: true)
       .stack(for: kindCase.kind, workingDirectory: fixture.workingDirectory)
 
-    let roots = stack.layers.map(\.root.standardizedFileURL.path)
+    let roots = stack.layers.map(\.root.standardizedFileURL.path).filter { $0 != builtin }
     #expect(!roots.contains { $0.hasPrefix(fixture.configHome.standardizedFileURL.path) })
     #expect(!roots.contains { $0.hasPrefix(home) })
   }
@@ -235,10 +262,72 @@ struct SettingsFoldersTests {
     #expect(lowest.root.standardizedFileURL.path == defaults.standardizedFileURL.path)
   }
 
+  // MARK: - The built-in skills layer
+
+  /// The stack of each kind other than the skills.
+  static let kindCasesWithNoBuiltinLayer = kindCases.filter { $0.builtinDefaults == nil }
+
+  /// The source and the root of the lowest layer of the skills stack.
+  ///
+  /// - Parameter settingsFolders: The settings folders of the stack.
+  /// - Parameter workingDirectory: The working directory of the stack.
+  /// - Returns: The `<source>:<root path>` entry of the lowest layer.
+  /// - Throws: An error when the stack has no layer.
+  private static func lowestSkillsLayer(
+    of settingsFolders: SettingsFolders, workingDirectory: URL
+  ) throws -> String {
+    let stack = settingsFolders.stack(for: .skills, workingDirectory: workingDirectory)
+    let lowest = try #require(stack.layers.first)
+    return "\(lowest.source):\(lowest.root.standardizedFileURL.path)"
+  }
+
+  /// The lowest layer of the skills stack is the folder of the built-in
+  /// skills of Multitool, with a root and with no root.
+  @Test(arguments: [true, false])
+  func theLowestSkillsLayerIsTheBuiltinSkillsOfMultitool(hasRoot: Bool) throws {
+    let fixture = Fixture(label: "builtin-skills-\(hasRoot)")
+
+    let lowest = try Self.lowestSkillsLayer(
+      of: try fixture.settingsFolders(hasRoot: hasRoot),
+      workingDirectory: fixture.workingDirectory)
+
+    #expect(lowest == "\(DotfolderStack.Source.defaults):\(BuiltinSkills.directory.standardizedFileURL.path)")
+  }
+
+  /// The folder that `SKILLS_DEFAULTS_DIR` names replaces the built-in
+  /// skills layer.
+  @Test func theSkillsDefaultsVariableReplacesTheBuiltinSkillsLayer() throws {
+    let fixture = Fixture(label: "builtin-skills-override")
+    let override = makeResolvedDirectory(label: "SettingsFoldersTests-skills-defaults")
+    let settingsFolders = SettingsFolders(
+      name: try DotfolderName(Self.dotfolderName),
+      home: fixture.customHome,
+      environment: [
+        ToolCatalog.skillsDotfolderName.uppercased() + Self.defaultsVariableSuffix: override.path
+      ])
+
+    let stack = settingsFolders.stack(for: .skills, workingDirectory: fixture.workingDirectory)
+
+    let defaults = stack.layers.filter { $0.source == .defaults }
+    #expect(defaults.map(\.root.standardizedFileURL.path) == [override.standardizedFileURL.path])
+  }
+
+  /// No kind other than the skills gets a built-in layer.
+  @Test(arguments: kindCasesWithNoBuiltinLayer)
+  func noOtherKindHasADefaultsLayer(kindCase: KindCase) throws {
+    let fixture = Fixture(label: "no-builtin-\(kindCase.kind)")
+
+    let stack = try fixture.settingsFolders(hasRoot: true)
+      .stack(for: kindCase.kind, workingDirectory: fixture.workingDirectory)
+
+    #expect(!stack.layers.contains { $0.source == .defaults })
+  }
+
   // MARK: - The layers with no root
 
   /// With no root, the stack of each kind has the layers of
-  /// `DotfolderStack(name:workingDirectory:environment:)`, as before.
+  /// `DotfolderStack(name:workingDirectory:defaultsDirectory:environment:)`
+  /// with the built-in layer of the kind.
   @Test(arguments: kindCases)
   func withNoRootEachKindKeepsTheOldLayerList(kindCase: KindCase) throws {
     let fixture = Fixture(label: "no-root-\(kindCase.kind)")
@@ -248,7 +337,7 @@ struct SettingsFoldersTests {
 
     let old = DotfolderStack(
       name: kindCase.projectDotfolder, workingDirectory: fixture.workingDirectory,
-      environment: fixture.environment)
+      defaultsDirectory: kindCase.builtinDefaults, environment: fixture.environment)
     #expect(Self.layerList(of: stack) == Self.layerList(of: old))
   }
 
@@ -393,6 +482,76 @@ struct SettingsFoldersTests {
 
     let skill = try #require(skills.first { $0.id == Self.sharedSkillID })
     #expect(skill.description == (kanbanEnabled ? "kanban files" : "no kanban files"))
+  }
+
+  /// The record of the built-in skill in the skills source of `fixture`.
+  ///
+  /// - Parameter fixture: The folders of the test, with a root.
+  /// - Returns: The record of ``builtinSkillID``.
+  /// - Throws: An error when the source has no record of the skill.
+  private static func builtinSkillRecord(in fixture: Fixture) async throws -> SkillRecord {
+    let context = try await catalogContext(of: fixture, hasRoot: true)
+    let records = await ToolCatalog.makeSkillsSource(context: context).registry.records()
+    return try #require(records.first { $0.id == builtinSkillID })
+  }
+
+  /// The user layer of the skills in the root of `fixture`.
+  ///
+  /// - Parameter fixture: The folders of the test.
+  /// - Returns: The folder `<root>/_skills/`.
+  private static func userSkillsLayer(of fixture: Fixture) -> URL {
+    fixture.root.appendingPathComponent(SettingsFolders.skillsFolderName, isDirectory: true)
+  }
+
+  /// The `SKILL.md` text of the user copy of the built-in skill.
+  private static let userBuiltinSkillMarkdown =
+    "---\nname: \(builtinSkillID)\ndescription: \(userBuiltinSkillDescription)\n---\nThe user body.\n"
+
+  /// With no marketplace, the skills source gives the built-in skill from
+  /// the `defaults` layer.
+  @Test func theSkillsSourceGivesTheBuiltinSkillWithNoMarketplace() async throws {
+    let fixture = Fixture(label: "builtin-skill")
+
+    let record = try await Self.builtinSkillRecord(in: fixture)
+
+    #expect(record.layer == .defaults)
+  }
+
+  /// A skill with the id of the built-in skill in `<root>/_skills/`
+  /// replaces the built-in skill: the stack holds the two copies, and the
+  /// skills source gives the user copy.
+  @Test func aUserSkillReplacesTheBuiltinSkill() async throws {
+    let fixture = Fixture(label: "builtin-skill-user")
+    try writeSkillFixture(
+      id: Self.builtinSkillID, markdown: Self.userBuiltinSkillMarkdown,
+      under: Self.userSkillsLayer(of: fixture))
+    let copies = try fixture.settingsFolders(hasRoot: true)
+      .stack(for: .skills, workingDirectory: fixture.workingDirectory)
+      .locate("\(Self.builtinSkillID)/\(Self.skillFileName)")
+    try #require(copies.count == Self.builtinAndUserCopyCount)
+
+    let record = try await Self.builtinSkillRecord(in: fixture)
+
+    #expect(record.layer == .user)
+  }
+
+  /// `add skill` with the id of the built-in skill writes the user layer,
+  /// and not the folder of the built-in skills.
+  @Test func addingTheBuiltinSkillIDWritesTheUserLayer() async throws {
+    let fixture = Fixture(label: "builtin-skill-add")
+    let context = try await Self.catalogContext(of: fixture, hasRoot: true)
+    let registry = await ToolCatalog.makeSkillsSource(context: context).registry
+    #expect(registry.records().first { $0.id == Self.builtinSkillID }?.layer == .defaults)
+
+    let outcome = try SkillWriter(registry: registry).add(
+      name: Self.builtinSkillID, skillMarkdown: Self.userBuiltinSkillMarkdown)
+
+    let expected = Self.userSkillsLayer(of: fixture)
+      .appendingPathComponent(Self.builtinSkillID, isDirectory: true)
+      .appendingPathComponent(Self.skillFileName)
+    #expect(
+      outcome == .success(
+        SkillWriteResult(name: Self.builtinSkillID, layer: .user, path: expected.path)))
   }
 
   /// Makes a catalog context over the folders of `fixture`, with no

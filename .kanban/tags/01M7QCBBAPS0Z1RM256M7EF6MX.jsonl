@@ -1,0 +1,1 @@
+{"id":"01M7QCBBAQNYKR3JSGSRKH6E3E","timestamp":"2026-11-18T13:08:14.807190Z","op":"create","item_id":"01M7QCBBAPS0Z1RM256M7EF6MX","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: d73a4a\n+tag_name: sessions-skill\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: d73a4a\n-tag_name: sessions-skill\n","transaction_id":null}
