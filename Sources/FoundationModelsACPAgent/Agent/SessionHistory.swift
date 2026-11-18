@@ -134,16 +134,6 @@ final class RetainedHistory: Sendable {
 }
 
 extension SessionMergeEngine {
-  /// Makes the history that `updates` give, in order.
-  ///
-  /// - Parameter updates: The session updates to merge.
-  init(replaying updates: [SessionUpdate]) {
-    self.init()
-    for update in updates {
-      apply(update)
-    }
-  }
-
   /// The current session info that a `session/resume` sync sends. It is
   /// the info that the history folded from the live updates. When the
   /// history has no title, it takes the recorded title. A session that an
@@ -198,9 +188,15 @@ extension SessionMergeEngine {
   func replayUpdates(from cursor: ReplayCursor) -> [SessionUpdate] {
     switch cursor {
     case .start:
-      return transcriptUpdates.filter { !$0.isMailDeliveryPause }
-        + stateUpdates.filter { $0.isReplayedState }
+      return replayedTranscriptUpdates + stateUpdates.filter { $0.isReplayedState }
     }
+  }
+
+  /// The transcript part of a replay from the start: each transcript entry as one whole update
+  /// with its id, without a recorded `_mail_delivery_paused`. The export of a session as Markdown
+  /// renders the same updates (``RoutedACPAgent/transcriptMarkdown(of:includeThoughts:)``).
+  var replayedTranscriptUpdates: [SessionUpdate] {
+    transcriptUpdates.filter { !$0.isMailDeliveryPause }
   }
 }
 
