@@ -11,7 +11,9 @@ import FoundationModelsExtras
 /// with the layer of each key under `--source`; and `config init` writes
 /// the defaults of a fresh `config.yaml` with it. Two front doors write
 /// the same file, so they must write the same bytes, and one generator is
-/// how they cannot drift.
+/// how they cannot drift. The one difference is the `profile` key:
+/// `config init` leaves it out (``ProfileForm/byFit``), so the default by
+/// fit applies.
 ///
 /// The text round-trips through ``ConfigurationLoader``: it names only
 /// schema keys, and it names every one of them, so the loader reads it
@@ -62,6 +64,19 @@ public enum ConfigurationYAML {
     /// not in force after an export: give the header as a
     /// `keychain:<name>` reference to keep it.
     case omitted
+  }
+
+  /// How the document holds the `profile` key.
+  public enum ProfileForm: Equatable, Sendable {
+    /// The key shows with the name of the profile of the configuration.
+    /// This is the form of `/config`, `/config export` and `config show`.
+    case named
+
+    /// The key is not in the document. Comments name the bundled profiles
+    /// and tell that the agent uses the largest profile that fits the Mac
+    /// (decision D203). This is the form of `config init`: the file does
+    /// not pin a profile, and its text is the same on every Mac.
+    case byFit
   }
 
   /// One emitted line: its text, and the dotted key path of the key it
@@ -118,6 +133,20 @@ public enum ConfigurationYAML {
       "The status line of the chat header of a host: a preset, and changes to its modules.",
   ]
 
+  /// The YAML spelling of the `profile` section.
+  private static let profileSection = AgentConfiguration.CodingKeys.profile.stringValue
+
+  /// The comments that stand in place of the `profile` key in the
+  /// ``ProfileForm/byFit`` form. They name the bundled profiles from the
+  /// largest to the smallest, so the text is the same on every Mac.
+  private static let byFitProfileComments = [
+    "# No profile is set, so the agent uses the largest bundled profile that fits this Mac: "
+      + BundledProfiles.names.joined(separator: ", ")
+      + ". It uses \(BundledProfiles.smallestName) when it cannot read the fit.",
+    "# To select a profile, add a line such as: "
+      + "\(profileSection): \"\(BundledProfiles.smallestName)\"",
+  ]
+
   /// The comment printed at the top of the document.
   private static let headerComment =
     "# The effective configuration. Edit and reload, or eject with /config export."
@@ -129,14 +158,16 @@ public enum ConfigurationYAML {
   ///   - annotation: What each key line carries after its value.
   ///   - secrets: How the document holds each secret. The default,
   ///     ``SecretForm/redacted``, is the form a person reads.
+  ///   - profile: How the document holds the `profile` key. The default,
+  ///     ``ProfileForm/named``, shows the key.
   /// - Returns: The YAML document, newline-terminated.
   /// - Throws: ``EmitError/notAMapping`` when the encoded configuration is
   ///   not a mapping, or a `JSONEncoder`/`JSONSerialization` error.
   public static func documentText(
     for configuration: AgentConfiguration, annotation: KeyAnnotation = .none,
-    secrets: SecretForm = .redacted
+    secrets: SecretForm = .redacted, profile: ProfileForm = .named
   ) throws -> String {
-    try lines(of: configuration, secrets: secrets)
+    try lines(of: configuration, secrets: secrets, profile: profile)
       .map { annotated(line: $0, with: annotation) }
       .joined(separator: "\n") + "\n"
   }
@@ -203,12 +234,13 @@ public enum ConfigurationYAML {
   /// - Parameters:
   ///   - configuration: The configuration to render.
   ///   - secrets: How the document holds each secret.
+  ///   - profile: How the document holds the `profile` key.
   /// - Returns: The lines, in document order.
   /// - Throws: ``EmitError/notAMapping`` when the encoded configuration is
   ///   not a mapping, or a `JSONEncoder`/`JSONSerialization` error.
-  private static func lines(of configuration: AgentConfiguration, secrets: SecretForm) throws
-    -> [Line]
-  {
+  private static func lines(
+    of configuration: AgentConfiguration, secrets: SecretForm, profile: ProfileForm = .named
+  ) throws -> [Line] {
     let encoder = JSONEncoder()
     encoder.userInfo[.omitsConfiguredSecrets] = secrets == .omitted
     let encoded = try JSONSerialization.jsonObject(with: encoder.encode(configuration))
@@ -221,6 +253,9 @@ public enum ConfigurationYAML {
           return []
         }
         let comment = sectionComments[section].map { [Line(text: "# \($0)", keyPath: nil)] } ?? []
+        if section == profileSection, profile == .byFit {
+          return comment + byFitProfileComments.map { Line(text: $0, keyPath: nil) }
+        }
         return comment
           + entryLines(
             key: section, value: completed(value: value, forSection: section),

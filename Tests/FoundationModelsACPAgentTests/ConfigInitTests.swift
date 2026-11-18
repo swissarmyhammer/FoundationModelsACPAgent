@@ -93,6 +93,15 @@ struct ConfigInitTests {
     try loader(in: fixture).load()
   }
 
+  /// The section schemas whose section the written file holds: each
+  /// section that is not retired, except `profile`, which the file leaves
+  /// out so the default by fit applies (decision D203).
+  private static var writtenSectionSchemas: [(String, AgentConfiguration.SectionSchema)] {
+    AgentConfiguration.sectionSchemas.filter { section, schema in
+      schema != .retired && section != AgentConfiguration.CodingKeys.profile.stringValue
+    }.map { ($0.key, $0.value) }
+  }
+
   /// The keys one section schema states.
   ///
   /// - Parameter schema: The schema of one top-level section.
@@ -208,7 +217,7 @@ struct ConfigInitTests {
     let text = try textOnDisk(
       at: ConfigCommandFixture.configURL(in: fixture.projectDirectory))
 
-    for (section, schema) in AgentConfiguration.sectionSchemas where schema != .retired {
+    for (section, schema) in Self.writtenSectionSchemas {
       #expect(text.contains("\(section):"), "the section \(section) is not in the file")
       for key in Self.knownKeys(of: schema) {
         #expect(text.contains("\(key):"), "the key \(section).\(key) is not in the file")
@@ -226,7 +235,7 @@ struct ConfigInitTests {
       at: ConfigCommandFixture.configURL(in: fixture.projectDirectory)
     ).split(separator: "\n").map(String.init)
 
-    for (section, schema) in AgentConfiguration.sectionSchemas where schema != .retired {
+    for (section, _) in Self.writtenSectionSchemas {
       let index = try #require(
         lines.firstIndex { $0.hasPrefix("\(section):") },
         "the section \(section) is not in the file")
@@ -265,6 +274,81 @@ struct ConfigInitTests {
     #expect(
       !FileManager.default.fileExists(
         atPath: ConfigCommandFixture.configURL(in: fixture.projectDirectory).path))
+  }
+
+  // MARK: - The profile (decision D203)
+
+  /// The start of a line that sets the `profile` key.
+  private static let profileKeyPrefix =
+    "\(AgentConfiguration.CodingKeys.profile.stringValue):"
+
+  /// A fit source where `medium` is the largest profile that fits.
+  private static let mediumFits = ProfileFitStub(
+    fitting: [BundledProfiles.mediumName, BundledProfiles.smallestName])
+
+  /// The lines of `text` that set the `profile` key.
+  ///
+  /// - Parameter text: A `config.yaml` text.
+  /// - Returns: The lines that start with the `profile` key.
+  private static func profileKeyLines(in text: String) -> [Substring] {
+    text.split(separator: "\n").filter { $0.hasPrefix(profileKeyPrefix) }
+  }
+
+  /// The loader the CLI composes over `fixture`'s stack, with the
+  /// fallback profile that `fitSource` chooses.
+  ///
+  /// - Parameters:
+  ///   - fixture: The two-layer tree the loader reads.
+  ///   - fitSource: The fit source of the choice of the default profile.
+  /// - Returns: The loader.
+  /// - Throws: `DotfolderNameError`.
+  private static func loader(
+    in fixture: ConfigCommandFixture, fitSource: ProfileFitStub
+  ) async throws -> ConfigurationLoader {
+    try AgentComposition.makeConfigurationLoader(
+      workingDirectory: fixture.workspace, environment: fixture.environment,
+      fallbackProfileName: await AgentComposition.fallbackProfileName(
+        environment: fixture.environment, fitSource: fitSource))
+  }
+
+  /// The written file sets no `profile` key, so the default by fit
+  /// applies.
+  @Test func theWrittenFileSetsNoProfileKey() throws {
+    let fixture = ConfigCommandFixture(label: "ConfigInitTests-no-profile")
+    try Self.initialize(in: fixture)
+
+    let text = try textOnDisk(
+      at: ConfigCommandFixture.configURL(in: fixture.projectDirectory))
+
+    #expect(Self.profileKeyLines(in: text).isEmpty)
+  }
+
+  /// A load of the written file selects the profile that the fit source
+  /// chooses.
+  @Test func aLoadOfTheWrittenFileSelectsTheProfileOfTheFitSource() async throws {
+    let fixture = ConfigCommandFixture(label: "ConfigInitTests-fit-load")
+    try Self.initialize(in: fixture)
+
+    let loaded = try await Self.loader(in: fixture, fitSource: Self.mediumFits).load()
+
+    #expect(loaded.configuration.profile.name == BundledProfiles.mediumName)
+  }
+
+  /// The written file is the same text with two different fit sources, so
+  /// it is the same on every Mac.
+  @Test func theWrittenFileIsTheSameWithTwoFitSources() async throws {
+    let fixture = ConfigCommandFixture(label: "ConfigInitTests-fit-same")
+    let file = ConfigCommandFixture.configURL(in: fixture.projectDirectory)
+
+    _ = try AcpAgentCommand.Config.writeDefaultConfiguration(
+      into: .project, of: try await Self.loader(in: fixture, fitSource: .allFit),
+      overwrites: false)
+    let allFit = try textOnDisk(at: file)
+    _ = try AcpAgentCommand.Config.writeDefaultConfiguration(
+      into: .project, of: try await Self.loader(in: fixture, fitSource: .noneFit),
+      overwrites: true)
+
+    #expect(try textOnDisk(at: file) == allFit)
   }
 
   // MARK: - The overwrite guard
@@ -307,14 +391,30 @@ struct ConfigInitTests {
 
   // MARK: - The two front doors
 
-  /// `config init --user` and `/config export home` write the same
-  /// bytes to the same path: two front doors, one behavior
-  /// (cli-plan.md §5.11).
+  /// The key lines of `text`, with no comment line and no `profile` key
+  /// line.
+  ///
+  /// - Parameter text: A `config.yaml` text.
+  /// - Returns: The lines, in order.
+  private static func keyLinesWithoutProfile(in text: String) -> [Substring] {
+    text.split(separator: "\n").filter {
+      !$0.hasPrefix(commentPrefix) && !$0.hasPrefix(profileKeyPrefix)
+    }
+  }
+
+  /// The start of a comment line.
+  private static let commentPrefix = "#"
+
+  /// `config init --user` and `/config export home` write the same keys
+  /// with the same values to the same path: two front doors, one behavior
+  /// (cli-plan.md §5.11). The one difference is the `profile` key:
+  /// `config init` leaves it out, so the default by fit applies (decision
+  /// D203), and `/config export` writes the profile of its session.
   ///
   /// `/config export` writes the session's effective configuration, so
   /// the comparable case is a session whose configuration is the
   /// builtin default — which is what `config init` always writes.
-  @Test func initUserAndExportHomeWriteTheSameBytesToTheSamePath() async throws {
+  @Test func initUserAndExportHomeWriteTheSameKeysToTheSamePath() async throws {
     let fixture = ConfigCommandFixture(label: "ConfigInitTests-two-doors")
     let file = ConfigCommandFixture.configURL(in: fixture.userDirectory)
 
@@ -324,7 +424,8 @@ struct ConfigInitTests {
     let exported = try textOnDisk(at: file)
 
     #expect(report.standardOutput == file.path + "\n")
-    #expect(initialized == exported)
+    #expect(
+      Self.keyLinesWithoutProfile(in: initialized) == Self.keyLinesWithoutProfile(in: exported))
     #expect(!initialized.isEmpty)
   }
 }

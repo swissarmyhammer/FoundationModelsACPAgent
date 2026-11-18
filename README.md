@@ -188,7 +188,7 @@ subcommand, so `acp-agent "write a haiku"` runs a prompt.
 | `acp-agent run` | Run one prompt, and print the answer. This is the default. |
 | `acp-agent acp` | Serve ACP on stdin and stdout. |
 | `acp-agent config show` | Print the merged configuration, and where each value came from. |
-| `acp-agent config init` | Write a `config.yaml` with every key at its default. |
+| `acp-agent config init` | Write a `config.yaml` with every key at its default, except `profile`: the file sets no profile, so the agent uses the largest profile that fits the Mac. |
 | `acp-agent config path` | Print each layer path, and say which ones exist. |
 | `acp-agent config edit` | Open the nearest `config.yaml` in `$EDITOR`. |
 | `acp-agent instructions eject` | Write `Instructions.md` into a layer. |
