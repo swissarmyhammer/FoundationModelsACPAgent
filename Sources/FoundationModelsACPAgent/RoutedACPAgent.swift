@@ -56,8 +56,9 @@ public actor RoutedACPAgent: Agent {
   /// The session directory of the router that resolved
   /// ``residentProfile`` (`Router.sessionDirectory`). Each session that
   /// the profile vends or restores registers in it, so the agent changes
-  /// the record of a session through it: the title at the first prompt,
-  /// and the additional directories at each mount. Router writes each
+  /// the record of a session through it: the additional directories at
+  /// each mount. Router gives each new root session its default name when
+  /// it registers the session. Router writes each
   /// change to the `index.md` of the session folder.
   nonisolated let sessionDirectory: RouterSessionDirectory
 

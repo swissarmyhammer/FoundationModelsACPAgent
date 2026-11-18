@@ -441,7 +441,6 @@ enum RoutedPrompt {
     var execution = PromptExecution(
       sessionId: SessionId(rawValue: syntheticSessionIdValue), promptBlocks: [],
       promptState: ledger.map { PromptStateOwner(ledger: $0) } ?? PromptStateOwner(send: send),
-      send: send, titleRecord: nil,
       modelName: syntheticModelName)
     execution.modelPrompt = prompt
     await execution.run(session: session, projector: projector) { _ in end.finish() }

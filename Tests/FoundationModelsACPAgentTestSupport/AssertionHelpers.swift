@@ -90,14 +90,18 @@ extension UpdateCollector {
 
 /// The prompt updates of a collected sequence: every notification except
 /// the `available_commands_update` publications, which ride the same
-/// stream at session start and on each registry change.
+/// stream at session start and on each registry change, and the
+/// `session_info_update` with the name of a new session, which goes out
+/// after the `session/new` response.
 /// A prompt-order proof filters them out, because their timing is the
-/// registry's, not the prompt's.
+/// session's, not the prompt's. A prompt sends no `session_info_update`.
 ///
 /// - Parameter updates: The collected notifications.
 /// - Returns: The notifications that belong to a prompt.
 public func promptUpdates(in updates: [UpdateSessionNotification]) -> [UpdateSessionNotification] {
-  updates.filter { $0.update.kind != .availableCommandsUpdate }
+  updates.filter {
+    $0.update.kind != .availableCommandsUpdate && $0.update.kind != .sessionInfoUpdate
+  }
 }
 
 /// Asserts that `expected` occurs within `sequence` in order, with gaps

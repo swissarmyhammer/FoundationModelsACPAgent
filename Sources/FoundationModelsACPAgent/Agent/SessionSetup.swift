@@ -182,11 +182,6 @@ struct ActiveSession: Sendable {
   /// Whether `session/close` released this session.
   var isClosed = false
 
-  /// Whether the `index.md` of the session holds its title. The first
-  /// prompt sets the title through Router, not `session/new`: the title
-  /// is the first line of that prompt.
-  var titleRecorded = false
-
   /// The retained history of the session: each
   /// `session/update` that the agent sent for the session, merged, with
   /// its id. The `session/new` or `session/resume` response seeds it. A
@@ -207,7 +202,7 @@ struct ActiveSession: Sendable {
   /// session takes after the pause clears it (``RoutedACPAgent/liftMailDeliveryPause(of:)``): for
   /// a nested session, that mail is a message of its caller. The next model prompt of a root
   /// session mails Router the message that lifts the pause, so that prompt clears it too
-  /// (``RoutedACPAgent/scheduleModelPrompt(overridePrompt:params:entry:connection:owner:send:)``).
+  /// (``RoutedACPAgent/scheduleModelPrompt(overridePrompt:params:entry:connection:owner:)``).
   /// A hot resume sends the pause in force of the root after the replay, and the pause in force
   /// of each live child after the own `state_update` of the child (``MailDeliveryPauseReport``).
   var mailDeliveryPause: SessionUpdate?
@@ -672,7 +667,8 @@ extension RoutedACPAgent {
   /// A resume would then restore the wrong conversation.
   /// Router writes the `index.md` of the session folder when it makes the session.
   /// The cwd is registered in the project store of the home now.
-  /// The title waits for the first prompt.
+  /// Router gives the session its default name when it registers it. A
+  /// `session_info_update` sends that name after the response.
   /// A session with zero prompts is not listed (``RoutedACPAgent/listSessions(_:)``).
   ///
   /// The request runs in one server span.
@@ -788,15 +784,14 @@ extension RoutedACPAgent {
     // This happens before the mount sends anything for the session.
     connections.recordStart(of: sessionId, by: caller)
 
-    // The title is NOT set here: the first prompt sets it, from the
-    // first line of that prompt.
+    // Router gave the session its default name when it registered it. The
+    // first prompt does not change the name. Only a rename changes it.
     let activation = try await activateSession(
       session,
       composition: composition,
       placement: SessionPlacement(
         workingDirectory: workingDirectory, additionalRoots: additionalRoots,
         userPresence: userPresence),
-      titleRecorded: false,
       history: SessionMergeEngine())
 
     let response = NewSessionResponse(
@@ -804,7 +799,39 @@ extension RoutedACPAgent {
       availableCommands: activation.availableCommands,
       configOptions: activation.configOptions)
     sessions[activation.sessionId]?.retainedHistory.seed(from: response)
+    announceName(of: session, sessionId: activation.sessionId)
     return response
+  }
+
+  /// Sends the name of a new root session in one `session_info_update`
+  /// after the response of the current `session/new` request, so the client
+  /// shows the name at once (D199 (b)). Router gives the name when it
+  /// registers the session: the default name from the agent of the session
+  /// (`SessionName.default`). After this, only a rename changes the name.
+  ///
+  /// The update goes through `post(_:in:)` directly, never through the
+  /// history sink. The record of the session holds the name, and the sync
+  /// of a `session/resume` reads it there
+  /// (``SessionMergeEngine/sessionInfoSyncUpdate(recordedTitle:)``). A name
+  /// in the retained history would hide a later rename from that sync.
+  ///
+  /// A session with no name sends nothing. A session whose connection has
+  /// no outbound path sends nothing. The deferred work keeps the connection
+  /// weakly, as the agent keeps the connection (task `^173qn8n`).
+  ///
+  /// - Parameters:
+  ///   - session: The new root Router session.
+  ///   - sessionId: The session the update belongs to.
+  private func announceName(of session: any RoutedSession, sessionId: SessionId) {
+    guard let name = session.facts.title, !name.isEmpty,
+      let connection = connections.path(forSession: sessionId)?.connection
+    else {
+      return
+    }
+    let update = SessionUpdate.sessionInfoUpdate(SessionInfoUpdate(title: .value(name)))
+    connection.afterRespondingInCurrentInstrumentationContext { [weak connection] in
+      await connection?.post(update, in: sessionId)
+    }
   }
 
   /// Mounts one made or restored root Router session into the agent.
@@ -824,8 +851,6 @@ extension RoutedACPAgent {
   ///   - session: The root Router session to mount.
   ///   - composition: What the composition pipeline built for it.
   ///   - placement: Where the session works, and its user presence.
-  ///   - titleRecorded: Whether the `index.md` of the session already
-  ///     holds its title, so the first prompt knows whether to set it.
   ///   - history: The retained history of the session: empty for a new
   ///     session, the kept history for a resumed one.
   /// - Returns: The session id, and the command list and the
@@ -835,7 +860,6 @@ extension RoutedACPAgent {
     _ session: any RoutedSession,
     composition: SessionComposition,
     placement: SessionPlacement,
-    titleRecorded: Bool,
     history: SessionMergeEngine
   ) async throws -> SessionActivation {
     let workingDirectory = placement.workingDirectory
@@ -890,7 +914,7 @@ extension RoutedACPAgent {
       build: SessionBuild(
         composition: composition, placement: placement, commands: commands,
         selectedSlot: composition.startSlot, announcedConfigOptions: configOptions,
-        titleRecorded: titleRecorded, history: history))
+        history: history))
     sessions[sessionId]?.builtinContext = commandContext
 
     // The announcer of the agent runs of the surface sends through this agent from now on. So

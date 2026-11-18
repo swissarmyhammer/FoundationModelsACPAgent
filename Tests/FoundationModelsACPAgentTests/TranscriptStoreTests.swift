@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsExtras
 import FoundationModelsRouter
 import Testing
 
@@ -179,8 +180,11 @@ import Testing
     #expect(records.first?.updatedAt == Self.steppedDate(1))
   }
 
-  @Test("a recorded session with no title still lists")
-  func sessionWithNoTitleStillLists() async throws {
+  /// Router gives a recorded root session with no title its default name
+  /// when it reads the session. The session has no agent name, so the name
+  /// is the fallback name of `SessionName`.
+  @Test("a recorded session with no title lists with its default name")
+  func sessionWithNoTitleListsWithItsDefaultName() async throws {
     let fixture = try await Self.makeFixture()
     defer { fixture.cleanUp() }
     let id = try await fixture.recorded.makeRecordedSession()
@@ -188,7 +192,7 @@ import Testing
     let records = try fixture.store.sessions(inProject: fixture.workingDirectory)
 
     #expect(records.map(\.sessionId) == [id])
-    #expect(records.first?.facts.title == nil)
+    #expect(records.first?.facts.title == SessionName.default(agentName: "", usedNames: []))
     #expect(records.first?.additionalDirectories == [])
     #expect(
       records.first?.workingDirectory.standardizedFileURL.path

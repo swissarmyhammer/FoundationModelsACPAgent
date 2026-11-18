@@ -88,33 +88,15 @@ enum PromptStop: Equatable, Sendable {
   case failed(message: String)
 }
 
-/// The title that the first prompt of a session gives it: the one-line
-/// title of the prompt text, set through the Router session directory,
-/// which writes it to the `index.md` of the session folder.
-struct SessionTitleRecord: Sendable {
-  /// The session directory the session is registered in.
-  let directory: RouterSessionDirectory
-
-  /// The id of the root Router session: the name of its session folder.
-  let sessionId: ULID
-
-  /// The one-line title of the first prompt.
-  let title: String
-
-  /// The instant the first prompt was accepted, for the
-  /// `session_info_update` that announces the title.
-  let acceptedAt: Date
-}
-
 /// The input side of one prompt: one ACP `session/prompt`, from the
 /// response that names the user message to the mail of the prompt.
 ///
 /// The prompt runs after the response went out, on the request's own
 /// dispatch task through `afterRespondingToCurrentRequest`. The
 /// `user_message` echo goes out before it, through the same response hooks
-/// (``RoutedACPAgent/insertUserMessage(_:through:)``). The prompt writes the
-/// title record of the session, opens itself in the ``SessionProjector`` of
-/// the session, and mails its text into the Router session. The projector
+/// (``RoutedACPAgent/insertUserMessage(_:through:)``). The prompt opens
+/// itself in the ``SessionProjector`` of the session, and mails its text
+/// into the Router session. The projector
 /// sends the events and the one `idle` state update of the prompt.
 struct PromptExecution: Sendable {
   /// The wire value a completed prompt that generated nothing stops
@@ -209,12 +191,6 @@ struct PromptExecution: Sendable {
   /// The prompt-state owner of the prompt.
   let promptState: PromptStateOwner
 
-  /// The sink of the title update of this prompt.
-  let send: SessionUpdateSink
-
-  /// The title the prompt sets, or `nil` when the session has its title.
-  let titleRecord: SessionTitleRecord?
-
   /// The model reference the prompt's session generates with.
   ///
   /// The stalled-generation report names it (task ^s0bw5cv), so a
@@ -232,7 +208,7 @@ struct PromptExecution: Sendable {
   /// the scheduling wiring supplies the session surface's verb.
   var contentResolver = ResourceLinkResolver(readVerb: nil)
 
-  /// Runs the prompt: the title record, `running`, the open of
+  /// Runs the prompt: `running`, the open of
   /// the prompt in the projector, and the mail of the prompt, in this
   /// order (elicitation-plan task 49). A plain prompt folds through
   /// `PromptContent`; an expanded command keeps its override text. The
@@ -259,7 +235,6 @@ struct PromptExecution: Sendable {
     mailId: MailID = MailID(), session: any RoutedSession, projector: SessionProjector,
     onEnd: @escaping @Sendable (StopReason) async -> Void
   ) async {
-    await recordTitle()
     await promptState.promptDidStart()
     let prompt: String
     if let modelPrompt {
@@ -287,28 +262,6 @@ struct PromptExecution: Sendable {
     } catch {
       projector.refuseMail(mail.id, error: error)
     }
-  }
-
-  // MARK: - The title
-
-  /// Sets the title of the session through the Router session directory
-  /// and announces it with `session_info_update`. A failure is logged; it
-  /// does not end the prompt.
-  private func recordTitle() async {
-    guard let titleRecord else { return }
-    do {
-      try await titleRecord.directory.setTitle(titleRecord.title, of: titleRecord.sessionId)
-    } catch {
-      ACPAgentTelemetry.logger(.promptExecution).error(
-        "The title of the session could not be set.",
-        metadata: ACPAgentTelemetry.errorMetadata(
-          error, sessionId: sessionId, parent: parentSessionId))
-    }
-    await send(
-      .sessionInfoUpdate(
-        SessionInfoUpdate(
-          title: .value(titleRecord.title),
-          updatedAt: .value(Self.rfc3339(titleRecord.acceptedAt)))))
   }
 
   // MARK: - The stop-reason mapping
@@ -600,40 +553,6 @@ struct PromptExecution: Sendable {
 
   // MARK: - Helpers
 
-  /// The plain text of the request: the text blocks joined by
-  /// newlines. The session title derives from it; the
-  /// model prompt goes through `PromptContent.modelPrompt` instead,
-  /// which also folds resource links and embedded resources.
-  ///
-  /// - Parameter blocks: The request's content blocks.
-  /// - Returns: The text.
-  static func promptText(from blocks: [ContentBlock]) -> String {
-    blocks.compactMap { block in
-      if case .text(let content) = block {
-        return content.text
-      }
-      return nil
-    }.joined(separator: "\n")
-  }
-
-  /// The generated session title: the first user prompt
-  /// cut to a single line. `session/list` needs a title, and it is
-  /// not derivable later, so the agent makes and keeps one.
-  ///
-  /// - Parameter text: The first prompt's text.
-  /// - Returns: The first non-empty line, trimmed; empty when the
-  ///   prompt has no text.
-  static func oneLineTitle(from text: String) -> String {
-    let lines = text.split(whereSeparator: \.isNewline)
-    for line in lines {
-      let trimmed = line.trimmingCharacters(in: .whitespaces)
-      if !trimmed.isEmpty {
-        return trimmed
-      }
-    }
-    return ""
-  }
-
   /// Formats a date as RFC 3339, the wire form of `updatedAt`.
   ///
   /// - Parameter date: The date to format.
@@ -863,8 +782,7 @@ extension RoutedACPAgent {
     let owner = beginPrompt(params: params)
     let response = scheduleModelPrompt(
       overridePrompt: nil,
-      params: params, entry: entry, connection: connection, owner: owner,
-      send: historySink(for: params.sessionId))
+      params: params, entry: entry, connection: connection, owner: owner)
     return (response, owner, connection)
   }
 
@@ -906,15 +824,13 @@ extension RoutedACPAgent {
   ///   - entry: The session's table entry.
   ///   - connection: The bound connection the prompt registers with.
   ///   - owner: The prompt-state owner ``beginPrompt(params:)`` installed.
-  ///   - send: The sink of the title update of the prompt.
   /// - Returns: The response that names the user message.
   func scheduleModelPrompt(
     overridePrompt: String?,
     params: PromptRequest,
     entry: ActiveSession,
     connection: AgentSideConnection,
-    owner: PromptStateOwner,
-    send: @escaping SessionUpdateSink
+    owner: PromptStateOwner
   ) -> PromptResponse {
     let sessionId = params.sessionId
     let mailId = MailID()
@@ -931,8 +847,6 @@ extension RoutedACPAgent {
       parentSessionId: sessionTree.parent(of: sessionId),
       promptBlocks: params.prompt,
       promptState: owner,
-      send: send,
-      titleRecord: makeTitleRecord(for: sessionId, entry: entry, blocks: params.prompt),
       modelName: ConfigOptions.handle(for: entry.selectedSlot, of: residentProfile)
         .chosen.stringValue,
       modelPrompt: overridePrompt,
@@ -1120,28 +1034,5 @@ extension RoutedACPAgent {
     if running <= 0, sessions[sessionId]?.openPrompts.isEmpty ?? true {
       resumePromptsFinishedWaits(of: sessionId)
     }
-  }
-
-  /// The title the prompt sets, or `nil` when the session already has its
-  /// title. The title is the first line of the first prompt. Marks the
-  /// title recorded at acceptance, so one session sets it at most once.
-  ///
-  /// - Parameters:
-  ///   - sessionId: The session being prompted.
-  ///   - entry: The session's table entry.
-  ///   - blocks: The prompt's content blocks, for the title.
-  /// - Returns: The title record, or `nil`.
-  private func makeTitleRecord(
-    for sessionId: SessionId, entry: ActiveSession, blocks: [ContentBlock]
-  ) -> SessionTitleRecord? {
-    guard !entry.titleRecorded, let rootId = ULID(ulidString: sessionId.rawValue) else {
-      return nil
-    }
-    sessions[sessionId]?.titleRecorded = true
-    return SessionTitleRecord(
-      directory: sessionDirectory,
-      sessionId: rootId,
-      title: PromptExecution.oneLineTitle(from: PromptExecution.promptText(from: blocks)),
-      acceptedAt: Date())
   }
 }

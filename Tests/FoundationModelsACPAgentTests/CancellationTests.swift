@@ -25,11 +25,11 @@ import Testing
   private static let toolCallId = "call-1"
 
   /// The kind sequence of one uncancelled scripted prompt: the echo,
-  /// the title info update, `running`, one chunk, and the
-  /// `idle` terminator. The no-op cancel tests compare against it, so
-  /// a cancel that leaks an update or a state change is visible.
+  /// `running`, one chunk, and the `idle` terminator. The no-op cancel
+  /// tests compare against it, so a cancel that leaks an update or a
+  /// state change is visible.
   private static let uncancelledPromptKinds: [SessionUpdateKind] = [
-    .userMessage, .sessionInfoUpdate, .stateUpdate,
+    .userMessage, .stateUpdate,
     .agentMessageChunk, .stateUpdate,
   ]
 

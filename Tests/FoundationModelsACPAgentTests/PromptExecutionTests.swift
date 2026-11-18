@@ -5,21 +5,21 @@ import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
 import FoundationModelsRouter
 import Testing
+import ULID
 
 @testable import FoundationModelsACPAgent
 
 /// The prompt execution: the acknowledge-then-notify
 /// order, the `user_message` echo, the prompt-state machine, the stop-reason
-/// mapping, and the title record.
+/// mapping, and the session name.
 @Suite(.closesHarnesses) struct PromptExecutionTests {
   // MARK: - Constants
 
-  /// The first prompt line. It becomes the session title.
-  private static let promptTitleLine = "Say hello to the tests"
-
-  /// The prompt text of the wire tests: two lines, so the cut to a
-  /// one-line title is observable.
+  /// The prompt text of the wire tests: two lines.
   private static let promptText = "Say hello to the tests\nwith a second line"
+
+  /// The name that a rename gives the session.
+  private static let renamedTitle = "renamed-session"
 
   // MARK: - Harness
   //
@@ -85,8 +85,8 @@ import Testing
   // MARK: - The prompt order
 
   /// A scripted prompt streams the acknowledge-then-notify order: the
-  /// `{}` response returns first, then the echo, the title info
-  /// update, `running`, the chunks, and one `idle` with
+  /// `{}` response returns first, then the echo, `running`, the
+  /// chunks, and one `idle` with
   /// `end_turn`. The echo owns the message identity: the agent
   /// chunks ride one different id.
   @Test
@@ -101,7 +101,7 @@ import Testing
 
     #expect(
       updates.map(\.update.kind) == [
-        .userMessage, .sessionInfoUpdate, .stateUpdate,
+        .userMessage, .stateUpdate,
         .agentMessageChunk, .agentMessageChunk, .stateUpdate,
       ])
     let echo = try #require(
@@ -120,8 +120,8 @@ import Testing
     #expect(chunkIds.first != echo.messageId)
 
     #expect(
-      isRunningState(updates[2].update),
-      "expected running before the prompt output, got \(updates[2])")
+      isRunningState(updates[1].update),
+      "expected running before the prompt output, got \(updates[1])")
     #expect(ScriptedPromptFixture.idleCount(in: updates) == 1)
     #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
     if case .stateUpdate(.idle) = try #require(updates.last).update {
@@ -238,8 +238,8 @@ import Testing
     let owner = PromptStateOwner(ledger: entry.stateLedger)
     await owner.noteCancelRequested()
     let execution = PromptExecution(
-      sessionId: fixture.sessionId, promptBlocks: [], promptState: owner, send: { _ in },
-      titleRecord: nil, modelName: syntheticModelName, modelPrompt: "never sent")
+      sessionId: fixture.sessionId, promptBlocks: [], promptState: owner,
+      modelName: syntheticModelName, modelPrompt: "never sent")
     let (ends, end) = AsyncStream.makeStream(of: StopReason.self)
 
     await execution.run(session: entry.session, projector: entry.projector) { reason in
@@ -1329,38 +1329,139 @@ import Testing
     await fixture.close()
   }
 
-  // MARK: - The title and the record timing
+  // MARK: - The session name
 
-  /// The `index.md` of the session holds no title before the first
-  /// prompt, holds a one-line title after the first prompt, and keeps
-  /// that title at the second prompt.
-  @Test
-  func theFirstPromptWritesTheTitleRecordWithAOneLineTitle() async throws {
-    let fixture = try await Self.makeFixture(script: [.textDelta("done"), .endPass])
-    #expect(try await Self.sessionRecord(of: fixture).facts.title == nil)
-
-    _ = try await fixture.harness.connection.prompt(
-      Self.makePromptRequest(sessionId: fixture.sessionId))
-    let firstPrompt = try await ScriptedPromptFixture.waitForIdle(fixture.collector)
-
-    let record = try await Self.sessionRecord(of: fixture)
-    #expect(record.facts.title == Self.promptTitleLine)
-    #expect(
-      record.workingDirectory.standardizedFileURL.path == fixture.cwd.standardizedFileURL.path)
-
-    let titles = firstPrompt.compactMap { notification -> PatchField<String>? in
+  /// The titles of the `session_info_update` updates in `updates`, in order.
+  ///
+  /// - Parameter updates: The collected updates.
+  /// - Returns: The title field of each `session_info_update`.
+  private static func sessionInfoTitles(
+    in updates: some Sequence<UpdateSessionNotification>
+  ) -> [PatchField<String>] {
+    updates.compactMap { notification in
       if case .sessionInfoUpdate(let info) = notification.update { return info.title }
       return nil
     }
-    #expect(titles == [.value(Self.promptTitleLine)])
+  }
 
+  /// The updates of `updates` before the first `user_message` echo: the
+  /// updates that went out before the first prompt.
+  ///
+  /// - Parameter updates: The collected updates.
+  /// - Returns: The updates before the first echo.
+  private static func updatesBeforeFirstPrompt(
+    in updates: [UpdateSessionNotification]
+  ) -> ArraySlice<UpdateSessionNotification> {
+    updates.prefix { $0.update.kind != .userMessage }
+  }
+
+  /// The updates of `updates` from the first `user_message` echo: the
+  /// updates of the first prompt.
+  ///
+  /// - Parameter updates: The collected updates.
+  /// - Returns: The updates from the first echo.
+  private static func updatesOfFirstPrompt(
+    in updates: [UpdateSessionNotification]
+  ) -> ArraySlice<UpdateSessionNotification> {
+    updates.drop { $0.update.kind != .userMessage }
+  }
+
+  /// Runs one prompt with the default text on the fixture session and
+  /// waits for the `idle` of prompt number `count`.
+  ///
+  /// - Parameters:
+  ///   - fixture: The fixture whose session gets the prompt.
+  ///   - count: The number of the prompt in the session, from 1.
+  /// - Returns: Each update that the collector holds at that `idle`.
+  /// - Throws: Whatever the prompt or the wait throws.
+  private static func runPrompt(
+    on fixture: ScriptedPromptFixture, count: Int = 1
+  ) async throws -> [UpdateSessionNotification] {
     _ = try await fixture.harness.connection.prompt(
-      Self.makePromptRequest(sessionId: fixture.sessionId, text: "a second prompt"))
-    let secondPrompt = try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: 2)
-    let afterSecond = try await Self.sessionRecord(of: fixture)
+      makePromptRequest(sessionId: fixture.sessionId))
+    return try await ScriptedPromptFixture.waitForIdle(fixture.collector, count: count)
+  }
+
+  /// Renames the fixture session through the Router session directory,
+  /// as a rename of a client does.
+  ///
+  /// - Parameter fixture: The fixture whose session gets the new name.
+  /// - Throws: When the session id is not a ULID, or the rename fails.
+  private static func rename(_ fixture: ScriptedPromptFixture) async throws {
+    let rootId = try #require(ULID(ulidString: fixture.sessionId.rawValue))
+    try await fixture.harness.agent.sessionDirectory.setTitle(renamedTitle, of: rootId)
+  }
+
+  /// A new session sends one `session_info_update` with the default name
+  /// that Router gave it, before the first prompt.
+  @Test
+  func aNewSessionSendsItsDefaultNameBeforeTheFirstPrompt() async throws {
+    let fixture = try await Self.makeFixture(script: [.textDelta("done"), .endPass])
+    let defaultName = try #require(try await Self.sessionRecord(of: fixture).facts.title)
+    let updates = try await Self.runPrompt(on: fixture)
     await fixture.close()
 
-    #expect(afterSecond.facts.title == Self.promptTitleLine)
-    #expect(secondPrompt.count { $0.update.kind == .sessionInfoUpdate } == 1)
+    #expect(
+      Self.sessionInfoTitles(in: Self.updatesBeforeFirstPrompt(in: updates))
+        == [.value(defaultName)])
+  }
+
+  /// The first prompt does not change the name that the session has.
+  @Test
+  func theFirstPromptKeepsTheDefaultName() async throws {
+    let fixture = try await Self.makeFixture(script: [.textDelta("done"), .endPass])
+    let defaultName = try await Self.sessionRecord(of: fixture).facts.title
+    _ = try await Self.runPrompt(on: fixture)
+    let afterPrompt = try await Self.sessionRecord(of: fixture).facts.title
+    await fixture.close()
+
+    #expect(afterPrompt == defaultName)
+  }
+
+  /// The first prompt sends no `session_info_update`: no title comes from
+  /// the text of the prompt.
+  @Test
+  func theFirstPromptSendsNoSessionInfoUpdate() async throws {
+    let fixture = try await Self.makeFixture(script: [.textDelta("done"), .endPass])
+    let updates = try await Self.runPrompt(on: fixture)
+    await fixture.close()
+
+    #expect(Self.sessionInfoTitles(in: Self.updatesOfFirstPrompt(in: updates)).isEmpty)
+  }
+
+  /// A rename changes the name, and the prompt after it keeps the new name.
+  @Test
+  func aRenameChangesTheNameAndThePromptKeepsIt() async throws {
+    let fixture = try await Self.makeFixture(script: [.textDelta("done"), .endPass])
+    try await Self.rename(fixture)
+    _ = try await Self.runPrompt(on: fixture)
+    let afterPrompt = try await Self.sessionRecord(of: fixture).facts.title
+    await fixture.close()
+
+    #expect(afterPrompt == Self.renamedTitle)
+  }
+
+  /// A resume after a rename sends the new name in its
+  /// `session_info_update`, not the name that the session had at its start.
+  @Test
+  func aResumeAfterARenameSendsTheNewName() async throws {
+    let first = try await Self.makeFixture(script: [.textDelta("done"), .endPass])
+    _ = try await Self.runPrompt(on: first)
+    try await Self.rename(first)
+    let titles = try await first.closeAndResume(
+      makeSecond: { cwd in
+        try await ScriptedPromptFixture.make(
+          script: [.endPass], label: "PromptExecutionTests-resume", workingDirectory: cwd)
+      },
+      read: { second, countBefore in
+        // The second agent opens a session of its own, which sends its own
+        // name. Only the updates of the resumed session count.
+        Self.sessionInfoTitles(
+          in: await second.collector.updates.dropFirst(countBefore).filter {
+            $0.sessionId == first.sessionId
+          })
+      })
+
+    #expect(titles == [.value(Self.renamedTitle)])
   }
 }

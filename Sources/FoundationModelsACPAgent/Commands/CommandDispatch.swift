@@ -275,10 +275,10 @@ extension RoutedACPAgent {
         await self.promptFinished(owner, sessionId: sessionId)
       }
       return (PromptResponse(messageId: messageId), owner)
-    case .modelPrompt(let text, let owner, let send):
+    case .modelPrompt(let text, let owner):
       let response = scheduleModelPrompt(
         overridePrompt: text,
-        params: params, entry: entry, connection: connection, owner: owner, send: send)
+        params: params, entry: entry, connection: connection, owner: owner)
       return (response, owner)
     }
   }
@@ -328,13 +328,11 @@ extension RoutedACPAgent {
       return .modelPrompt(
         text: CommandDispatch.modelPrompt(
           expandedText: expandedText, attachments: command.attachments),
-        owner: beginPrompt(params: params),
-        send: historySink(for: params.sessionId))
+        owner: beginPrompt(params: params))
     case .rendered(let render):
       // Record the prompt in flight before the async render, so a
       // cancel or a close during the render reaches it.
       let owner = beginPrompt(params: params)
-      let send = historySink(for: params.sessionId)
       let renderedText: String
       do {
         renderedText = try await render(
@@ -348,7 +346,7 @@ extension RoutedACPAgent {
       return .modelPrompt(
         text: CommandDispatch.modelPrompt(
           expandedText: renderedText, attachments: command.attachments),
-        owner: owner, send: send)
+        owner: owner)
     }
   }
 }
@@ -366,6 +364,5 @@ private enum CommandWork: Sendable {
   /// - Parameters:
   ///   - text: The model prompt.
   ///   - owner: The prompt-state owner of the prompt in flight.
-  ///   - send: The sink every update of the prompt goes to.
-  case modelPrompt(text: String, owner: PromptStateOwner, send: SessionUpdateSink)
+  case modelPrompt(text: String, owner: PromptStateOwner)
 }

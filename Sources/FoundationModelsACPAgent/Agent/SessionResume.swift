@@ -289,15 +289,15 @@ extension RoutedACPAgent {
 
     // The mount gives Router the new root set, unless the session is
     // replay-only: a replay-only session runs no prompt, so its
-    // `index.md` stays as the session left it. A session that recorded
-    // a title keeps it; the first prompt of one with none sets it.
+    // `index.md` stays as the session left it. The session keeps its name:
+    // Router gives a recorded root session with no title its default name
+    // when it reads the session.
     let activation = try await activateSession(
       restored.session,
       composition: composition,
       placement: SessionPlacement(
         workingDirectory: workingDirectory, additionalRoots: additionalRoots,
         userPresence: userPresence),
-      titleRecorded: restored.session.facts.title != nil,
       history: history)
 
     // The root is in the table with its project hook key. So each recorded nested session

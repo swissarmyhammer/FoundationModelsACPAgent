@@ -44,9 +44,6 @@ struct SessionBuild {
   /// Whether the session is replay-only.
   let isReplayOnly: Bool
 
-  /// Whether the `index.md` of the session holds its title.
-  let titleRecorded: Bool
-
   /// The history that the retained history of the session starts from.
   let history: SessionMergeEngine
 
@@ -66,7 +63,6 @@ struct SessionBuild {
   ///   - selectedSlot: The model slot of the Router session.
   ///   - announcedConfigOptions: The config-option list of the first
   ///     announcement.
-  ///   - titleRecorded: Whether the `index.md` already holds the title.
   ///   - history: The history that the retained history starts from.
   init(
     composition: SessionComposition,
@@ -74,7 +70,6 @@ struct SessionBuild {
     commands: CommandRegistry,
     selectedSlot: ModelSlot,
     announcedConfigOptions: [SessionConfigOption],
-    titleRecorded: Bool,
     history: SessionMergeEngine
   ) {
     configuration = composition.configuration
@@ -88,7 +83,6 @@ struct SessionBuild {
     agentOption = composition.agent?.option
     userPresence = placement.userPresence
     isReplayOnly = composition.isReplayOnly
-    self.titleRecorded = titleRecorded
     self.history = history
     runCallJoins = composition.surface.runCallJoins
     capabilities = .all
@@ -122,9 +116,6 @@ struct SessionBuild {
     agentOption = parent.agentOption
     userPresence = parent.userPresence
     isReplayOnly = parent.isReplayOnly
-    // The Router owns the record of a sub-agent session, so the first
-    // prompt of the agent never writes its title.
-    titleRecorded = true
     self.history = history
     runCallJoins = RunCallJoinTable(
       holds: parent.surface.runCallJoins.holds, messages: parent.surface.runCallJoins.messages)
@@ -176,7 +167,7 @@ extension RoutedACPAgent {
   /// and the command registry. They are also the publication of the
   /// commands, the terminal projection and the status of the MCP servers.
   /// They stay with
-  /// ``activateSession(_:composition:placement:titleRecorded:history:)``.
+  /// ``activateSession(_:composition:placement:history:)``.
   /// A nested session borrows their results from its parent. Else it would
   /// do them a second time on the same surface.
   ///
@@ -268,7 +259,6 @@ extension RoutedACPAgent {
       announcement: announcement,
       capabilities: build.capabilities,
       isReplayOnly: build.isReplayOnly,
-      titleRecorded: build.titleRecorded,
       retainedHistory: RetainedHistory(build.history))
     if let parent {
       sessions[parent]?.children.append(sessionId)

@@ -3,6 +3,7 @@ import FoundationModels
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
+import FoundationModelsExtras
 import FoundationModelsRouter
 import Testing
 
@@ -11,8 +12,8 @@ import Testing
 /// The `session/new` composition pipeline: the ACP
 /// session id is the root Router session's ULID, the per-cwd config layer
 /// shapes each session's tool roster, the project store of the home records
-/// the cwd, and the session record holds no title and no first activity until
-/// the first prompt.
+/// the cwd, and the session record holds the default name of Router and no
+/// first activity until the first prompt.
 @Suite struct SessionSetupTests {
   /// A cwd string that is not absolute, so the agent must refuse it.
   private static let relativeCwd = "relative/path"
@@ -355,12 +356,12 @@ import Testing
     #expect(plainEntry.configuration.tools.shell != .disabled)
   }
 
-  // MARK: The project now, the title at the first prompt
+  // MARK: The project and the name now, the activity at the first prompt
 
   /// The slice of the recorded `index.md` that the project test reads:
-  /// the two keys the first prompt sets.
+  /// the name of the session and the key the first prompt sets.
   private struct RecordActivitySlice: Decodable {
-    /// The title of the session, or `nil` before the first prompt.
+    /// The title of the session: the name that Router gave it.
     let title: String?
 
     /// The start of the first submission, or `nil` before the first
@@ -369,8 +370,9 @@ import Testing
   }
 
   /// After `session/new` alone, the projects folder of the home holds the
-  /// cwd, and the `index.md` of the session holds no title and no first
-  /// activity yet.
+  /// cwd, and the `index.md` of the session holds the default name and no
+  /// first activity yet. The agent of the session has no name, so the
+  /// default name is the fallback name of `SessionName`.
   @Test
   func sessionNewRegistersTheProjectAndRecordsNoActivity() async throws {
     let userDirectory = makeResolvedDirectory(label: "SessionSetupTests-user")
@@ -386,7 +388,7 @@ import Testing
     let record = try RecordedSessionIndexFile.slice(
       ofSession: response.sessionId.rawValue, under: Self.projectTranscriptsRoot(of: cwd),
       as: RecordActivitySlice.self)
-    #expect(record.title == nil)
+    #expect(record.title == SessionName.default(agentName: "", usedNames: []))
     #expect(record.firstActivityAt == nil)
   }
 

@@ -27,11 +27,19 @@ import Testing
   /// The extension of a project file in the projects folder.
   private static let projectFileExtension = "md"
 
-  /// The prompt text of the first session, which is also its title.
-  private static let firstTitle = "the first session"
+  /// The prompt text of the first session.
+  private static let firstPrompt = "the first session"
 
-  /// The prompt text of the second session, which is also its title.
-  private static let secondTitle = "the second session"
+  /// The prompt text of the second session.
+  private static let secondPrompt = "the second session"
+
+  /// The default name of the first session in a folder. The agent of the
+  /// fixture has no name, so the name is the fallback name of `SessionName`.
+  private static let firstName = SessionName.default(agentName: "", usedNames: [])
+
+  /// The default name of the second session in the same folder: the first
+  /// session uses the base name.
+  private static let secondName = SessionName.default(agentName: "", usedNames: [firstName])
 
   /// The script of each prompt: one text, then the end of the pass.
   private static let script: [ScriptedPassStep] = [.textDelta("done"), .endPass]
@@ -39,8 +47,8 @@ import Testing
   // MARK: - Two sessions in one folder
 
   /// Two prompted sessions in one working folder give two session folders,
-  /// each with an `index.md` that holds the title of its first prompt and
-  /// its additional directories. `session/list` shows both, and the
+  /// each with an `index.md` that holds the default name that Router gave
+  /// the session and its additional directories. `session/list` shows both, and the
   /// recording root holds no shared `sessions.jsonl`.
   @Test func twoSessionsInOneFolderGiveTwoSessionFoldersThatTheListShows() async throws {
     let extraOne = makeResolvedDirectory(label: "\(Self.label)-extra-one")
@@ -48,8 +56,8 @@ import Testing
     let fixture = try await Self.makeFixture(additionalDirectories: [extraOne])
     let second = try await Self.newSession(
       on: fixture, in: fixture.cwd, additionalDirectories: [extraTwo])
-    try await ScriptedPromptFixture.runPrompt(on: fixture, text: Self.firstTitle)
-    try await Self.runPrompt(Self.secondTitle, in: second, on: fixture, count: 2)
+    try await ScriptedPromptFixture.runPrompt(on: fixture, text: Self.firstPrompt)
+    try await Self.runPrompt(Self.secondPrompt, in: second, on: fixture, count: 2)
 
     let listed = try await fixture.harness.connection.listSessions(
       ListSessionsRequest(cwd: AbsolutePath(rawValue: fixture.cwd.path)))
@@ -58,12 +66,12 @@ import Testing
     let root = try Self.recordingRoot(of: fixture.cwd)
     let first = try Self.frontmatter(ofSession: fixture.sessionId, under: root)
     let other = try Self.frontmatter(ofSession: second, under: root)
-    #expect(first["title"] == .string(Self.firstTitle))
+    #expect(first["title"] == .string(Self.firstName))
     #expect(Self.paths(in: first["additionalDirectories"]) == [extraOne.standardizedFileURL.path])
-    #expect(other["title"] == .string(Self.secondTitle))
+    #expect(other["title"] == .string(Self.secondName))
     #expect(Self.paths(in: other["additionalDirectories"]) == [extraTwo.standardizedFileURL.path])
     #expect(Set(listed.sessions.map(\.sessionId)) == [fixture.sessionId, second])
-    #expect(Set(listed.sessions.compactMap(\.title)) == [Self.firstTitle, Self.secondTitle])
+    #expect(Set(listed.sessions.compactMap(\.title)) == [Self.firstName, Self.secondName])
     #expect(
       !FileManager.default.fileExists(
         atPath: root.appendingPathComponent(Self.sharedListingFileName).path))
@@ -113,8 +121,8 @@ import Testing
   @Test func aDeleteRemovesOnlyTheFolderOfItsOwnSession() async throws {
     let fixture = try await Self.makeFixture()
     let kept = try await Self.newSession(on: fixture, in: fixture.cwd)
-    try await ScriptedPromptFixture.runPrompt(on: fixture, text: Self.firstTitle)
-    try await Self.runPrompt(Self.secondTitle, in: kept, on: fixture, count: 2)
+    try await ScriptedPromptFixture.runPrompt(on: fixture, text: Self.firstPrompt)
+    try await Self.runPrompt(Self.secondPrompt, in: kept, on: fixture, count: 2)
 
     _ = try await fixture.harness.connection.deleteSession(
       DeleteSessionRequest(sessionId: fixture.sessionId))
@@ -124,7 +132,7 @@ import Testing
     let entries = try FileManager.default.contentsOfDirectory(atPath: root.path)
     #expect(entries == [kept.rawValue])
     #expect(
-      try Self.frontmatter(ofSession: kept, under: root)["title"] == .string(Self.secondTitle))
+      try Self.frontmatter(ofSession: kept, under: root)["title"] == .string(Self.secondName))
   }
 
   // MARK: - Helpers

@@ -336,8 +336,8 @@ import Tracing
     #expect(await Self.aRunGotAccept(in: recorder))
   }
 
-  /// A prompt that starts no background run ends as before: the echo, the
-  /// title, `running`, the text and one `idle` with
+  /// A prompt that starts no background run ends as before: the echo,
+  /// `running`, the text and one `idle` with
   /// `end_turn`.
   @Test
   func aPromptWithNoBackgroundRunEndsAsBefore() async throws {
@@ -350,7 +350,7 @@ import Tracing
 
     #expect(
       promptUpdates(in: updates).map(\.update.kind) == [
-        .userMessage, .sessionInfoUpdate, .stateUpdate, .agentMessageChunk, .stateUpdate,
+        .userMessage, .stateUpdate, .agentMessageChunk, .stateUpdate,
       ])
     #expect(ScriptedPromptFixture.idleStopReason(in: updates) == .endTurn)
   }

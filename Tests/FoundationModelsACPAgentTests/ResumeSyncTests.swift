@@ -325,18 +325,34 @@ import Testing
     #expect(updates.compactMap(idleState(of:)).first?.stopReason == nil)
   }
 
-  /// A session with no title and no session info gets no `session_info_update`. An empty update
-  /// has no value, and the replay skips it too.
+  /// A session with no session info in its history gets one `session_info_update` with the name
+  /// of its record: the default name that Router gave it.
   @Test
-  func aResumeOfASessionWithNoInfoSendsNoSessionInfoUpdate() async throws {
+  func aResumeOfASessionWithNoInfoSendsItsRecordedName() async throws {
     let resume = try await ResumeSessionFixture.make(label: "ResumeSyncTests-no-info")
+    let entry = try #require(await resume.fixture.harness.agent.sessions[resume.fixture.sessionId])
+    let name = try #require(entry.session.facts.title)
+    // The name of the new session goes out after the `session/new` response. The wait keeps it
+    // out of the updates of the resume.
+    _ = try await resume.fixture.collector.wait(for: "the name of the new session") {
+      $0.contains { $0.update.kind == .sessionInfoUpdate }
+    }
     await resume.fixture.harness.agent.markSessionClosed(resume.fixture.sessionId)
 
     let updates = try await Self.resumeAndCollect(resume)
     await resume.fixture.close()
 
     #expect(stateNames(of: updates) == ["idle"])
-    #expect(!Self.kinds(of: updates).contains(.info))
+    #expect(updates.compactMap(Self.infoTitle(of:)) == [.value(name)])
+  }
+
+  /// The title of a `session_info_update`.
+  ///
+  /// - Parameter update: An update.
+  /// - Returns: The title field, or `nil` for an update of another kind.
+  private static func infoTitle(of update: SessionUpdate) -> PatchField<String>? {
+    if case .sessionInfoUpdate(let info) = update { return info.title }
+    return nil
   }
 
   // MARK: - The retained history
