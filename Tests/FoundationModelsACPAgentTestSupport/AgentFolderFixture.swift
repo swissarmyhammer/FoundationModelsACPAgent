@@ -13,6 +13,13 @@ public enum AgentFolderFixture {
   /// The body of an agent document when the test gives no body.
   public static let defaultBody = "Do the task."
 
+  /// The `name` key of the sample agent of a folder. The name has capitals and a space, so its
+  /// default session name is different from the name.
+  public static let sampleAgentName = "Travel Planner"
+
+  /// The default session name that ``sampleAgentName`` gives.
+  public static let sampleAgentSlug = "travel-planner"
+
   /// The text of one agent document: a frontmatter with the name, the description and the extra
   /// keys, then a body.
   ///
@@ -27,6 +34,18 @@ public enum AgentFolderFixture {
   ) -> String {
     let extraLines = extraKeys.map { "\($0)\n" }.joined()
     return "---\nname: \(id)\ndescription: \(description)\n\(extraLines)---\n\n\(body)\n"
+  }
+
+  /// Writes the root `AGENT.md` of `folder`, with the `name` key `name` and the description
+  /// `The <name> test agent.`.
+  ///
+  /// - Parameters:
+  ///   - name: The `name` key of the document.
+  ///   - folder: The folder of the document, for example the working directory of a session.
+  /// - Throws: The directory-creation or write error.
+  public static func writeAgent(named name: String, in folder: URL) throws {
+    try TestFileFixture.write(
+      document(id: name, description: "The \(name) test agent."), named: documentName, in: folder)
   }
 
   /// Writes the agent folder `<layer>/<id>/AGENT.md`.

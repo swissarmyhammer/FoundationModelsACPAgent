@@ -26,29 +26,11 @@ import ULID
   /// The default name that ``defaultAgentName`` gives.
   private static let defaultAgentSlug = "default-helper"
 
-  /// The `name` of the `AGENT.md` of the working directory.
-  private static let folderAgentName = "Travel Planner"
-
-  /// The default name that ``folderAgentName`` gives.
-  private static let folderAgentSlug = "travel-planner"
-
   /// The name that the host gives the agent.
   private static let hostAgentName = "Testudo"
 
   /// The default name that ``hostAgentName`` gives.
   private static let hostAgentSlug = "testudo"
-
-  /// Writes a root `AGENT.md` with the `name` key `name` in `folder`.
-  ///
-  /// - Parameters:
-  ///   - name: The `name` key of the document.
-  ///   - folder: The folder of the document.
-  /// - Throws: The directory-creation or write error.
-  private static func writeRootAgent(named name: String, in folder: URL) throws {
-    try TestFileFixture.write(
-      AgentFolderFixture.document(id: name, description: "The \(name) test agent."),
-      named: AgentFolderFixture.documentName, in: folder)
-  }
 
   /// Opens one new session in `cwd` and gives its name.
   ///
@@ -73,7 +55,7 @@ import ULID
   /// - Throws: What the write or the agent throws.
   private static func makeAgentWithNamedDefaultAgent(test: String) async throws -> RoutedACPAgent {
     let userDirectory = makeResolvedDirectory(label: "\(label)-\(test)-user")
-    try writeRootAgent(named: defaultAgentName, in: userDirectory)
+    try AgentFolderFixture.writeAgent(named: defaultAgentName, in: userDirectory)
     return try await AgentClientHarness.makeInitializedAgent(
       label: "\(label)-\(test)", userDirectory: userDirectory)
   }
@@ -105,11 +87,11 @@ import ULID
   @Test func aSessionOfAnAgentMdGetsItsName() async throws {
     let agent = try await AgentClientHarness.makeInitializedAgent(label: "\(Self.label)-folder")
     let cwd = makeResolvedDirectory(label: "\(Self.label)-folder-repo")
-    try Self.writeRootAgent(named: Self.folderAgentName, in: cwd)
+    try AgentFolderFixture.writeAgent(named: AgentFolderFixture.sampleAgentName, in: cwd)
 
     let name = try await Self.nameOfNewSession(on: agent, in: cwd)
 
-    #expect(name == Self.folderAgentSlug)
+    #expect(name == AgentFolderFixture.sampleAgentSlug)
   }
 
   /// A session of the builtin default agent gets the name that the host

@@ -33,6 +33,38 @@ comments:
     - evidence: `swift build --build-tests` -> "Build complete!", 0 compiler warnings (1 SwiftPM "missing creator for mutated node" note for the mlx bundle, not from the compiler); `swift test --skip-build` -> 2315 tests in 246 suites passed, 0 failed, 0 skipped, 1 known issue (the existing `withKnownIssue` in HarnessSmokeTests)
     - next: review
   timestamp: 2026-11-18T16:12:38.766244+00:00
+- actor: claude-code
+  id: 01m7qq42ztmd30yzhtw7gbad0q
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD; 2 findings (2 confirmed, 0 refuted) — Tests/FoundationModelsACPAgentTests/PromptExecutionTests.swift:1411, Tests/FoundationModelsACPAgentTests/PromptExecutionTests.swift:1421
+    - next: Move the agent name, the agent slug and the AGENT.md write into shared test support (for example `AgentFolderFixture`). Use them from PromptExecutionTests and SessionDefaultNameTests. Then review again.
+  timestamp: 2026-11-18T16:16:31.226555+00:00
+- actor: claude-code
+  id: 01m7qq4h973v7j9cb8w5vwn3fm
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 6 files
+    - test: green — swift test --skip-build, 2315 tests in 246 suites passed; 0 compiler warnings
+    - commit: 8d32eb9
+    - review: findings — PromptExecutionTests.swift:1411, PromptExecutionTests.swift:1421
+  timestamp: 2026-11-18T16:16:45.863875+00:00
+- actor: claude-code
+  id: 01m7qqdxcppz46a970xds0xbaa
+  text: |-
+    Review findings of 2026-11-18 10:13 removed.
+    - `AgentFolderFixture` (Tests/FoundationModelsACPAgentTestSupport) now holds `sampleAgentName` ("Travel Planner"), `sampleAgentSlug` ("travel-planner") and `writeAgent(named:in:)`, which writes the root AGENT.md of a folder with the description `The <name> test agent.`.
+    - SessionDefaultNameTests: removed `folderAgentName`, `folderAgentSlug` and the private `writeRootAgent`. The suite uses the shared helper and constants. The per-suite helper added no suite-specific description, so it is gone.
+    - PromptExecutionTests: removed `workingDirectoryAgentName`, `workingDirectoryAgentSlug` and the two-step write. The test uses the shared helper and constants. No other copy of the cause is in the file.
+
+    ### implement — changed
+    - evidence: Tests/FoundationModelsACPAgentTestSupport/AgentFolderFixture.swift, Tests/FoundationModelsACPAgentTests/SessionDefaultNameTests.swift, Tests/FoundationModelsACPAgentTests/PromptExecutionTests.swift
+    - next: review
+
+    ### test — green
+    - evidence: `swift build --build-tests` -> "Build complete!", 0 compiler warnings (1 SwiftPM "missing creator for mutated node" note for the mlx bundle, not from the compiler); `swift test --skip-build` -> 2315 tests in 246 suites passed, 0 failed, 0 skipped, 1 known issue (the existing `withKnownIssue` in HarnessSmokeTests)
+    - next: review
+  timestamp: 2026-11-18T16:21:53.174136+00:00
 position_column: doing
 position_ordinal: '8180'
 title: 'D199 (b): give the Router the agent name and id at session start, so the default name is the agent name'
@@ -59,3 +91,13 @@ The sessions of the app get the default names `session` and `session-2`, not the
 - Update the tests that ^8pqam4g changed to expect `session` and `session-2`.
 
 When this lands, push to origin/main and send the sha to the TestudoApp session (testudoapp-9a). #d199 #at-sessions
+
+## Review Findings (2026-11-18 10:13)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 6 file(s) reviewed, 20 not reviewed.
+
+> 20 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 20 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTests/PromptExecutionTests.swift:1411` `reuse/reuse` — The new constants `workingDirectoryAgentName` ("Travel Planner") and `workingDirectoryAgentSlug` ("travel-planner") copy the values of `folderAgentName` and `folderAgentSlug` that SessionDefaultNameTests already defines for the same fixture. The same fact now lives in two places, so a change to one can leave the other stale. Define the agent name and slug once in shared test support (for example, on `AgentFolderFixture`), and reference that from both suites. Otherwise, reuse the existing values by moving them to a shared location instead of redefining them.
+- [x] `Tests/FoundationModelsACPAgentTests/PromptExecutionTests.swift:1421` `reuse/reuse` — The new test writes the AGENT.md fixture with the same two-step TestFileFixture.write plus AgentFolderFixture.document sequence that SessionDefaultNameTests.writeRootAgent already encapsulates. The helper is private to that suite, so this test copies its body instead of calling a shared helper. Two copies of the fixture write can drift apart. Move the AGENT.md write into a shared test-support helper (for example, an `AgentFolderFixture.writeAgent(named:in:)` next to `AgentFolderFixture.document`) and call it from both suites. Keep the per-suite helper only if it adds a suite-specific description.
