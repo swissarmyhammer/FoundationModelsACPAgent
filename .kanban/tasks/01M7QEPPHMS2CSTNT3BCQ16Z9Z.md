@@ -1,6 +1,11 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m7qf6t19w715qb9n7r1gj88y
+  text: 'Dependency available (2026-11-18): FoundationModelsACP main 7e31ad0 has the `ACPMarkdown` product and the public `SessionMergeEngine.init(replaying: some Sequence<SessionUpdate>)` in the core target. Remove the internal copy in `Agent/SessionHistory.swift:136-146`; callers with an array still compile. API: `SessionMarkdown.render(updates:options:)` or `render(entries:sessionInfo:options:)`. Options: `includeThoughts` (default false), `title`, `agentName`, `labels` (`.english`). A test in FoundationModelsACP checks that the render of `engine.transcriptUpdates` gives the same text as the render of the live updates. Still waiting for: ^v2y341x, and the Multitool `SessionTranscriptExporter` protocol on main.'
+  timestamp: 2026-11-18T13:58:11.753911+00:00
 depends_on:
 - 01M7NQMWNNTAYWET485V2Y341X
 position_column: todo

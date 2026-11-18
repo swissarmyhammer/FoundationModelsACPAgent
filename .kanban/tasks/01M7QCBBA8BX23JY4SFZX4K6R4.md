@@ -65,8 +65,24 @@ comments:
     - evidence: `swift build --build-tests` Build complete!; `swift test --skip-build` 2232 tests in 237 suites passed (1 known issue, HarnessSmokeTests, which was there before this change)
     - next: /review
   timestamp: 2026-11-18T13:56:20.046823+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m7qf78whk29ygdhdccjt9wpv
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (439642d); 0 findings, 0 confirmed, 0 refuted; 1 file reviewed. All prior findings are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-11-18T13:58:26.961004+00:00
+- actor: claude-code
+  id: 01m7qf7q3my9ctj7bwx1qj855y
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — Tests/FoundationModelsACPAgentTests/SettingsFoldersTests.swift
+    - test: green — swift test --skip-build, 2232 tests in 237 suites passed
+    - commit: 439642d
+    - review: clean — 0 findings; the finding at SettingsFoldersTests.swift:281 is checked
+  timestamp: 2026-11-18T13:58:41.524160+00:00
+position_column: done
+position_ordinal: fffffd80
 title: 'D200: add the built-in layer of the skills stack (Multitool skill folder)'
 ---
 Decision D200 in `TestudoApp/features/decisions.md` (commit d1895ba); read D199 before it. Brief: `/Users/wballard/github/swissarmyhammer/.briefs/at-sessions/acpa-brief-sessions-skill.md`, change items 1, 2 and 4. Draft skill text: `sessions-skill-SKILL.md` in the same folder.
