@@ -1,6 +1,6 @@
 # The bundled profile `large`, the default profile of the agent. A key that
 # a profile file leaves out takes its value from this file.
-description: Qwen3.8 27B 8-bit with its MTP drafter, for a Mac with much memory.
+description: Qwen3.8 27B 8-bit with its MTP drafter, for a Mac with 48 GB or more.
 standard:
   - repo: mlx-community/Qwen3.8-27B-8bit
     drafter: mlx-community/Qwen3.8-27B-MTP-8bit

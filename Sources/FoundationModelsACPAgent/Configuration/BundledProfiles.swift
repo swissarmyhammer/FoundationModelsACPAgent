@@ -3,28 +3,35 @@ import FoundationModelsExtras
 import FoundationModelsRouter
 
 /// The profiles that ship in the resources of the library:
-/// `Resources/profiles/large.yaml` and `Resources/profiles/small.yaml`.
+/// `Resources/profiles/large.yaml`, `Resources/profiles/medium.yaml` and
+/// `Resources/profiles/small.yaml`.
 ///
 /// They are the lowest layer of the profiles, under the user layer and the
-/// project layer (``ProfileStore``), and they are read-only. `large` is the
-/// default profile, and each key that a profile file leaves out takes its
-/// value from `large` (``ProfileFile``).
+/// project layer (``ProfileStore``), and they are read-only. Each key that a
+/// profile file leaves out takes its value from `large` (``baseName``,
+/// ``ProfileFile``). `large` is also the default profile (``defaultName``).
 ///
 /// The files are part of the library, and the unit tests pin their contents,
 /// thus a file that does not decode is a fault of the build and stops the
 /// process.
 public enum BundledProfiles {
-  /// The name of the default profile.
-  public static let defaultName = "large"
+  /// The name of the bundled profile whose file is the base of the merge of
+  /// each profile file (``baseKeys``).
+  static let baseName = "large"
 
-  /// The names of the bundled profiles, in the order that a list shows them.
-  static let names = [defaultName, "small"]
+  /// The name of the default profile: the profile when no layer sets
+  /// `profile`.
+  public static let defaultName = baseName
 
-  /// The keys of the default profile file: the base of the merge of each
+  /// The names of the bundled profiles, from the largest to the smallest.
+  /// A list shows the profiles in this order.
+  static let names = [baseName, "medium", "small"]
+
+  /// The keys of the file of ``baseName``: the base of the merge of each
   /// profile file.
   static let baseKeys: [String: YAMLValue] = {
-    guard case .dictionary(let keys) = tree(of: defaultName) else {
-      preconditionFailure("the bundled profile \(defaultName) is not a mapping")
+    guard case .dictionary(let keys) = tree(of: baseName) else {
+      preconditionFailure("the bundled profile \(baseName) is not a mapping")
     }
     return keys
   }()

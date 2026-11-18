@@ -64,11 +64,12 @@ the composition the `acp-agent` CLI builds every mode on.
 
 ## The machine, and the models
 
-The agent needs a Mac with **32 GB** of memory for the profile `small`; the
-default profile, `large`, needs more. A profile fills four model slots at one
-time, and Router's `JointFit` prices the four models together against the
-memory of the machine. A 27B model at 4 bits is approximately 15 GB alone, so a
-16 GB machine is too small.
+The agent needs a Mac with 16 GB of memory or more. A profile fills four
+model slots at one time, and Router's `JointFit` prices the four models
+together against the memory of the machine. The agent also needs a context
+window of 32K tokens or more: the minimum window. Thus each bundled profile has
+a target memory, the memory of a Mac where its four models and the minimum
+window fit.
 
 | Slot | Model of `large` (the default) | MTP drafter |
 |---|---|---|
@@ -79,15 +80,16 @@ memory of the machine. A 27B model at 4 bits is approximately 15 GB alone, so a
 
 The model configuration is by profile. A profile is a file,
 `profiles/<name>.yaml`, and `profile: <name>` in `config.yaml` selects one.
-The agent ships two profiles:
+The agent ships three profiles, from the largest to the smallest:
 
-| `profile` | `standard` and `flash` |
-|---|---|
-| `large` (the default) | `mlx-community/Qwen3.8-27B-8bit` with its MTP drafter `mlx-community/Qwen3.8-27B-MTP-8bit` |
-| `small` | `mlx-community/Qwen3.8-27B-4bit` with its MTP drafter `mlx-community/Qwen3.8-27B-MTP-4bit` |
+| `profile` | `standard` and `flash` | Download | Target memory |
+|---|---|---|---|
+| `large` (the default) | `mlx-community/Qwen3.8-27B-8bit` with its MTP drafter `mlx-community/Qwen3.8-27B-MTP-8bit` | 33.9 GB | 48 GB or more |
+| `medium` | `mlx-community/Qwen3.8-27B-4bit` with its MTP drafter `mlx-community/Qwen3.8-27B-MTP-4bit` | 19.3 GB | 32 GB |
+| `small` | `mlx-community/Qwen3.5-9B-4bit` with its MTP drafter `mlx-community/Qwen3.5-9B-MTP-4bit`, and an 8-bit KV cache (`kvBits: 8`) | 9.4 GB | 16 GB or 24 GB |
 
-The two have the same `embedding` and `decision` models. `small` fits a Mac
-with less memory:
+The three profiles have the same `embedding` and `decision` models, and the
+download size includes them. A smaller profile fits a Mac with less memory:
 
 ```yaml
 profile: small

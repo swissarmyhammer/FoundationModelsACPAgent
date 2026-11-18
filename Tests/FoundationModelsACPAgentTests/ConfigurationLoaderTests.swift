@@ -1039,7 +1039,7 @@ import Testing
   @Test func anUnknownNameIsAnErrorThatListsTheProfiles() throws {
     let fixture = Fixture()
 
-    #expect(throws: ProfileStoreError.unknownProfile(name: "huge", available: ["large", "small"])) {
+    #expect(throws: ProfileStoreError.unknownProfile(name: "huge", available: ["large", "medium", "small"])) {
       try fixture.loadProjectConfig("profile: huge\n")
     }
   }

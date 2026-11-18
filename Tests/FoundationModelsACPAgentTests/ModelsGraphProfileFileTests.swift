@@ -65,7 +65,7 @@ import Testing
 
     let layers = try await Self.rowLayers(Self.graph(fixture))
 
-    #expect(layers == ["large": "BUNDLED", "small": "BUNDLED"])
+    #expect(layers == ["large": "BUNDLED", "medium": "BUNDLED", "small": "BUNDLED"])
   }
 
   // MARK: - saveProfile
