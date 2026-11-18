@@ -1,8 +1,34 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '8880'
+comments:
+- actor: claude-code
+  id: 01m7qg9ydg11d2b975ve6fn58s
+  text: |-
+    Causes found:
+    - Extras `MarketplaceRegistry.add(_:)` returns `MarketplaceEntry`. It has no `@discardableResult`. Thus the 4 `add` calls gave "result of call to 'add' is unused".
+    - Extras `InMemoryMarketplaceSourceStorage` is an actor. Its `loadSources()` does not throw on the concrete type. The two closures called it with `try`. The closure type stays `async throws`, thus removal of `try` does not change the closure contract.
+    - `ConnectionTable` in this package is a `final class` with a `Mutex`. Its `owner(of:)` is synchronous. Thus `await` on it gave a warning.
+
+    Changes:
+    - MarketplaceRegistryMountTests: each `add` result goes into `added`, and the test checks `added.source` against the added source. The `try` keyword is removed in the two `loadSources()` closures.
+    - AgentSessionLauncherTests: the `await` keyword is removed on the two `owner(of:)` calls.
+
+    Note: the build also prints "warning: missing creator for mutated node" for the mlx-swift_Cmlx.bundle. That is a SwiftPM build graph message about a dependency bundle, not a diagnostic in a source file of this package.
+  timestamp: 2026-11-18T14:17:23.120266+00:00
+- actor: claude-code
+  id: 01m7qga0n9m5224etnwjysbvqx
+  text: |-
+    ### implement — changed
+    - evidence: Tests/FoundationModelsACPAgentTests/MarketplaceRegistryMountTests.swift, Tests/FoundationModelsACPAgentTests/AgentSessionLauncherTests.swift
+    - next: review
+
+    ### test — green
+    - evidence: `swift build --build-tests` prints "Build complete!" with 0 source warnings (1 SwiftPM "missing creator for mutated node" message on the mlx-swift_Cmlx.bundle). `swift test --skip-build`: 2290 tests in 243 suites pass, 0 failures, 1 expected known issue (HarnessSmokeTests.orderedSubsequenceAssertionChecksOrderWithGaps uses withKnownIssue).
+    - next: review
+  timestamp: 2026-11-18T14:17:25.417679+00:00
+position_column: doing
+position_ordinal: '8180'
 title: Remove the test warnings in MarketplaceRegistryMountTests and AgentSessionLauncherTests
 ---
 Found during ^zx4k6r4 (2026-11-18).

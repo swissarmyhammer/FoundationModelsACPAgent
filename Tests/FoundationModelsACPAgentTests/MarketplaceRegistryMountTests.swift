@@ -68,11 +68,12 @@ import Testing
     let composed = try await composeStubAgent(
       name: "MarketplaceRegistryMountTests", label: "MarketplaceRegistryMountTests-reset")
     let registry = composed.agent.marketplaceRegistry
-    try await registry.add(Self.plain)
+    let added = try await registry.add(Self.plain)
 
     let entries = try await registry.reset()
     await composed.closeOpenSessions()
 
+    #expect(added.source == Self.plain)
     #expect(!entries.map(\.source).contains(Self.plain))
   }
 
@@ -84,11 +85,12 @@ import Testing
     let composed = try await composeStubAgent(
       name: "MarketplaceRegistryMountTests", label: "MarketplaceRegistryMountTests-agent")
 
-    try await composed.agent.marketplaceRegistry.add(Self.plain)
+    let added = try await composed.agent.marketplaceRegistry.add(Self.plain)
     let cwd = makeResolvedDirectory(label: "MarketplaceRegistryMountTests-agent-cwd")
     let merged = try await composed.agent.settingsStore.merged(for: cwd).configuration
     await composed.closeOpenSessions()
 
+    #expect(added.source == Self.plain)
     #expect(merged.tools.skills.marketplaces.contains(Self.plain))
   }
 
@@ -194,11 +196,12 @@ import Testing
     let registry = MarketplaceRegistry(storage: storage)
     let (layers, made) = Self.recordingLayers()
     var updates = layers.layerUpdates.makeAsyncIterator()
-    layers.follow(registry.changes()) { try await storage.loadSources() }
+    layers.follow(registry.changes()) { await storage.loadSources() }
 
-    try await registry.add(Self.plain)
+    let added = try await registry.add(Self.plain)
     _ = await updates.next()
 
+    #expect(added.source == Self.plain)
     #expect(made.all.map(\.sources) == [[Self.plain]])
     await layers.stop()
   }
@@ -225,14 +228,14 @@ import Testing
           name: try DotfolderName(SkillsMarketplaceTests.dotfolderName), environment: environment),
         environment: [:]),
       mode: .open, environment: environment,
-      marketplaceMount: MarketplaceMount(registry: registry) { try await storage.loadSources() })
+      marketplaceMount: MarketplaceMount(registry: registry) { await storage.loadSources() })
 
     let skills = await ToolCatalog.makeSkillsSource(context: context)
     #expect(!skills.registry.metadata().map(\.id).contains(SkillsMarketplaceTests.skillName))
-    try await registry.add(
-      MarketplaceSource(
-        SkillsMarketplaceTests.fileURLPrefix + repository.path,
-        ref: SkillsMarketplaceTests.marketplaceBranch))
+    let source = MarketplaceSource(
+      SkillsMarketplaceTests.fileURLPrefix + repository.path,
+      ref: SkillsMarketplaceTests.marketplaceBranch)
+    let added = try await registry.add(source)
 
     var found = false
     for _ in 0..<200 where !found {
@@ -241,6 +244,7 @@ import Testing
     }
     await skills.marketplaces?.stop()
     await skills.registry.stopWatching()
+    #expect(added.source == source)
     #expect(found)
   }
 }

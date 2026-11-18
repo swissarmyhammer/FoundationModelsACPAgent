@@ -45,11 +45,11 @@ import Testing
   @Test func aRecordedSessionRestoresLiveAndKeepsItsOwnerRecord() async throws {
     let recorded = try await Self.recordedSession(label: "\(Self.label)-cold")
     let launcher = AgentSessionLauncher(agent: recorded.composed.agent)
-    let ownerBefore = await recorded.composed.agent.connections.owner(of: recorded.id)
+    let ownerBefore = recorded.composed.agent.connections.owner(of: recorded.id)
 
     let session = try await launcher.restoreSession(id: try Self.ulid(recorded.id))
     let entry = await recorded.composed.agent.liveRoot(recorded.id)
-    let owner = await recorded.composed.agent.connections.owner(of: recorded.id)
+    let owner = recorded.composed.agent.connections.owner(of: recorded.id)
     await recorded.composed.closeOpenSessions()
 
     #expect(session.id == (try Self.ulid(recorded.id)))
