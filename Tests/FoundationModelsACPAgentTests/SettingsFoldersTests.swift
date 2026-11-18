@@ -276,9 +276,9 @@ struct SettingsFoldersTests {
   private static func lowestSkillsLayer(
     of settingsFolders: SettingsFolders, workingDirectory: URL
   ) throws -> String {
-    let stack = settingsFolders.stack(for: .skills, workingDirectory: workingDirectory)
-    let lowest = try #require(stack.layers.first)
-    return "\(lowest.source):\(lowest.root.standardizedFileURL.path)"
+    try #require(
+      Self.layerList(of: settingsFolders.stack(for: .skills, workingDirectory: workingDirectory))
+        .first)
   }
 
   /// The lowest layer of the skills stack is the folder of the built-in
@@ -291,7 +291,9 @@ struct SettingsFoldersTests {
       of: try fixture.settingsFolders(hasRoot: hasRoot),
       workingDirectory: fixture.workingDirectory)
 
-    #expect(lowest == "\(DotfolderStack.Source.defaults):\(BuiltinSkills.directory.standardizedFileURL.path)")
+    let expected = DotfolderStack(
+      layers: [DotfolderStack.Layer(source: .defaults, root: BuiltinSkills.directory)])
+    #expect([lowest] == Self.layerList(of: expected))
   }
 
   /// The folder that `SKILLS_DEFAULTS_DIR` names replaces the built-in

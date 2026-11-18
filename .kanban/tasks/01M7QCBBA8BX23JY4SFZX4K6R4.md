@@ -36,6 +36,35 @@ comments:
     - evidence: 3 files — Sources/FoundationModelsACPAgent/Configuration/SettingsFolders.swift, Tests/FoundationModelsACPAgentTests/SettingsFoldersTests.swift, Tests/FoundationModelsACPAgentTests/AgentCompositionTests.swift; `swift build --build-tests` Build complete!; `swift test --skip-build` 2232 tests in 237 suites passed (1 known issue, HarnessSmokeTests, before this change).
     - next: /review
   timestamp: 2026-11-18T13:50:44.350694+00:00
+- actor: claude-code
+  id: 01m7qezce1jdj2rqvzge03p60r
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (f6c723d): 1 finding (1 confirmed, 0 refuted) — Tests/FoundationModelsACPAgentTests/SettingsFoldersTests.swift:281 (reuse/reuse)
+    - next: Do the open item in "Review Findings (2026-11-18 07:51)". Then do the review again. The task stays in review.
+  timestamp: 2026-11-18T13:54:08.449471+00:00
+- actor: claude-code
+  id: 01m7qezpz4re9mmf7wr5vyw81y
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 3 files
+    - test: green — swift test --skip-build, 2232 tests in 237 suites passed (run by the implement step on the same tree)
+    - commit: f6c723d
+    - review: findings — Tests/FoundationModelsACPAgentTests/SettingsFoldersTests.swift:281
+  timestamp: 2026-11-18T13:54:19.236142+00:00
+- actor: claude-code
+  id: 01m7qf3cyemrvd1819y47w1f7y
+  text: |-
+    Review finding done (2026-11-18). The body of `lowestSkillsLayer` is now `try #require(Self.layerList(of: settingsFolders.stack(for: .skills, workingDirectory: workingDirectory)).first)`. The `#require` stays. The same cause was also in `theLowestSkillsLayerIsTheBuiltinSkillsOfMultitool`: its expected value built the `<source>:<root path>` string again. Now it makes a `DotfolderStack` with one `.defaults` layer at `BuiltinSkills.directory` and compares `[lowest]` with `layerList(of:)` of that stack. The file has no other copy of the layer format. (`catalogList` formats catalog definitions, not stack layers.)
+
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsACPAgentTests/SettingsFoldersTests.swift
+    - next: /review
+
+    ### test — green
+    - evidence: `swift build --build-tests` Build complete!; `swift test --skip-build` 2232 tests in 237 suites passed (1 known issue, HarnessSmokeTests, which was there before this change)
+    - next: /review
+  timestamp: 2026-11-18T13:56:20.046823+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'D200: add the built-in layer of the skills stack (Multitool skill folder)'
@@ -66,3 +95,12 @@ FoundationModelsMultitool (`mt-brief-sessions-skill.md`): Multitool ships the `s
 - A `SkillsRegistry` from `makeSkillsSource` lists `sessions` with an empty marketplace list. A user layer `_skills/sessions/SKILL.md` replaces it.
 - `add skill` named `sessions` writes the user layer, not the built-in folder.
 - The CLI stack also lists `sessions`. #d200 #sessions-skill
+
+## Review Findings (2026-11-18 07:51)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 3 file(s) reviewed, 32 not reviewed.
+
+> 32 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 32 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTests/SettingsFoldersTests.swift:281` `reuse/reuse` — `lowestSkillsLayer` rebuilds the `<source>:<root path>` string that the existing `layerList(of:)` helper already produces for each layer. Writing the formatting a second time means two copies of the layer-label format can drift apart, and a change to one will not reach the other. Replace the body of `lowestSkillsLayer` with `try #require(Self.layerList(of: settingsFolders.stack(for: .skills, workingDirectory: workingDirectory)).first)`. Keep the `#require` so an empty stack still fails the test.
