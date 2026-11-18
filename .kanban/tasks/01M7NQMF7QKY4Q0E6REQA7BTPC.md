@@ -84,8 +84,25 @@ comments:
     - evidence: `swift build --build-tests` printed "Build complete!" with 0 compiler warnings (only the SwiftBuild line "missing creator for mutated node" for the mlx-swift_Cmlx bundle, not a compiler warning). `swift test --skip-build`: 2309 tests in 245 suites passed, 0 failures, 1 known issue (the `withKnownIssue` in HarnessSmokeTests that was there before).
     - next: /review
   timestamp: 2026-11-18T15:58:38.708656+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m7qp8wg4bhkycdy9jkk1k8cz
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (06a16d0). 0 findings, 0 confirmed, 0 refuted. 5 files reviewed. All 7 items of "Review Findings (2026-11-18 09:46)" are checked.
+    - next: The task is in done. Tell the TestudoApp session to update the ACPA-6 status and the "(to confirm with the ACP spec)" note (TestudoApp task ^k6wacyz).
+  timestamp: 2026-11-18T16:01:39.844302+00:00
+- actor: claude-code
+  id: 01m7qp97609s0kgetm4ay4tx9a
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 5 files; 7/7 findings checked
+    - test: green — swift test --skip-build, 2309 tests in 245 suites passed; 0 compiler warnings
+    - commit: 06a16d0
+    - review: clean — 0 findings
+    - The TestudoApp session got the request to update ACPA-6 (^k6wacyz) with the push of 7d35965.
+  timestamp: 2026-11-18T16:01:50.784119+00:00
+position_column: done
+position_ordinal: ffffff8280
 title: 'ACPA-6: send a session_message update for each delivered directory message'
 ---
 Decision D199 (f) in `TestudoApp/features/decisions.md` (commit 740cd1a), and ACPA-6 in `TestudoApp/features/packages/foundationmodels-acpagent.md:76-84`. Brief: `/Users/wballard/github/swissarmyhammer/.briefs/at-sessions/acpa-brief-at-sessions.md`, items 1, 2 and 6.
