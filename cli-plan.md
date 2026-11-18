@@ -422,6 +422,11 @@ would look like a bug.
 - The earlier design stated the 16 GB figure. It is now wrong; §12
   records the difference, and the README states the 32 GB floor.
 
+**Update 2026-11-18 (decision D203): the memory floor is 16 GB again.**
+The agent has three bundled profiles (`large`, `medium` and `small`), and
+`small` fits a Mac with 16 GB. The `doctor` memory check and the README
+state the 16 GB floor. The 32 GB figure above is out of date.
+
 ### 7.1 The `standard` default decodes with MTP
 
 **Update 2026-10-29: the decision below is reversed.** Router now uses
@@ -665,7 +670,7 @@ replaces them. This list tells a reader what changed, and why.
 
 | Item | The earlier design | This plan |
 |---|---|---|
-| The default models | A profile for a 16 GB machine, on Qwen2.5. | §7: Qwen3 models, and a 32 GB floor. |
+| The default models | A profile for a 16 GB machine, on Qwen2.5. | §7: Qwen3 models, and a 32 GB floor (D203 sets the floor back to 16 GB). |
 | The flag surface of `acp-agent` | An example with no flags and no config wizardry. | §5.4 gives it a small flag surface, because it is now the product. |
 | The place of `acp-agent` | An example, under `Examples/`. | §8 moves it to `Sources/`. |
 | The flag surface of `acp-print` | No flags. | The same. It does not change. |

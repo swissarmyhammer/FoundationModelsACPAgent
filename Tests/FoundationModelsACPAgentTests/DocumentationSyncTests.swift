@@ -188,6 +188,17 @@ import Testing
     #expect(readme.contains(Self.memoryFloorText))
   }
 
+  /// The bytes of one gigabyte, as the doctor states each figure.
+  static let bytesPerGigabyte: Int64 = 1_073_741_824
+
+  /// The memory floor of the README and the memory floor of the doctor
+  /// (``ProfileDoctor/memoryFloorBytes``) are the same figure.
+  @Test func readmeMemoryFloorAgreesWithTheDoctorFloor() {
+    let doctorFloor = "\(ProfileDoctor.memoryFloorBytes / Self.bytesPerGigabyte) GB of memory or more"
+
+    #expect(doctorFloor == Self.memoryFloorText)
+  }
+
   // MARK: - The command tree
 
   /// The invocation of every command of the tree, root included, each as

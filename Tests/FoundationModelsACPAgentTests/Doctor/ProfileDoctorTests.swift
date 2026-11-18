@@ -20,15 +20,19 @@ struct ProfileDoctorTests {
   /// The number of findings a test that expects exactly one gets.
   private static let oneFinding = 1
 
-  /// A memory figure below the floor: 16 GB, the machine cli-plan.md §7
-  /// names as too small.
-  private static let smallMemoryBytes: Int64 = 17_179_869_184
+  /// A memory figure below the floor: 8 GB, a Mac that is smaller than
+  /// the smallest Mac of decision D203.
+  private static let smallMemoryBytes: Int64 = 8_589_934_592
 
   /// How ``smallMemoryBytes`` is stated in a message.
-  private static let smallMemoryText = "16.0 GB"
+  private static let smallMemoryText = "8.0 GB"
+
+  /// A memory figure at the floor: 16 GB, the smallest Mac that decision
+  /// D203 supports.
+  private static let floorMemoryBytes: Int64 = 17_179_869_184
 
   /// How ``ProfileDoctor/memoryFloorBytes`` is stated in a message.
-  private static let memoryFloorText = "32.0 GB"
+  private static let memoryFloorText = "16.0 GB"
 
   /// A free-disk figure below the download of the scripted trio.
   private static let smallDiskBytes: Int64 = 1_073_741_824
@@ -318,6 +322,14 @@ struct ProfileDoctorTests {
     #expect(fix.contains(Self.presetKey))
     #expect(fix.contains(ProfileDoctor.smallerProfileName))
     #expect(!fix.contains(BundledProfiles.defaultProfile.standard[0].repo))
+  }
+
+  /// A memory figure of 16 GB, the smallest Mac of decision D203, gives
+  /// no error.
+  @Test func aMemoryFigureAtTheFloorGivesNoError() async {
+    let checks = await Self.doctor(memoryBytes: Self.floorMemoryBytes).runHealthChecks()
+
+    #expect(checks.findings(.error).isEmpty)
   }
 
   // MARK: - The free disk

@@ -458,9 +458,8 @@ public actor RoutedACPAgent: Agent {
   /// configured profile to a resident one (`config →
   /// ProfileDefinition → Router.resolve → resident profile`).
   ///
-  /// The default `configuration` is the in-code layer-1 default: a
-  /// coding profile that operates on a 32 GB machine
-  /// (cli-plan.md §7).
+  /// The default `configuration` is the in-code layer-1 default: the
+  /// bundled profile ``BundledProfiles/defaultName``.
   ///
   /// - Parameters:
   ///   - name: The dotfolder name the frontend chose. It
