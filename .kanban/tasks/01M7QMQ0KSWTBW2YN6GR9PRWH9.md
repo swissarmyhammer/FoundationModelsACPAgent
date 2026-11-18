@@ -65,8 +65,24 @@ comments:
     - evidence: `swift build --build-tests` -> "Build complete!", 0 compiler warnings (1 SwiftPM "missing creator for mutated node" note for the mlx bundle, not from the compiler); `swift test --skip-build` -> 2315 tests in 246 suites passed, 0 failed, 0 skipped, 1 known issue (the existing `withKnownIssue` in HarnessSmokeTests)
     - next: review
   timestamp: 2026-11-18T16:21:53.174136+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m7qqh566fgjhv4j7eyjxwkwy
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (a6fb122). 3 files reviewed. Counts: 0 findings, 0 confirmed, 0 refuted. The 2 items of "Review Findings (2026-11-18 10:13)" are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-11-18T16:23:39.462093+00:00
+- actor: claude-code
+  id: 01m7qqhexm4qtp55rh6xvd97m2
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 3 test files; 2/2 findings checked
+    - test: green — swift test --skip-build, 2315 tests in 246 suites passed; 0 compiler warnings
+    - commit: a6fb122
+    - review: clean — 0 findings
+  timestamp: 2026-11-18T16:23:49.428144+00:00
+position_column: done
+position_ordinal: ffffff8380
 title: 'D199 (b): give the Router the agent name and id at session start, so the default name is the agent name'
 ---
 Gap found by the TestudoApp integration test (2026-11-18, ACPAgent 16fdd67, Router 6b1abce). Decision D199 (b) in `TestudoApp/features/decisions.md`. Follow-up of ^8pqam4g.
