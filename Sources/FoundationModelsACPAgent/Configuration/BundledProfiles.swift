@@ -9,7 +9,9 @@ import FoundationModelsRouter
 /// They are the lowest layer of the profiles, under the user layer and the
 /// project layer (``ProfileStore``), and they are read-only. Each key that a
 /// profile file leaves out takes its value from `large` (``baseName``,
-/// ``ProfileFile``). `large` is also the default profile (``defaultName``).
+/// ``ProfileFile``). The profile of a load where no layer sets `profile` is
+/// the largest bundled profile that fits the machine
+/// (``fallbackName(using:)``).
 ///
 /// The files are part of the library, and the unit tests pin their contents,
 /// thus a file that does not decode is a fault of the build and stops the
@@ -19,27 +21,76 @@ public enum BundledProfiles {
   /// each profile file (``baseKeys``).
   static let baseName = "large"
 
-  /// The name of the default profile: the profile when no layer sets
-  /// `profile`.
+  /// The name of the profile of a configuration that a caller makes in
+  /// code (`ProfileConfiguration()`): `large`. A load where no layer sets
+  /// `profile` does not use it: it uses the choice of
+  /// ``fallbackName(using:)``.
   public static let defaultName = baseName
 
-  /// The name of the smallest bundled profile.
-  static let smallestName = "small"
+  /// The name of the smallest bundled profile. It is the choice of
+  /// ``fallbackName(using:)`` when no fit can be read.
+  public static let smallestName = "small"
 
   /// The name of the fallback profile: the profile that a load uses when
-  /// the `profile` name of the settings names no profile of a layer.
+  /// no layer sets `profile`, and when the `profile` name of the settings
+  /// names no profile of a layer.
+  ///
+  /// The choice is the first bundled profile, in the order of ``names``,
+  /// whose fit says that it fits (decision D203). The fit includes the
+  /// minimum context window of Router. When no fit can be read (there is
+  /// no source, each estimate fails, or the task is cancelled), the choice
+  /// is ``smallestName``.
   ///
   /// This is the one choice of the fallback. Each caller that needs the
-  /// fallback calls this function.
+  /// fallback calls this function: the agent, with its router, and the
+  /// `acp-agent` CLI. The read of a fit is async and a load is not, thus a
+  /// caller makes the choice before the load and gives the name to the
+  /// loader (``ConfigurationLoader/fallbackProfileName``) or to the
+  /// settings store (``SettingsStore/fallbackProfileName``).
   ///
+  /// - Parameter source: The source of the fit of a profile, or `nil` when
+  ///   no fit can be read.
   /// - Returns: The name of a bundled profile.
-  public static func fallbackName() -> String {
-    smallestName
+  public static func fallbackName(using source: (any ProfileFitEstimating)?) async -> String {
+    guard let source else {
+      return smallestName
+    }
+    for profile in all {
+      let report = await source.fitReport(of: profile)
+      if Task.isCancelled {
+        return smallestName
+      }
+      if report.fits {
+        return profile.name
+      }
+    }
+    return smallestName
+  }
+
+  /// The memory of the Mac that each bundled profile is for, by name. The
+  /// profile files do not hold it, because Router's profile has no such
+  /// key; the description of each file names the same memory.
+  private static let targetMemories = [
+    baseName: "48 GB or more",
+    mediumName: "32 GB",
+    smallestName: "16 GB or 24 GB",
+  ]
+
+  /// The memory of the Mac that a bundled profile is for, such as
+  /// "32 GB".
+  ///
+  /// - Parameter name: The name of the profile.
+  /// - Returns: The memory, or `nil` when no bundled profile has the name.
+  public static func targetMemory(of name: String) -> String? {
+    targetMemories[name]
   }
 
   /// The names of the bundled profiles, from the largest to the smallest.
   /// A list shows the profiles in this order.
-  static let names = [baseName, "medium", smallestName]
+  static let names = [baseName, mediumName, smallestName]
+
+  /// The name of the bundled profile between `large` and `small`.
+  static let mediumName = "medium"
 
   /// The keys of the file of ``baseName``: the base of the merge of each
   /// profile file.
@@ -59,7 +110,7 @@ public enum BundledProfiles {
     }
   }
 
-  /// The default profile, `large`.
+  /// The profile of ``defaultName``, `large`.
   public static var defaultProfile: ProfileDefinition {
     guard let profile = named(defaultName) else {
       preconditionFailure("the bundled profiles have no profile named \(defaultName)")

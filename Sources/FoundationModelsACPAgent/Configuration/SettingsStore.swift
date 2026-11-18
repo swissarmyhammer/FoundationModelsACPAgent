@@ -196,6 +196,12 @@ public actor SettingsStore {
   /// the files keep the references.
   public nonisolated let secretStore: any SecretStore
 
+  /// The name of the profile that a merge uses when no level sets
+  /// `profile`, and when the `profile` name names no profile of a layer:
+  /// the choice of ``BundledProfiles/fallbackName(using:)``. Each loader of
+  /// the store (``makeConfigurationLoader(workingDirectory:)``) gets it.
+  public nonisolated let fallbackProfileName: String
+
   /// The settings object of each level that the store has read, keyed by
   /// the path of its `config.yaml`.
   private var levels: [String: LevelState] = [:]
@@ -277,25 +283,32 @@ public actor SettingsStore {
   ///     log keeps, so that `changes(after:)` resumes after a cursor at most
   ///     this many changes old. It must be at least 1. The default is
   ///     ``defaultChangeCapacity``.
+  ///   - fallbackProfileName: The profile of a merge where no level sets
+  ///     `profile`, or where the name is unknown (``fallbackProfileName``).
+  ///     The default is ``BundledProfiles/smallestName``, the choice when
+  ///     no fit can be read. An agent gives the choice of its router.
   public init(
     settingsFolders: SettingsFolders,
     secretStore: (any SecretStore)? = nil,
-    changeCapacity: Int = SettingsStore.defaultChangeCapacity
+    changeCapacity: Int = SettingsStore.defaultChangeCapacity,
+    fallbackProfileName: String = BundledProfiles.smallestName
   ) {
     self.settingsFolders = settingsFolders
+    self.fallbackProfileName = fallbackProfileName
     self.secretStore = secretStore ?? KeychainSecretStore.loginKeychain(for: settingsFolders.name)
     changeLog = ChangeLog(capacity: changeCapacity)
   }
 
   /// Makes the configuration loader of one working directory over the
-  /// settings folders and the secret store of this store.
+  /// settings folders, the secret store and the fallback profile of this
+  /// store.
   ///
   /// - Parameter workingDirectory: The working directory of the session.
   /// - Returns: The loader.
   public nonisolated func makeConfigurationLoader(workingDirectory: URL) -> ConfigurationLoader {
     ConfigurationLoader(
       settingsFolders: settingsFolders, workingDirectory: workingDirectory,
-      secretStore: secretStore)
+      secretStore: secretStore, fallbackProfileName: fallbackProfileName)
   }
 
   // MARK: - Reads

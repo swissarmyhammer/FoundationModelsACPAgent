@@ -372,7 +372,7 @@ import Testing
     let response = try await agent.newSession(AgentClientHarness.makeNewSessionRequest(cwd: cwd))
 
     let entry = try #require(await agent.sessions[response.sessionId])
-    #expect(entry.configuration.profile.definition.name == BundledProfiles.fallbackName())
+    #expect(entry.configuration.profile.definition.name == agent.settingsStore.fallbackProfileName)
   }
 
   // MARK: The project and the name now, the activity at the first prompt

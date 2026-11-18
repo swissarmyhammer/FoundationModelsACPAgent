@@ -251,7 +251,7 @@ import Testing
 
     let merged = try await fixture.store.merged(for: fixture.firstDirectory)
 
-    #expect(merged.configuration.profile.definition.name == BundledProfiles.fallbackName())
+    #expect(merged.configuration.profile.definition.name == BundledProfiles.smallestName)
   }
 
   /// A set of an other key works when the user `config.yaml` names no

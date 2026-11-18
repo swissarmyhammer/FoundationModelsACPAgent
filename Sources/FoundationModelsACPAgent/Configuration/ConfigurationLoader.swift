@@ -86,7 +86,8 @@ public enum ConfigurationWarning: Equatable, Sendable, CustomStringConvertible {
   case retiredSection(name: String)
 
   /// A `profile` name that no layer of the profiles has. The load uses the
-  /// fallback profile (``BundledProfiles/fallbackName()``) and continues.
+  /// fallback profile (``ConfigurationLoader/fallbackProfileName``) and
+  /// continues.
   /// `name` is the value of `profile`, `available` is each name that a
   /// layer has, and `fallback` is the name of the profile that the load
   /// uses.
@@ -257,6 +258,13 @@ public struct ConfigurationLoader: Sendable {
   /// Gives the tree of layer 1, under the dotfolder stack.
   private let builtinLayer: @Sendable () throws -> YAMLValue
 
+  /// The name of the profile that a load uses when no layer sets
+  /// `profile`, and when the `profile` name names no profile of a layer:
+  /// the choice of ``BundledProfiles/fallbackName(using:)``. The host
+  /// makes the choice one time, before the load, because the read of a fit
+  /// is async and a load is not.
+  public let fallbackProfileName: String
+
   /// Builds the configuration stack of `settingsFolders` for one working
   /// directory, over the builtin configuration file.
   ///
@@ -269,14 +277,20 @@ public struct ConfigurationLoader: Sendable {
   ///     reference, or `nil` (the default) for the login Keychain under
   ///     the service `name` (``KeychainSecretStore/loginKeychain(for:)``).
   ///     A test gives an ``InMemorySecretStore``.
+  ///   - fallbackProfileName: The profile of a load where no layer sets
+  ///     `profile`, or where the name is unknown (``fallbackProfileName``).
+  ///     The default is ``BundledProfiles/smallestName``, the choice when
+  ///     no fit can be read.
   public init(
     settingsFolders: SettingsFolders,
     workingDirectory: URL,
-    secretStore: (any SecretStore)? = nil
+    secretStore: (any SecretStore)? = nil,
+    fallbackProfileName: String = BundledProfiles.smallestName
   ) {
     self.init(
       settingsFolders: settingsFolders, workingDirectory: workingDirectory,
-      secretStore: secretStore, builtinLayer: BuiltinConfigurationFile.root)
+      secretStore: secretStore, builtinLayer: BuiltinConfigurationFile.root,
+      fallbackProfileName: fallbackProfileName)
   }
 
   /// Builds the stack for `name`, over the builtin configuration file.
@@ -296,17 +310,22 @@ public struct ConfigurationLoader: Sendable {
   ///     reference, or `nil` (the default) for the login Keychain under
   ///     the service `name` (``KeychainSecretStore/loginKeychain(for:)``).
   ///     A test gives an ``InMemorySecretStore``.
+  ///   - fallbackProfileName: The profile of a load where no layer sets
+  ///     `profile`, or where the name is unknown (``fallbackProfileName``).
+  ///     The default is ``BundledProfiles/smallestName``, the choice when
+  ///     no fit can be read.
   public init(
     name: DotfolderName,
     workingDirectory: URL,
     home: AgentHome,
     environment: [String: String] = ProcessInfo.processInfo.environment,
-    secretStore: (any SecretStore)? = nil
+    secretStore: (any SecretStore)? = nil,
+    fallbackProfileName: String = BundledProfiles.smallestName
   ) {
     self.init(
-      name: name, workingDirectory: workingDirectory, home: home,
-      environment: environment, secretStore: secretStore,
-      builtinLayer: BuiltinConfigurationFile.root)
+      settingsFolders: SettingsFolders(name: name, home: home, environment: environment),
+      workingDirectory: workingDirectory, secretStore: secretStore,
+      builtinLayer: BuiltinConfigurationFile.root, fallbackProfileName: fallbackProfileName)
   }
 
   /// Builds the stack for `name`, over the layer 1 tree that
@@ -332,7 +351,7 @@ public struct ConfigurationLoader: Sendable {
     self.init(
       settingsFolders: SettingsFolders(name: name, home: home, environment: environment),
       workingDirectory: workingDirectory, secretStore: secretStore,
-      builtinLayer: builtinLayer)
+      builtinLayer: builtinLayer, fallbackProfileName: BundledProfiles.smallestName)
   }
 
   /// Builds the configuration stack of `settingsFolders`, over the layer 1
@@ -345,11 +364,14 @@ public struct ConfigurationLoader: Sendable {
   ///     reference, or `nil` for the login Keychain under the service
   ///     `name`.
   ///   - builtinLayer: Gives the tree of layer 1. Each load calls it.
+  ///   - fallbackProfileName: The profile of a load where no layer sets
+  ///     `profile`, or where the name is unknown (``fallbackProfileName``).
   init(
     settingsFolders: SettingsFolders,
     workingDirectory: URL,
     secretStore: (any SecretStore)?,
-    builtinLayer: @escaping @Sendable () throws -> YAMLValue
+    builtinLayer: @escaping @Sendable () throws -> YAMLValue,
+    fallbackProfileName: String
   ) {
     self.name = settingsFolders.name
     self.settingsFolders = settingsFolders
@@ -357,17 +379,21 @@ public struct ConfigurationLoader: Sendable {
     self.workingDirectory = workingDirectory
     self.secretStore = secretStore ?? KeychainSecretStore.loginKeychain(for: settingsFolders.name)
     self.builtinLayer = builtinLayer
+    self.fallbackProfileName = fallbackProfileName
   }
 
   /// The configuration a load gives when no layer holds a file:
-  /// `AgentConfiguration()` with each default that the dotfolder name
-  /// gives. The files tools exclude the dotfolder `.<name>/`, which holds
-  /// the transcripts of the agent (``FilesToolOptions/exclude``).
+  /// `AgentConfiguration()` with the profile ``fallbackProfileName`` and
+  /// each default that the dotfolder name gives. The files tools exclude
+  /// the dotfolder `.<name>/`, which holds the transcripts of the agent
+  /// (``FilesToolOptions/exclude``).
   ///
   /// `config init` writes this configuration, thus the file it writes
   /// loads back to the same value.
   public var builtinConfiguration: AgentConfiguration {
-    resolvingDotfolderDefaults(of: AgentConfiguration())
+    var configuration = AgentConfiguration()
+    configuration.profile = ProfileConfiguration(name: fallbackProfileName)
+    return resolvingDotfolderDefaults(of: configuration)
   }
 
   /// The location of the builtin configuration file
@@ -391,7 +417,8 @@ public struct ConfigurationLoader: Sendable {
   /// and returned as a warning. An unknown key inside a known section is
   /// an error. A `profile` that no layer has is logged and returned as a
   /// warning, and the load uses the fallback profile
-  /// (``BundledProfiles/fallbackName()``). Each secret reference
+  /// (``fallbackProfileName``). A load where no layer sets `profile` uses
+  /// the fallback profile too. Each secret reference
   /// `keychain:<name>` then gets its value
   /// from ``secretStore``; a reference with no value is left out, and it
   /// is logged and returned as a warning.
@@ -434,7 +461,7 @@ public struct ConfigurationLoader: Sendable {
     let root = try layeredRoot(over: dotfolderRoot)
     var warnings = try Self.schemaWarnings(in: root)
     let profiled = try resolvingProfile(
-      of: Self.configuration(from: root), warnings: &warnings)
+      of: Self.configuration(from: root), in: root, warnings: &warnings)
     let decoded = resolvingSecrets(of: profiled, warnings: &warnings)
     Self.log(warnings)
     return LoadedConfiguration(
@@ -469,19 +496,22 @@ public struct ConfigurationLoader: Sendable {
       _ = try profileLayers.read(configuration.profile.name, cwd: workingDirectory)
     } else {
       var warnings: [ConfigurationWarning] = []
-      _ = try resolvingProfile(of: configuration, warnings: &warnings)
+      _ = try resolvingProfile(of: configuration, in: root, warnings: &warnings)
     }
   }
 
   /// `configuration` with the profile file of its profile name, read from
-  /// the layers of the working directory of this loader. When no layer has
-  /// the name, the profile is the fallback profile
-  /// (``BundledProfiles/fallbackName()``), and a warning names the value
-  /// and every available name. The name of the configuration does not
-  /// change.
+  /// the layers of the working directory of this loader. When no layer of
+  /// the configuration sets `profile`, the name is
+  /// ``fallbackProfileName``. When no layer of the profiles has the name,
+  /// the profile is the profile of ``fallbackProfileName``, a warning names
+  /// the value and every available name, and the name of the configuration
+  /// does not change.
   ///
   /// - Parameters:
   ///   - configuration: The decoded configuration.
+  ///   - root: The merged tree that `configuration` decodes from. It tells
+  ///     if a layer sets `profile`.
   ///   - warnings: The warnings of the load. This adds one
   ///     ``ConfigurationWarning/unknownProfile(name:available:fallback:)``
   ///     when no layer has the name.
@@ -489,16 +519,20 @@ public struct ConfigurationLoader: Sendable {
   /// - Throws: ``ProfileFileError`` when the file of the profile does not
   ///   decode.
   private func resolvingProfile(
-    of configuration: AgentConfiguration, warnings: inout [ConfigurationWarning]
+    of configuration: AgentConfiguration, in root: YAMLValue,
+    warnings: inout [ConfigurationWarning]
   ) throws -> AgentConfiguration {
     var resolved = configuration
+    if root.value(at: ProfileConfiguration.keyPath) == nil {
+      resolved.profile.name = fallbackProfileName
+    }
     do {
       resolved.profile.resolved = try profileLayers.read(
-        configuration.profile.name, cwd: workingDirectory)
+        resolved.profile.name, cwd: workingDirectory)
     } catch ProfileStoreError.unknownProfile(let name, let available) {
-      let fallback = BundledProfiles.fallbackName()
-      warnings.append(.unknownProfile(name: name, available: available, fallback: fallback))
-      resolved.profile.resolved = try profileLayers.read(fallback, cwd: workingDirectory)
+      warnings.append(
+        .unknownProfile(name: name, available: available, fallback: fallbackProfileName))
+      resolved.profile.resolved = try profileLayers.read(fallbackProfileName, cwd: workingDirectory)
     }
     return resolved
   }

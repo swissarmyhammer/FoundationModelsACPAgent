@@ -102,25 +102,31 @@ struct ModelsEngine: Sendable {
   /// The profile that `profile` selects in the settings now, at the user
   /// level.
   ///
-  /// - Returns: The profile. The fallback profile
-  ///   (``BundledProfiles/fallbackName()``) when the value names a profile
-  ///   that no layer has, as a load does. The default profile when no
-  ///   layer has a value, or when a profile file does not read.
+  /// - Returns: The profile. The fallback profile of the store
+  ///   (``SettingsStore/fallbackProfileName``) when no layer has a value,
+  ///   or when the value names a profile that no layer has, as a load
+  ///   does. The profile of ``BundledProfiles/defaultName`` when a profile
+  ///   file does not read.
   /// - Throws: What the store throws for a level file.
   func selectedProfile() async throws -> ProfileDefinition {
     guard let setting = try await store.value(at: ProfileConfiguration.keyPath, cwd: nil),
       let selection: ProfileConfiguration = try? setting.value.decoded()
     else {
-      return BundledProfiles.defaultProfile
+      return fallbackProfile
     }
     do {
       return try profileLayers.read(selection.name, cwd: nil)
     } catch ProfileStoreError.unknownProfile {
-      return (try? profileLayers.read(BundledProfiles.fallbackName(), cwd: nil))
-        ?? BundledProfiles.defaultProfile
+      return fallbackProfile
     } catch {
       return BundledProfiles.defaultProfile
     }
+  }
+
+  /// The profile of the fallback name of the store, or the profile of
+  /// ``BundledProfiles/defaultName`` when its file does not read.
+  private var fallbackProfile: ProfileDefinition {
+    (try? profileLayers.read(store.fallbackProfileName, cwd: nil)) ?? BundledProfiles.defaultProfile
   }
 
   /// Each profile of the user layer and the bundled profiles that reads, in
@@ -266,7 +272,9 @@ struct ModelsEngine: Sendable {
       fit: ModelsGraphProfileFit(estimate),
       requiredBytes: estimate?.requiredBytes.map(Double.init),
       budgetBytes: estimate.map { Double($0.budgetBytes) },
-      fitError: estimate?.failure)
+      fitError: estimate?.failure,
+      contextTokens: estimate?.contextTokens,
+      targetMemory: layer == .bundled ? BundledProfiles.targetMemory(of: profile.name) : nil)
   }
 
   /// The disk state of a profile: complete when each model is complete,

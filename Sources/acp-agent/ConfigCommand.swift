@@ -60,6 +60,10 @@ extension AcpAgentCommand {
     ///   - options: The `--cwd` option group of the subcommand.
     ///   - environment: The environment the home of the stack is read
     ///     from (``AgentComposition/home(environment:)``).
+    /// The fallback profile of the loader is
+    /// ``BundledProfiles/defaultName``, so the `profile` that `init` writes
+    /// does not depend on the memory of the machine.
+    ///
     /// - Returns: The loader. Construction touches no file.
     /// - Throws: `DotfolderNameError` when the dotfolder name is
     ///   refused.
@@ -67,13 +71,14 @@ extension AcpAgentCommand {
       for options: WorkingDirectoryOptions, environment: [String: String]
     ) throws -> ConfigurationLoader {
       try AgentComposition.makeConfigurationLoader(
-        workingDirectory: options.directoryURL, environment: environment)
+        workingDirectory: options.directoryURL, environment: environment,
+        fallbackProfileName: BundledProfiles.defaultName)
     }
 
     /// `config show`: print the merged configuration, and where each
     /// value came from. The report goes to stdout (§5.6), and each
     /// configuration warning goes to stderr.
-    struct Show: ParsableCommand {
+    struct Show: AsyncParsableCommand {
       static let configuration = CommandConfiguration(
         commandName: "show",
         abstract: "Print the merged configuration, and where each value came from.",
@@ -109,9 +114,10 @@ extension AcpAgentCommand {
       @Flag(name: .customLong("json"), help: "Print the same tree as JSON.")
       var asJSON = false
 
-      mutating func run() throws {
-        try report(environment: homeOptions.environment(over: ProcessInfo.processInfo.environment))
-          .write()
+      mutating func run() async throws {
+        try await report(
+          environment: homeOptions.environment(over: ProcessInfo.processInfo.environment)
+        ).write()
       }
 
       /// Builds the report: the merged configuration of `--cwd`'s
@@ -125,15 +131,21 @@ extension AcpAgentCommand {
       ///   - secretStore: The store that gives the value of each
       ///     secret reference, or `nil` (the default) for the login
       ///     Keychain of the CLI.
+      ///   - fitSource: The fit source of the choice of the default
+      ///     profile, or `nil` (the default) for the router of the model
+      ///     choice of the CLI (``AgentComposition/fallbackProfileName(environment:fitSource:)``).
       /// - Returns: The report.
       /// - Throws: `DotfolderNameError`, the configuration load
       ///   error, or the encoding error.
       func report(
-        environment: [String: String], secretStore: (any SecretStore)? = nil
-      ) throws -> CommandReport {
+        environment: [String: String], secretStore: (any SecretStore)? = nil,
+        fitSource: (any ProfileFitEstimating)? = nil
+      ) async throws -> CommandReport {
+        let fallbackProfileName = await AgentComposition.fallbackProfileName(
+          environment: environment, fitSource: fitSource)
         let loaded = try AgentComposition.makeConfigurationLoader(
           workingDirectory: workingDirectoryOptions.directoryURL, environment: environment,
-          secretStore: secretStore
+          secretStore: secretStore, fallbackProfileName: fallbackProfileName
         ).load()
         return CommandReport(
           standardOutput: try documentText(for: loaded, environment: environment),

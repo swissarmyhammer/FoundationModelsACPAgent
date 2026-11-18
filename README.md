@@ -71,7 +71,7 @@ window of 32K tokens or more: the minimum window. Thus each bundled profile has
 a target memory, the memory of a Mac where its four models and the minimum
 window fit.
 
-| Slot | Model of `large` (the default) | MTP drafter |
+| Slot | Model of `large` | MTP drafter |
 |---|---|---|
 | `standard` | `mlx-community/Qwen3.8-27B-8bit` | `mlx-community/Qwen3.8-27B-MTP-8bit` |
 | `flash` | `mlx-community/Qwen3.8-27B-8bit` (the `standard` model, shared) | `mlx-community/Qwen3.8-27B-MTP-8bit` |
@@ -84,12 +84,20 @@ The agent ships three profiles, from the largest to the smallest:
 
 | `profile` | `standard` and `flash` | Download | Target memory |
 |---|---|---|---|
-| `large` (the default) | `mlx-community/Qwen3.8-27B-8bit` with its MTP drafter `mlx-community/Qwen3.8-27B-MTP-8bit` | 33.9 GB | 48 GB or more |
+| `large` | `mlx-community/Qwen3.8-27B-8bit` with its MTP drafter `mlx-community/Qwen3.8-27B-MTP-8bit` | 33.9 GB | 48 GB or more |
 | `medium` | `mlx-community/Qwen3.8-27B-4bit` with its MTP drafter `mlx-community/Qwen3.8-27B-MTP-4bit` | 19.3 GB | 32 GB |
 | `small` | `mlx-community/Qwen3.5-9B-4bit` with its MTP drafter `mlx-community/Qwen3.5-9B-MTP-4bit`, and an 8-bit KV cache (`kvBits: 8`) | 9.4 GB | 16 GB or 24 GB |
 
 The three profiles have the same `embedding` and `decision` models, and the
-download size includes them. A smaller profile fits a Mac with less memory:
+download size includes them.
+
+When no layer sets `profile`, the agent uses the largest profile that fits the
+Mac. At the start, the agent asks Router for the fit of `large`, then
+`medium`, then `small`, and uses the first profile that fits with the minimum
+window. When the agent cannot read a fit (there is no Metal device, or the
+estimate fails or is cancelled), it uses `small`. Each session and the
+`acp-agent` commands `run`, `acp`, `config show` and `doctor` use the same
+choice. To select a profile yourself, set `profile`:
 
 ```yaml
 profile: small
@@ -133,7 +141,8 @@ not decode, is an error that names the file and the key.
 
 `profile` names a profile of any layer. A name that no layer has does not
 stop the agent. The load gives a warning that names the value and every
-available name, and the agent uses the fallback profile, `small`. The agent
+available name, and the agent uses the profile that it uses when no layer
+sets `profile`: the largest profile that fits. The agent
 writes the warning to its log, `acp-agent config show` writes it to stderr,
 and `acp-agent doctor` shows it. A write of a name that no layer has through
 the `settings` tool or the `settings` GraphQL endpoint is refused, and the
@@ -145,7 +154,10 @@ error lists every available name. An old `config.yaml` with the map form of
 A change of a profile, or of the selected profile, applies at the next launch
 of the agent. `acp-agent profiles` lists, shows, saves and deletes the
 profile files. The `models` tool and the `models` GraphQL endpoint list each
-profile with its layer, and save and delete a profile file
+profile with its layer, its fit, its context window (`contextTokens`, null
+when the profile does not fit) and the memory of the Mac that a bundled
+profile is for (`targetMemory`, null for a profile file of the user or the
+project), and save and delete a profile file
 (`saveProfile`, `deleteProfile`); the `settings` tool selects one with the
 key path `["profile"]`. A child agent run cannot save, delete or select a
 profile.

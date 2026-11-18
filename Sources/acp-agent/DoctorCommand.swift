@@ -117,17 +117,24 @@ extension AcpAgentCommand {
     ///     figure, so no finding depends on the host.
     ///   - freeDiskBytes: The free disk of the model cache. A test
     ///     injects a figure, for the same reason.
+    ///   - fallbackProfileName: The profile of the load where no layer
+    ///     sets `profile`. ``run()`` gives
+    ///     ``AgentComposition/fallbackProfileName(environment:fitSource:)``,
+    ///     the choice of the agent. The default is
+    ///     ``BundledProfiles/smallestName``, so a test reads no fit.
     /// - Returns: The components, in the order the report lists them.
     static func components(
       workingDirectory: URL, environment: [String: String],
       resolver: (any ModelResolver)? = nil,
       memoryBytes: Int64 = MachineFigures.physicalMemoryBytes,
-      freeDiskBytes: Int64? = nil
+      freeDiskBytes: Int64? = nil,
+      fallbackProfileName: String = BundledProfiles.smallestName
     ) -> [any Doctorable] {
       let loader: ConfigurationLoader
       do {
         loader = try AgentComposition.makeConfigurationLoader(
-          workingDirectory: workingDirectory, environment: environment)
+          workingDirectory: workingDirectory, environment: environment,
+          fallbackProfileName: fallbackProfileName)
       } catch {
         return [LoaderFailureDoctor(error: error)]
       }
@@ -153,10 +160,13 @@ extension AcpAgentCommand {
     // MARK: - Running
 
     mutating func run() async throws {
+      let environment = homeOptions.environment(over: ProcessInfo.processInfo.environment)
       let report = await DoctorRunner(
         components: Self.components(
           workingDirectory: workingDirectoryOptions.directoryURL,
-          environment: homeOptions.environment(over: ProcessInfo.processInfo.environment))
+          environment: environment,
+          fallbackProfileName: await AgentComposition.fallbackProfileName(
+            environment: environment))
       ).run()
       try Self.write(
         report, asJSON: asJSON,

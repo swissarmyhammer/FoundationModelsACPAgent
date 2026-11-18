@@ -80,7 +80,8 @@ struct ConfigInitTests {
   /// - Throws: `DotfolderNameError`.
   private static func loader(in fixture: ConfigCommandFixture) throws -> ConfigurationLoader {
     try AgentComposition.makeConfigurationLoader(
-      workingDirectory: fixture.workspace, environment: fixture.environment)
+      workingDirectory: fixture.workspace, environment: fixture.environment,
+      fallbackProfileName: BundledProfiles.defaultName)
   }
 
   /// Loads `fixture`'s stack, over the same loader the CLI composes.

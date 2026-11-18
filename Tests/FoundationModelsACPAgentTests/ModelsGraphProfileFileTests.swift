@@ -82,6 +82,17 @@ import Testing
     #expect(try await Self.rowLayers(graph)["custom"] == "USER")
   }
 
+  /// A profile file of the user has no target memory.
+  @Test func aUserProfileHasNoTargetMemory() async throws {
+    let fixture = try SettingsGraphFixture(label: "models-files-target-memory")
+    let graph = Self.graph(fixture)
+    _ = try await ModelsGraphTests.run(graph, Self.saveUserDocument)
+
+    let rows = try await ModelsGraphTests.windowRows(graph)
+
+    #expect(rows["custom"]?["targetMemory"] is NSNull)
+  }
+
   /// A save of a profile with an unknown key is refused, and writes no
   /// file.
   @Test func aSaveOfAnUnknownKeyIsRefused() async throws {

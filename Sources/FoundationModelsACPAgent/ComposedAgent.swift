@@ -11,8 +11,9 @@ import HuggingFace
 ///
 /// The work has two steps, and only the first one is slow or can fail:
 ///
-/// 1. ``compose(name:workingDirectory:home:mode:sandboxProbe:environment:modelSource:stubChunkGate:stubScript:secretStore:userDeviceTokens:huggingFaceTokenProvider:sessionToolFactories:reporting:)``
-///    loads the configuration, builds the router and resolves the profile.
+/// 1. ``compose(name:workingDirectory:home:mode:sandboxProbe:openTestudoDownloadURL:agentName:environment:modelSource:stubChunkGate:stubScript:secretStore:userDeviceTokens:huggingFaceTokenProvider:modelStorage:sessionToolFactories:reporting:profileFitSource:)``
+///    builds the router, chooses the default profile with the fit of the
+///    router, loads the configuration and resolves the profile.
 ///    It is `async` and `throws`. A host calls it one time, before it opens
 ///    a connection.
 /// 2. ``agent(boundTo:)`` binds the composed agent to one
@@ -188,6 +189,11 @@ public struct ComposedAgent: Sendable {
   ///     observes the same object while this call runs: the whole
   ///     resolution stands inside the agent's construction, so nothing
   ///     can be observed after this returns.
+  ///   - profileFitSource: The fit source of the choice of the profile of
+  ///     a load where no layer sets `profile`
+  ///     (``BundledProfiles/fallbackName(using:)``), or `nil` (the
+  ///     default) for the router of `modelSource`. The start-up load and
+  ///     each session load use the same choice. A test gives a stub.
   ///   - sessionToolFactories: Factories of tools for each session. The
   ///     composition of each session runs them with the context of the
   ///     session (``SessionToolContext``), and mounts the tools after the
@@ -217,26 +223,31 @@ public struct ComposedAgent: Sendable {
     huggingFaceTokenProvider: TokenProvider = .environment,
     modelStorage: (any ModelStorageSource)? = nil,
     sessionToolFactories: [SessionToolFactory] = [],
-    reporting progress: ResolutionProgress? = nil
+    reporting progress: ResolutionProgress? = nil,
+    profileFitSource: (any ProfileFitEstimating)? = nil
   ) async throws -> ComposedAgent {
     // The check comes first, so a wrong mode fails before the router
     // builds and before any tool registers.
     try mode.validate(probe: sandboxProbe)
+    let hooks = AgentHooks(dataDirectory: home.hooksDirectory)
+    let router = try makeRouter(
+      for: modelSource,
+      gatedBy: stubChunkGate,
+      scriptedBy: stubScript,
+      recordingInto: try makeRecordingsDirectory(),
+      hooks: hooks.dispatcher,
+      home: home,
+      huggingFaceTokenProvider: huggingFaceTokenProvider)
+    let fallbackProfileName = await BundledProfiles.fallbackName(
+      using: profileFitSource ?? router)
     let configuration = try ConfigurationLoader(
       settingsFolders: SettingsFolders(name: name, home: home, environment: environment),
-      workingDirectory: workingDirectory, secretStore: secretStore
+      workingDirectory: workingDirectory, secretStore: secretStore,
+      fallbackProfileName: fallbackProfileName
     ).load().configuration
-    let hooks = AgentHooks(dataDirectory: home.hooksDirectory)
     let agent = try await RoutedACPAgent(
       name: name,
-      router: try makeRouter(
-        for: modelSource,
-        gatedBy: stubChunkGate,
-        scriptedBy: stubScript,
-        recordingInto: try makeRecordingsDirectory(),
-        hooks: hooks.dispatcher,
-        home: home,
-        huggingFaceTokenProvider: huggingFaceTokenProvider),
+      router: router,
       hooks: hooks,
       configuration: configuration,
       reporting: progress,
@@ -250,7 +261,8 @@ public struct ComposedAgent: Sendable {
       userDeviceTokens: userDeviceTokens,
       modelStorage: modelStorage
         ?? ModelStorage(
-          cacheDirectory: home.modelCacheDirectory, tokenProvider: huggingFaceTokenProvider))
+          cacheDirectory: home.modelCacheDirectory, tokenProvider: huggingFaceTokenProvider),
+      fallbackProfileName: fallbackProfileName)
     await agent.registerSessionToolFactories(sessionToolFactories)
     return ComposedAgent(
       agent: agent, modelSource: modelSource, configuration: configuration)
@@ -394,6 +406,38 @@ public struct ComposedAgent: Sendable {
         recordingsDirectory: recordingsDirectory,
         loader: try makeStubLoader(gatedBy: chunkGate, scriptedBy: stubScript),
         hooks: hooks)
+    }
+  }
+
+  /// Makes the fit source of the choice of the default profile for a host
+  /// that has no agent, such as the `config show` and `doctor` commands of
+  /// the `acp-agent` CLI. It gives the same fit as the router of
+  /// ``compose(name:workingDirectory:home:mode:sandboxProbe:openTestudoDownloadURL:agentName:environment:modelSource:stubChunkGate:stubScript:secretStore:userDeviceTokens:huggingFaceTokenProvider:modelStorage:sessionToolFactories:reporting:profileFitSource:)``,
+  /// and it loads no model.
+  ///
+  /// - Parameters:
+  ///   - modelSource: The model path. ``ModelSource/live`` sizes the models
+  ///     with Hugging Face metadata, against the memory of this machine;
+  ///     ``ModelSource/stub`` sizes the stub models against the stub
+  ///     machine.
+  ///   - home: The home of the host. The live path keeps the metadata cache
+  ///     in ``AgentHome/routerCacheDirectory``.
+  ///   - huggingFaceTokenProvider: The provider of the Hugging Face token of
+  ///     each sizing request. The default `.environment` reads `HF_TOKEN`,
+  ///     then `~/.cache/huggingface/token`. The stub path ignores it.
+  /// - Returns: The fit source.
+  /// - Throws: The directory-creation error of the stub cache.
+  public static func makeProfileFitSource(
+    for modelSource: ModelSource, home: AgentHome,
+    huggingFaceTokenProvider: TokenProvider = .environment
+  ) throws -> any ProfileFitEstimating {
+    switch modelSource {
+    case .live:
+      Router(
+        cacheDir: home.routerCacheDirectory,
+        metadataSource: HuggingFaceMetadataSource(tokenProvider: huggingFaceTokenProvider))
+    case .stub:
+      EchoModel.makeRouter(cacheDirectory: try makeStubCacheDirectory())
     }
   }
 
