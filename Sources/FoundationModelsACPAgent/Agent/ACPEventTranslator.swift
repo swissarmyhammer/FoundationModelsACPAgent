@@ -466,8 +466,9 @@ struct ACPEventTranslator {
       streamedTextInAnswer = false
       reportUnsentEvent(event)
     case .mailDelivered(let mail):
-      // The mail of a message between a caller and a child gets its incoming view when this
-      // session takes it. Every other mail sends nothing.
+      // The mail of a message between a caller and a child, or of a message of the session
+      // directory, gets its incoming view when this session takes it. Every other mail sends
+      // nothing.
       await receiveMessage(of: mail)
       reportUnsentEvent(event)
     case .submissionStarted, .cancelled, .signalDone, .lost:

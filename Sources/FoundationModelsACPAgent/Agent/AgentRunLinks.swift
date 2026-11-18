@@ -26,18 +26,25 @@ extension RoutedACPAgent {
       callerMail: { [weak self] message, sender, caller in
         let mail = OutgoingSessionMessage(
           from: .session(sender), to: .session(caller), text: message)
+        let recipient = SessionId(rawValue: caller.description)
+        let senderId = SessionId(rawValue: sender.description)
+        let messages = await self?.sessions[recipient]?.surface.runCallJoins.messages
+        // The directory also reports the mail. The record keeps the views of this route, and
+        // the directory route of the projector shows no second view.
+        let expected = ExpectedHostMail(sender: senderId, recipient: recipient, text: message)
+        messages?.expectHostMail(expected)
         do {
           let receipts = try await directory.send(mail)
-          let delivered = receipts.first { $0.outcome != .refused }?.messageID
-          if let delivered {
-            // The client sees the mail as a message between the run and its caller.
-            let recipient = SessionId(rawValue: caller.description)
-            await self?.sessions[recipient]?.surface.runCallJoins.messages.mailed(
-              delivered, from: SessionId(rawValue: sender.description), to: recipient,
-              text: message)
+          guard let delivered = receipts.first(where: { $0.outcome != .refused })?.messageID
+          else {
+            messages?.forgetHostMail(expected)
+            return nil
           }
+          // The client sees the mail as a message between the run and its caller.
+          messages?.mailed(delivered, from: senderId, to: recipient, text: message)
           return delivered
         } catch {
+          messages?.forgetHostMail(expected)
           // The links type cannot throw, so the reason of the failure goes to the log.
           ACPAgentTelemetry.logger(.session).warning(
             "The result mail of a restored run did not reach its caller session.",

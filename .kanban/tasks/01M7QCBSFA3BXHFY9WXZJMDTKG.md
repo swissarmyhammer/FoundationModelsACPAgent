@@ -1,6 +1,20 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m7qm5apgh8sz7ecmaqe0vjff
+  text: 'Skill text available (2026-11-18): the final text of the built-in `sessions` skill is on FoundationModelsMultitool origin/main, commit a5234d76 (main head 88ada32e), version 1.1.0. The path and API did not change: `BuiltinSkills.directory` → `sessions/SKILL.md`. The text names the address forms `@<id>`, `@<short id>`, `@<slug>`, the aliases, and the receipt words `delivered`, `queued`, `sent`, `started`, `refused`. A test in Multitool checks the skill against the tool. Compare the examples of this text with the real stack output. This task still waits for the Router D199 header and event work (^jf3j3v5).'
+  timestamp: 2026-11-18T15:24:46.160294+00:00
+- actor: claude-code
+  id: 01m7qn7jt215p1ke21jnmn4pxt
+  text: |-
+    Skill text update (2026-11-18): the `sessions` skill 1.1.1 is on FoundationModelsMultitool origin/main, commit e76f7d2e (main head 288eae56). It shows the message headers as Router origin/main 709d82c5 writes them:
+    - A user message with a source session: `From the user, in <title> (<folder>)`, a blank line, then the text. Unknown source: `From the user, in the session <id>`.
+    - A message from a session: the Router header with the `agent name:` line and the fenced block `message from another agent`.
+    - The old `[message from the user, ...]` form is gone.
+    Use this version (or later) for the comparison. The Router D199 work is on main, so this task waits only for ^qa7btpc on this board.
+  timestamp: 2026-11-18T15:43:28.578078+00:00
 depends_on:
 - 01M7QCBBA8BX23JY4SFZX4K6R4
 position_column: todo

@@ -1,4 +1,5 @@
 import FoundationModelsACP
+import FoundationModelsExtras
 import FoundationModelsRouter
 import Synchronization
 
@@ -23,7 +24,7 @@ import Synchronization
 /// updates for the transcript of that session, so the session sends them at once, in the order of
 /// its events. The call gives the updates for any other session to the inbox of that session.
 ///
-/// Four routes make messages.
+/// Five routes make messages.
 ///
 /// - The mail route (``sent(_:from:text:)``, ``delivered(_:to:)``). The `agents` tool attached a
 ///   record to the tool call that mailed the message. The send step is the record with its text.
@@ -42,6 +43,13 @@ import Synchronization
 ///   result of a run to its caller through the session directory: a firing of a scheduled agent,
 ///   or a restored run. The send step is the receipt of the directory. The receive step is the
 ///   `mailDelivered` event of the caller.
+/// - The directory route (``directoryEventArrived(_:)``, ``learnDirectoryMessage(of:takenBy:)``,
+///   ``delivered(_:to:)``). The session directory delivered a message from the user in another
+///   session, or from a session through the `sessions` tool (ACPA-6). The send step is the
+///   `messageDelivered` event of the directory. The receive step is the `mailDelivered` event of
+///   the target. Only the target gets a view: the incoming view, with `SAH.SessionMessage` in
+///   `_meta`. The host mail route also sends through the directory, so it records each of its
+///   mails first (``expectHostMail(_:)``), and the directory route leaves that mail to it.
 ///
 /// A class, because the sessions of a surface share one object. A `Mutex` guards the state. The
 /// object calls an inbox after it left the lock, so an inbox can call the object.
@@ -55,8 +63,27 @@ final class SubagentMessageProjector: Sendable {
   /// The state, under its lock.
   private let state = Mutex(State())
 
+  /// The session directory whose delivered messages the object shows, or `nil` for none.
+  private let source: DirectoryMessageSource?
+
+  /// Reads the events of ``source``.
+  private let feed = DirectoryMessageFeed()
+
   /// Makes an object with no session.
-  init() {}
+  ///
+  /// - Parameter directory: The session directory whose delivered messages the object shows, or
+  ///   `nil` for none. The object reads its events until the object goes away.
+  init(directory: (any SessionDirectory)? = nil) {
+    source = directory.map(DirectoryMessageSource.init(directory:))
+    if let directory {
+      feed.start(reading: directory.events(), into: self)
+    }
+  }
+
+  /// Stops the read of the events of the directory.
+  deinit {
+    feed.stop()
+  }
 
   // MARK: - The sessions
 
@@ -93,8 +120,9 @@ final class SubagentMessageProjector: Sendable {
     return perform(as: sender) { $0.send(message) }
   }
 
-  /// The receive step of a message that the `agents` tool mailed: a session took a mail. A mail
-  /// that is not a message of the `agents` tool, for example the mail of a prompt, sends nothing.
+  /// The receive step of a message that the `agents` tool, the host or the session directory
+  /// mailed: a session took a mail. Any other mail, for example the mail of a prompt, sends
+  /// nothing.
   ///
   /// - Parameters:
   ///   - mail: The mail that the session took.
@@ -104,6 +132,74 @@ final class SubagentMessageProjector: Sendable {
     perform(as: session) {
       $0.receive(key: mail.value.description, by: session, text: nil)
     }
+  }
+
+  // MARK: - The directory route
+
+  /// Reads one event of the session directory. Only `messageDelivered` changes the state: the
+  /// directory delivered a message to an attached session, so the message waits for the take of
+  /// its mail (``delivered(_:to:)``). Each other event, for example a message that only went
+  /// into a queue, changes nothing.
+  ///
+  /// - Parameter event: The event.
+  func directoryEventArrived(_ event: SessionDirectoryEvent) async {
+    guard case .messageDelivered(let message) = event, let source,
+      isAttached(SessionId(rawValue: message.to.description))
+    else {
+      return
+    }
+    register(await source.describe(message))
+  }
+
+  /// Reads the directory for a mail that a session took, when the object does not know the mail
+  /// yet. The two streams of events, of the directory and of the session, come in two tasks, so
+  /// the take can come before the `messageDelivered` event. This read makes the view go out at
+  /// the take, before the output of the turn. A mail that the directory did not deliver changes
+  /// nothing.
+  ///
+  /// - Parameters:
+  ///   - mail: The mail that the session took.
+  ///   - session: The session that took it.
+  func learnDirectoryMessage(of mail: MailID, takenBy session: SessionId) async {
+    let key = mail.value.description
+    guard let source, !state.withLock({ $0.knows(key) }),
+      let message = await source.message(of: mail, takenBy: session)
+    else {
+      return
+    }
+    register(await source.describe(message))
+  }
+
+  /// Records a mail that the host mail route sends through the directory, before the send. The
+  /// directory route then does not show it, and the views of the host mail route stay
+  /// (``mailed(_:from:to:text:)``).
+  ///
+  /// - Parameter mail: The mail.
+  func expectHostMail(_ mail: ExpectedHostMail) {
+    state.withLock { $0.expectHostMail(mail) }
+  }
+
+  /// Forgets a host mail that the directory did not deliver.
+  ///
+  /// - Parameter mail: The mail that ``expectHostMail(_:)`` recorded.
+  func forgetHostMail(_ mail: ExpectedHostMail) {
+    state.withLock { _ = $0.takeHostMail(mail) }
+  }
+
+  /// Whether a session has an inbox here.
+  ///
+  /// - Parameter session: The session.
+  /// - Returns: `true` when the session is attached.
+  private func isAttached(_ session: SessionId) -> Bool {
+    state.withLock { $0.inboxes[session] != nil }
+  }
+
+  /// Keeps a delivered message until the target takes its mail. A take that came first gets the
+  /// view now, in the inbox of the target.
+  ///
+  /// - Parameter message: The message.
+  private func register(_ message: DirectoryMessage) {
+    perform(as: nil) { $0.register(message) }
   }
 
   // MARK: - The host mail route
@@ -370,6 +466,67 @@ extension SubagentMessageProjector {
     /// The keys whose send step is done.
     var sentKeys = RecentIDSet<String>(limit: SubagentMessageProjector.tableLimit)
 
+    /// The messages of the directory that wait for the take of their mail, by key.
+    var directoryMessages: BoundedTable<DirectoryMessage> = SubagentMessageProjector.newTable()
+
+    /// The keys of the directory messages that are done: shown, or left to the host mail route.
+    var directoryKeys = RecentIDSet<String>(limit: SubagentMessageProjector.tableLimit)
+
+    /// The host mails that the route will send through the directory, the oldest first.
+    var expectedHostMails: [ExpectedHostMail] = []
+
+    /// Whether the object knows the key of a message.
+    ///
+    /// - Parameter key: The key.
+    /// - Returns: `true` when a route sent the key, or the directory gave it.
+    func knows(_ key: String) -> Bool {
+      sentKeys.contains(key) || directoryKeys.contains(key) || directoryMessages[key] != nil
+    }
+
+    /// Records a host mail before its send. At the limit the oldest record leaves.
+    ///
+    /// - Parameter mail: The mail.
+    mutating func expectHostMail(_ mail: ExpectedHostMail) {
+      expectedHostMails.append(mail)
+      if expectedHostMails.count > SubagentMessageProjector.tableLimit {
+        expectedHostMails.removeFirst()
+      }
+    }
+
+    /// Takes the record of a host mail.
+    ///
+    /// - Parameter mail: The mail.
+    /// - Returns: `true` when a record matched.
+    mutating func takeHostMail(_ mail: ExpectedHostMail) -> Bool {
+      guard let index = expectedHostMails.firstIndex(of: mail) else {
+        return false
+      }
+      expectedHostMails.remove(at: index)
+      return true
+    }
+
+    /// Keeps a message of the directory until the take of its mail. A key that is done, a key
+    /// that another route sent, and a host mail keep nothing. A take that came first gets the
+    /// view now.
+    ///
+    /// - Parameter message: The message.
+    /// - Returns: The deliveries. None, unless a take came first.
+    mutating func register(_ message: DirectoryMessage) -> [Delivery] {
+      guard !directoryKeys.contains(message.key), !sentKeys.contains(message.key) else {
+        return []
+      }
+      if let hostMail = message.hostMail, takeHostMail(hostMail) {
+        directoryKeys.insert(message.key)
+        return []
+      }
+      guard let receipt = earlyReceipts.remove(message.key) else {
+        directoryMessages.store(message, for: message.key)
+        return []
+      }
+      directoryKeys.insert(message.key)
+      return [delivery(to: receipt.session, message.incomingView)]
+    }
+
     /// Records that the send step of a key is done.
     ///
     /// - Parameter key: The key of the message.
@@ -458,6 +615,10 @@ extension SubagentMessageProjector {
       }
       if let message = withoutOutgoingView.remove(key) {
         return incomingOnly(of: message, receivedBy: receiver, text: text ?? "")
+      }
+      if let message = directoryMessages.remove(key) {
+        directoryKeys.insert(key)
+        return [delivery(to: receiver, message.incomingView)]
       }
       if !sentKeys.contains(key) {
         earlyReceipts.store(Receipt(session: receiver, text: text), for: key)

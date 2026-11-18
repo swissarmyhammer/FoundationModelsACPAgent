@@ -31,7 +31,10 @@ lives. All of it is in `Sources/FoundationModelsACPAgent/Agent/`.
   final `tool_call_update` and the announcement name the same call. It also holds the holds on
   the final status of the `agents` calls (`AgentCallHolds`).
 - **The messages.** `SubagentMessageProjector` makes the two `session_message` views of a message
-  between a caller and a child. All sessions of one surface share it.
+  between a caller and a child. All sessions of one surface share it. It also reads the
+  `messageDelivered` events of the session directory (`DirectoryMessageFeed`,
+  `DirectoryMessageSource`), and gives the target of a directory message one incoming view with
+  `SAH.SessionMessage` in `_meta` when the target takes the mail (ACPA-6).
 - **The shutdown.** `SessionShutdownPause` pauses the open tool calls of a session and of the
   sessions nested in it. `SessionLifecycle` runs the order: suspend, pause, stop the runs, close.
   A user `session/close` cancels the runs, and a shutdown only stops them.

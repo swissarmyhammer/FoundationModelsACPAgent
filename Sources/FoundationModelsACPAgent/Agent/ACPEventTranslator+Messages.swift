@@ -78,10 +78,13 @@ extension ACPEventTranslator {
   }
 
   /// Sends the incoming view of a mail that this session took, when the mail is a message of the
-  /// `agents` tool. Any other mail, for example the mail of a prompt, sends nothing.
+  /// `agents` tool, of the host, or of the session directory. Any other mail, for example the
+  /// mail of a prompt, sends nothing. The view goes out before the output of the turn that the
+  /// mail starts.
   ///
   /// - Parameter mail: The mail that the session took.
   func receiveMessage(of mail: MailID) async {
+    await runCallJoins.messages.learnDirectoryMessage(of: mail, takenBy: sessionId)
     await sendAll(runCallJoins.messages.delivered(mail, to: sessionId))
   }
 

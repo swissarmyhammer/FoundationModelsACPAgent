@@ -456,7 +456,10 @@ public enum ToolCatalog {
       } else {
         await makeSkillsSource(context: context)
       }
-    let runCallJoins = RunCallJoinTable()
+    // The messages of the surface show each message that the session directory delivers to a
+    // session of the surface (ACPA-6).
+    let runCallJoins = RunCallJoinTable(
+      messages: SubagentMessageProjector(directory: context.sessionDirectory))
     let mcpServerNames = await RegistrySelection.serverNames(of: built.mcpServers)
     let agents = try await AgentsComposition.compose(
       context: context, skills: skillsSource, agentRegistry: agentRegistry,

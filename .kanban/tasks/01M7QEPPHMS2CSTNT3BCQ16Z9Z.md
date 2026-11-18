@@ -6,6 +6,16 @@ comments:
   id: 01m7qf6t19w715qb9n7r1gj88y
   text: 'Dependency available (2026-11-18): FoundationModelsACP main 7e31ad0 has the `ACPMarkdown` product and the public `SessionMergeEngine.init(replaying: some Sequence<SessionUpdate>)` in the core target. Remove the internal copy in `Agent/SessionHistory.swift:136-146`; callers with an array still compile. API: `SessionMarkdown.render(updates:options:)` or `render(entries:sessionInfo:options:)`. Options: `includeThoughts` (default false), `title`, `agentName`, `labels` (`.english`). A test in FoundationModelsACP checks that the render of `engine.transcriptUpdates` gives the same text as the render of the live updates. Still waiting for: ^v2y341x, and the Multitool `SessionTranscriptExporter` protocol on main.'
   timestamp: 2026-11-18T13:58:11.753911+00:00
+- actor: claude-code
+  id: 01m7qmynzc93n7azaspgkhkqw2
+  text: |-
+    Dependency available (2026-11-18): the exporter protocol is on FoundationModelsMultitool origin/main, commit 2f80c9d9 (main head 670f234d).
+    - API: `public protocol SessionTranscriptExporter: Sendable { func markdown(of session: ULID, includeThoughts: Bool) async throws -> String }`.
+    - Give it as `SessionsTool(directory:exporter:)` and `SessionsGraph.endpoint(of:exporter:)`. Both parameters are optional with default nil. The endpoint keeps the exporter of its directory; a later call with no exporter does not remove it. Thus give the exporter at each place that makes the tool or the endpoint.
+    - The `export session` op writes `<slug>.md` (or `path`) in the session folder. With no exporter it gives MISSING_EXPORTER; an exporter that throws gives EXPORT_FAILED. The corrective text of this task goes in the thrown error.
+    - The endpoint field `Session.export` comes later (Multitool ^n9fhrz0).
+    Now this task waits only for ^v2y341x.
+  timestamp: 2026-11-18T15:38:36.908097+00:00
 depends_on:
 - 01M7NQMWNNTAYWET485V2Y341X
 position_column: todo
