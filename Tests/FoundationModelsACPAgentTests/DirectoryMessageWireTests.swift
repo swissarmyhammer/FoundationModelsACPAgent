@@ -11,8 +11,15 @@ import Testing
 /// D199 (f)). Each test opens a target session and a source session on one scripted agent, sends
 /// a message through the directory of the agent, and reads the updates that the client of the
 /// target got. The suite trait closes each harness of a test whose body throws, also the harness
-/// of a ``Pair`` whose make throws after its fixture opened.
-@Suite(.closesHarnesses) struct DirectoryMessageWireTests {
+/// of a ``Pair`` whose make throws after its fixture opened. Each wait for an update ends after
+/// ``waitBound``, so a test whose update does not come fails and does not wait forever.
+@Suite(.closesHarnesses, .timeLimit(.minutes(1))) struct DirectoryMessageWireTests {
+  /// The longest time that a wait for an update of the target takes.
+  private static let waitBound = Duration.seconds(20)
+
+  /// The time between two reads of the inbox of the target, while a test waits for a message.
+  private static let inboxPollInterval = Duration.milliseconds(10)
+
   /// The directory label of the suite.
   private static let label = "DirectoryMessageWireTests"
 
@@ -88,14 +95,89 @@ import Testing
           sourceSession: sourceSession))
     }
 
+    /// Starts a turn of the target that waits at the gate of the pair, and waits until the target
+    /// works. A message to the target then waits in its queue.
+    ///
+    /// - Returns: The task of the prompt of the turn. The caller cancels it.
+    func startBusyTurn() async throws -> Task<PromptResponse, any Error> {
+      let target = self.target
+      let connection = fixture.harness.connection
+      let busy = Task {
+        try await connection.prompt(
+          AgentClientHarness.makePromptRequest(sessionId: target, text: busyMarker))
+      }
+      do {
+        _ = try await waitForTarget("the target works") { isRunningState($0) }
+      } catch {
+        busy.cancel()
+        throw error
+      }
+      return busy
+    }
+
+    /// Waits, for at most ``DirectoryMessageWireTests/waitBound``, until the inbox of the target
+    /// holds a message that is not read. A message from a session to a durable target goes
+    /// through an inbox file, and the directory scans the file in a task of its own. Only after
+    /// the scan is the message in the inbox, with its mail in the queue of the target.
+    ///
+    /// - Throws: `CancellationError` when the bound comes first, or the error of a read.
+    func waitUntilInInbox() async throws {
+      let directory = self.directory
+      let target = try target.ulid()
+      try await bounded(by: waitBound) {
+        while try await directory.inbox(of: target, markRead: false).isEmpty {
+          try await Task.sleep(for: inboxPollInterval)
+        }
+      }
+    }
+
+    /// The target reads its inbox, as the `inbox` operation of the `sessions` tool does. The read
+    /// starts no turn.
+    func readInbox() async throws {
+      _ = try await directory.inbox(of: try target.ulid(), markRead: true)
+    }
+
+    /// The updates of the target, after the view of the message went out.
+    ///
+    /// - Returns: The updates of the target, in order.
+    func targetUpdatesAfterTheView() async throws -> [SessionUpdate] {
+      try await waitForTarget("the target shows the message") {
+        !messageViews(in: [$0]).isEmpty
+      }
+    }
+
     /// The updates of the target, after its reply to the message went out.
     ///
     /// - Returns: The updates of the target, in order.
     func targetUpdatesAfterTheReply() async throws -> [SessionUpdate] {
+      try await targetUpdates(afterChunk: replyText)
+    }
+
+    /// The updates of the target, after a text chunk of the target went out.
+    ///
+    /// - Parameter text: The text of the chunk.
+    /// - Returns: The updates of the target, in order.
+    func targetUpdates(afterChunk text: String) async throws -> [SessionUpdate] {
+      try await waitForTarget("the target sent \(text)") { chunkText(of: $0) == text }
+    }
+
+    /// Waits, for at most ``DirectoryMessageWireTests/waitBound``, until the target sent an
+    /// update that `isMatch` accepts.
+    ///
+    /// - Parameters:
+    ///   - condition: The name of the condition, for the error of a wait that does not end.
+    ///   - isMatch: The test of one update of the target.
+    /// - Returns: The updates of the target, in order, up to the first that matches.
+    /// - Throws: ``ConditionWaitCancelled`` when the bound comes first.
+    private func waitForTarget(
+      _ condition: String, until isMatch: @escaping @Sendable (SessionUpdate) -> Bool
+    ) async throws -> [SessionUpdate] {
       let target = self.target
-      let notifications = try await fixture.collector.wait(for: "the target replied") {
-        updates in
-        updates.contains { $0.sessionId == target && chunkText(of: $0.update) == replyText }
+      let collector = fixture.collector
+      let notifications = try await bounded(by: waitBound) {
+        try await collector.wait(for: condition) { updates in
+          updates.contains { $0.sessionId == target && isMatch($0.update) }
+        }
       }
       return notifications.filter { $0.sessionId == target }.map(\.update)
     }
@@ -108,6 +190,22 @@ import Testing
   private static func chunkText(of update: SessionUpdate) -> String? {
     guard case .text(let content) = agentMessageChunk(of: update)?.content else { return nil }
     return content.text
+  }
+
+  /// The path of a gate in a new folder. The busy turn of the target waits until a file is at
+  /// the path.
+  ///
+  /// - Parameter name: The label of the test.
+  /// - Returns: The path. No file is at it yet.
+  private static func gatePath(name: String) -> String {
+    makeResolvedDirectory(label: "\(label)-\(name)-gate").appendingPathComponent("gate").path
+  }
+
+  /// Opens a gate, so the busy turn that waits at it goes on.
+  ///
+  /// - Parameter gate: The path of the gate.
+  private static func open(_ gate: String) throws {
+    try "open".write(toFile: gate, atomically: true, encoding: .utf8)
   }
 
   /// The index of the first update that `isMatch` accepts.
@@ -189,23 +287,15 @@ import Testing
 
   @Test("a queued message shows when its turn starts, after the turn before it")
   func aQueuedMessageShowsWhenItsTurnStarts() async throws {
-    let gate = makeResolvedDirectory(label: "\(Self.label)-queued-gate")
-      .appendingPathComponent("gate").path
+    let gate = Self.gatePath(name: "queued")
     let pair = try await Pair.make(name: "queued", gatePath: gate)
     defer { await pair.fixture.close() }
-    let busy = Task {
-      try await pair.fixture.harness.connection.prompt(
-        AgentClientHarness.makePromptRequest(sessionId: pair.target, text: Self.busyMarker))
-    }
+    let busy = try await pair.startBusyTurn()
     // A wait that throws must not leave the busy prompt at the gate. The cancel comes before the
     // close of the fixture, because the defer blocks run in the reverse order.
     defer { busy.cancel() }
-    let target = pair.target
-    _ = try await pair.fixture.collector.wait(for: "the target works") { updates in
-      updates.contains { $0.sessionId == target && isRunningState($0.update) }
-    }
     try await pair.send(from: .session(try pair.source.ulid()))
-    try "open".write(toFile: gate, atomically: true, encoding: .utf8)
+    try Self.open(gate)
 
     let updates = try await pair.targetUpdatesAfterTheReply()
     _ = try await busy.value
@@ -215,5 +305,63 @@ import Testing
     let reply = try Self.index(in: updates) { Self.chunkText(of: $0) == Self.replyText }
     #expect(busyReply < view)
     #expect(view < reply)
+  }
+
+  @Test("an inbox read of a queued message gives one view with the session sender")
+  func anInboxReadGivesOneView() async throws {
+    let gate = Self.gatePath(name: "inbox")
+    let pair = try await Pair.make(name: "inbox", gatePath: gate)
+    defer { await pair.fixture.close() }
+    let busy = try await pair.startBusyTurn()
+    defer { busy.cancel() }
+    try await pair.send(from: .session(try pair.source.ulid()))
+    try await pair.waitUntilInInbox()
+
+    try await pair.readInbox()
+
+    let updates = try await pair.targetUpdatesAfterTheView()
+    #expect(Self.messageViews(in: updates).count == 1)
+    #expect(try Self.sender(in: updates).kind == .session)
+  }
+
+  @Test("a second inbox read gives no second view")
+  func aSecondInboxReadGivesNoSecondView() async throws {
+    let gate = Self.gatePath(name: "second-read")
+    let pair = try await Pair.make(name: "second-read", gatePath: gate)
+    defer { await pair.fixture.close() }
+    let busy = try await pair.startBusyTurn()
+    defer { busy.cancel() }
+    try await pair.send(from: .session(try pair.source.ulid()))
+    try await pair.waitUntilInInbox()
+    try await pair.readInbox()
+    _ = try await pair.targetUpdatesAfterTheView()
+
+    try await pair.readInbox()
+    try Self.open(gate)
+    _ = try await busy.value
+
+    let updates = try await pair.targetUpdates(afterChunk: Self.busyReply)
+    #expect(Self.messageViews(in: updates).count == 1)
+  }
+
+  @Test("a turn after the inbox read gives no second view")
+  func aTurnAfterTheInboxReadGivesNoSecondView() async throws {
+    let gate = Self.gatePath(name: "later-turn")
+    let pair = try await Pair.make(name: "later-turn", gatePath: gate)
+    defer { await pair.fixture.close() }
+    let busy = try await pair.startBusyTurn()
+    defer { busy.cancel() }
+    try await pair.send(from: .session(try pair.source.ulid()))
+    try await pair.waitUntilInInbox()
+    try await pair.readInbox()
+    _ = try await pair.targetUpdatesAfterTheView()
+    try Self.open(gate)
+    _ = try await busy.value
+
+    _ = try await pair.fixture.harness.connection.prompt(
+      AgentClientHarness.makePromptRequest(sessionId: pair.target, text: Self.messageText))
+
+    let updates = try await pair.targetUpdatesAfterTheReply()
+    #expect(Self.messageViews(in: updates).count == 1)
   }
 }

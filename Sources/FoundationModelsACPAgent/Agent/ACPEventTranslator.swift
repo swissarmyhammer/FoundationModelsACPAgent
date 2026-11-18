@@ -471,7 +471,13 @@ struct ACPEventTranslator {
       // nothing.
       await receiveMessage(of: mail)
       reportUnsentEvent(event)
-    case .submissionStarted, .cancelled, .signalDone, .lost:
+    case .cancelled(let mail):
+      // A directory message that this session read with the `inbox` operation of the `sessions`
+      // tool gets its incoming view when its mail leaves the queue. Every other mail sends
+      // nothing.
+      await receiveReadMessage(of: mail)
+      reportUnsentEvent(event)
+    case .submissionStarted, .signalDone, .lost:
       // Mail and signal bookkeeping with no ACP counterpart.
       reportUnsentEvent(event)
     case .workStarted, .workEnded:

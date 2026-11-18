@@ -88,6 +88,15 @@ extension ACPEventTranslator {
     await sendAll(runCallJoins.messages.delivered(mail, to: sessionId))
   }
 
+  /// Sends the incoming view of a directory message that this session read with the `inbox`
+  /// operation of the `sessions` tool. The read takes the mail of the message out of the queue of
+  /// this session, so the mail starts no turn. Any other mail that leaves the queue sends nothing.
+  ///
+  /// - Parameter mail: The mail that left the queue of this session.
+  func receiveReadMessage(of mail: MailID) async {
+    await sendAll(await runCallJoins.messages.withdrawn(mail, from: sessionId))
+  }
+
   /// Sends the incoming view of a message that a run of the call route posted to this session.
   /// The event is both steps of the message. An event of a tool that starts no child, and an event
   /// with no text, send nothing.

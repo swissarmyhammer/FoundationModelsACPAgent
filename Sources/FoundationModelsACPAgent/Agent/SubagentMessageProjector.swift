@@ -44,10 +44,12 @@ import Synchronization
 ///   or a restored run. The send step is the receipt of the directory. The receive step is the
 ///   `mailDelivered` event of the caller.
 /// - The directory route (``directoryEventArrived(_:)``, ``learnDirectoryMessage(of:takenBy:)``,
-///   ``delivered(_:to:)``). The session directory delivered a message from the user in another
-///   session, or from a session through the `sessions` tool (ACPA-6). The send step is the
-///   `messageDelivered` event of the directory. The receive step is the `mailDelivered` event of
-///   the target. Only the target gets a view: the incoming view, with `SAH.SessionMessage` in
+///   ``delivered(_:to:)``, ``withdrawn(_:from:)``). The session directory delivered a message
+///   from the user in another session, or from a session through the `sessions` tool (ACPA-6).
+///   The send step is the `messageDelivered` event of the directory. The receive step is the
+///   `mailDelivered` event of the target, or the `cancelled` event of the target when the target
+///   read the message with the `inbox` operation of the `sessions` tool and its mail left the
+///   queue. Only the target gets a view: the incoming view, with `SAH.SessionMessage` in
 ///   `_meta`. The host mail route also sends through the directory, so it records each of its
 ///   mails first (``expectHostMail(_:)``), and the directory route leaves that mail to it.
 ///
@@ -138,8 +140,9 @@ final class SubagentMessageProjector: Sendable {
 
   /// Reads one event of the session directory. Only `messageDelivered` changes the state: the
   /// directory delivered a message to an attached session, so the message waits for the take of
-  /// its mail (``delivered(_:to:)``). Each other event, for example a message that only went
-  /// into a queue, changes nothing.
+  /// its mail (``delivered(_:to:)``), or for the read in the inbox of the session
+  /// (``withdrawn(_:from:)``). Each other event, for example a message that only went into a
+  /// queue, changes nothing.
   ///
   /// - Parameter event: The event.
   func directoryEventArrived(_ event: SessionDirectoryEvent) async {
@@ -161,9 +164,44 @@ final class SubagentMessageProjector: Sendable {
   ///   - mail: The mail that the session took.
   ///   - session: The session that took it.
   func learnDirectoryMessage(of mail: MailID, takenBy session: SessionId) async {
+    await learnDirectoryMessage(of: mail, for: session) { _ in true }
+  }
+
+  /// The receive step of a directory message that the session read with the `inbox` operation of
+  /// the `sessions` tool: the mail of the message left the queue of the session before a take.
+  /// The directory sends the `messageDelivered` event of the message at the read, and the target
+  /// gets no take, so the cancel of the mail gives the incoming view. The two streams of events
+  /// come in two tasks, so the cancel can come before the event. Then the object reads the
+  /// directory, and accepts only a message that the target read. A mail that left the queue for
+  /// another cause, for example a cancel of all the work of the session, has a message that is
+  /// not read, and gives no view.
+  ///
+  /// - Parameters:
+  ///   - mail: The mail that left the queue.
+  ///   - session: The session whose queue held the mail.
+  /// - Returns: The updates for the transcript of `session`. None for a mail that is not a
+  ///   directory message that the session read, and none for a message that has its view.
+  func withdrawn(_ mail: MailID, from session: SessionId) async -> [SessionUpdate] {
+    await learnDirectoryMessage(of: mail, for: session) { $0.isRead }
+    return perform(as: session) {
+      $0.receiveWithdrawn(key: mail.value.description, by: session)
+    }
+  }
+
+  /// Reads the directory for a mail of a session, when the object does not know the mail yet,
+  /// and keeps the message when `isAccepted` accepts it.
+  ///
+  /// - Parameters:
+  ///   - mail: The mail.
+  ///   - session: The session that the mail went to.
+  ///   - isAccepted: Tells if the object keeps the message that the directory gives.
+  private func learnDirectoryMessage(
+    of mail: MailID, for session: SessionId,
+    accepting isAccepted: (FoundationModelsExtras.SessionMessage) -> Bool
+  ) async {
     let key = mail.value.description
     guard let source, !state.withLock({ $0.knows(key) }),
-      let message = await source.message(of: mail, takenBy: session)
+      let message = await source.message(of: mail, takenBy: session), isAccepted(message)
     else {
       return
     }
@@ -194,8 +232,8 @@ final class SubagentMessageProjector: Sendable {
     state.withLock { $0.inboxes[session] != nil }
   }
 
-  /// Keeps a delivered message until the target takes its mail. A take that came first gets the
-  /// view now, in the inbox of the target.
+  /// Keeps a delivered message until the target takes its mail or reads it in its inbox. A take
+  /// that came first gets the view now, in the inbox of the target.
   ///
   /// - Parameter message: The message.
   private func register(_ message: DirectoryMessage) {
@@ -466,7 +504,8 @@ extension SubagentMessageProjector {
     /// The keys whose send step is done.
     var sentKeys = RecentIDSet<String>(limit: SubagentMessageProjector.tableLimit)
 
-    /// The messages of the directory that wait for the take of their mail, by key.
+    /// The messages of the directory that wait for the take of their mail, or for the read in the
+    /// inbox of the target, by key.
     var directoryMessages: BoundedTable<DirectoryMessage> = SubagentMessageProjector.newTable()
 
     /// The keys of the directory messages that are done: shown, or left to the host mail route.
@@ -537,6 +576,21 @@ extension SubagentMessageProjector {
     {
       directoryKeys.insert(message.key)
       return [delivery(to: session, message.incomingView)]
+    }
+
+    /// The receive step of a directory message whose mail left the queue of the receiver,
+    /// because the receiver read it in its inbox. Only a kept directory message gives a view.
+    ///
+    /// - Parameters:
+    ///   - key: The key of the message.
+    ///   - receiver: The session whose queue held the mail.
+    /// - Returns: The delivery of the incoming view, or none when no directory message with the
+    ///   key waits.
+    mutating func receiveWithdrawn(key: String, by receiver: SessionId) -> [Delivery] {
+      guard let message = directoryMessages.remove(key) else {
+        return []
+      }
+      return deliverDirectoryView(of: message, to: receiver)
     }
 
     /// Records that the send step of a key is done.

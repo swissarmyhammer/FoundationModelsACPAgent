@@ -8,8 +8,9 @@ import Synchronization
 //
 // The session directory delivers a message from the user in another session, or from a session
 // through the `sessions` tool (ACPA-6, D199 (f)). The target session gets one `session_message`
-// view with `SAH.SessionMessage` in `_meta`, when it takes the mail. The projector of the
-// messages (``SubagentMessageProjector``) holds the state. The types here read the directory.
+// view with `SAH.SessionMessage` in `_meta`, when it takes the mail, or when it reads the message
+// with the `inbox` operation of the `sessions` tool. The projector of the messages
+// (``SubagentMessageProjector``) holds the state. The types here read the directory.
 
 /// A message that the session directory delivered to a session of this agent, ready to show.
 struct DirectoryMessage: Sendable {

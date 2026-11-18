@@ -113,6 +113,19 @@ import Testing
     return projector.delivered(message.id, to: targetId)
   }
 
+  /// The target reads its inbox, as the `inbox` operation of the `sessions` tool does. The
+  /// directory marks the message read, and the mail of the message leaves the queue of the
+  /// target, as its translator sees at `cancelled`.
+  ///
+  /// - Parameter message: The delivered message.
+  /// - Returns: The updates for the transcript of the target.
+  private func read(_ message: FoundationModelsExtras.SessionMessage) async throws
+    -> [SessionUpdate]
+  {
+    _ = try await directory.inbox(of: target, markRead: true)
+    return await projector.withdrawn(message.id, from: targetId)
+  }
+
   /// The `SAH.SessionMessage` in the `_meta` of a view.
   ///
   /// - Parameter message: The view.
@@ -207,6 +220,59 @@ import Testing
     let second = await take(message)
 
     #expect(first.count + second.count == 1)
+  }
+
+  @Test("an inbox read gives one view with the sender of the message")
+  func anInboxReadGivesOneView() async throws {
+    let message = try await send(from: .session(source))
+    await projector.directoryEventArrived(.messageDelivered(message))
+
+    let updates = try await read(message)
+
+    let sender = try Self.meta(of: updates.first?.sessionMessagePayload).sender
+    #expect(updates.count == 1)
+    #expect(sender.kind == .session)
+    #expect(sender.sessionId == sourceId)
+  }
+
+  @Test("an inbox read before the delivered event gives the view")
+  func anInboxReadBeforeTheEventGivesTheView() async throws {
+    let message = try await send(from: .session(source))
+
+    let updates = try await read(message)
+
+    #expect(updates.compactMap(\.sessionMessagePayload).count == 1)
+  }
+
+  @Test("a second inbox read sends no second view")
+  func aSecondInboxReadSendsNoSecondView() async throws {
+    let message = try await send(from: .session(source))
+    await projector.directoryEventArrived(.messageDelivered(message))
+
+    let first = try await read(message)
+    let second = try await read(message)
+
+    #expect(first.count + second.count == 1)
+  }
+
+  @Test("a take after the inbox read sends no second view")
+  func aTakeAfterTheInboxReadSendsNoSecondView() async throws {
+    let message = try await send(from: .session(source))
+    await projector.directoryEventArrived(.messageDelivered(message))
+    _ = try await read(message)
+
+    let updates = await take(message)
+
+    #expect(updates.isEmpty)
+  }
+
+  @Test("a withdrawn mail that the target did not read gives no view")
+  func aWithdrawnUnreadMailGivesNoView() async throws {
+    let message = try await send(from: .session(source))
+
+    let updates = await projector.withdrawn(message.id, from: targetId)
+
+    #expect(updates.isEmpty)
   }
 
   @Test("an expected host mail keeps the views of the host mail route")

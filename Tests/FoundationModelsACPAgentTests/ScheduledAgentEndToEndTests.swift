@@ -133,7 +133,7 @@ import Testing
   ///   error of the write.
   private static func writeScheduleCall(_ call: CallFiles) async throws -> Date {
     let reached = call.reached
-    try await bounded {
+    try await bounded(by: waitBound) {
       try await FileWriteWatch.wait(on: reached, for: "the pass of the root reached the call") {
         (try? Data(contentsOf: reached).isEmpty == false) ?? false
       }
@@ -196,29 +196,6 @@ import Testing
 
   // MARK: - Waits
 
-  /// Runs the wait `body`, and cancels it when it did not end after ``waitBound``.
-  ///
-  /// - Parameter body: The wait. A cancel ends it with an error.
-  /// - Returns: The value of `body`.
-  /// - Throws: The error of `body`, for example ``ConditionWaitCancelled`` after the bound.
-  @discardableResult
-  private static func bounded<Value: Sendable>(
-    _ body: @escaping @Sendable () async throws -> Value
-  ) async throws -> Value {
-    let work = Task { try await body() }
-    let limit = Task {
-      do {
-        try await Task.sleep(for: waitBound)
-        work.cancel()
-      } catch {
-        // The sleep throws only when the wait ended in time and cancelled the limit.
-        return
-      }
-    }
-    defer { limit.cancel() }
-    return try await work.value
-  }
-
   /// Waits until `isMet` accepts the updates of `collector`, for at most ``waitBound``.
   ///
   /// - Parameters:
@@ -231,7 +208,7 @@ import Testing
     for condition: String, in collector: UpdateCollector,
     until isMet: @escaping @Sendable ([UpdateSessionNotification]) -> Bool
   ) async throws -> [UpdateSessionNotification] {
-    try await bounded { try await collector.wait(for: condition, until: isMet) }
+    try await bounded(by: waitBound) { try await collector.wait(for: condition, until: isMet) }
   }
 
   /// Waits until a firing played its first text on a session other than `root`, and gives the

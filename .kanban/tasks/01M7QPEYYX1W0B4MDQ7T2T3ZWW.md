@@ -13,6 +13,19 @@ comments:
     - `resolve(profile:)` does not change.
     Write the stub fit source with these names.
   timestamp: 2026-11-18T16:05:11.957798+00:00
+- actor: claude-code
+  id: 01m7qss1vssrjg8bp9sdfcw956
+  text: |-
+    Dependency available (2026-11-18): Router ROUTER-13 (^h27ffj0) is on FoundationModelsRouter origin/main 429156b8. Run `swift package update FoundationModelsRouter` when this task starts (not while another task builds).
+    - `ProfileFitEstimate.contextTokens: Int?`: the window of the chosen fit, nil when it does not fit. `requiredBytes` is the charge at that window.
+    - `ProfileFitEstimate.defaultMinimumContextTokens = 32_768`.
+    - `Router.estimateFit(of:minimumContextTokens:)`, with that default. `estimateFit(of:)` still compiles.
+    - A largest fitting window under the minimum gives `fits == false`, `contextTokens == nil`, and the failure "the largest window that fits is X tokens; a profile needs Y". Y is the minimum, or the native window when that is smaller.
+    - A profile with an explicit `context` uses that context as its window, and the minimum does not apply. The bundled profiles set no `context`.
+    - `resolve(profile:)` does not change.
+    - Router check with fixed fixtures: `small` (Qwen3.5-9B 4-bit, MTP, kvBits 8, h2o decision model) fits 16 GB with about 52K tokens. Qwen3.8-27B 4-bit does not fit 16 GB.
+    All dependencies in other repositories are now on main; this task waits only for ^56r9vp9 (and ^sc4qx6z for the shared fallback function).
+  timestamp: 2026-11-18T17:02:55.353398+00:00
 depends_on:
 - 01M7QPE4FQH8810KJV056R9VP9
 position_column: todo

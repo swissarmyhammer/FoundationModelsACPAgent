@@ -1,6 +1,11 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m7qsw216kz0dab3sdvwzxfx5
+  text: 'Dropped (2026-11-18). The user said, through the TestudoApp session: "we haven''t shipped yet, so there are no users to worry about". Thus no user `config.yaml` needs a migration. Do not build the migration or the settings-version marker. D203 (e) changes to say this. ^sc4qx6z stays, because a hand-edited `config.yaml` can still name a wrong profile. This task is archived, not done.'
+  timestamp: 2026-11-18T17:04:33.830034+00:00
 depends_on:
 - 01M7QPE4FQH8810KJV056R9VP9
 position_column: todo
