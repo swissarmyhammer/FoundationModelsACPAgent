@@ -27,8 +27,24 @@ comments:
     - evidence: `swift build --build-tests` prints "Build complete!" with 0 source warnings (1 SwiftPM "missing creator for mutated node" message on the mlx-swift_Cmlx.bundle). `swift test --skip-build`: 2290 tests in 243 suites pass, 0 failures, 1 expected known issue (HarnessSmokeTests.orderedSubsequenceAssertionChecksOrderWithGaps uses withKnownIssue).
     - next: review
   timestamp: 2026-11-18T14:17:25.417679+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m7qgggsfyn7se74wxf77c8yx
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (197c47b). 0 findings, 0 confirmed, 1 refuted, 7 attempted, 0 failed. The engine reviewed 2 files. The ignore rule (.reviewignore) excluded 2 .kanban files.
+    - next: The task is in done. No more work is necessary.
+  timestamp: 2026-11-18T14:20:58.543719+00:00
+- actor: claude-code
+  id: 01m7qggx364c0pnshxrfsfe0bb
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — MarketplaceRegistryMountTests.swift, AgentSessionLauncherTests.swift
+    - test: green — swift test --skip-build, 2290 tests in 243 suites passed; 0 compiler warnings
+    - commit: 197c47b
+    - review: clean — 0 findings
+  timestamp: 2026-11-18T14:21:11.142673+00:00
+position_column: done
+position_ordinal: ffffff80
 title: Remove the test warnings in MarketplaceRegistryMountTests and AgentSessionLauncherTests
 ---
 Found during ^zx4k6r4 (2026-11-18).
