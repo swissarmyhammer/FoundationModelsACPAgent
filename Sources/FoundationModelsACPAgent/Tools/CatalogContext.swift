@@ -134,6 +134,11 @@ public struct CatalogContext: Sendable {
   /// `sessions` GraphQL endpoint (ACPA-9, D118).
   public let sessionDirectory: (any SessionDirectory)?
 
+  /// The exporter of the transcripts of the sessions of the agent (D202), or `nil` for a catalog
+  /// that has no agent. The `sessions` tool gives it to the `export session` operation and to the
+  /// `export` field of the `sessions` endpoint. With no exporter, both give `MISSING_EXPORTER`.
+  public let transcriptExporter: (any SessionTranscriptExporter)?
+
   /// The `models` endpoint of the agent (``RoutedACPAgent/modelsEndpoint``),
   /// or `nil` for a catalog that has no agent. With an endpoint, the session
   /// gets a top-level `models` tool over it.
@@ -183,6 +188,8 @@ public struct CatalogContext: Sendable {
   ///     noun. Empty by default (``sessionOperationTools``).
   ///   - sessionDirectory: The session directory of the agent, or `nil`
   ///     (the default) for no `sessions` tool (``sessionDirectory``).
+  ///   - transcriptExporter: The exporter of the transcripts of the
+  ///     sessions, or `nil` (the default) for none (``transcriptExporter``).
   ///   - modelsEndpoint: The `models` endpoint of the agent, or `nil` (the
   ///     default) for no `models` tool (``modelsEndpoint``).
   ///   - mcpServerRegistry: The MCP server registry of the agent, or `nil`
@@ -206,6 +213,7 @@ public struct CatalogContext: Sendable {
     agentRunHost: AgentRunHost? = nil,
     sessionOperationTools: [SessionOperationMount] = [],
     sessionDirectory: (any SessionDirectory)? = nil,
+    transcriptExporter: (any SessionTranscriptExporter)? = nil,
     modelsEndpoint: ModelsGraph? = nil,
     mcpServerRegistry: MCPServerRegistry? = nil,
     marketplaceMount: MarketplaceMount? = nil
@@ -215,6 +223,7 @@ public struct CatalogContext: Sendable {
     self.mcpServerRegistry = mcpServerRegistry
     self.sessionOperationTools = sessionOperationTools
     self.sessionDirectory = sessionDirectory
+    self.transcriptExporter = transcriptExporter
     self.agentRunHost = agentRunHost
     self.snapshotStore = snapshotStore
     self.settingsEndpoint = settingsEndpoint

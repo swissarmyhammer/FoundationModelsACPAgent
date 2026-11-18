@@ -55,6 +55,12 @@ private let mainBranch = "main"
 /// connections, and the ndJSON framing. It has zero dependencies.
 private let wireDependencyName = "FoundationModelsACP"
 
+/// The Markdown renderer of the session updates, a second product of
+/// `wireDependencyName` (D202). The library target renders the export of a
+/// session with it, and the test target compares an export with it.
+private let markdownProduct = Target.Dependency.product(
+    name: "ACPMarkdown", package: wireDependencyName)
+
 /// The runtime: self-folding, token-metered, event-streaming, recorded
 /// sessions. This package owns what the runtime does not: file I/O, the
 /// dotfolders, the command registry, the tool roster and the ACP `Agent`
@@ -451,8 +457,8 @@ let package = Package(
     targets: [
         .target(
             name: packageName,
-            dependencies: familyProducts + [mcpSDKProduct, huggingFaceProduct] + telemetryAPIProducts
-                + graphQLProducts,
+            dependencies: familyProducts + [mcpSDKProduct, huggingFaceProduct, markdownProduct]
+                + telemetryAPIProducts + graphQLProducts,
             // The builtin configuration and the bundled profiles — see
             // `builtinConfigurationResource` and `bundledProfilesResource`.
             resources: [.copy(builtinConfigurationResource), .copy(bundledProfilesResource)]
@@ -572,7 +578,8 @@ let package = Package(
                 metricsTestKitProduct,
                 huggingFaceProduct,
             ]
-                + familyProducts + multitoolTestProducts + [mcpSDKProduct] + graphQLProducts
+                + familyProducts + multitoolTestProducts + [mcpSDKProduct, markdownProduct]
+                + graphQLProducts
         ),
     ]
 )

@@ -25,7 +25,7 @@ import Testing
   private static let childMarker = "CHILD-MESSAGES-ITS-CALLER-NOW"
 
   /// The text of the message that the child sends to its caller.
-  private static let message = "CHILD-HALF-WAY-REPORT"
+  static let message = "CHILD-HALF-WAY-REPORT"
 
   /// The final text of the child.
   private static let finalText = "CHILD-FINAL-RESULT"
@@ -34,10 +34,13 @@ import Testing
   private static let waitingChildMarker = "CHILD-WAITS-FOR-A-MESSAGE-NOW"
 
   /// The text of the message that the root session sends to the child with `send agent`.
-  private static let rootMessage = "ROOT-ASKS-FOR-THE-SECOND-FILE"
+  static let rootMessage = "ROOT-ASKS-FOR-THE-SECOND-FILE"
 
   /// The wire updates of one run, in wire order, after the child ended.
-  private struct Run {
+  struct Run {
+    /// The working directory of the root session. A resume in a second agent opens it.
+    let cwd: URL
+
     /// The id of the root session.
     let root: SessionId
 
@@ -58,7 +61,7 @@ import Testing
   ///
   /// - Returns: The run.
   /// - Throws: Whatever the fixture or a wait throws.
-  private static func runMessengerChild() async throws -> Run {
+  static func runMessengerChild() async throws -> Run {
     let cwd = makeResolvedDirectory(label: "\(label)-repo")
     try AgentsToolTests.writeAgent(named: childAgent, in: cwd)
     let sendCaller = ScriptedPassStep.toolCall(
@@ -89,7 +92,8 @@ import Testing
     _ = try await prompt.value
     let child = try #require(ended.first { $0.sessionId != root }?.sessionId)
     await fixture.close()
-    return Run(root: root, child: child, notifications: await fixture.collector.updates)
+    return Run(
+      cwd: cwd, root: root, child: child, notifications: await fixture.collector.updates)
   }
 
   @Test("the message of a child to its caller is an outgoing view in the child stream")
@@ -188,7 +192,7 @@ import Testing
   ///
   /// - Returns: The run, after the child took the message.
   /// - Throws: Whatever the fixture or a wait throws.
-  private static func runSendAgent() async throws -> Run {
+  static func runSendAgent() async throws -> Run {
     let cwd = makeResolvedDirectory(label: "\(label)-send-repo")
     try AgentsToolTests.writeAgent(named: childAgent, in: cwd)
     let folder = makeResolvedDirectory(label: "\(label)-send-files")
@@ -231,7 +235,8 @@ import Testing
     }
     _ = try await prompt.value
     await fixture.close()
-    return Run(root: root, child: child, notifications: await fixture.collector.updates)
+    return Run(
+      cwd: cwd, root: root, child: child, notifications: await fixture.collector.updates)
   }
 
   @Test("send agent is an outgoing view in the caller stream")

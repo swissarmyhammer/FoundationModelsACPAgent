@@ -1103,6 +1103,7 @@ extension RoutedACPAgent {
       agentRunHost: makeAgentRunHost(recordingRoot: context.transcriptRoot),
       sessionOperationTools: sessionOperationTools,
       sessionDirectory: sessionDirectory,
+      transcriptExporter: AgentTranscriptExporter(agent: self),
       modelsEndpoint: modelsEndpoint,
       mcpServerRegistry: mcpServerRegistry,
       marketplaceMount: marketplaceMount(workingDirectory: workingDirectory))
