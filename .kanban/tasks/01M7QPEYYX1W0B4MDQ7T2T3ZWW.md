@@ -26,10 +26,28 @@ comments:
     - Router check with fixed fixtures: `small` (Qwen3.5-9B 4-bit, MTP, kvBits 8, h2o decision model) fits 16 GB with about 52K tokens. Qwen3.8-27B 4-bit does not fit 16 GB.
     All dependencies in other repositories are now on main; this task waits only for ^56r9vp9 (and ^sc4qx6z for the shared fallback function).
   timestamp: 2026-11-18T17:02:55.353398+00:00
+- actor: claude-code
+  id: 01m7rghwgqm4njs9b06s35mb1k
+  text: |-
+    ### review — findings
+    - evidence: review sha bdf13fe~1..bdf13fe; findings 5, confirmed 5, refuted 4, attempted 28, failed 0. Sources/FoundationModelsACPAgent/ComposedAgent.swift:436 (duplication/duplication), Sources/FoundationModelsACPAgent/Configuration/ConfigurationLoader.swift:535 (duplication/duplication), Sources/FoundationModelsACPAgent/Models/ModelsEngine.swift:129 (swift/preconditions), Tests/FoundationModelsACPAgentTests/ModelsGraphTests.swift:376 (reuse/reuse), Tests/FoundationModelsACPAgentTests/Support/ProfileFitStub.swift:27 (code-hygiene/idioms-swift). No validator matched ARCHITECTURE.md and README.md, and the engine did not review them.
+    - next: correct the 5 findings in the section "Review Findings (2026-11-18 17:35)". The task stays in review.
+  timestamp: 2026-11-18T23:40:57.751478+00:00
+- actor: claude-code
+  id: 01m7rhgperwfa7wp3gjwyy391a
+  text: |-
+    Review fix (2026-11-18):
+    - `ComposedAgent.makeRouter` now has defaults (`nil`) for the chunk gate, the recordings root and the hooks. `makeProfileFitSource` calls it, so one place builds the router. The live fit router now has a `LiveModelLoader`; a fit read loads no model, thus the loader is not used.
+    - `ConfigurationLoader.resolvingProfile`: the name comes first from `profileLayers.names(cwd:)` (unknown name: the warning and the fallback name), then one `read`.
+    - `ModelsEngine.fallbackProfile`: fixed in the ^sc4qx6z commit (a356... see that card). It is a throwing function with a log record; `assertionFailure` only for an unknown fallback name (a programmer error), not for a bad user file, because a bad user config must not crash.
+    - `ModelsGraphTests.profiles(_:selecting:)` takes the selection set; `windowRows` calls it.
+    - `ProfileFitStub`: the explicit init is removed; the synthesized init has the same label.
+    Tests: ModelsGraphTests, ConfigurationLoaderTests, HuggingFaceTokenProviderTests, AgentCompositionTests: 106 passed.
+  timestamp: 2026-11-18T23:57:47.352359+00:00
 depends_on:
 - 01M7QPE4FQH8810KJV056R9VP9
-position_column: todo
-position_ordinal: 8b80
+position_column: doing
+position_ordinal: '8280'
 title: 'ACPA-23 (D203): the default profile is the largest that fits; contextTokens and target memory on the models endpoint'
 ---
 Decision D203 in `TestudoApp/features/decisions.md` (commit 4ab65e8). Brief: `/Users/wballard/github/swissarmyhammer/.briefs/profiles/acpa-brief.md`, parts 2 and 5.
@@ -62,3 +80,17 @@ Decision D203 in `TestudoApp/features/decisions.md` (commit 4ab65e8). Brief: `/U
 - The endpoint gives `contextTokens` and the target memory of each bundled profile, and `null` target memory for a user profile file.
 
 When this lands, push to origin/main and send the sha and the field names to the TestudoApp session (testudoapp-9a). #d203 #profiles #acpa-23
+
+## Review Findings (2026-11-18 17:35)
+
+> Scope: `review sha bdf13fe~1..bdf13fe` — reviewed the diffs only — lines this change added or modified. 25 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — no validator matched:
+> - `ARCHITECTURE.md` — no validator matches this file
+> - `README.md` — no validator matches this file
+
+- [x] `Sources/FoundationModelsACPAgent/ComposedAgent.swift:436` `duplication/duplication` — `makeProfileFitSource(for:home:huggingFaceTokenProvider:)` repeats the live branch of `makeRouter(...)`: the same `switch modelSource` with a `.live` arm that builds `Router(cacheDir: home.routerCacheDirectory, ... metadataSource: HuggingFaceMetadataSource(tokenProvider: huggingFaceTokenProvider))` and a `.stub` arm that calls `EchoModel.makeRouter(cacheDirectory: try makeStubCacheDirectory())`. The same construction is spelled twice, so a change to the router's cache directory or metadata source has to be made in both places. Extract the router-building switch into one helper that takes the optional recording, loader and hook arguments, with defaults. `makeProfileFitSource` then calls it with only the cache and metadata arguments. Or extract the shared `Router(cacheDir:metadataSource:)` construction into a helper that both functions call.
+- [x] `Sources/FoundationModelsACPAgent/Configuration/ConfigurationLoader.swift:535` `duplication/duplication` — Inside `resolvingProfile(of:in:warnings:)`, the `catch` arm repeats the `try` arm's assignment `resolved.profile.resolved = try profileLayers.read(..., cwd: workingDirectory)`. The two copies differ only in the profile name argument (`resolved.profile.name` versus `fallbackProfileName`). Both copies are `+` lines of this change, so a later change to how the profile file is read or assigned must be made twice. Compute the name to read first, then make a single read. For example, catch `ProfileStoreError.unknownProfile` to set `name = fallbackProfileName` and append the warning, then perform one `resolved.profile.resolved = try profileLayers.read(name, cwd: workingDirectory)` after the do/catch.
+- [x] `Sources/FoundationModelsACPAgent/Models/ModelsEngine.swift:129` `swift/preconditions` — The `fallbackProfile` property hides a failed profile read. `try?` discards the error, and `?? BundledProfiles.defaultProfile` returns a profile with no log record and no assertion. A reader cannot tell that the configured fallback failed to load, so the defect stays hidden. Use a `do`/`catch` that calls `assertionFailure` and writes a production log record with the profile name and the error, then returns `BundledProfiles.defaultProfile`. Keep the fallback value, and record the failure.
+- [x] `Tests/FoundationModelsACPAgentTests/ModelsGraphTests.swift:376` `reuse/reuse` — `windowRows` repeats the body of the existing `profiles` helper (run the GraphQL document, `#expect` no codes, `#require` the `profiles` array), differing only in the selection set and in keying the rows by name. A near-match that was not extended, so the query-and-parse logic now exists twice and can diverge. Parameterize the existing helper with the selection string, for example `static func profileRows(_ graph: ModelsGraph, selecting fields: String = "...") async throws -> [[String: Any]]`, so `profiles` and `windowRows` both call it. `windowRows` then only maps the returned rows by name.
+- [x] `Tests/FoundationModelsACPAgentTests/Support/ProfileFitStub.swift:27` `code-hygiene/idioms-swift` — UseSynthesizedInitializer: remove this explicit initializer, which is identical to the compiler-synthesized initializer.

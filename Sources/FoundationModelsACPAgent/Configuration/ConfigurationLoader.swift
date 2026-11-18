@@ -526,14 +526,14 @@ public struct ConfigurationLoader: Sendable {
     if root.value(at: ProfileConfiguration.keyPath) == nil {
       resolved.profile.name = fallbackProfileName
     }
-    do {
-      resolved.profile.resolved = try profileLayers.read(
-        resolved.profile.name, cwd: workingDirectory)
-    } catch ProfileStoreError.unknownProfile(let name, let available) {
+    let available = profileLayers.names(cwd: workingDirectory)
+    var name = resolved.profile.name
+    if !available.contains(name) {
       warnings.append(
         .unknownProfile(name: name, available: available, fallback: fallbackProfileName))
-      resolved.profile.resolved = try profileLayers.read(fallbackProfileName, cwd: workingDirectory)
+      name = fallbackProfileName
     }
+    resolved.profile.resolved = try profileLayers.read(name, cwd: workingDirectory)
     return resolved
   }
 

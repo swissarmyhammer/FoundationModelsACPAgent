@@ -134,12 +134,22 @@ import Testing
     return try #require(reply.data?["models"] as? [[String: Any]])
   }
 
+  /// The fields of a row of `profiles` that ``profiles(_:selecting:)``
+  /// reads when the test names no fields.
+  static let profileFields =
+    "name description selected active restartRequired downloadBytes presentBytes state "
+    + "fit requiredBytes budgetBytes fitError models { slot repo drafter sizeBytes state }"
+
   /// The rows of `profiles`.
-  static func profiles(_ graph: ModelsGraph) async throws -> [[String: Any]] {
-    let reply = try await run(
-      graph,
-      "{ profiles { name description selected active restartRequired downloadBytes presentBytes state "
-        + "fit requiredBytes budgetBytes fitError models { slot repo drafter sizeBytes state } } }")
+  ///
+  /// - Parameters:
+  ///   - graph: The endpoint.
+  ///   - fields: The selection set of a row.
+  /// - Returns: The rows.
+  static func profiles(_ graph: ModelsGraph, selecting fields: String = profileFields)
+    async throws -> [[String: Any]]
+  {
+    let reply = try await run(graph, "{ profiles { \(fields) } }")
     #expect(reply.codes.isEmpty, "\(reply.text)")
     return try #require(reply.data?["profiles"] as? [[String: Any]])
   }
@@ -374,9 +384,7 @@ import Testing
   /// - Parameter graph: The endpoint.
   /// - Returns: The rows, by name.
   static func windowRows(_ graph: ModelsGraph) async throws -> [String: [String: Any]] {
-    let reply = try await run(graph, "{ profiles { name contextTokens targetMemory } }")
-    #expect(reply.codes.isEmpty, "\(reply.text)")
-    let rows = try #require(reply.data?["profiles"] as? [[String: Any]])
+    let rows = try await profiles(graph, selecting: "name contextTokens targetMemory")
     return Dictionary(
       uniqueKeysWithValues: rows.compactMap { row in (row["name"] as? String).map { ($0, row) } })
   }

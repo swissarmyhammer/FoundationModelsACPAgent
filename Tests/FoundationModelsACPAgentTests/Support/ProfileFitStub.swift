@@ -21,13 +21,6 @@ struct ProfileFitStub: ProfileFitEstimating {
   /// The names of the profiles that fit. Each other profile does not fit.
   let fitting: Set<String>
 
-  /// Makes a fit source where only the named profiles fit.
-  ///
-  /// - Parameter fitting: The names of the profiles that fit.
-  init(fitting: Set<String>) {
-    self.fitting = fitting
-  }
-
   /// A fit source where each bundled profile fits.
   static let allFit = ProfileFitStub(fitting: Set(BundledProfiles.names))
 

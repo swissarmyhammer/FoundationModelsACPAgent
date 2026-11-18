@@ -358,15 +358,17 @@ public struct ComposedAgent: Sendable {
   /// - Parameters:
   ///   - modelSource: The model path to build the router over.
   ///   - chunkGate: The path of the named pipe of a stub answer, or
-  ///     `nil` for the library's one-chunk echo. The live path ignores
-  ///     it.
+  ///     `nil` (the default) for the library's one-chunk echo. The live
+  ///     path ignores it.
   ///   - stubScript: The path of the script file of the stub model, or
-  ///     `nil` for the echo. The live path ignores it. A script wins over
-  ///     `chunkGate`.
+  ///     `nil` (the default) for the echo. The live path ignores it. A
+  ///     script wins over `chunkGate`.
   ///   - recordingsDirectory: The router's own recordings root — see
-  ///     ``makeRecordingsDirectory()``.
+  ///     ``makeRecordingsDirectory()`` — or `nil` (the default) to record
+  ///     nothing, as for a router that only sizes the profiles.
   ///   - hooks: The dispatcher that each session of the router sends its
-  ///     hook events to: the ``AgentHooks/dispatcher`` of the agent.
+  ///     hook events to: the ``AgentHooks/dispatcher`` of the agent, or
+  ///     `nil` (the default) for no hooks.
   ///   - home: The home of the host. The live path takes the metadata cache
   ///     of the router (``AgentHome/routerCacheDirectory``) and the model
   ///     cache (``AgentHome/modelCacheDirectory``) from it. The stub path
@@ -384,10 +386,10 @@ public struct ComposedAgent: Sendable {
   ///   is not valid.
   static func makeRouter(
     for modelSource: ModelSource,
-    gatedBy chunkGate: String?,
+    gatedBy chunkGate: String? = nil,
     scriptedBy stubScript: String? = nil,
-    recordingInto recordingsDirectory: URL,
-    hooks: HookDispatcher,
+    recordingInto recordingsDirectory: URL? = nil,
+    hooks: HookDispatcher? = nil,
     home: AgentHome,
     huggingFaceTokenProvider: TokenProvider
   ) throws -> Router {
@@ -425,20 +427,15 @@ public struct ComposedAgent: Sendable {
   ///   - huggingFaceTokenProvider: The provider of the Hugging Face token of
   ///     each sizing request. The default `.environment` reads `HF_TOKEN`,
   ///     then `~/.cache/huggingface/token`. The stub path ignores it.
-  /// - Returns: The fit source.
+  /// - Returns: The fit source: the router of
+  ///   ``makeRouter(for:gatedBy:scriptedBy:recordingInto:hooks:home:huggingFaceTokenProvider:)``
+  ///   with no recording and no hooks.
   /// - Throws: The directory-creation error of the stub cache.
   public static func makeProfileFitSource(
     for modelSource: ModelSource, home: AgentHome,
     huggingFaceTokenProvider: TokenProvider = .environment
   ) throws -> any ProfileFitEstimating {
-    switch modelSource {
-    case .live:
-      Router(
-        cacheDir: home.routerCacheDirectory,
-        metadataSource: HuggingFaceMetadataSource(tokenProvider: huggingFaceTokenProvider))
-    case .stub:
-      EchoModel.makeRouter(cacheDirectory: try makeStubCacheDirectory())
-    }
+    try makeRouter(for: modelSource, home: home, huggingFaceTokenProvider: huggingFaceTokenProvider)
   }
 
   /// Makes the loader of the live path over one model cache folder and one
