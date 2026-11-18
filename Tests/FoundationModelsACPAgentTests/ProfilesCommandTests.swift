@@ -43,7 +43,7 @@ import Testing
     let report = try await Self.report(["list", "--cwd", fixture.workspace.path], in: fixture)
 
     let lines = report.standardOutput.split(separator: "\n").map { $0.split(separator: "\t") }
-    #expect(lines.map { $0.prefix(2).joined(separator: " ") } == ["large bundled", "small bundled"])
+    #expect(lines.map { $0.prefix(2).joined(separator: " ") } == ["large bundled", "medium bundled", "small bundled"])
   }
 
   /// `save` writes the user file, and `list` then names its layer.
@@ -73,7 +73,7 @@ import Testing
   @Test func showPrintsTheProfile() async throws {
     let fixture = ConfigCommandFixture(label: "ProfilesCommandTests-show")
 
-    let report = try await Self.report(["show", "small"], in: fixture)
+    let report = try await Self.report(["show", "medium"], in: fixture)
 
     #expect(report.standardOutput.contains("mlx-community/Qwen3.8-27B-4bit"))
   }
@@ -82,7 +82,7 @@ import Testing
   @Test func showOfAnUnknownNameFails() async throws {
     let fixture = ConfigCommandFixture(label: "ProfilesCommandTests-show-unknown")
 
-    await #expect(throws: ProfileStoreError.unknownProfile(name: "huge", available: ["large", "small"])) {
+    await #expect(throws: ProfileStoreError.unknownProfile(name: "huge", available: ["large", "medium", "small"])) {
       try await Self.report(["show", "huge"], in: fixture)
     }
   }

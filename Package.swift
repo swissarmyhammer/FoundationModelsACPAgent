@@ -13,7 +13,7 @@ private let packageName = "FoundationModelsACPAgent"
 /// `acp-agent` binary finds it as the unit tests do.
 private let builtinConfigurationResource = "Resources/builtin.config.yaml"
 
-/// The folder of the bundled profile files (`large.yaml`, `small.yaml`), a
+/// The folder of the bundled profile files (`large.yaml`, `medium.yaml`, `small.yaml`), a
 /// resource of the library target. `BundledProfiles` reads each file through
 /// `Bundle.module`, under the user layer and the project layer of the
 /// profiles.

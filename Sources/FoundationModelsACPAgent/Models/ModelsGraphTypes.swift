@@ -288,6 +288,14 @@ struct ModelsGraphProfile: Sendable {
 
   /// The readable reason of a fit that failed, or `nil`.
   let fitError: String?
+
+  /// The context window of the fit, in tokens, or `nil` when the profile
+  /// does not fit or no estimate ran.
+  let contextTokens: Int?
+
+  /// The memory of the Mac that a bundled profile is for, such as
+  /// "32 GB", or `nil` for a profile file of the user or the project.
+  let targetMemory: String?
 }
 
 /// The arguments of `Query.profiles`.

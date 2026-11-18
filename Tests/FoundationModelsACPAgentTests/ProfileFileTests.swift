@@ -5,8 +5,8 @@ import Testing
 
 @testable import FoundationModelsACPAgent
 
-/// The profile files: the two bundled profiles, `large` and `small`, and the
-/// decode of one profile file over the bundled `large` profile.
+/// The profile files: the three bundled profiles, `large`, `medium` and
+/// `small`, and the decode of one profile file over the bundled `large` profile.
 @Suite struct ProfileFileTests {
   /// The path that each decode in this suite names in its errors.
   private static let path = "/tmp/profiles/custom.yaml"
@@ -36,13 +36,14 @@ import Testing
   ///   - name: The name.
   ///   - description: The description.
   ///   - model: The model of the `standard` and `flash` slots.
+  ///   - kvCache: The KV cache quantization, or `nil` for fp16.
   /// - Returns: The profile.
-  private static func profile(name: String, description: String, model: ModelRef)
-    -> ProfileDefinition
-  {
+  private static func profile(
+    name: String, description: String, model: ModelRef, kvCache: KVCacheQuantization? = nil
+  ) -> ProfileDefinition {
     ProfileDefinition(
       name: name, description: description, standard: [model], flash: [model],
-      embedding: embedding)
+      embedding: embedding, kvCacheQuantization: kvCache)
   }
 
   /// Decodes the text of a profile file at ``path``.
@@ -56,10 +57,10 @@ import Testing
 
   // MARK: - The bundled profiles
 
-  /// The bundled profiles are `large` and `small`, in that order, and
-  /// `large` is the default.
-  @Test func theBundledProfilesAreLargeAndSmall() {
-    #expect(BundledProfiles.all.map(\.name) == ["large", "small"])
+  /// The bundled profiles are `large`, `medium` and `small`, from the
+  /// largest to the smallest, and each file decodes.
+  @Test func theBundledProfilesAreLargeMediumAndSmall() {
+    #expect(BundledProfiles.all.map(\.name) == ["large", "medium", "small"])
   }
 
   /// The default profile is `large`.
@@ -71,7 +72,7 @@ import Testing
   @Test func largeIsTheEightBitModelWithItsDrafter() throws {
     let expected = Self.profile(
       name: "large",
-      description: "Qwen3.8 27B 8-bit with its MTP drafter, for a Mac with much memory.",
+      description: "Qwen3.8 27B 8-bit with its MTP drafter, for a Mac with 48 GB or more.",
       model: ModelRef(
         repo: "mlx-community/Qwen3.8-27B-8bit", drafter: "mlx-community/Qwen3.8-27B-MTP-8bit"))
 
@@ -80,13 +81,31 @@ import Testing
     #expect(try Self.encoding(of: large) == Self.encoding(of: expected))
   }
 
-  /// `small` is Qwen3.8 27B at 4 bits with its 4-bit MTP drafter.
-  @Test func smallIsTheFourBitModelWithItsDrafter() throws {
+  /// `medium` is Qwen3.8 27B at 4 bits with its 4-bit MTP drafter: the
+  /// models of the old `small`.
+  @Test func mediumIsTheFourBitModelWithItsDrafter() throws {
     let expected = Self.profile(
-      name: "small",
-      description: "Qwen3.8 27B 4-bit with its MTP drafter, for a Mac with less memory.",
+      name: "medium",
+      description: "Qwen3.8 27B 4-bit with its MTP drafter, for a Mac with 32 GB.",
       model: ModelRef(
         repo: "mlx-community/Qwen3.8-27B-4bit", drafter: "mlx-community/Qwen3.8-27B-MTP-4bit"))
+
+    let medium = try #require(BundledProfiles.named("medium"))
+
+    #expect(try Self.encoding(of: medium) == Self.encoding(of: expected))
+  }
+
+  /// `small` is Qwen3.5 9B at 4 bits with its 4-bit MTP drafter and an
+  /// 8-bit KV cache.
+  @Test func smallIsTheNineBModelWithItsDrafterAndAnEightBitKVCache() throws {
+    let expected = Self.profile(
+      name: "small",
+      description:
+        "Qwen3.5 9B 4-bit with its MTP drafter and an 8-bit KV cache, "
+        + "for a Mac with 16 GB or 24 GB.",
+      model: ModelRef(
+        repo: "mlx-community/Qwen3.5-9B-4bit", drafter: "mlx-community/Qwen3.5-9B-MTP-4bit"),
+      kvCache: .bits8)
 
     let small = try #require(BundledProfiles.named("small"))
 

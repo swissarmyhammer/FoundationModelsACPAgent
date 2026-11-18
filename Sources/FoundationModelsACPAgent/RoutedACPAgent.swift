@@ -508,6 +508,13 @@ public actor RoutedACPAgent: Agent {
   ///   - modelStorage: The reader of the model storage of the `models`
   ///     endpoint, or `nil` (the default) for a `ModelStorage` over
   ///     ``AgentHome/modelCacheDirectory`` with the token of the environment.
+  ///   - fallbackProfileName: The profile of each session load where no
+  ///     layer sets `profile`, or where the name is unknown
+  ///     (``SettingsStore/fallbackProfileName``), or `nil` (the default)
+  ///     for the choice of ``BundledProfiles/fallbackName(using:)`` with
+  ///     `router` as the fit source. A host that loaded its start-up
+  ///     configuration with a choice gives that choice here, so the agent
+  ///     makes no second choice.
   /// - Throws: `ToolModeError.openModeInSandbox` when `mode` is `open`
   ///   and `sandboxProbe` tells that the process is sandboxed, before any
   ///   other work; `ProfileResolutionError` when the profile does not
@@ -527,9 +534,16 @@ public actor RoutedACPAgent: Agent {
     inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
     secretStore: (any SecretStore)? = nil,
     userDeviceTokens: Set<String> = [],
-    modelStorage: (any ModelStorageSource)? = nil
+    modelStorage: (any ModelStorageSource)? = nil,
+    fallbackProfileName: String? = nil
   ) async throws {
     try mode.validate(probe: sandboxProbe)
+    let chosenProfileName: String
+    if let fallbackProfileName {
+      chosenProfileName = fallbackProfileName
+    } else {
+      chosenProfileName = await BundledProfiles.fallbackName(using: router)
+    }
     self.toolMode = mode
     self.sandboxProbe = sandboxProbe
     self.openTestudoDownloadURL = openTestudoDownloadURL
@@ -545,7 +559,8 @@ public actor RoutedACPAgent: Agent {
     self.secretStore = secretStore ?? KeychainSecretStore.loginKeychain(for: name)
     self.settingsStore = SettingsStore(
       settingsFolders: settingsFolders,
-      secretStore: self.secretStore)
+      secretStore: self.secretStore,
+      fallbackProfileName: chosenProfileName)
     self.settingsEndpoint = try SettingsGraph(store: settingsStore)
     self.mcpServerRegistry = MCPServerRegistry(
       storage: SettingsMCPServerStorage(

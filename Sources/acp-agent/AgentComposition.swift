@@ -230,17 +230,47 @@ enum AgentComposition {
   ///     reference `keychain:<name>`, or `nil` (the default) for the login
   ///     Keychain under the service ``dotfolderName``: the store of the CLI
   ///     (ACPA-18, D101). A test gives an in-memory store.
+  ///   - fallbackProfileName: The profile of a load where no layer sets
+  ///     `profile`, or where the name is unknown. A command that loads
+  ///     gives ``fallbackProfileName(environment:fitSource:)``. The default
+  ///     is ``BundledProfiles/smallestName``, for a command that only reads
+  ///     the stack.
   /// - Returns: The loader. Construction touches no file.
   /// - Throws: `DotfolderNameError` when ``dotfolderName`` is refused.
   static func makeConfigurationLoader(
     workingDirectory: URL, environment: [String: String],
-    secretStore: (any SecretStore)? = nil
+    secretStore: (any SecretStore)? = nil,
+    fallbackProfileName: String = BundledProfiles.smallestName
   ) throws -> ConfigurationLoader {
     ConfigurationLoader(
       settingsFolders: SettingsFolders(
         name: try DotfolderName(dotfolderName), home: try home(environment: environment),
         environment: environment),
       workingDirectory: workingDirectory,
-      secretStore: secretStore)
+      secretStore: secretStore,
+      fallbackProfileName: fallbackProfileName)
+  }
+
+  /// The profile of a load of the CLI where no layer sets `profile`: the
+  /// choice of ``BundledProfiles/fallbackName(using:)``, the same function
+  /// that the agent of ``compose(workingDirectory:environment:reporting:)``
+  /// calls.
+  ///
+  /// - Parameters:
+  ///   - environment: The environment that ``home(environment:)`` reads
+  ///     the home from.
+  ///   - fitSource: The fit source, or `nil` (the default) for the router
+  ///     of ``modelChoice`` (`ComposedAgent.makeProfileFitSource`). A test
+  ///     gives a stub.
+  /// - Returns: The name of a bundled profile. `small` when no fit source
+  ///   can be made.
+  static func fallbackProfileName(
+    environment: [String: String], fitSource: (any ProfileFitEstimating)? = nil
+  ) async -> String {
+    let source =
+      fitSource
+      ?? (try? ComposedAgent.makeProfileFitSource(
+        for: modelSource(), home: home(environment: environment)))
+    return await BundledProfiles.fallbackName(using: source)
   }
 }

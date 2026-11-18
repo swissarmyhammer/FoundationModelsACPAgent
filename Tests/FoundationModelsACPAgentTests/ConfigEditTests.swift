@@ -150,7 +150,8 @@ struct ConfigEditTests {
     #expect(plan.report.standardErrorLines.first?.contains(written.path) == true)
     #expect(plan.report.standardOutput.isEmpty)
     let loader = try AgentComposition.makeConfigurationLoader(
-      workingDirectory: fixture.workspace, environment: fixture.environment)
+      workingDirectory: fixture.workspace, environment: fixture.environment,
+      fallbackProfileName: BundledProfiles.defaultName)
     #expect(try loader.load().configuration == loader.builtinConfiguration)
   }
 

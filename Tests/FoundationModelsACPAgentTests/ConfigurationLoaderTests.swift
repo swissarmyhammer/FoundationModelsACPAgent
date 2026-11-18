@@ -56,18 +56,24 @@ import Testing
     /// A loader over this fixture, with the user directory as the synced
     /// root of a custom home.
     ///
-    /// - Parameter secretStore: The store that gives the value of each
-    ///   secret reference. The default is an empty in-memory store, so
-    ///   no load touches the real Keychain.
-    func makeLoader(secretStore: any SecretStore = InMemorySecretStore()) throws
-      -> ConfigurationLoader
-    {
+    /// - Parameters:
+    ///   - secretStore: The store that gives the value of each secret
+    ///     reference. The default is an empty in-memory store, so no load
+    ///     touches the real Keychain.
+    ///   - fallbackProfileName: The profile of a load where no layer sets
+    ///     `profile` or the name is unknown. The default is the choice
+    ///     when no fit can be read.
+    func makeLoader(
+      secretStore: any SecretStore = InMemorySecretStore(),
+      fallbackProfileName: String = BundledProfiles.smallestName
+    ) throws -> ConfigurationLoader {
       try ConfigurationLoader(
         name: DotfolderName(ConfigurationLoaderTests.agentName),
         workingDirectory: workingDirectory,
         home: AgentHomeFixture.make(label: "ConfigurationLoaderTests", synced: userDirectory),
         environment: [:],
-        secretStore: secretStore)
+        secretStore: secretStore,
+        fallbackProfileName: fallbackProfileName)
     }
 
     /// Writes `contents` as the project-layer `config.yaml` and loads
@@ -106,7 +112,9 @@ import Testing
     var expected = AgentConfiguration()
     expected.tools.files = .enabled(FilesToolOptions(exclude: [".\(Self.agentName)/"]))
 
-    #expect(try Fixture().makeLoader().builtinConfiguration == expected)
+    #expect(
+      try Fixture().makeLoader(fallbackProfileName: BundledProfiles.defaultName)
+        .builtinConfiguration == expected)
   }
 
   /// The in-code default values: the theme follows the system, the keymap
@@ -145,14 +153,16 @@ import Testing
 
   // MARK: - The builtin default models
 
-  /// The empty stack — no `config.yaml` in any layer — gives the profile
-  /// `large` and its three model references of cli-plan.md §7 exactly.
-  /// This is what a person gets on a first run with no configuration, so a
+  /// The empty stack — no `config.yaml` in any layer — with the choice of
+  /// `large` gives the profile `large` and its three model references of
+  /// cli-plan.md §7 exactly. This is what a person with a Mac where `large`
+  /// fits gets on a first run with no configuration, so a
   /// wrong id here stops that run.
   @Test func theEmptyStackGivesTheThreeDefaultModels() throws {
     let fixture = Fixture()
 
-    let configured = try fixture.makeLoader().load().configuration.profile
+    let configured = try fixture.makeLoader(fallbackProfileName: BundledProfiles.defaultName)
+      .load().configuration.profile
     let profile = configured.definition
 
     #expect(configured.name == "large")
@@ -169,7 +179,8 @@ import Testing
   @Test func theStandardAndFlashDefaultsNameTheirMTPDrafter() throws {
     let fixture = Fixture()
 
-    let profile = try fixture.makeLoader().load().configuration.profile.definition
+    let profile = try fixture.makeLoader(fallbackProfileName: BundledProfiles.defaultName)
+      .load().configuration.profile.definition
 
     #expect(profile.standard.map { $0.drafter?.stringValue } == [Self.defaultStandardDrafter])
     #expect(profile.flash.map { $0.drafter?.stringValue } == [Self.defaultStandardDrafter])
@@ -1034,14 +1045,71 @@ import Testing
     #expect(throws: ProfileFileError.self) { try fixture.loadProjectConfig("profile: custom\n") }
   }
 
-  /// A name that no layer has is an error that lists every available name.
-  /// Thus the settings store refuses the write.
-  @Test func anUnknownNameIsAnErrorThatListsTheProfiles() throws {
-    let fixture = Fixture()
+  /// A `profile` name that no layer has.
+  static let unknownProfileName = "nosuch"
 
-    #expect(throws: ProfileStoreError.unknownProfile(name: "huge", available: ["large", "small"])) {
-      try fixture.loadProjectConfig("profile: huge\n")
+  /// Loads the stack with ``unknownProfileName`` as the `profile` of the
+  /// user level.
+  ///
+  /// - Parameter fixture: The fixture.
+  /// - Returns: The loaded configuration.
+  /// - Throws: What the load throws.
+  static func loadUnknownUserProfile(in fixture: Fixture) throws -> LoadedConfiguration {
+    fixture.writeConfig("profile: \(unknownProfileName)\n", in: fixture.userDirectory)
+    return try fixture.makeLoader().load()
+  }
+
+  /// A user-level name that no layer has gives one warning that names the
+  /// value, each available name and the fallback.
+  @Test func anUnknownUserNameGivesOneWarning() throws {
+    let loaded = try Self.loadUnknownUserProfile(in: Fixture())
+
+    #expect(
+      loaded.warnings == [
+        .unknownProfile(
+          name: Self.unknownProfileName, available: BundledProfiles.names,
+          fallback: BundledProfiles.smallestName)
+      ])
+  }
+
+  /// The message of the warning names the value and each available name.
+  @Test func theUnknownNameWarningNamesTheValueAndTheProfiles() throws {
+    let loaded = try Self.loadUnknownUserProfile(in: Fixture())
+
+    let message = try #require(loaded.warnings.first).description
+    #expect(([Self.unknownProfileName] + BundledProfiles.names).allSatisfy(message.contains))
+  }
+
+  /// A user-level name that no layer has loads the fallback profile.
+  @Test func anUnknownUserNameUsesTheFallbackProfile() throws {
+    let loaded = try Self.loadUnknownUserProfile(in: Fixture())
+
+    #expect(loaded.configuration.profile.definition.name == BundledProfiles.smallestName)
+  }
+
+  /// The check of a write refuses a name that no layer has, and the error
+  /// lists every available name.
+  @Test func theCheckOfAWriteRefusesAnUnknownName() throws {
+    let loader = try Fixture().makeLoader()
+
+    #expect(
+      throws: ProfileStoreError.unknownProfile(
+        name: Self.unknownProfileName, available: BundledProfiles.names)
+    ) {
+      try loader.check(
+        dotfolderRoot: .dictionary(["profile": .string(Self.unknownProfileName)]),
+        requiresKnownProfile: true)
     }
+  }
+
+  /// The check of a write that does not select the profile accepts a name
+  /// that no layer has, as the load does.
+  @Test func theCheckOfAnOtherWriteAcceptsAnUnknownName() throws {
+    let loader = try Fixture().makeLoader()
+
+    try loader.check(
+      dotfolderRoot: .dictionary(["profile": .string(Self.unknownProfileName)]),
+      requiresKnownProfile: false)
   }
 
   /// The old map form loads: `preset` gives the name, with no warning.

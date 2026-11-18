@@ -67,8 +67,8 @@ import Testing
   @Test func theListIsTheBundledProfilesWithNoFile() throws {
     let entries = try Fixture().layers.list(cwd: nil)
 
-    #expect(entries.map(\.name) == ["large", "small"])
-    #expect(entries.map(\.layer) == [.bundled, .bundled])
+    #expect(entries.map(\.name) == ["large", "medium", "small"])
+    #expect(entries.map(\.layer) == [.bundled, .bundled, .bundled])
   }
 
   /// A user file with the hidden flag of macOS is in the list. iCloud sets
@@ -120,7 +120,7 @@ import Testing
   /// A read of a name that no layer has is an error that lists each name.
   @Test func anUnknownNameIsAnErrorThatListsTheNames() throws {
     let layers = try Fixture().layers
-    #expect(throws: ProfileStoreError.unknownProfile(name: "huge", available: ["large", "small"])) {
+    #expect(throws: ProfileStoreError.unknownProfile(name: "huge", available: ["large", "medium", "small"])) {
       try layers.read("huge", cwd: nil)
     }
   }

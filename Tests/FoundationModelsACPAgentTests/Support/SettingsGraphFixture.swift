@@ -171,15 +171,19 @@ struct SettingsGraphFixture {
   ///     ``FailingSecretStore``.
   ///   - changeCapacity: The number of the newest changes that the change
   ///     log of the store keeps, or the default of the store.
+  ///   - fallbackProfileName: The fallback profile of the store. The
+  ///     default is `large`: the choice of a Mac where `large` fits.
   /// - Throws: `DotfolderNameError` when the dotfolder name is refused, or
   ///   the error of the schema build.
   init(
     label: String, secretStore: any SecretStore,
-    changeCapacity: Int = SettingsStore.defaultChangeCapacity
+    changeCapacity: Int = SettingsStore.defaultChangeCapacity,
+    fallbackProfileName: String = BundledProfiles.defaultName
   ) throws {
     settingsFolders = try SettingsFoldersFixture.make(label: "SettingsGraph-\(label)")
     store = SettingsStore(
-      settingsFolders: settingsFolders, secretStore: secretStore, changeCapacity: changeCapacity)
+      settingsFolders: settingsFolders, secretStore: secretStore, changeCapacity: changeCapacity,
+      fallbackProfileName: fallbackProfileName)
     graph = try SettingsGraph(store: store)
     firstDirectory = makeResolvedDirectory(label: "SettingsGraph-\(label)-first")
     secondDirectory = makeResolvedDirectory(label: "SettingsGraph-\(label)-second")

@@ -50,9 +50,9 @@ public enum ProfileFileError: Error, Equatable, Sendable, CustomStringConvertibl
 /// `ProfileDefinition` in YAML, with the name of the file as its name.
 ///
 /// Each key is optional. A key that the file leaves out takes the value of
-/// the bundled default profile (``BundledProfiles/defaultName``), and not of
+/// the bundled base profile `large` (``BundledProfiles/baseName``), and not of
 /// the selected profile or of an other layer. The merge is at the top level:
-/// a slot of the file replaces the slot of the default profile as a whole. A
+/// a slot of the file replaces the slot of the base profile as a whole. A
 /// key that a profile does not have, and a value that does not decode, are
 /// errors that name the file.
 enum ProfileFile {

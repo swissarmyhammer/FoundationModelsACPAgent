@@ -196,6 +196,12 @@ public actor SettingsStore {
   /// the files keep the references.
   public nonisolated let secretStore: any SecretStore
 
+  /// The name of the profile that a merge uses when no level sets
+  /// `profile`, and when the `profile` name names no profile of a layer:
+  /// the choice of ``BundledProfiles/fallbackName(using:)``. Each loader of
+  /// the store (``makeConfigurationLoader(workingDirectory:)``) gets it.
+  public nonisolated let fallbackProfileName: String
+
   /// The settings object of each level that the store has read, keyed by
   /// the path of its `config.yaml`.
   private var levels: [String: LevelState] = [:]
@@ -277,25 +283,32 @@ public actor SettingsStore {
   ///     log keeps, so that `changes(after:)` resumes after a cursor at most
   ///     this many changes old. It must be at least 1. The default is
   ///     ``defaultChangeCapacity``.
+  ///   - fallbackProfileName: The profile of a merge where no level sets
+  ///     `profile`, or where the name is unknown (``fallbackProfileName``).
+  ///     The default is ``BundledProfiles/smallestName``, the choice when
+  ///     no fit can be read. An agent gives the choice of its router.
   public init(
     settingsFolders: SettingsFolders,
     secretStore: (any SecretStore)? = nil,
-    changeCapacity: Int = SettingsStore.defaultChangeCapacity
+    changeCapacity: Int = SettingsStore.defaultChangeCapacity,
+    fallbackProfileName: String = BundledProfiles.smallestName
   ) {
     self.settingsFolders = settingsFolders
+    self.fallbackProfileName = fallbackProfileName
     self.secretStore = secretStore ?? KeychainSecretStore.loginKeychain(for: settingsFolders.name)
     changeLog = ChangeLog(capacity: changeCapacity)
   }
 
   /// Makes the configuration loader of one working directory over the
-  /// settings folders and the secret store of this store.
+  /// settings folders, the secret store and the fallback profile of this
+  /// store.
   ///
   /// - Parameter workingDirectory: The working directory of the session.
   /// - Returns: The loader.
   public nonisolated func makeConfigurationLoader(workingDirectory: URL) -> ConfigurationLoader {
     ConfigurationLoader(
       settingsFolders: settingsFolders, workingDirectory: workingDirectory,
-      secretStore: secretStore)
+      secretStore: secretStore, fallbackProfileName: fallbackProfileName)
   }
 
   // MARK: - Reads
@@ -504,14 +517,17 @@ public actor SettingsStore {
   ///   rendered line can hold a secret value.
   ///   ``SettingsStoreError/retiredKey(keyPath:)`` for a key under
   ///   `profile`; ``ProfileStoreError`` or ``ProfileFileError`` for a
-  ///   `profile` name whose file no layer has or does not decode. After an
-  ///   error, the level and its file do not change.
+  ///   `profile` name whose file no layer has or does not decode. A set of
+  ///   `profile` to a name that no layer has is refused, although a load
+  ///   of such a name only gives a warning and uses the fallback profile.
+  ///   After an error, the level and its file do not change.
   public func set(_ value: YAMLValue, at keyPath: [String], level: SettingsLevel) async throws {
     if let retired = Self.retiredKeyPath(of: keyPath) {
       throw SettingsStoreError.retiredKey(keyPath: retired)
     }
     let id = SettingsTreeDifference.id(of: keyPath)
-    try await change(at: keyPath, level: level) { tree in
+    let selectsProfile = keyPath.first == AgentConfiguration.CodingKeys.profile.stringValue
+    try await change(at: keyPath, level: level, requiresKnownProfile: selectsProfile) { tree in
       let ids = tree.value(at: keyPath) == nil ? ChangedIDs(added: [id]) : ChangedIDs(changed: [id])
       return (tree: try tree.setting(value, at: keyPath), ids: ids)
     }
@@ -548,7 +564,7 @@ public actor SettingsStore {
   ///   error also holds no line of the parsed text.
   public func clear(at keyPath: [String], level: SettingsLevel) async throws {
     let ids = ChangedIDs(removed: [SettingsTreeDifference.id(of: keyPath)])
-    try await change(at: keyPath, level: level) { tree in
+    try await change(at: keyPath, level: level, requiresKnownProfile: false) { tree in
       (tree: try tree.removingValue(at: keyPath), ids: ids)
     }
   }
@@ -564,11 +580,13 @@ public actor SettingsStore {
   ///   - keyPath: The changed key path, for the change event and the
   ///     errors.
   ///   - level: The level to change.
+  ///   - requiresKnownProfile: `true` when the change selects the
+  ///     profile: then a `profile` that no layer has refuses the change.
   ///   - transform: Gives the changed source tree of the level, and the
   ///     ids of the change.
   /// - Throws: What ``set(_:at:level:)`` throws.
   private func change(
-    at keyPath: [String], level: SettingsLevel,
+    at keyPath: [String], level: SettingsLevel, requiresKnownProfile: Bool,
     transform: (YAMLValue) throws -> (tree: YAMLValue, ids: ChangedIDs)
   ) async throws {
     var state = try levelState(of: level)
@@ -580,7 +598,7 @@ public actor SettingsStore {
     }
     let text = try source.text(of: changed)
     let root = try Self.renderedTree(of: text, layer: state.layer)
-    try check(root, of: level)
+    try check(root, of: level, requiresKnownProfile: requiresKnownProfile)
     try Self.write(text, to: state.file)
     let clearsLoadError = state.loadError != nil
     state.root = root
@@ -603,15 +621,20 @@ public actor SettingsStore {
   ///   - level: The level of the tree. A user level change is checked with
   ///     no session level; a session level change is checked over the
   ///     user level.
-  /// - Throws: `ConfigurationError` or `YAMLValueDecodingError`.
-  private func check(_ root: YAMLValue, of level: SettingsLevel) throws {
+  ///   - requiresKnownProfile: `true` when the change selects the
+  ///     profile (``ConfigurationLoader/check(dotfolderRoot:requiresKnownProfile:)``).
+  /// - Throws: `ConfigurationError`, `YAMLValueDecodingError`,
+  ///   ``ProfileStoreError`` or ``ProfileFileError``.
+  private func check(_ root: YAMLValue, of level: SettingsLevel, requiresKnownProfile: Bool)
+    throws
+  {
     let lowerLevels: [SettingsLevel] = level == .user ? [] : [.user]
     let lowerTrees = try lowerLevels.map { try levelState(of: $0).tree }
     let merged = try mergedSettings(over: lowerTrees + [(source: level.source, root: root)])
     try makeConfigurationLoader(
       workingDirectory: level.workingDirectory ?? Self.placeholderDirectory
     )
-    .check(dotfolderRoot: merged.root)
+    .check(dotfolderRoot: merged.root, requiresKnownProfile: requiresKnownProfile)
   }
 
   /// Writes `text` to `file` with an atomic write, and makes the folder of
