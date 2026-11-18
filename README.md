@@ -131,8 +131,13 @@ should usually leave it out, because the context comes from the model. A
 `name` key must be the name of the file. An unknown key, or a value that does
 not decode, is an error that names the file and the key.
 
-`profile` names a profile of any layer. A name that no layer has is an error
-that lists every available name. An old `config.yaml` with the map form of
+`profile` names a profile of any layer. A name that no layer has does not
+stop the agent. The load gives a warning that names the value and every
+available name, and the agent uses the fallback profile, `small`. The agent
+writes the warning to its log, `acp-agent config show` writes it to stderr,
+and `acp-agent doctor` shows it. A write of a name that no layer has through
+the `settings` tool or the `settings` GraphQL endpoint is refused, and the
+error lists every available name. An old `config.yaml` with the map form of
 `profile` loads: `preset` gives the name, and each other key (`name`,
 `description`, `standard`, `flash`, `embedding`, `decision`,
 `decisionContext`, `kvBits`) gives a warning and is ignored.

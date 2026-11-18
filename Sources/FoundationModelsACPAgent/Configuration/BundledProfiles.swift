@@ -23,9 +23,23 @@ public enum BundledProfiles {
   /// `profile`.
   public static let defaultName = baseName
 
+  /// The name of the smallest bundled profile.
+  static let smallestName = "small"
+
+  /// The name of the fallback profile: the profile that a load uses when
+  /// the `profile` name of the settings names no profile of a layer.
+  ///
+  /// This is the one choice of the fallback. Each caller that needs the
+  /// fallback calls this function.
+  ///
+  /// - Returns: The name of a bundled profile.
+  public static func fallbackName() -> String {
+    smallestName
+  }
+
   /// The names of the bundled profiles, from the largest to the smallest.
   /// A list shows the profiles in this order.
-  static let names = [baseName, "medium", "small"]
+  static let names = [baseName, "medium", smallestName]
 
   /// The keys of the file of ``baseName``: the base of the merge of each
   /// profile file.

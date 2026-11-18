@@ -362,6 +362,25 @@ import Testing
     #expect(fit.calls.withLock { $0 } == BundledProfiles.all.map(\.name))
   }
 
+  /// A user `profile` that no layer has selects the fallback profile, as
+  /// the load of a session does.
+  @Test func anUnknownProfileNameSelectsTheFallback() async throws {
+    let fixture = try SettingsGraphFixture(label: "models-unknown-on-disk")
+    let root = try #require(
+      SettingsFoldersFixture.layerRoot(
+        of: .user, in: fixture.settingsFolders, workingDirectory: fixture.firstDirectory))
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    try "profile: nosuch\n".write(
+      to: root.appendingPathComponent(ConfigurationLoader.configFileName),
+      atomically: true, encoding: .utf8)
+
+    let rows = try await Self.profiles(Self.graph(fixture))
+
+    #expect(
+      rows.compactMap { $0["selected"] as? Bool == true ? $0["name"] as? String : nil }
+        == [BundledProfiles.fallbackName()])
+  }
+
   /// A name that no layer has is refused by the settings store, and the
   /// error names the profiles.
   @Test func anUnknownProfileNameIsRefused() async throws {

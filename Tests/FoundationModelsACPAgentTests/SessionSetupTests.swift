@@ -357,6 +357,24 @@ import Testing
     #expect(plainEntry.configuration.tools.shell != .disabled)
   }
 
+  /// `session/new` starts when the user `config.yaml` selects a profile
+  /// that no layer has, and the session uses the fallback profile.
+  @Test
+  func anUnknownProfileNameStartsTheSessionWithTheFallback() async throws {
+    let userDirectory = makeResolvedDirectory(label: "SessionSetupTests-user-unknown-profile")
+    let cwd = makeResolvedDirectory(label: "SessionSetupTests-repo-unknown-profile")
+    try "profile: nosuch\n".write(
+      to: userDirectory.appendingPathComponent(ConfigurationLoader.configFileName),
+      atomically: true, encoding: .utf8)
+    let agent = try await AgentClientHarness.makeInitializedAgent(
+      label: Self.label, userDirectory: userDirectory)
+
+    let response = try await agent.newSession(AgentClientHarness.makeNewSessionRequest(cwd: cwd))
+
+    let entry = try #require(await agent.sessions[response.sessionId])
+    #expect(entry.configuration.profile.definition.name == BundledProfiles.fallbackName())
+  }
+
   // MARK: The project and the name now, the activity at the first prompt
 
   /// The slice of the recorded `index.md` that the project test reads:

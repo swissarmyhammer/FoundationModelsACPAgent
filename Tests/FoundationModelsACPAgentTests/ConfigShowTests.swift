@@ -499,6 +499,17 @@ struct ConfigShowTests {
     #expect(report.standardOutput.contains("profile:"))
   }
 
+  /// A user `profile` that no layer has gives a warning on stderr that
+  /// names the value, and the report shows the configuration.
+  @Test func anUnknownProfileNameGivesAWarningOnStderr() throws {
+    let fixture = ConfigCommandFixture(label: "ConfigShowTests-unknown-profile")
+    try fixture.writeUserConfig("profile: nosuch\n")
+
+    let report = try Self.report([], in: fixture)
+
+    #expect(report.standardErrorLines.contains { $0.contains("\"nosuch\"") })
+  }
+
   // MARK: - The parse
 
   /// The flags parse onto `Show`, and default off.

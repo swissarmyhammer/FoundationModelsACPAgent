@@ -102,17 +102,25 @@ struct ModelsEngine: Sendable {
   /// The profile that `profile` selects in the settings now, at the user
   /// level.
   ///
-  /// - Returns: The profile. The default profile when no layer has a
-  ///   value that names a profile that reads.
+  /// - Returns: The profile. The fallback profile
+  ///   (``BundledProfiles/fallbackName()``) when the value names a profile
+  ///   that no layer has, as a load does. The default profile when no
+  ///   layer has a value, or when a profile file does not read.
   /// - Throws: What the store throws for a level file.
   func selectedProfile() async throws -> ProfileDefinition {
     guard let setting = try await store.value(at: ProfileConfiguration.keyPath, cwd: nil),
-      let selection: ProfileConfiguration = try? setting.value.decoded(),
-      let profile = try? profileLayers.read(selection.name, cwd: nil)
+      let selection: ProfileConfiguration = try? setting.value.decoded()
     else {
       return BundledProfiles.defaultProfile
     }
-    return profile
+    do {
+      return try profileLayers.read(selection.name, cwd: nil)
+    } catch ProfileStoreError.unknownProfile {
+      return (try? profileLayers.read(BundledProfiles.fallbackName(), cwd: nil))
+        ?? BundledProfiles.defaultProfile
+    } catch {
+      return BundledProfiles.defaultProfile
+    }
   }
 
   /// Each profile of the user layer and the bundled profiles that reads, in

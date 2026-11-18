@@ -230,13 +230,55 @@ import Testing
     #expect(try await fixture.store.merged(for: fixture.firstDirectory).configuration.profile.name == "small")
   }
 
-  /// A set of `profile` to a name that no layer has is refused.
+  /// A set of `profile` to a name that no layer has is refused, also when
+  /// a load of that name gives a warning and the fallback profile.
   @Test func aSetOfAnUnknownProfileNameIsRefused() async throws {
     let fixture = try Fixture(label: "profile-unknown")
 
-    await #expect(throws: ProfileStoreError.self) {
-      try await fixture.store.set(.string("huge"), at: ["profile"], level: .user)
+    await #expect(
+      throws: ProfileStoreError.unknownProfile(
+        name: Self.unknownProfileName, available: BundledProfiles.names)
+    ) {
+      try await fixture.store.set(.string(Self.unknownProfileName), at: ["profile"], level: .user)
     }
+  }
+
+  /// A user `config.yaml` whose `profile` names no profile merges with
+  /// the fallback profile.
+  @Test func anUnknownProfileNameOnDiskMergesWithTheFallback() async throws {
+    let fixture = try Fixture(label: "profile-unknown-disk")
+    try Self.writeUnknownProfile(in: fixture)
+
+    let merged = try await fixture.store.merged(for: fixture.firstDirectory)
+
+    #expect(merged.configuration.profile.definition.name == BundledProfiles.fallbackName())
+  }
+
+  /// A set of an other key works when the user `config.yaml` names no
+  /// profile: the load of that file gives a warning, and no error.
+  @Test func aSetOfAnOtherKeyWorksOverAnUnknownProfileName() async throws {
+    let fixture = try Fixture(label: "profile-unknown-other")
+    try Self.writeUnknownProfile(in: fixture)
+
+    try await fixture.store.set(.double(Self.userTrigger), at: Self.triggerKeyPath, level: .user)
+
+    #expect(try await fixture.mergedTrigger(for: fixture.firstDirectory) == Self.userTrigger)
+  }
+
+  /// A `profile` name that no layer has.
+  private static let unknownProfileName = "nosuch"
+
+  /// Writes a user `config.yaml` whose `profile` is
+  /// ``unknownProfileName``.
+  ///
+  /// - Parameter fixture: The fixture.
+  /// - Throws: The error of the write.
+  private static func writeUnknownProfile(in fixture: Fixture) throws {
+    let root = try fixture.userRoot
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    try "profile: \(unknownProfileName)\n".write(
+      to: root.appendingPathComponent(ConfigurationLoader.configFileName),
+      atomically: true, encoding: .utf8)
   }
 
   /// directory that does not set the key, and writes `<user>/config.yaml`.

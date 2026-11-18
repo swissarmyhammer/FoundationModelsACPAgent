@@ -279,8 +279,9 @@ public struct FontRoleConfiguration: Codable, Equatable, Sendable, KeyCheckedSec
 ///
 /// A profile is a file, `profiles/<name>.yaml`, in the project layer, the
 /// user layer or the bundled resources (``ProfileStore``). The loader reads
-/// the file of the name for the working directory of the load, and an
-/// unknown name is an error that lists every available name.
+/// the file of the name for the working directory of the load. For an
+/// unknown name, the load gives a warning that lists every available name,
+/// and it uses the fallback profile (``BundledProfiles/fallbackName()``).
 ///
 /// The old map form of the section loads: its `preset` key gives the name,
 /// and each other key (``retiredKeys``) gives a warning and is ignored.

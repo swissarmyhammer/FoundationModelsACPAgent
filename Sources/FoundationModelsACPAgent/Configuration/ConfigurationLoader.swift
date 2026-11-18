@@ -85,6 +85,13 @@ public enum ConfigurationWarning: Equatable, Sendable, CustomStringConvertible {
   /// body that is not a mapping (D187). The loader ignores it.
   case retiredSection(name: String)
 
+  /// A `profile` name that no layer of the profiles has. The load uses the
+  /// fallback profile (``BundledProfiles/fallbackName()``) and continues.
+  /// `name` is the value of `profile`, `available` is each name that a
+  /// layer has, and `fallback` is the name of the profile that the load
+  /// uses.
+  case unknownProfile(name: String, available: [String], fallback: String)
+
   /// What replaces a key that is no longer used, for the message of the
   /// warning.
   ///
@@ -125,6 +132,10 @@ public enum ConfigurationWarning: Equatable, Sendable, CustomStringConvertible {
       return
         "\(ConfigurationLoader.configFileName): the section \"\(name)\" is no longer used and is ignored"
         + Self.retiredHint(section: name)
+    case .unknownProfile(let name, let available, let fallback):
+      return
+        "\(ConfigurationLoader.configFileName): no profile is named \"\(name)\"; the profiles are: "
+        + "\(available.joined(separator: ", ")); the agent uses the profile \"\(fallback)\""
     }
   }
 }
@@ -154,6 +165,8 @@ extension ConfigurationWarning {
       "The secret store could not read the item for a secret reference of the configuration. The key is not set."
     case .retiredKey, .retiredSection:
       "The configuration has a key that is no longer used. The loader ignored the key."
+    case .unknownProfile:
+      "The configuration selects a profile that no layer has. The agent uses the fallback profile."
     }
   }
 
@@ -171,6 +184,8 @@ extension ConfigurationWarning {
       section + LoadedConfiguration.keyPathSeparator + key
     case .retiredSection(let name):
       name
+    case .unknownProfile:
+      AgentConfiguration.CodingKeys.profile.stringValue
     }
   }
 }
@@ -374,7 +389,10 @@ public struct ConfigurationLoader: Sendable {
   /// dotfolder name gives, such as the default of `tools.files.exclude`,
   /// is put in after the decode. An unknown top-level section is logged
   /// and returned as a warning. An unknown key inside a known section is
-  /// an error. Each secret reference `keychain:<name>` then gets its value
+  /// an error. A `profile` that no layer has is logged and returned as a
+  /// warning, and the load uses the fallback profile
+  /// (``BundledProfiles/fallbackName()``). Each secret reference
+  /// `keychain:<name>` then gets its value
   /// from ``secretStore``; a reference with no value is left out, and it
   /// is logged and returned as a warning.
   ///
@@ -384,10 +402,8 @@ public struct ConfigurationLoader: Sendable {
   ///   rendered or parsed; ``BuiltinConfigurationFileError`` or
   ///   `YAMLValueParsingError` for a builtin file that cannot be read or
   ///   parsed; `YAMLValueDecodingError` for a value that does not decode,
-  ///   such as a `theme` that is not a theme;
-  ///   ``ProfileStoreError/unknownProfile(name:available:)`` for a
-  ///   `profile` that no layer has; ``ProfileFileError`` for a selected
-  ///   profile file that does not decode.
+  ///   such as a `theme` that is not a theme; ``ProfileFileError`` for a
+  ///   selected profile file that does not decode.
   public func load() throws -> LoadedConfiguration {
     let document = try LayeredYAMLDocument.load(
       Self.configFileName,
@@ -416,15 +432,14 @@ public struct ConfigurationLoader: Sendable {
     dotfolderRoot: YAMLValue, sources: [String: DotfolderStack.Source]
   ) throws -> LoadedConfiguration {
     let root = try layeredRoot(over: dotfolderRoot)
-    let schemaWarnings = try Self.schemaWarnings(in: root)
-    Self.log(schemaWarnings)
-    var secretWarnings: [ConfigurationWarning] = []
-    let decoded = resolvingSecrets(
-      of: try resolvingProfile(of: Self.configuration(from: root)), warnings: &secretWarnings)
-    Self.log(secretWarnings)
+    var warnings = try Self.schemaWarnings(in: root)
+    let profiled = try resolvingProfile(
+      of: Self.configuration(from: root), warnings: &warnings)
+    let decoded = resolvingSecrets(of: profiled, warnings: &warnings)
+    Self.log(warnings)
     return LoadedConfiguration(
       configuration: resolvingDotfolderDefaults(of: decoded),
-      warnings: schemaWarnings + secretWarnings,
+      warnings: warnings,
       sources: sources)
   }
 
@@ -435,30 +450,56 @@ public struct ConfigurationLoader: Sendable {
   ///
   /// ``SettingsStore`` calls it before it writes a change to a file.
   ///
-  /// - Parameter dotfolderRoot: The merged tree of the dotfolder layers.
+  /// - Parameters:
+  ///   - dotfolderRoot: The merged tree of the dotfolder layers.
+  ///   - requiresKnownProfile: `true` for a write that selects the
+  ///     profile: then a `profile` that no layer has is an error. With
+  ///     `false`, such a name passes, as it does at a load, which uses
+  ///     the fallback profile.
   /// - Throws: `ConfigurationError` for a schema failure,
-  ///   `YAMLValueDecodingError` for a value that does not decode, or what
-  ///   ``resolvingProfile(of:)`` throws.
-  func check(dotfolderRoot: YAMLValue) throws {
+  ///   `YAMLValueDecodingError` for a value that does not decode,
+  ///   ``ProfileStoreError/unknownProfile(name:available:)`` for a
+  ///   `profile` that no layer has when `requiresKnownProfile` is `true`,
+  ///   or ``ProfileFileError`` for a profile file that does not decode.
+  func check(dotfolderRoot: YAMLValue, requiresKnownProfile: Bool) throws {
     let root = try layeredRoot(over: dotfolderRoot)
     _ = try Self.schemaWarnings(in: root)
-    _ = try resolvingProfile(of: Self.configuration(from: root))
+    let configuration = try Self.configuration(from: root)
+    if requiresKnownProfile {
+      _ = try profileLayers.read(configuration.profile.name, cwd: workingDirectory)
+    } else {
+      var warnings: [ConfigurationWarning] = []
+      _ = try resolvingProfile(of: configuration, warnings: &warnings)
+    }
   }
 
   /// `configuration` with the profile file of its profile name, read from
-  /// the layers of the working directory of this loader.
+  /// the layers of the working directory of this loader. When no layer has
+  /// the name, the profile is the fallback profile
+  /// (``BundledProfiles/fallbackName()``), and a warning names the value
+  /// and every available name. The name of the configuration does not
+  /// change.
   ///
-  /// - Parameter configuration: The decoded configuration.
+  /// - Parameters:
+  ///   - configuration: The decoded configuration.
+  ///   - warnings: The warnings of the load. This adds one
+  ///     ``ConfigurationWarning/unknownProfile(name:available:fallback:)``
+  ///     when no layer has the name.
   /// - Returns: The configuration with its profile resolved.
-  /// - Throws: ``ProfileStoreError/unknownProfile(name:available:)`` when no
-  ///   layer has the name, with every available name;
-  ///   ``ProfileFileError`` when its file does not decode.
-  private func resolvingProfile(of configuration: AgentConfiguration) throws
-    -> AgentConfiguration
-  {
+  /// - Throws: ``ProfileFileError`` when the file of the profile does not
+  ///   decode.
+  private func resolvingProfile(
+    of configuration: AgentConfiguration, warnings: inout [ConfigurationWarning]
+  ) throws -> AgentConfiguration {
     var resolved = configuration
-    resolved.profile.resolved = try profileLayers.read(
-      configuration.profile.name, cwd: workingDirectory)
+    do {
+      resolved.profile.resolved = try profileLayers.read(
+        configuration.profile.name, cwd: workingDirectory)
+    } catch ProfileStoreError.unknownProfile(let name, let available) {
+      let fallback = BundledProfiles.fallbackName()
+      warnings.append(.unknownProfile(name: name, available: available, fallback: fallback))
+      resolved.profile.resolved = try profileLayers.read(fallback, cwd: workingDirectory)
+    }
     return resolved
   }
 
