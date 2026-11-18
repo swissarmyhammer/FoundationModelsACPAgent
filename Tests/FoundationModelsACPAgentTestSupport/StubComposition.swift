@@ -44,6 +44,9 @@ public let openTestudoDownloadURL = URL(string: "https://example.test/opentestud
 ///     endpoint, or `nil` (the default) for a `ModelStorage` over the model
 ///     cache of the home in offline mode: it reads only the disk, and sends
 ///     no Hub request.
+///   - profileFitSource: The fit source of the choice of the default
+///     profile, or `nil` (the default) for the stub router of the
+///     composition.
 /// - Returns: The composition.
 /// - Throws: `DotfolderNameError` when `name` is refused, the write error of
 ///   the defaults layer, or whatever the composition throws.
@@ -59,7 +62,8 @@ public func composeStubAgent(
   sandboxProbe: SandboxProbe = .live,
   openTestudoDownloadURL: URL? = nil,
   agentName: String? = nil,
-  modelStorage: (any ModelStorageSource)? = nil
+  modelStorage: (any ModelStorageSource)? = nil,
+  profileFitSource: (any ProfileFitEstimating)? = nil
 ) async throws -> ComposedAgent {
   let workspace = workspace ?? makeResolvedDirectory(label: "\(label)-repo")
   let home = home ?? AgentHomeFixture.make(label: label)
@@ -75,7 +79,8 @@ public func composeStubAgent(
     modelSource: .stub,
     secretStore: secretStore,
     userDeviceTokens: userDeviceTokens,
-    modelStorage: modelStorage ?? offlineModelStorage(of: home))
+    modelStorage: modelStorage ?? offlineModelStorage(of: home),
+    profileFitSource: profileFitSource)
 }
 
 /// The model storage of a test: a `ModelStorage` over the model cache of

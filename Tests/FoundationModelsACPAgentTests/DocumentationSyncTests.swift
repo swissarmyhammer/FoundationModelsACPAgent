@@ -151,11 +151,11 @@ import Testing
 
   // MARK: - The profile
 
-  /// The memory floor of the default profile (cli-plan.md §7), as the
-  /// README spells it. The figure lives in the doc comment of
-  /// ``ProfileConfiguration``, thus this string is the one assertion
-  /// that keeps the README saying it.
-  static let memoryFloorText = "32 GB"
+  /// The memory floor of the agent (decision D203): the memory of the
+  /// smallest Mac that the bundled profile `small` fits, as the README
+  /// spells it. This string is the one assertion that keeps the README
+  /// saying it.
+  static let memoryFloorText = "16 GB of memory or more"
 
   /// Every model of each bundled profile, over the four slots, in slot
   /// order, and the MTP drafter of each reference that names one. The
@@ -180,13 +180,23 @@ import Testing
     }
   }
 
-  /// The README states the memory floor of the default profile. A person
-  /// who reads the README before the first run learns which machine the
-  /// three models fit on.
+  /// The README states the memory floor of the agent. A person who reads
+  /// the README before the first run learns which machine the agent needs.
   @Test func readmeStatesTheMemoryFloor() throws {
     let readme = try Self.readmeText()
 
     #expect(readme.contains(Self.memoryFloorText))
+  }
+
+  /// The bytes of one gigabyte, as the doctor states each figure.
+  static let bytesPerGigabyte: Int64 = 1_073_741_824
+
+  /// The memory floor of the README and the memory floor of the doctor
+  /// (``ProfileDoctor/memoryFloorBytes``) are the same figure.
+  @Test func readmeMemoryFloorAgreesWithTheDoctorFloor() {
+    let doctorFloor = "\(ProfileDoctor.memoryFloorBytes / Self.bytesPerGigabyte) GB of memory or more"
+
+    #expect(doctorFloor == Self.memoryFloorText)
   }
 
   // MARK: - The command tree

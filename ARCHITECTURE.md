@@ -99,6 +99,12 @@ each key that the file leaves out taken from the bundled `large`.
 - **The selection.** `profile: <name>` in `config.yaml` selects a profile. `ConfigurationLoader`
   reads the file of the name for the working directory of the load, thus the resolved profile
   rides in the loaded configuration, and the agent resolves it with Router at its launch.
+- **The default (D203).** When no layer sets `profile`, or the name is unknown, the load uses the
+  largest bundled profile that fits: `BundledProfiles.fallbackName(using:)` reads the fit of each
+  bundled profile from a `ProfileFitEstimating` source (the router), and gives `small` when no fit
+  can be read. The read is async and a load is not, so the host makes the choice one time before
+  the load and gives the name to the loader and to the `SettingsStore`. `ComposedAgent.compose`,
+  `RoutedACPAgent` and the `config show` and `doctor` commands of the CLI call the same function.
 - **The reads.** `ProfileLayers` reads the disk at each call, and needs no cache. The loader, the
   `models` engine, the doctor and the CLI read through it.
 - **The writes.** `ProfileStore` saves and deletes the file of the user layer or of a project

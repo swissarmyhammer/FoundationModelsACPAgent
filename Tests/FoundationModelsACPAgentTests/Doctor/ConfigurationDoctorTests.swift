@@ -135,6 +135,18 @@ struct ConfigurationDoctorTests {
     #expect(checks.findings(.error).isEmpty)
   }
 
+  /// A `profile` that no layer has is one `.warning` whose fix names each
+  /// available profile.
+  @Test func anUnknownProfileNameGivesAWarningWhoseFixNamesTheProfiles() async throws {
+    let fixture = ConfigCommandFixture(label: "ConfigurationDoctorTests-profile")
+    try fixture.writeUserConfig("profile: nosuch\n")
+
+    let checks = try await Self.checks(in: fixture)
+
+    let fix = try #require(try checks.singleFinding(.warning).fix)
+    #expect(BundledProfiles.names.allSatisfy(fix.contains))
+  }
+
   // MARK: - The secret references
 
   /// A reference with no item is one `.warning` whose message names the

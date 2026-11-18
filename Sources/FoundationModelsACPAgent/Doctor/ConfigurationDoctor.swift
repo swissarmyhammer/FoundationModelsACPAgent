@@ -111,8 +111,9 @@ public struct ConfigurationDoctor: Doctorable {
   /// The fix of one loader warning. A secret reference with no item is
   /// repaired in the secret store, or by the removal of its key. A secret
   /// reference whose lookup failed is repaired when the store can read the
-  /// item, or by the removal of its key. Each other warning is repaired by
-  /// the removal of its key.
+  /// item, or by the removal of its key. A profile name that no layer has
+  /// is repaired by the name of an available profile, or by the removal of
+  /// the key. Each other warning is repaired by the removal of its key.
   ///
   /// - Parameter warning: The warning the loader returned.
   /// - Returns: The fix text.
@@ -126,6 +127,8 @@ public struct ConfigurationDoctor: Doctorable {
         "unlock the secret store and let this app read the item for the reference \"\(reference)\", or \(removal)"
     case .retiredKey(let section, _) where section == AgentConfiguration.CodingKeys.profile.stringValue:
       return removal + ", and select a profile with \"profile: <name>\""
+    case .unknownProfile(_, let available, _):
+      return "set \"profile\" to one of \(available.joined(separator: ", ")), or \(removal)"
     case .unknownSection, .unknownToolSection, .cannotDisable, .retiredKey, .retiredSection:
       return removal
     }

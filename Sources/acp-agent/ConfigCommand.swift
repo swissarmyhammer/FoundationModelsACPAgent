@@ -14,8 +14,8 @@ extension AcpAgentCommand {
       abstract: "Show, write, locate or edit the configuration.",
       subcommands: [Show.self, Init.self, Path.self, Edit.self])
 
-    /// Writes a `config.yaml` with every key at its default into one
-    /// layer — the body of `config init`, which `config edit` runs
+    /// Writes a `config.yaml` with every key at its default, except
+    /// `profile`, into one layer — the body of `config init`, which `config edit` runs
     /// too when no layer holds a file.
     ///
     /// **Nothing here is new.** The text comes from
@@ -27,6 +27,12 @@ extension AcpAgentCommand {
     /// defaults are the builtin configuration of `loader`, thus the
     /// defaults that the dotfolder name gives, such as
     /// `tools.files.exclude`, stand in the file.
+    ///
+    /// **The file sets no `profile` key** (``ConfigurationYAML/ProfileForm/byFit``,
+    /// decision D203). Comments name the bundled profiles in its place, so
+    /// each load uses the largest profile that fits the Mac, and the text
+    /// is the same on every Mac. `/config export` writes the profile of
+    /// its session, so the two front doors differ in this key only.
     ///
     /// - Parameters:
     ///   - selection: Which layer receives the file.
@@ -43,7 +49,8 @@ extension AcpAgentCommand {
       into selection: LayerSelection, of loader: ConfigurationLoader, overwrites: Bool
     ) throws -> URL {
       try LayerFileWriter.write(
-        try ConfigurationYAML.documentText(for: loader.builtinConfiguration, secrets: .omitted),
+        try ConfigurationYAML.documentText(
+          for: loader.builtinConfiguration, secrets: .omitted, profile: .byFit),
         named: ConfigurationLoader.configFileName,
         into: selection, of: loader.stack, overwrites: overwrites)
     }
@@ -60,6 +67,11 @@ extension AcpAgentCommand {
     ///   - options: The `--cwd` option group of the subcommand.
     ///   - environment: The environment the home of the stack is read
     ///     from (``AgentComposition/home(environment:)``).
+    /// The fallback profile of the loader is
+    /// ``BundledProfiles/defaultName``, so the composition reads no fit.
+    /// The file that `init` writes has no `profile` key, so it does not
+    /// depend on this name.
+    ///
     /// - Returns: The loader. Construction touches no file.
     /// - Throws: `DotfolderNameError` when the dotfolder name is
     ///   refused.
@@ -67,13 +79,14 @@ extension AcpAgentCommand {
       for options: WorkingDirectoryOptions, environment: [String: String]
     ) throws -> ConfigurationLoader {
       try AgentComposition.makeConfigurationLoader(
-        workingDirectory: options.directoryURL, environment: environment)
+        workingDirectory: options.directoryURL, environment: environment,
+        fallbackProfileName: BundledProfiles.defaultName)
     }
 
     /// `config show`: print the merged configuration, and where each
     /// value came from. The report goes to stdout (§5.6), and each
     /// configuration warning goes to stderr.
-    struct Show: ParsableCommand {
+    struct Show: AsyncParsableCommand {
       static let configuration = CommandConfiguration(
         commandName: "show",
         abstract: "Print the merged configuration, and where each value came from.",
@@ -109,9 +122,10 @@ extension AcpAgentCommand {
       @Flag(name: .customLong("json"), help: "Print the same tree as JSON.")
       var asJSON = false
 
-      mutating func run() throws {
-        try report(environment: homeOptions.environment(over: ProcessInfo.processInfo.environment))
-          .write()
+      mutating func run() async throws {
+        try await report(
+          environment: homeOptions.environment(over: ProcessInfo.processInfo.environment)
+        ).write()
       }
 
       /// Builds the report: the merged configuration of `--cwd`'s
@@ -125,15 +139,21 @@ extension AcpAgentCommand {
       ///   - secretStore: The store that gives the value of each
       ///     secret reference, or `nil` (the default) for the login
       ///     Keychain of the CLI.
+      ///   - fitSource: The fit source of the choice of the default
+      ///     profile, or `nil` (the default) for the router of the model
+      ///     choice of the CLI (``AgentComposition/fallbackProfileName(environment:fitSource:)``).
       /// - Returns: The report.
       /// - Throws: `DotfolderNameError`, the configuration load
       ///   error, or the encoding error.
       func report(
-        environment: [String: String], secretStore: (any SecretStore)? = nil
-      ) throws -> CommandReport {
+        environment: [String: String], secretStore: (any SecretStore)? = nil,
+        fitSource: (any ProfileFitEstimating)? = nil
+      ) async throws -> CommandReport {
+        let fallbackProfileName = await AgentComposition.fallbackProfileName(
+          environment: environment, fitSource: fitSource)
         let loaded = try AgentComposition.makeConfigurationLoader(
           workingDirectory: workingDirectoryOptions.directoryURL, environment: environment,
-          secretStore: secretStore
+          secretStore: secretStore, fallbackProfileName: fallbackProfileName
         ).load()
         return CommandReport(
           standardOutput: try documentText(for: loaded, environment: environment),
@@ -216,9 +236,11 @@ extension AcpAgentCommand {
     struct Init: ParsableCommand {
       static let configuration = CommandConfiguration(
         commandName: "init",
-        abstract: "Write a config.yaml with every key at its default.",
+        abstract: "Write a config.yaml with every key at its default, except profile.",
         discussion: """
-          The written path goes to stdout. The command refuses to \
+          The file sets no profile, so the agent uses the largest \
+          profile that fits the Mac. The written path goes to stdout. \
+          The command refuses to \
           replace a config.yaml that is already in the layer, and it \
           names the flag that permits the replacement.
           """)

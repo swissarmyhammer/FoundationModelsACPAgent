@@ -64,13 +64,14 @@ the composition the `acp-agent` CLI builds every mode on.
 
 ## The machine, and the models
 
-The agent needs a Mac with **32 GB** of memory for the profile `small`; the
-default profile, `large`, needs more. A profile fills four model slots at one
-time, and Router's `JointFit` prices the four models together against the
-memory of the machine. A 27B model at 4 bits is approximately 15 GB alone, so a
-16 GB machine is too small.
+The agent needs a Mac with 16 GB of memory or more. A profile fills four
+model slots at one time, and Router's `JointFit` prices the four models
+together against the memory of the machine. The agent also needs a context
+window of 32K tokens or more: the minimum window. Thus each bundled profile has
+a target memory, the memory of a Mac where its four models and the minimum
+window fit.
 
-| Slot | Model of `large` (the default) | MTP drafter |
+| Slot | Model of `large` | MTP drafter |
 |---|---|---|
 | `standard` | `mlx-community/Qwen3.8-27B-8bit` | `mlx-community/Qwen3.8-27B-MTP-8bit` |
 | `flash` | `mlx-community/Qwen3.8-27B-8bit` (the `standard` model, shared) | `mlx-community/Qwen3.8-27B-MTP-8bit` |
@@ -79,15 +80,24 @@ memory of the machine. A 27B model at 4 bits is approximately 15 GB alone, so a
 
 The model configuration is by profile. A profile is a file,
 `profiles/<name>.yaml`, and `profile: <name>` in `config.yaml` selects one.
-The agent ships two profiles:
+The agent ships three profiles, from the largest to the smallest:
 
-| `profile` | `standard` and `flash` |
-|---|---|
-| `large` (the default) | `mlx-community/Qwen3.8-27B-8bit` with its MTP drafter `mlx-community/Qwen3.8-27B-MTP-8bit` |
-| `small` | `mlx-community/Qwen3.8-27B-4bit` with its MTP drafter `mlx-community/Qwen3.8-27B-MTP-4bit` |
+| `profile` | `standard` and `flash` | Download | Target memory |
+|---|---|---|---|
+| `large` | `mlx-community/Qwen3.8-27B-8bit` with its MTP drafter `mlx-community/Qwen3.8-27B-MTP-8bit` | 33.9 GB | 48 GB or more |
+| `medium` | `mlx-community/Qwen3.8-27B-4bit` with its MTP drafter `mlx-community/Qwen3.8-27B-MTP-4bit` | 19.3 GB | 32 GB |
+| `small` | `mlx-community/Qwen3.5-9B-4bit` with its MTP drafter `mlx-community/Qwen3.5-9B-MTP-4bit`, and an 8-bit KV cache (`kvBits: 8`) | 9.4 GB | 16 GB or 24 GB |
 
-The two have the same `embedding` and `decision` models. `small` fits a Mac
-with less memory:
+The three profiles have the same `embedding` and `decision` models, and the
+download size includes them.
+
+When no layer sets `profile`, the agent uses the largest profile that fits the
+Mac. At the start, the agent asks Router for the fit of `large`, then
+`medium`, then `small`, and uses the first profile that fits with the minimum
+window. When the agent cannot read a fit (there is no Metal device, or the
+estimate fails or is cancelled), it uses `small`. Each session and the
+`acp-agent` commands `run`, `acp`, `config show` and `doctor` use the same
+choice. To select a profile yourself, set `profile`:
 
 ```yaml
 profile: small
@@ -129,8 +139,14 @@ should usually leave it out, because the context comes from the model. A
 `name` key must be the name of the file. An unknown key, or a value that does
 not decode, is an error that names the file and the key.
 
-`profile` names a profile of any layer. A name that no layer has is an error
-that lists every available name. An old `config.yaml` with the map form of
+`profile` names a profile of any layer. A name that no layer has does not
+stop the agent. The load gives a warning that names the value and every
+available name, and the agent uses the profile that it uses when no layer
+sets `profile`: the largest profile that fits. The agent
+writes the warning to its log, `acp-agent config show` writes it to stderr,
+and `acp-agent doctor` shows it. A write of a name that no layer has through
+the `settings` tool or the `settings` GraphQL endpoint is refused, and the
+error lists every available name. An old `config.yaml` with the map form of
 `profile` loads: `preset` gives the name, and each other key (`name`,
 `description`, `standard`, `flash`, `embedding`, `decision`,
 `decisionContext`, `kvBits`) gives a warning and is ignored.
@@ -138,7 +154,10 @@ that lists every available name. An old `config.yaml` with the map form of
 A change of a profile, or of the selected profile, applies at the next launch
 of the agent. `acp-agent profiles` lists, shows, saves and deletes the
 profile files. The `models` tool and the `models` GraphQL endpoint list each
-profile with its layer, and save and delete a profile file
+profile with its layer, its fit, its context window (`contextTokens`, null
+when the profile does not fit) and the memory of the Mac that a bundled
+profile is for (`targetMemory`, null for a profile file of the user or the
+project), and save and delete a profile file
 (`saveProfile`, `deleteProfile`); the `settings` tool selects one with the
 key path `["profile"]`. A child agent run cannot save, delete or select a
 profile.
@@ -169,7 +188,7 @@ subcommand, so `acp-agent "write a haiku"` runs a prompt.
 | `acp-agent run` | Run one prompt, and print the answer. This is the default. |
 | `acp-agent acp` | Serve ACP on stdin and stdout. |
 | `acp-agent config show` | Print the merged configuration, and where each value came from. |
-| `acp-agent config init` | Write a `config.yaml` with every key at its default. |
+| `acp-agent config init` | Write a `config.yaml` with every key at its default, except `profile`: the file sets no profile, so the agent uses the largest profile that fits the Mac. |
 | `acp-agent config path` | Print each layer path, and say which ones exist. |
 | `acp-agent config edit` | Open the nearest `config.yaml` in `$EDITOR`. |
 | `acp-agent instructions eject` | Write `Instructions.md` into a layer. |

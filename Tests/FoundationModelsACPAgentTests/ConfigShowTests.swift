@@ -97,20 +97,24 @@ struct ConfigShowTests {
   ///   - secretStore: The store that gives the value of each secret
   ///     reference. The default is an empty in-memory store, so no report
   ///     touches the real Keychain.
+  ///   - fitSource: The fit source of the choice of the default profile.
+  ///     The default is a source where each profile fits, so no report
+  ///     asks the network.
   /// - Returns: The report.
   /// - Throws: The parse or load error.
   private static func report(
     _ arguments: [String], in fixture: ConfigCommandFixture,
     extraEnvironment: [String: String] = [:],
-    secretStore: any SecretStore = InMemorySecretStore()
-  ) throws -> CommandReport {
+    secretStore: any SecretStore = InMemorySecretStore(),
+    fitSource: ProfileFitStub = .allFit
+  ) async throws -> CommandReport {
     let show = try #require(
       try AcpAgentCommand.parseAsRoot(
         ["config", "show", "--cwd", fixture.workspace.path] + arguments)
         as? AcpAgentCommand.Config.Show)
-    return try show.report(
+    return try await show.report(
       environment: fixture.environment.merging(extraEnvironment) { _, extra in extra },
-      secretStore: secretStore)
+      secretStore: secretStore, fitSource: fitSource)
   }
 
   /// The lines of `text` that carry a mapping key: not a comment, not a
@@ -155,10 +159,10 @@ struct ConfigShowTests {
 
   /// With no file in any layer the report is the builtin configuration,
   /// on stdout, with nothing on stderr.
-  @Test func noFilesShowTheBuiltinConfiguration() throws {
+  @Test func noFilesShowTheBuiltinConfiguration() async throws {
     let fixture = ConfigCommandFixture(label: "ConfigShowTests-builtin")
 
-    let report = try Self.report([], in: fixture)
+    let report = try await Self.report([], in: fixture)
 
     #expect(report.standardOutput.contains("profile:"))
     #expect(report.standardOutput.contains("compaction:"))
@@ -171,10 +175,10 @@ struct ConfigShowTests {
   /// With no file in any layer, the report shows the `repetition` section
   /// with Router's default value for each key, so a person can see and
   /// edit the settings of the repetition detector.
-  @Test func noFilesShowTheRepetitionSectionWithRouterDefaults() throws {
+  @Test func noFilesShowTheRepetitionSectionWithRouterDefaults() async throws {
     let fixture = ConfigCommandFixture(label: "ConfigShowTests-repetition")
 
-    let report = try Self.report([], in: fixture)
+    let report = try await Self.report([], in: fixture)
 
     #expect(report.standardOutput.contains("repetition:"))
     #expect(report.standardOutput.contains("isEnabled: \(RepetitionDetection.defaultIsEnabled)"))
@@ -194,10 +198,10 @@ struct ConfigShowTests {
   /// With no file in any layer, the report shows the line-shape and
   /// reasoning keys of the `repetition` section with Router's default value
   /// for each one (task ^7fsfw7y).
-  @Test func noFilesShowTheLineShapeAndReasoningKeysWithRouterDefaults() throws {
+  @Test func noFilesShowTheLineShapeAndReasoningKeysWithRouterDefaults() async throws {
     let fixture = ConfigCommandFixture(label: "ConfigShowTests-repetition-reasoning")
 
-    let report = try Self.report([], in: fixture)
+    let report = try await Self.report([], in: fixture)
 
     #expect(
       report.standardOutput.contains(
@@ -213,23 +217,48 @@ struct ConfigShowTests {
         "identicalToolCallLimit: \(RepetitionDetection.defaultIdenticalToolCallLimit)"))
   }
 
-  /// With no file in any layer, the report shows `profile: large`, the
-  /// name of the default profile, and no slot key.
-  @Test func noFilesShowTheDefaultProfileName() throws {
+  /// With no file in any layer and a fit source where each profile fits,
+  /// the report shows `profile: large`, the largest profile that fits, and
+  /// no slot key.
+  @Test func noFilesShowTheDefaultProfileName() async throws {
     let fixture = ConfigCommandFixture(label: "ConfigShowTests-profile")
 
-    let report = try Self.report([], in: fixture)
+    let report = try await Self.report([], in: fixture)
 
     #expect(report.standardOutput.contains("\nprofile: \"\(BundledProfiles.defaultName)\"\n"))
     #expect(!report.standardOutput.contains("  standard:"))
   }
 
+  /// With no file in any layer and a fit source where only `small` fits,
+  /// the report shows `profile: small`: the CLI uses the choice of the
+  /// agent.
+  @Test func onlySmallFittingShowsSmall() async throws {
+    let fixture = ConfigCommandFixture(label: "ConfigShowTests-choice-small")
+
+    let report = try await Self.report(
+      [], in: fixture, fitSource: ProfileFitStub(fitting: [BundledProfiles.smallestName]))
+
+    #expect(report.standardOutput.contains("\nprofile: \"\(BundledProfiles.smallestName)\"\n"))
+  }
+
+  /// With no file in any layer and a fit source where `medium` and `small`
+  /// fit, the report shows `profile: medium`.
+  @Test func mediumAndSmallFittingShowsMedium() async throws {
+    let fixture = ConfigCommandFixture(label: "ConfigShowTests-choice-medium")
+
+    let report = try await Self.report(
+      [], in: fixture,
+      fitSource: ProfileFitStub(fitting: ["medium", BundledProfiles.smallestName]))
+
+    #expect(report.standardOutput.contains("\nprofile: \"medium\"\n"))
+  }
+
   /// The comment above the `profile` key says that it names a profile
   /// file.
-  @Test func theProfileCommentNamesTheProfileFiles() throws {
+  @Test func theProfileCommentNamesTheProfileFiles() async throws {
     let fixture = ConfigCommandFixture(label: "ConfigShowTests-profile-comment")
 
-    let report = try Self.report([], in: fixture)
+    let report = try await Self.report([], in: fixture)
 
     #expect(
       report.standardOutput.contains(
@@ -239,10 +268,10 @@ struct ConfigShowTests {
   /// With no file in any layer, the report shows `tools.files.exclude`
   /// with its default: the dotfolder of the CLI, which holds the
   /// transcripts that the search verbs skip.
-  @Test func noFilesShowTheFilesExcludeDefault() throws {
+  @Test func noFilesShowTheFilesExcludeDefault() async throws {
     let fixture = ConfigCommandFixture(label: "ConfigShowTests-files-exclude")
 
-    let report = try Self.report([], in: fixture)
+    let report = try await Self.report([], in: fixture)
 
     #expect(
       report.standardOutput.contains(
@@ -251,11 +280,11 @@ struct ConfigShowTests {
 
   /// A `repetition.reasoningTokenLimit: null` shows as `null`, the value
   /// that loads back as "no limit", and not as Router's default limit.
-  @Test func aNullReasoningTokenLimitShowsAsNull() throws {
+  @Test func aNullReasoningTokenLimitShowsAsNull() async throws {
     let fixture = ConfigCommandFixture(label: "ConfigShowTests-reasoning-null")
     try fixture.writeProjectConfig(Self.noReasoningLimitYAML)
 
-    let report = try Self.report([], in: fixture)
+    let report = try await Self.report([], in: fixture)
 
     #expect(report.standardOutput.contains("reasoningTokenLimit: null"))
     #expect(
@@ -265,11 +294,11 @@ struct ConfigShowTests {
 
   /// The report is the merged configuration: a project key shows its
   /// value, not the default.
-  @Test func aProjectKeyShowsItsMergedValue() throws {
+  @Test func aProjectKeyShowsItsMergedValue() async throws {
     let fixture = ConfigCommandFixture(label: "ConfigShowTests-merged")
     try fixture.writeProjectConfig(Self.themeDarkYAML)
 
-    let report = try Self.report([], in: fixture)
+    let report = try await Self.report([], in: fixture)
 
     #expect(report.standardOutput.contains("theme: \"dark\""))
     #expect(!report.standardOutput.contains("theme: \"system\""))
@@ -277,14 +306,14 @@ struct ConfigShowTests {
 
   /// `--cwd` selects the project layer: two workspaces with different
   /// files give different reports.
-  @Test func cwdSelectsTheProjectLayer() throws {
+  @Test func cwdSelectsTheProjectLayer() async throws {
     let first = ConfigCommandFixture(label: "ConfigShowTests-cwd-first")
     let second = ConfigCommandFixture(label: "ConfigShowTests-cwd-second")
     try first.writeProjectConfig(Self.themeDarkYAML)
     try second.writeProjectConfig(Self.triggerYAML)
 
-    let firstReport = try Self.report([], in: first)
-    let secondReport = try Self.report([], in: second)
+    let firstReport = try await Self.report([], in: first)
+    let secondReport = try await Self.report([], in: second)
 
     #expect(firstReport.standardOutput.contains("theme: \"dark\""))
     #expect(!firstReport.standardOutput.contains("trigger: \(Self.configuredTrigger)"))
@@ -295,10 +324,10 @@ struct ConfigShowTests {
   // MARK: - --source
 
   /// With no file in any layer, every key reports `builtin`.
-  @Test func withNoFileEveryKeyReportsBuiltin() throws {
+  @Test func withNoFileEveryKeyReportsBuiltin() async throws {
     let fixture = ConfigCommandFixture(label: "ConfigShowTests-source-builtin")
 
-    let report = try Self.report(["--source"], in: fixture)
+    let report = try await Self.report(["--source"], in: fixture)
 
     let keyLines = Self.keyLines(in: report.standardOutput)
     #expect(!keyLines.isEmpty)
@@ -308,11 +337,11 @@ struct ConfigShowTests {
   /// With a project file that sets one key, that key reports `project`
   /// and the others `builtin`. The section the key sits in reports
   /// `project` too: the project layer introduced it.
-  @Test func aProjectKeyReportsProjectAndTheOthersBuiltin() throws {
+  @Test func aProjectKeyReportsProjectAndTheOthersBuiltin() async throws {
     let fixture = ConfigCommandFixture(label: "ConfigShowTests-source-project")
     try fixture.writeProjectConfig(Self.themeDarkYAML)
 
-    let report = try Self.report(["--source"], in: fixture)
+    let report = try await Self.report(["--source"], in: fixture)
 
     let keyLines = Self.keyLines(in: report.standardOutput)
     let projectLines = keyLines.filter { $0.hasSuffix("# project") }
@@ -325,12 +354,12 @@ struct ConfigShowTests {
 
   /// A user key reports `user`, and a project key that overrides a user
   /// key reports `project`.
-  @Test func aUserKeyReportsUserAndAnOverrideReportsProject() throws {
+  @Test func aUserKeyReportsUserAndAnOverrideReportsProject() async throws {
     let fixture = ConfigCommandFixture(label: "ConfigShowTests-source-user")
     try fixture.writeUserConfig("theme: dark\nkeymap: vim\n")
     try fixture.writeProjectConfig("theme: light\n")
 
-    let report = try Self.report(["--source"], in: fixture)
+    let report = try await Self.report(["--source"], in: fixture)
 
     let keyLines = Self.keyLines(in: report.standardOutput)
     #expect(keyLines.contains { $0.contains("theme: \"light\"") && $0.hasSuffix("# project") })
@@ -340,11 +369,11 @@ struct ConfigShowTests {
   /// A user `tools.web: false` reports `user` for that key and for its
   /// section, and each other key reports `builtin`: layer 1, the builtin
   /// file, sets no source.
-  @Test func aUserToolKeyReportsUserAndTheOtherToolKeysBuiltin() throws {
+  @Test func aUserToolKeyReportsUserAndTheOtherToolKeysBuiltin() async throws {
     let fixture = ConfigCommandFixture(label: "ConfigShowTests-source-tools")
     try fixture.writeUserConfig(Self.webOffYAML)
 
-    let report = try Self.report(["--source"], in: fixture)
+    let report = try await Self.report(["--source"], in: fixture)
 
     let keyLines = Self.keyLines(in: report.standardOutput)
     let userLines = keyLines.filter { $0.hasSuffix("# user") }
@@ -355,11 +384,11 @@ struct ConfigShowTests {
   }
 
   /// Without `--source` no key carries an annotation.
-  @Test func withoutSourceNoKeyIsAnnotated() throws {
+  @Test func withoutSourceNoKeyIsAnnotated() async throws {
     let fixture = ConfigCommandFixture(label: "ConfigShowTests-no-source")
     try fixture.writeProjectConfig(Self.themeDarkYAML)
 
-    let report = try Self.report([], in: fixture)
+    let report = try await Self.report([], in: fixture)
 
     #expect(!report.standardOutput.contains("# project"))
     #expect(!report.standardOutput.contains(Self.builtinAnnotation))
@@ -369,13 +398,13 @@ struct ConfigShowTests {
 
   /// `--json` parses as JSON and holds the same values as the YAML
   /// output: the JSON decodes to the configuration the YAML reloads to.
-  @Test func jsonDecodesToTheSameValuesAsTheYAML() throws {
+  @Test func jsonDecodesToTheSameValuesAsTheYAML() async throws {
     let fixture = ConfigCommandFixture(label: "ConfigShowTests-json")
     try fixture.writeProjectConfig(Self.triggerYAML)
     let reloadFixture = ConfigCommandFixture(label: "ConfigShowTests-json-reload")
 
-    let jsonReport = try Self.report(["--json"], in: fixture)
-    let yamlReport = try Self.report([], in: fixture)
+    let jsonReport = try await Self.report(["--json"], in: fixture)
+    let yamlReport = try await Self.report([], in: fixture)
 
     let decoded = try JSONDecoder().decode(
       AgentConfiguration.self, from: Data(jsonReport.standardOutput.utf8))
@@ -393,11 +422,11 @@ struct ConfigShowTests {
 
   /// `--json --source` holds the tree under `configuration` and the
   /// layer of every key under `sources`.
-  @Test func jsonWithSourceHoldsTheTreeAndTheSources() throws {
+  @Test func jsonWithSourceHoldsTheTreeAndTheSources() async throws {
     let fixture = ConfigCommandFixture(label: "ConfigShowTests-json-source")
     try fixture.writeProjectConfig(Self.themeDarkYAML)
 
-    let report = try Self.report(["--json", "--source"], in: fixture)
+    let report = try await Self.report(["--json", "--source"], in: fixture)
 
     let document = try JSONDecoder().decode(
       AnnotatedDocument.self, from: Data(report.standardOutput.utf8))
@@ -412,11 +441,11 @@ struct ConfigShowTests {
   /// A configured API key never shows: neither the YAML nor the JSON
   /// holds the value.
   @Test(arguments: [[], ["--json"], ["--source"]])
-  func aConfiguredAPIKeyNeverShows(arguments: [String]) throws {
+  func aConfiguredAPIKeyNeverShows(arguments: [String]) async throws {
     let fixture = ConfigCommandFixture(label: "ConfigShowTests-web-key")
     try fixture.writeProjectConfig(Self.webKeyYAML)
 
-    let report = try Self.report(arguments, in: fixture)
+    let report = try await Self.report(arguments, in: fixture)
 
     #expect(!report.standardOutput.contains(Self.webKeyValue))
     #expect(report.standardOutput.contains(ConfiguredSecret.redactedForm))
@@ -426,11 +455,11 @@ struct ConfigShowTests {
   /// and the annotated report, and the value that the store gives never
   /// shows.
   @Test(arguments: [[], ["--json"], ["--source"]])
-  func aSecretReferenceShowsAsItsReference(arguments: [String]) throws {
+  func aSecretReferenceShowsAsItsReference(arguments: [String]) async throws {
     let fixture = ConfigCommandFixture(label: "ConfigShowTests-web-reference")
     try fixture.writeProjectConfig(Self.webReferenceYAML)
 
-    let report = try Self.report(
+    let report = try await Self.report(
       arguments, in: fixture,
       secretStore: InMemorySecretStore([Self.webReferenceName: Self.webKeyValue]))
 
@@ -445,11 +474,11 @@ struct ConfigShowTests {
   /// is redacted, in the YAML, the JSON and the annotated report. No value
   /// shows.
   @Test(arguments: [[], ["--json"], ["--source"]])
-  func anMCPHeaderShowsAsItsReferenceOrRedacted(arguments: [String]) throws {
+  func anMCPHeaderShowsAsItsReferenceOrRedacted(arguments: [String]) async throws {
     let fixture = ConfigCommandFixture(label: "ConfigShowTests-mcp-secrets")
     try fixture.writeProjectConfig(Self.mcpSecretsYAML)
 
-    let report = try Self.report(
+    let report = try await Self.report(
       arguments, in: fixture,
       secretStore: InMemorySecretStore([Self.mcpReferenceName: Self.mcpReferenceValue]))
 
@@ -462,22 +491,22 @@ struct ConfigShowTests {
 
   /// The YAML report names the search providers in force, in order, and
   /// the provider of a configured key is first.
-  @Test func theReportNamesTheProvidersInForce() throws {
+  @Test func theReportNamesTheProvidersInForce() async throws {
     let fixture = ConfigCommandFixture(label: "ConfigShowTests-web-providers")
     try fixture.writeProjectConfig(Self.webKeyYAML)
 
-    let report = try Self.report([], in: fixture)
+    let report = try await Self.report([], in: fixture)
 
     #expect(report.standardOutput.contains("tavily, duckDuckGoHTML, braveHTML"))
   }
 
   /// A key in the environment changes the providers in force, and the
   /// report never shows its value.
-  @Test func anEnvironmentKeyChangesTheProvidersAndNeverShows() throws {
+  @Test func anEnvironmentKeyChangesTheProvidersAndNeverShows() async throws {
     let fixture = ConfigCommandFixture(label: "ConfigShowTests-web-environment")
     let environmentKey = "show-environment-key"
 
-    let report = try Self.report(
+    let report = try await Self.report(
       [], in: fixture, extraEnvironment: ["EXA_API_KEY": environmentKey])
 
     #expect(report.standardOutput.contains("exa, duckDuckGoHTML, braveHTML"))
@@ -487,16 +516,27 @@ struct ConfigShowTests {
   // MARK: - stderr
 
   /// A configuration warning goes to stderr, and never to stdout.
-  @Test func aWarningGoesToStderrAndNeverToStdout() throws {
+  @Test func aWarningGoesToStderrAndNeverToStdout() async throws {
     let fixture = ConfigCommandFixture(label: "ConfigShowTests-warning")
     try fixture.writeProjectConfig(Self.permissionsYAML)
 
-    let report = try Self.report([], in: fixture)
+    let report = try await Self.report([], in: fixture)
 
     #expect(report.standardErrorLines.count == 1)
     #expect(report.standardErrorLines.first?.contains("permissions") == true)
     #expect(!report.standardOutput.contains("permissions"))
     #expect(report.standardOutput.contains("profile:"))
+  }
+
+  /// A user `profile` that no layer has gives a warning on stderr that
+  /// names the value, and the report shows the configuration.
+  @Test func anUnknownProfileNameGivesAWarningOnStderr() async throws {
+    let fixture = ConfigCommandFixture(label: "ConfigShowTests-unknown-profile")
+    try fixture.writeUserConfig("profile: nosuch\n")
+
+    let report = try await Self.report([], in: fixture)
+
+    #expect(report.standardErrorLines.contains { $0.contains("\"nosuch\"") })
   }
 
   // MARK: - The parse

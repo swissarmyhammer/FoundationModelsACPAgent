@@ -4,8 +4,8 @@ import FoundationModelsRouter
 /// `models` endpoint shows it. It downloads no model and loads no model.
 ///
 /// Router's `ProfileFitEstimate` (``init(_:)``) gives it in an agent. A test
-/// makes one with ``init(fits:requiredBytes:budgetBytes:failure:)``, because
-/// Router's type has no public initializer.
+/// makes one with ``init(fits:requiredBytes:contextTokens:budgetBytes:failure:)``,
+/// because Router's type has no public initializer.
 public struct ProfileFitReport: Sendable, Equatable {
   /// True when the profile fits the budget.
   public let fits: Bool
@@ -13,6 +13,10 @@ public struct ProfileFitReport: Sendable, Equatable {
   /// The bytes that the profile needs, or `nil` when the profile does not
   /// fit.
   public let requiredBytes: Int64?
+
+  /// The context window of the fit, in tokens, or `nil` when the profile
+  /// does not fit.
+  public let contextTokens: Int?
 
   /// The memory budget of the machine, in bytes.
   public let budgetBytes: Int64
@@ -26,11 +30,16 @@ public struct ProfileFitReport: Sendable, Equatable {
   /// - Parameters:
   ///   - fits: True when the profile fits the budget.
   ///   - requiredBytes: The bytes that the profile needs, or `nil`.
+  ///   - contextTokens: The context window of the fit, or `nil`.
   ///   - budgetBytes: The memory budget of the machine.
   ///   - failure: The readable reason of a failure, or `nil`.
-  public init(fits: Bool, requiredBytes: Int64?, budgetBytes: Int64, failure: String? = nil) {
+  public init(
+    fits: Bool, requiredBytes: Int64?, contextTokens: Int? = nil, budgetBytes: Int64,
+    failure: String? = nil
+  ) {
     self.fits = fits
     self.requiredBytes = requiredBytes
+    self.contextTokens = contextTokens
     self.budgetBytes = budgetBytes
     self.failure = failure
   }
@@ -41,7 +50,8 @@ public struct ProfileFitReport: Sendable, Equatable {
   public init(_ estimate: ProfileFitEstimate) {
     self.init(
       fits: estimate.fits, requiredBytes: estimate.requiredBytes,
-      budgetBytes: estimate.budgetBytes, failure: estimate.failure)
+      contextTokens: estimate.contextTokens, budgetBytes: estimate.budgetBytes,
+      failure: estimate.failure)
   }
 }
 

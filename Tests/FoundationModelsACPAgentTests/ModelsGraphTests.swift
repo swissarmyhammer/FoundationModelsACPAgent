@@ -82,6 +82,10 @@ import Testing
     return storage
   }
 
+  /// The context window of each answer of ``StubFit`` that fits, in
+  /// tokens.
+  static let stubContextTokens = 40_960
+
   /// A fit estimate with fixed answers, which counts its calls.
   final class StubFit: ProfileFitEstimating, Sendable {
     /// The answer of each profile, by name. A profile with no answer fits.
@@ -97,7 +101,9 @@ import Testing
     func fitReport(of profile: ProfileDefinition) async -> ProfileFitReport {
       calls.withLock { $0.append(profile.name) }
       return answers[profile.name]
-        ?? ProfileFitReport(fits: true, requiredBytes: 1, budgetBytes: 2)
+        ?? ProfileFitReport(
+          fits: true, requiredBytes: 1, contextTokens: ModelsGraphTests.stubContextTokens,
+          budgetBytes: 2)
     }
   }
 
@@ -360,6 +366,86 @@ import Testing
     #expect(small["requiredBytes"] as? Double == 20)
     #expect(small["fitError"] is NSNull)
     #expect(fit.calls.withLock { $0 } == BundledProfiles.all.map(\.name))
+  }
+
+  /// The fields of `contextTokens` and `targetMemory` of each row, by the
+  /// name of the profile.
+  ///
+  /// - Parameter graph: The endpoint.
+  /// - Returns: The rows, by name.
+  static func windowRows(_ graph: ModelsGraph) async throws -> [String: [String: Any]] {
+    let reply = try await run(graph, "{ profiles { name contextTokens targetMemory } }")
+    #expect(reply.codes.isEmpty, "\(reply.text)")
+    let rows = try #require(reply.data?["profiles"] as? [[String: Any]])
+    return Dictionary(
+      uniqueKeysWithValues: rows.compactMap { row in (row["name"] as? String).map { ($0, row) } })
+  }
+
+  /// The window of a profile that fits comes from the estimate.
+  @Test func theWindowComesFromTheEstimate() async throws {
+    let fixture = try SettingsGraphFixture(label: "models-window")
+    let graph = Self.graph(fixture, fit: StubFit())
+
+    let rows = try await Self.windowRows(graph)
+
+    #expect(rows["small"]?["contextTokens"] as? Int == Self.stubContextTokens)
+  }
+
+  /// A profile that does not fit has no window.
+  @Test func aProfileThatDoesNotFitHasNoWindow() async throws {
+    let fixture = try SettingsGraphFixture(label: "models-no-window")
+    let fit = StubFit([
+      "large": ProfileFitReport(
+        fits: false, requiredBytes: nil, budgetBytes: 32, failure: "needs 40, has 32")
+    ])
+
+    let rows = try await Self.windowRows(Self.graph(fixture, fit: fit))
+
+    #expect(rows["large"]?["contextTokens"] is NSNull)
+  }
+
+  /// Each bundled profile has the memory of the Mac that it is for.
+  @Test func eachBundledProfileHasItsTargetMemory() async throws {
+    let fixture = try SettingsGraphFixture(label: "models-target-memory")
+
+    let rows = try await Self.windowRows(Self.graph(fixture))
+
+    #expect(
+      rows.mapValues { $0["targetMemory"] as? String }
+        == ["large": "48 GB or more", "medium": "32 GB", "small": "16 GB or 24 GB"])
+  }
+
+  /// With no `profile` at the user level, the selected profile is the
+  /// choice of the store, as the load of a session does.
+  @Test func noProfileKeySelectsTheChoiceOfTheStore() async throws {
+    let fixture = try SettingsGraphFixture(
+      label: "models-no-profile-key", secretStore: InMemorySecretStore(),
+      fallbackProfileName: BundledProfiles.smallestName)
+
+    let rows = try await Self.profiles(Self.graph(fixture))
+
+    #expect(
+      rows.compactMap { $0["selected"] as? Bool == true ? $0["name"] as? String : nil }
+        == [BundledProfiles.smallestName])
+  }
+
+  /// A user `profile` that no layer has selects the fallback profile, as
+  /// the load of a session does.
+  @Test func anUnknownProfileNameSelectsTheFallback() async throws {
+    let fixture = try SettingsGraphFixture(label: "models-unknown-on-disk")
+    let root = try #require(
+      SettingsFoldersFixture.layerRoot(
+        of: .user, in: fixture.settingsFolders, workingDirectory: fixture.firstDirectory))
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    try "profile: nosuch\n".write(
+      to: root.appendingPathComponent(ConfigurationLoader.configFileName),
+      atomically: true, encoding: .utf8)
+
+    let rows = try await Self.profiles(Self.graph(fixture))
+
+    #expect(
+      rows.compactMap { $0["selected"] as? Bool == true ? $0["name"] as? String : nil }
+        == [fixture.store.fallbackProfileName])
   }
 
   /// A name that no layer has is refused by the settings store, and the

@@ -496,6 +496,13 @@ struct ModelsGraphAPI: API {
         .description("The memory budget of this machine in bytes, or null when no estimate ran.")
       Field("fitError", at: \.fitError)
         .description("Why the profile does not fit: the budget is too small, or a model could not be sized. Null when it fits.")
+      Field("contextTokens", at: \.contextTokens)
+        .description(
+          "The context window of the fit in tokens, or null when the profile does not fit or no estimate ran.")
+      Field("targetMemory", at: \.targetMemory)
+        .description(
+          "The memory of the Mac that a bundled profile is for, such as \"32 GB\". Null for a profile file of the "
+            + "user or the project.")
     }
     .description("One profile: the models of the four slots, which the user selects together.")
   }
