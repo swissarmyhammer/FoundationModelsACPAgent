@@ -28,10 +28,26 @@ comments:
     - evidence: `swift build --build-tests` printed "Build complete!" with no new warning; `swift test --skip-build`: 2290 tests in 243 suites passed, 1 known issue (the existing `withKnownIssue` in HarnessSmokeTests); swiftlint 0 violations on the new file
     - next: review
   timestamp: 2026-11-18T14:10:10.946939+00:00
+- actor: claude-code
+  id: 01m7qg07wwv1kh03hx4rn16rsh
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (e9e7f2a). 1 file reviewed: Tests/FoundationModelsACPAgentTests/SessionsSkillPreloadTests.swift. 0 findings, 0 confirmed, 0 refuted, 7 attempted, 0 failed. 4 .kanban files not reviewed (ignore rule).
+    - next: none. The task is in done.
+  timestamp: 2026-11-18T14:12:05.148811+00:00
+- actor: claude-code
+  id: 01m7qg0hyfj9v0ccqat79rea2t
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — Tests/FoundationModelsACPAgentTests/SessionsSkillPreloadTests.swift
+    - test: green — swift test --skip-build, 2290 tests in 243 suites passed
+    - commit: e9e7f2a
+    - review: clean — 0 findings
+  timestamp: 2026-11-18T14:12:15.439239+00:00
 depends_on:
 - 01M7QCBBA8BX23JY4SFZX4K6R4
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: fffffe80
 title: 'D200: test that `skills: [sessions]` in AGENT.md puts the skill body in the instructions'
 ---
 Decision D200 in `TestudoApp/features/decisions.md` (commit d1895ba). Brief: `/Users/wballard/github/swissarmyhammer/.briefs/at-sessions/acpa-brief-sessions-skill.md`, change item 3 and the third unit test.
