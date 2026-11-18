@@ -10,8 +10,9 @@ import Testing
 /// The wire view of a message that the session directory delivers to a hosted session (ACPA-6,
 /// D199 (f)). Each test opens a target session and a source session on one scripted agent, sends
 /// a message through the directory of the agent, and reads the updates that the client of the
-/// target got.
-@Suite struct DirectoryMessageWireTests {
+/// target got. The suite trait closes each harness of a test whose body throws, also the harness
+/// of a ``Pair`` whose make throws after its fixture opened.
+@Suite(.closesHarnesses) struct DirectoryMessageWireTests {
   /// The directory label of the suite.
   private static let label = "DirectoryMessageWireTests"
 
@@ -71,7 +72,7 @@ import Testing
         AgentClientHarness.makeNewSessionRequest(cwd: sourceFolder)
       ).sessionId
       let pair = Pair(fixture: fixture, source: source, sourceFolder: sourceFolder)
-      _ = try await pair.directory.setTitle(sourceTitle, of: try ulid(source))
+      _ = try await pair.directory.setTitle(sourceTitle, of: try source.ulid())
       return pair
     }
 
@@ -83,7 +84,7 @@ import Testing
     func send(from sender: SessionMessageSender, sourceSession: ULID? = nil) async throws {
       _ = try await directory.send(
         OutgoingSessionMessage(
-          from: sender, to: .session(try ulid(target)), text: messageText,
+          from: sender, to: .session(try target.ulid()), text: messageText,
           sourceSession: sourceSession))
     }
 
@@ -98,14 +99,6 @@ import Testing
       }
       return notifications.filter { $0.sessionId == target }.map(\.update)
     }
-  }
-
-  /// The ULID of a wire session id.
-  ///
-  /// - Parameter id: The wire session id.
-  /// - Returns: The ULID.
-  private static func ulid(_ id: SessionId) throws -> ULID {
-    try #require(ULID(ulidString: id.rawValue))
   }
 
   /// The text of an agent-message chunk.
@@ -152,10 +145,10 @@ import Testing
   @Test("a user message to an idle session gives one view with the user sender")
   func aUserMessageGivesOneViewWithTheUserSender() async throws {
     let pair = try await Pair.make(name: "user", gatePath: "/nonexistent")
-    try await pair.send(from: .user(clientID: Self.clientID), sourceSession: try Self.ulid(pair.source))
+    defer { await pair.fixture.close() }
+    try await pair.send(from: .user(clientID: Self.clientID), sourceSession: try pair.source.ulid())
 
     let updates = try await pair.targetUpdatesAfterTheReply()
-    await pair.fixture.close()
 
     let sender = try Self.sender(in: updates)
     #expect(Self.messageViews(in: updates).count == 1)
@@ -168,10 +161,10 @@ import Testing
   @Test("the view of a user message comes before the reply of the turn")
   func theViewComesBeforeTheReply() async throws {
     let pair = try await Pair.make(name: "order", gatePath: "/nonexistent")
-    try await pair.send(from: .user(clientID: Self.clientID), sourceSession: try Self.ulid(pair.source))
+    defer { await pair.fixture.close() }
+    try await pair.send(from: .user(clientID: Self.clientID), sourceSession: try pair.source.ulid())
 
     let updates = try await pair.targetUpdatesAfterTheReply()
-    await pair.fixture.close()
 
     let view = try Self.index(in: updates) { $0.sessionMessagePayload?.firstText == Self.messageText }
     let reply = try Self.index(in: updates) { Self.chunkText(of: $0) == Self.replyText }
@@ -181,11 +174,11 @@ import Testing
   @Test("a session message gives the title, the agent and the folder of the sender")
   func aSessionMessageGivesTheSenderSession() async throws {
     let pair = try await Pair.make(name: "session", gatePath: "/nonexistent")
-    try await pair.send(from: .session(try Self.ulid(pair.source)))
+    defer { await pair.fixture.close() }
+    try await pair.send(from: .session(try pair.source.ulid()))
 
     let updates = try await pair.targetUpdatesAfterTheReply()
-    let summary = try #require(try await pair.directory.summary(of: try Self.ulid(pair.source)))
-    await pair.fixture.close()
+    let summary = try #require(try await pair.directory.summary(of: try pair.source.ulid()))
 
     let sender = try Self.sender(in: updates)
     #expect(sender.kind == .session)
@@ -199,20 +192,23 @@ import Testing
     let gate = makeResolvedDirectory(label: "\(Self.label)-queued-gate")
       .appendingPathComponent("gate").path
     let pair = try await Pair.make(name: "queued", gatePath: gate)
+    defer { await pair.fixture.close() }
     let busy = Task {
       try await pair.fixture.harness.connection.prompt(
         AgentClientHarness.makePromptRequest(sessionId: pair.target, text: Self.busyMarker))
     }
+    // A wait that throws must not leave the busy prompt at the gate. The cancel comes before the
+    // close of the fixture, because the defer blocks run in the reverse order.
+    defer { busy.cancel() }
     let target = pair.target
     _ = try await pair.fixture.collector.wait(for: "the target works") { updates in
       updates.contains { $0.sessionId == target && isRunningState($0.update) }
     }
-    try await pair.send(from: .session(try Self.ulid(pair.source)))
+    try await pair.send(from: .session(try pair.source.ulid()))
     try "open".write(toFile: gate, atomically: true, encoding: .utf8)
 
     let updates = try await pair.targetUpdatesAfterTheReply()
     _ = try await busy.value
-    await pair.fixture.close()
 
     let busyReply = try Self.index(in: updates) { Self.chunkText(of: $0) == Self.busyReply }
     let view = try Self.index(in: updates) { $0.sessionMessagePayload?.firstText == Self.messageText }

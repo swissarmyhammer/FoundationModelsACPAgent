@@ -49,6 +49,41 @@ comments:
     - evidence: `swift build --build-tests` printed "Build complete!" with 0 compiler warnings. The only warning line is the SwiftBuild message "missing creator for mutated node" for the mlx-swift_Cmlx bundle; it is not a compiler warning and is not from this change. `swift test --skip-build`: 2309 tests in 245 suites passed, 0 failures, 1 known issue (the `withKnownIssue` in HarnessSmokeTests that was there before).
     - next: /review
   timestamp: 2026-11-18T15:46:08.066217+00:00
+- actor: claude-code
+  id: 01m7qnpnpycnn8hww49x2f1v7g
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD; 7 findings (7 confirmed, 4 refuted). DirectoryMessage.swift:63, DirectoryMessage.swift:66, DirectoryMessage.swift:69, DirectoryMessage.swift:87, SubagentMessageProjector.swift:621, DirectoryMessageWireTests.swift:107, DirectoryMessageWireTests.swift:202.
+    - next: Correct each item in the section "Review Findings (2026-11-18 09:46)". Then do the review again.
+  timestamp: 2026-11-18T15:51:43.070042+00:00
+- actor: claude-code
+  id: 01m7qnq67w0kgfawcfbgbaznxj
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 9 files
+    - test: green — swift test --skip-build, 2309 tests in 245 suites passed; 0 compiler warnings
+    - commit: 7d35965 (pushed to origin/main at the request of the user)
+    - review: findings — DirectoryMessage.swift:63, :66, :69, :87; SubagentMessageProjector.swift:621; DirectoryMessageWireTests.swift:107, :202
+  timestamp: 2026-11-18T15:51:59.996004+00:00
+- actor: claude-code
+  id: 01m7qp37kpx47m92da88126fb8
+  text: |-
+    Review findings (2026-11-18 09:46) corrected, not committed:
+    - Findings 1-3 (dead-code-swift, `ExpectedHostMail.sender`, `.recipient`, `.text`): the properties stay. The projector finds a record with `firstIndex(of:)`, so the synthesized `Equatable` is their only reader. The `dead-code-swift` rule says: do not delete such a property, write `// periphery:ignore` above it with the reason. Each property now has the reason in its doc comment and the marker on the line above the declaration. The other properties of the file have real readers.
+    - Finding 4 (preconditions): `DirectoryMessageSource.message(of:takenBy:)` now calls `assertionFailure("session id is not a ULID: ...")` and `ACPAgentTelemetry.logger(.session).error(...)` with the `sessionId` metadata key before `return nil`. No unit test reaches this path: `assertionFailure` stops a debug test run. The full suite passed, so no test sends a session id that is not a ULID through this path.
+    - Finding 5 (duplication): new `State.deliverDirectoryView(of:to:)` inserts the key in `directoryKeys` and gives the delivery. `register` and `receive` call it. The two copies are gone.
+    - Finding 6 (reuse): new `Tests/FoundationModelsACPAgentTests/Support/SessionIdULID.swift` with `extension SessionId { func ulid() throws -> ULID }` (needs `import FoundationModelsRouter` for `ULID`). `AgentSessionLauncherTests` and `DirectoryMessageWireTests` call it. The two private copies are gone.
+    - Finding 7 (concurrency): each test of `DirectoryMessageWireTests` has `defer { await pair.fixture.close() }` (Swift 6.4 accepts `await` in `defer`). The queued test has `defer { busy.cancel() }` after the busy Task; the defers run in reverse order, so the cancel comes before the close. The scripted gate wait checks cancellation. The suite also has `@Suite(.closesHarnesses)` (test rule T1), so a `Pair.make` that throws after its fixture opened also closes the harness.
+  timestamp: 2026-11-18T15:58:34.614249+00:00
+- actor: claude-code
+  id: 01m7qp3bkmcv3kazcxq1erm513
+  text: |-
+    ### implement — changed
+    - evidence: 6 files — Sources/FoundationModelsACPAgent/Agent/DirectoryMessage.swift, Sources/FoundationModelsACPAgent/Agent/SubagentMessageProjector.swift, Tests/FoundationModelsACPAgentTests/Support/SessionIdULID.swift (new), Tests/FoundationModelsACPAgentTests/AgentSessionLauncherTests.swift, Tests/FoundationModelsACPAgentTests/DirectoryMessageWireTests.swift, .kanban card (7 of 7 findings checked)
+    ### test — green
+    - evidence: `swift build --build-tests` printed "Build complete!" with 0 compiler warnings (only the SwiftBuild line "missing creator for mutated node" for the mlx-swift_Cmlx bundle, not a compiler warning). `swift test --skip-build`: 2309 tests in 245 suites passed, 0 failures, 1 known issue (the `withKnownIssue` in HarnessSmokeTests that was there before).
+    - next: /review
+  timestamp: 2026-11-18T15:58:38.708656+00:00
 position_column: doing
 position_ordinal: '8180'
 title: 'ACPA-6: send a session_message update for each delivered directory message'
@@ -86,3 +121,21 @@ Use the existing event `SessionDirectoryEvent.messageDelivered(SessionMessage)` 
 - A message from a session through the `sessions` tool: `sender.kind == "session"`, with title, agent and cwd.
 - A queued message: the update comes when its turn starts, not before.
 - A message of the `agents` tool: the same updates as today, no second update. #d199 #at-sessions #acpa-6
+
+## Review Findings (2026-11-18 09:46)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 8 file(s) reviewed, 9 not reviewed.
+
+> 8 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 8 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `ARCHITECTURE.md` — no validator matches this file
+
+- [x] `Sources/FoundationModelsACPAgent/Agent/DirectoryMessage.swift:63` `code-hygiene/dead-code-swift` — var.instance `sender` is assignOnlyProperty.
+- [x] `Sources/FoundationModelsACPAgent/Agent/DirectoryMessage.swift:66` `code-hygiene/dead-code-swift` — var.instance `recipient` is assignOnlyProperty.
+- [x] `Sources/FoundationModelsACPAgent/Agent/DirectoryMessage.swift:69` `code-hygiene/dead-code-swift` — var.instance `text` is assignOnlyProperty.
+- [x] `Sources/FoundationModelsACPAgent/Agent/DirectoryMessage.swift:87` `swift/preconditions` — The guard returns nil with no log and no assertion when the session id of a directory read is not a ULID. A session id that does not parse as a ULID is an unexpected condition. The silent nil hides the defect from the author and from production logs. Add `assertionFailure("session id is not a ULID: \(session.rawValue)")` and a `ACPAgentTelemetry.logger(.session).error(...)` call with the `sessionId` metadata key before `return nil`, as the preconditions rule describes.
+- [x] `Sources/FoundationModelsACPAgent/Agent/SubagentMessageProjector.swift:621` `duplication/duplication` — The take of a stored directory message repeats the same two steps as the register path: it marks the key in `directoryKeys` and returns one delivery of `message.incomingView` to a session. If the rule for marking a directory key done changes in one place and not the other, the two paths drift apart. Extract one `mutating func deliverDirectoryView(of message: DirectoryMessage, to session: SessionId) -> [Delivery]` in `State` that inserts the key and returns the delivery. Call it from both `register` (526-527) and `receive` (620-621), and delete the two copies.
+- [x] `Tests/FoundationModelsACPAgentTests/DirectoryMessageWireTests.swift:107` `reuse/reuse` — The private static `ulid(_:)` helper reimplements the same conversion from a wire `SessionId` to a `ULID` that already exists in `AgentSessionLauncherTests`. It is a second copy of one behavior, so a fix to one would not reach the other. Move the helper to shared test support (for example `Tests/FoundationModelsACPAgentTests/Support/`) as one non-private function, and have both suites call it. Do not keep two private copies.
+- [x] `Tests/FoundationModelsACPAgentTests/DirectoryMessageWireTests.swift:202` `swift/concurrency` — The unstructured Task at line 202 is awaited only at line 214. If a throw happens first (at line 207 while the wait for the target runs, or at line 213 while the wait for the reply runs), the Task is never awaited or cancelled. The busy prompt then stays blocked at the gate, and the fixture is never closed. Cancel the task and close the fixture on every exit path. Use `defer { busy.cancel() }` before the waits, or run the busy prompt in `async let` or a `withThrowingTaskGroup`, so that it ends when the scope ends. Keep `await pair.fixture.close()` in a `defer` as well.

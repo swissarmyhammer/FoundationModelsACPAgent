@@ -523,8 +523,20 @@ extension SubagentMessageProjector {
         directoryMessages.store(message, for: message.key)
         return []
       }
+      return deliverDirectoryView(of: message, to: receipt.session)
+    }
+
+    /// Marks a directory message done and gives its view to the session that took its mail.
+    ///
+    /// - Parameters:
+    ///   - message: The message.
+    ///   - session: The session that took the mail.
+    /// - Returns: The delivery of the incoming view.
+    mutating func deliverDirectoryView(of message: DirectoryMessage, to session: SessionId)
+      -> [Delivery]
+    {
       directoryKeys.insert(message.key)
-      return [delivery(to: receipt.session, message.incomingView)]
+      return [delivery(to: session, message.incomingView)]
     }
 
     /// Records that the send step of a key is done.
@@ -617,8 +629,7 @@ extension SubagentMessageProjector {
         return incomingOnly(of: message, receivedBy: receiver, text: text ?? "")
       }
       if let message = directoryMessages.remove(key) {
-        directoryKeys.insert(key)
-        return [delivery(to: receiver, message.incomingView)]
+        return deliverDirectoryView(of: message, to: receiver)
       }
       if !sentKeys.contains(key) {
         earlyReceipts.store(Receipt(session: receiver, text: text), for: key)

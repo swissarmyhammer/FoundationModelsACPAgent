@@ -58,14 +58,24 @@ struct DirectoryMessage: Sendable {
 /// A mail that the host mail route sends through the session directory
 /// (``RoutedACPAgent/makeAgentRunHost(recordingRoot:)``). The route records it before the send,
 /// so the directory path of the projector does not show it a second time.
+///
+/// The projector finds a record with `firstIndex(of:)`, so the synthesized `Equatable`
+/// conformance is the only reader of each property. Periphery does not see a synthesized
+/// reader, so each property has a marker.
 struct ExpectedHostMail: Equatable, Sendable {
   /// The session of the run that sends the mail.
+  /// Read by the synthesized `Equatable` conformance; periphery sees no reader.
+  // periphery:ignore
   let sender: SessionId
 
   /// The caller session that gets the mail.
+  /// Read by the synthesized `Equatable` conformance; periphery sees no reader.
+  // periphery:ignore
   let recipient: SessionId
 
   /// The text of the mail.
+  /// Read by the synthesized `Equatable` conformance; periphery sees no reader.
+  // periphery:ignore
   let text: String
 }
 
@@ -80,11 +90,16 @@ struct DirectoryMessageSource: Sendable {
   ///   - mail: The id of the mail that the session took.
   ///   - session: The session that took it.
   /// - Returns: The message, or `nil` when the directory did not deliver the mail. A read that
-  ///   fails is logged and gives `nil`.
+  ///   fails is logged and gives `nil`. A session id that is not a ULID is unexpected: it stops
+  ///   a debug build, and a release build logs it and gives `nil`.
   func message(of mail: MailID, takenBy session: SessionId) async -> FoundationModelsExtras
     .SessionMessage?
   {
     guard let recipient = ULID(ulidString: session.rawValue) else {
+      assertionFailure("session id is not a ULID: \(session.rawValue)")
+      ACPAgentTelemetry.logger(.session).error(
+        "The id of a session is not a ULID. The directory read stops, and the mail gets no view.",
+        metadata: [ACPAgentTelemetry.LogMetadataKey.sessionId: "\(session.rawValue)"])
       return nil
     }
     do {

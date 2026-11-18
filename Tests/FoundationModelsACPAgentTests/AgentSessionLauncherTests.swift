@@ -34,11 +34,6 @@ import Testing
     return (composed, id, folder)
   }
 
-  /// The ULID of a wire session id.
-  private static func ulid(_ id: SessionId) throws -> ULID {
-    try #require(ULID(ulidString: id.rawValue))
-  }
-
   /// A recorded root session that is not live comes back live, in the
   /// session table of the agent. The launcher takes the session for no
   /// connection: the owner record stays as it was.
@@ -47,12 +42,12 @@ import Testing
     let launcher = AgentSessionLauncher(agent: recorded.composed.agent)
     let ownerBefore = recorded.composed.agent.connections.owner(of: recorded.id)
 
-    let session = try await launcher.restoreSession(id: try Self.ulid(recorded.id))
+    let session = try await launcher.restoreSession(id: try recorded.id.ulid())
     let entry = await recorded.composed.agent.liveRoot(recorded.id)
     let owner = recorded.composed.agent.connections.owner(of: recorded.id)
     await recorded.composed.closeOpenSessions()
 
-    #expect(session.id == (try Self.ulid(recorded.id)))
+    #expect(session.id == (try recorded.id.ulid()))
     #expect(entry != nil)
     #expect(entry?.workingDirectory.standardizedFileURL == recorded.folder.standardizedFileURL)
     #expect(owner == ownerBefore)
@@ -62,9 +57,9 @@ import Testing
   @Test func aLiveSessionComesBackAsItIs() async throws {
     let recorded = try await Self.recordedSession(label: "\(Self.label)-live")
     let launcher = AgentSessionLauncher(agent: recorded.composed.agent)
-    let first = try await launcher.restoreSession(id: try Self.ulid(recorded.id))
+    let first = try await launcher.restoreSession(id: try recorded.id.ulid())
 
-    let second = try await launcher.restoreSession(id: try Self.ulid(recorded.id))
+    let second = try await launcher.restoreSession(id: try recorded.id.ulid())
     await recorded.composed.closeOpenSessions()
 
     #expect((first as AnyObject) === (second as AnyObject))
@@ -75,7 +70,7 @@ import Testing
   @Test func aClientTakesARestoredSession() async throws {
     let recorded = try await Self.recordedSession(label: "\(Self.label)-take")
     let launcher = AgentSessionLauncher(agent: recorded.composed.agent)
-    let restored = try await launcher.restoreSession(id: try Self.ulid(recorded.id))
+    let restored = try await launcher.restoreSession(id: try recorded.id.ulid())
 
     _ = try await recorded.composed.agent.resumeSession(
       ResumeSessionRequest(

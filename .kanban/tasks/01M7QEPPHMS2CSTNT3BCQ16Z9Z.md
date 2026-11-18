@@ -16,6 +16,10 @@ comments:
     - The endpoint field `Session.export` comes later (Multitool ^n9fhrz0).
     Now this task waits only for ^v2y341x.
   timestamp: 2026-11-18T15:38:36.908097+00:00
+- actor: claude-code
+  id: 01m7qnr1et6han1a5x3kraex70
+  text: 'Dependency available (2026-11-18): the endpoint field `Session.export(format: MARKDOWN, thoughts: Boolean = false): String!` is on FoundationModelsMultitool origin/main, commit 5385bec6. It calls the same `SessionTranscriptExporter` that `SessionsGraph.endpoint(of:exporter:)` gets, and writes no file. Thus give the exporter to `SessionsGraph.endpoint(of:exporter:)` too, not only to `SessionsTool(directory:exporter:)`, and add a test that the endpoint field gives the same text as the tool.'
+  timestamp: 2026-11-18T15:52:27.866146+00:00
 depends_on:
 - 01M7NQMWNNTAYWET485V2Y341X
 position_column: todo
