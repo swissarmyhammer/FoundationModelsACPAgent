@@ -205,6 +205,53 @@ extension SessionMergeEngine {
 }
 
 extension SessionMergeEngine {
+  /// The position of a fork cut in this history: the number of transcript entries (``entries``)
+  /// that the fork keeps (D205).
+  ///
+  /// - ``ForkCutSide/before`` keeps the entries before the message, and not the message.
+  /// - ``ForkCutSide/after`` keeps the entries up to the end of the message, and the message.
+  ///
+  /// Thus the cut after the last agent message of a turn and the cut before the user message of
+  /// the next turn give the same position. The message is the first message entry of the history
+  /// with the id (``SessionEntry/ID/messageId``). An entry keeps the place where it first
+  /// appeared, so a message that came in chunks has one position.
+  ///
+  /// The history keeps the ACP ids that the client saw live, and the file of the history keeps
+  /// them for a new process (``SessionHistoryFile``). Thus the map is the same for a session that
+  /// was resumed after a restart (``RoutedACPAgent/retainedHistory(kept:directory:sessionId:)``).
+  ///
+  /// - Parameters:
+  ///   - messageId: The ACP message id at the cut.
+  ///   - side: The side of the message where the cut is.
+  /// - Returns: The position, or `nil` when no message of the history has the id.
+  func forkPosition(of messageId: MessageId, on side: ForkCutSide) -> Int? {
+    guard let index = entries.firstIndex(where: { $0.id.messageId == messageId }) else {
+      return nil
+    }
+    switch side {
+    case .before:
+      return index
+    case .after:
+      return entries.index(after: index)
+    }
+  }
+}
+
+extension SessionEntry.ID {
+  /// The ACP message id of a message entry: a user message, an agent message, an agent thought or
+  /// a message between sessions. It is `nil` for an entry that is not a message.
+  var messageId: MessageId? {
+    switch self {
+    case .userMessage(let id), .agentMessage(let id), .agentThought(let id),
+      .sessionMessage(let id):
+      return id
+    case .toolCall, .terminal, .plan, .compaction, .unidentified:
+      return nil
+    }
+  }
+}
+
+extension SessionMergeEngine {
   /// The update that holds the current state of a listed piece of work: the merged `tool_call`,
   /// `terminal` or `subagent` that the history holds for it.
   ///
