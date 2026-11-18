@@ -1406,6 +1406,33 @@ import ULID
         == [.value(defaultName)])
   }
 
+  /// The `name` of the `AGENT.md` of the working directory of the session
+  /// that sends the name of its agent.
+  private static let workingDirectoryAgentName = "Travel Planner"
+
+  /// The default name that ``workingDirectoryAgentName`` gives.
+  private static let workingDirectoryAgentSlug = "travel-planner"
+
+  /// The `session_info_update` of a new session has the name of the agent
+  /// of the session: the `name` of the `AGENT.md` of its working directory.
+  @Test
+  func aNewSessionSendsTheNameOfItsAgentBeforeTheFirstPrompt() async throws {
+    let cwd = makeResolvedDirectory(label: "PromptExecutionTests-agent-name")
+    try TestFileFixture.write(
+      AgentFolderFixture.document(
+        id: Self.workingDirectoryAgentName, description: "The test agent of the folder."),
+      named: AgentFolderFixture.documentName, in: cwd)
+    let fixture = try await ScriptedPromptFixture.make(
+      script: [.textDelta("done"), .endPass], label: "PromptExecutionTests",
+      workingDirectory: cwd)
+    let updates = try await Self.runPrompt(on: fixture)
+    await fixture.close()
+
+    #expect(
+      Self.sessionInfoTitles(in: Self.updatesBeforeFirstPrompt(in: updates))
+        == [.value(Self.workingDirectoryAgentSlug)])
+  }
+
   /// The first prompt does not change the name that the session has.
   @Test
   func theFirstPromptKeepsTheDefaultName() async throws {

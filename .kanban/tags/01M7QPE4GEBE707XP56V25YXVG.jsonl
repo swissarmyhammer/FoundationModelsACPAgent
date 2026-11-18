@@ -1,0 +1,1 @@
+{"id":"01M7QPE4GEMEP9TAKY9EJV225T","timestamp":"2026-11-18T16:04:31.886772Z","op":"create","item_id":"01M7QPE4GEBE707XP56V25YXVG","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: 7057ff\n+tag_name: acpa-23\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: 7057ff\n-tag_name: acpa-23\n","transaction_id":null}

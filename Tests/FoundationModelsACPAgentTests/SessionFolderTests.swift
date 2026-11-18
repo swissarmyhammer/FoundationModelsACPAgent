@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
+import FoundationModelsAgents
 import FoundationModelsExtras
 import Testing
 
@@ -33,13 +34,16 @@ import Testing
   /// The prompt text of the second session.
   private static let secondPrompt = "the second session"
 
-  /// The default name of the first session in a folder. The agent of the
-  /// fixture has no name, so the name is the fallback name of `SessionName`.
-  private static let firstName = SessionName.default(agentName: "", usedNames: [])
+  /// The default name of the first session in a folder. The session has the
+  /// builtin default agent, and the host of the fixture gives no name, so
+  /// the name comes from the id of the default agent.
+  private static let firstName = SessionName.default(
+    agentName: AgentCatalog.defaultAgentID, usedNames: [])
 
   /// The default name of the second session in the same folder: the first
   /// session uses the base name.
-  private static let secondName = SessionName.default(agentName: "", usedNames: [firstName])
+  private static let secondName = SessionName.default(
+    agentName: AgentCatalog.defaultAgentID, usedNames: [firstName])
 
   /// The script of each prompt: one text, then the end of the pass.
   private static let script: [ScriptedPassStep] = [.textDelta("done"), .endPass]

@@ -3,6 +3,7 @@ import FoundationModels
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
+import FoundationModelsAgents
 import FoundationModelsExtras
 import FoundationModelsRouter
 import Testing
@@ -371,8 +372,9 @@ import Testing
 
   /// After `session/new` alone, the projects folder of the home holds the
   /// cwd, and the `index.md` of the session holds the default name and no
-  /// first activity yet. The agent of the session has no name, so the
-  /// default name is the fallback name of `SessionName`.
+  /// first activity yet. The session has the builtin default agent, and the
+  /// host gives no name, so the default name comes from the id of the
+  /// default agent.
   @Test
   func sessionNewRegistersTheProjectAndRecordsNoActivity() async throws {
     let userDirectory = makeResolvedDirectory(label: "SessionSetupTests-user")
@@ -388,7 +390,8 @@ import Testing
     let record = try RecordedSessionIndexFile.slice(
       ofSession: response.sessionId.rawValue, under: Self.projectTranscriptsRoot(of: cwd),
       as: RecordActivitySlice.self)
-    #expect(record.title == SessionName.default(agentName: "", usedNames: []))
+    #expect(
+      record.title == SessionName.default(agentName: AgentCatalog.defaultAgentID, usedNames: []))
     #expect(record.firstActivityAt == nil)
   }
 

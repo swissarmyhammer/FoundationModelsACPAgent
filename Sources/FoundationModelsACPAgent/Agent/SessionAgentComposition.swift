@@ -95,11 +95,25 @@ extension RoutedACPAgent {
       agent: ComposedSessionAgent(
         choice: resolved.choice,
         option: ConfigOptions.AgentOption(catalog: catalog, agent: resolved),
-        slot: startSlot(of: resolved.definition)),
+        slot: startSlot(of: resolved.definition),
+        name: name(of: resolved)),
       text: try await renderedInstructions(
         of: resolved.definition, runner: runner, templateContext: templateContext),
       definition: resolved.definition,
       workingDirectoryAgent: resolved.workingDirectoryAgent)
+  }
+
+  /// The name of the agent of a session (D199 (b)): the `name` key of its
+  /// `AGENT.md`. The default agent with no `name` key, and the builtin
+  /// floor, have the name that the host gave (``agentName``).
+  ///
+  /// - Parameter resolved: The resolved agent of the session.
+  /// - Returns: The name, or `nil` when the agent has no name.
+  private func name(of resolved: ResolvedSessionAgent) -> String? {
+    guard let name = resolved.definition?.name else {
+      return resolved.choice.id == AgentCatalog.defaultAgentID ? agentName : nil
+    }
+    return name
   }
 
   /// The start slot of a session for the `model:` key of its agent

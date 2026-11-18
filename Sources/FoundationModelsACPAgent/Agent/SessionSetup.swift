@@ -629,6 +629,12 @@ struct ComposedSessionAgent {
   /// The slot that the `model:` key of the agent names: the start slot of
   /// the session and the start value of the `model` option (ACPA-1b).
   let slot: ModelSlot
+
+  /// The name of the agent, or `nil` for none. Router makes the default
+  /// name of a new session from it (D199 (b)). It is the `name` key of the
+  /// `AGENT.md` of the agent. The default agent with no `name` key has the
+  /// name that the host gave (``RoutedACPAgent/agentName``).
+  let name: String?
 }
 
 /// What one mount of a session announces in the `session/new` or `session/resume` response (ACP schema-v2.0.0-alpha.7).
@@ -774,6 +780,8 @@ extension RoutedACPAgent {
         userPresence: userPresence,
         mailOnlyAnswerLimit: mailOnlyAnswerLimit,
         hookLineage: hookLineage,
+        agentID: composition.agent?.choice.id,
+        agentName: composition.agent?.name,
         transcriptReader: transcriptReader)
     let sessionId = SessionId(rawValue: session.id.description)
     SnapshotSessionKeys.shared.record(hookLineage.sessionKey, for: sessionId)
@@ -1355,6 +1363,12 @@ extension RoutedLLM {
   ///     `session/new` gives the lineage of its working directory
   ///     (``HookLineage/init(workingDirectory:origin:)``).
   ///     So each session of one folder shares one snapshot timeline.
+  ///   - agentID: The resolved id of the agent of the session (D71), or
+  ///     `nil` (the default) for none. `session/new` gives the catalog id of
+  ///     its agent: `default` for the root agent.
+  ///   - agentName: The name of the agent of the session, or `nil` (the
+  ///     default) for none (``ComposedSessionAgent/name``). Router makes the
+  ///     default name of the session from it, else from `agentID` (D199 (b)).
   ///   - transcriptReader: The reader that a tool of the session uses to read the
   ///     transcript of a session (``RoutedACPAgent/transcriptReader``).
   ///     Every session that the agent makes gets it.
@@ -1375,6 +1389,8 @@ extension RoutedLLM {
     userPresence: UserPresence = .interactive,
     mailOnlyAnswerLimit: Int = SessionConfiguration.defaultMailOnlyAnswerLimit,
     hookLineage: HookLineage? = nil,
+    agentID: String? = nil,
+    agentName: String? = nil,
     transcriptReader: (any SessionTranscriptReader)?
   ) -> any RoutedSession {
     // The resolved context decides two things that a reader cannot see otherwise.
@@ -1413,6 +1429,8 @@ extension RoutedLLM {
         userPresence: userPresence,
         hookSessionKey: hookLineage?.sessionKey,
         hookOrigin: hookLineage?.origin,
+        agentID: agentID,
+        agentName: agentName,
         transcriptReader: transcriptReader))
   }
 
@@ -1480,7 +1498,7 @@ extension RoutedLLM {
 }
 
 /// The host rules that every Router session of the agent carries. A new
-/// session (``RoutedACPAgent/makeBudgetedSession(instructions:workingDirectory:recordingRoot:tools:compaction:repetition:inlineSettleGrace:userPresence:mailOnlyAnswerLimit:hookLineage:transcriptReader:)``)
+/// session (``RoutedACPAgent/makeBudgetedSession(instructions:workingDirectory:recordingRoot:tools:compaction:repetition:inlineSettleGrace:userPresence:mailOnlyAnswerLimit:hookLineage:agentID:agentName:transcriptReader:)``)
 /// and a restored session (``RoutedACPAgent/restoreSessionWithHostChecks(id:recordingRoot:instructions:tools:userPresence:hookSessionKey:claimingRuns:transcriptReader:)``)
 /// both read the rules here, so the two cannot differ.
 private enum HostRules {
