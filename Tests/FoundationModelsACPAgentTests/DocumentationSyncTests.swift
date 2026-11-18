@@ -1,9 +1,9 @@
 import ArgumentParser
 import Foundation
-import FoundationModelsACPAgent
 import FoundationModelsRouter
 import Testing
 
+@testable import FoundationModelsACPAgent
 @testable import acp_agent
 
 /// The discoverability obligation of the compiled-in instructions floor:
@@ -188,13 +188,10 @@ import Testing
     #expect(readme.contains(Self.memoryFloorText))
   }
 
-  /// The bytes of one gigabyte, as the doctor states each figure.
-  static let bytesPerGigabyte: Int64 = 1_073_741_824
-
   /// The memory floor of the README and the memory floor of the doctor
   /// (``ProfileDoctor/memoryFloorBytes``) are the same figure.
   @Test func readmeMemoryFloorAgreesWithTheDoctorFloor() {
-    let doctorFloor = "\(ProfileDoctor.memoryFloorBytes / Self.bytesPerGigabyte) GB of memory or more"
+    let doctorFloor = "\(ProfileDoctor.memoryFloorBytes / ProfileDoctor.bytesPerGigabyte) GB of memory or more"
 
     #expect(doctorFloor == Self.memoryFloorText)
   }

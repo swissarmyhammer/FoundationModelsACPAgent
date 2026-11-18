@@ -45,8 +45,8 @@ public struct ProfileDoctor: Doctorable {
   public static let memoryFloorBytes: Int64 = 17_179_869_184
 
   /// The bytes of one gigabyte, as every figure of this component is
-  /// stated.
-  private static let bytesPerGigabyte = 1_073_741_824.0
+  /// stated. A test uses it to state the floor in gigabytes.
+  static let bytesPerGigabyte: Int64 = 1_073_741_824
 
   /// How a figure in gigabytes is written.
   private static let gigabyteFormat = "%.1f GB"
@@ -585,7 +585,7 @@ public struct ProfileDoctor: Doctorable {
   /// - Parameter bytes: The figure to write.
   /// - Returns: The text.
   private static func gigabytes(_ bytes: Int64) -> String {
-    String(format: gigabyteFormat, Double(bytes) / bytesPerGigabyte)
+    String(format: gigabyteFormat, Double(bytes) / Double(bytesPerGigabyte))
   }
 
   /// One candidate list as a person reads it.
