@@ -33,21 +33,20 @@ struct CLIProcessTests {
   /// The heading the help text carries.
   private static let usageHeading = "USAGE"
 
-  /// The text `doctor` writes for a profile reference that is not
-  /// `owner/name` (cli-plan.md §5.12).
-  private static let malformedReferenceMarker = "profile.preset must be one of"
+  /// The text `doctor` writes for a `profile:` that names no profile file
+  /// of any layer (^eq7gjw2).
+  private static let unknownProfileMarker = "no profile is named \"no-such-profile\""
 
   /// The `doctor` subcommand (cli-plan.md §5.12).
   private static let doctorSubcommand = "doctor"
 
-  /// A user-layer `config.yaml` whose `profile.preset` names no builtin
-  /// profile (ACPA-21). The load of the configuration fails, and the
+  /// A user-layer `config.yaml` whose `profile:` names no profile file of
+  /// any layer (^eq7gjw2). The load of the configuration fails, and the
   /// configuration check of `doctor` reports the error, which names the
   /// profiles. That failure is deterministic with no model, so it is the
   /// one `doctor` exit this suite can assert.
-  private static let malformedProfileYAML = """
-    profile:
-      preset: no-such-profile
+  private static let unknownProfileYAML = """
+    profile: no-such-profile
     """
 
   /// The line of the git tool that `config show --source` writes when no
@@ -116,18 +115,18 @@ struct CLIProcessTests {
     #expect(run.standardOutput.isEmpty, "a usage error wrote to stdout: \(run.standardOutput)")
   }
 
-  /// `doctor` finds the malformed profile reference, exits 1, and states
+  /// `doctor` finds the profile that no layer has, exits 1, and states
   /// the failure on stderr, with nothing on stdout (cli-plan.md §5.12).
-  @Test func aMalformedProfileReferenceMakesDoctorExitOneWithTheFailureOnStderr() async throws {
+  @Test func anUnknownProfileMakesDoctorExitOneWithTheFailureOnStderr() async throws {
     let configHome = makeResolvedDirectory(label: "CLIProcess-config")
-    try TierThreeFixture.writeUserConfig(under: configHome, yaml: Self.malformedProfileYAML)
+    try TierThreeFixture.writeUserConfig(under: configHome, yaml: Self.unknownProfileYAML)
 
     let run = try await Self.runAgentCLI(
       arguments: [Self.doctorSubcommand], configHome: configHome)
 
     #expect(run.exitCode == errorExitCode, "stderr: \(run.standardError)")
     #expect(
-      run.standardError.contains(Self.malformedReferenceMarker),
+      run.standardError.contains(Self.unknownProfileMarker),
       "stderr: \(run.standardError)")
     #expect(run.standardOutput.isEmpty, "doctor wrote to stdout: \(run.standardOutput)")
   }
