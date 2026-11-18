@@ -204,11 +204,16 @@ public struct ProfileLayers: Sendable {
   ///   - folder: The `profiles` folder.
   ///   - layer: The layer of the folder.
   /// - Returns: The entries in name order; none when there is no folder.
+  ///
+  /// A dotfile is left out by its name, not by `.skipsHiddenFiles`: that
+  /// option also leaves out each file with the hidden flag of macOS, and
+  /// iCloud sets that flag on each file of a synced `~/.config`.
   private func entries(in folder: URL, layer: ProfileLayer) -> [ProfileEntry] {
     let files =
       (try? FileManager.default.contentsOfDirectory(
-        at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
-    return files.filter { $0.pathExtension == ProfileFile.fileExtension }
+        at: folder, includingPropertiesForKeys: nil)) ?? []
+    return files.filter { !$0.lastPathComponent.hasPrefix(".") }
+      .filter { $0.pathExtension == ProfileFile.fileExtension }
       .sorted { $0.lastPathComponent < $1.lastPathComponent }
       .map { file in
         let name = file.deletingPathExtension().lastPathComponent

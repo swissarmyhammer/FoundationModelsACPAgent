@@ -71,6 +71,29 @@ import Testing
     #expect(entries.map(\.layer) == [.bundled, .bundled])
   }
 
+  /// A user file with the hidden flag of macOS is in the list. iCloud sets
+  /// that flag on each file of a synced `~/.config`; only a dotfile is
+  /// hidden.
+  @Test func aUserFileWithTheHiddenFlagIsInTheList() throws {
+    let fixture = try Fixture()
+    try fixture.write(Self.customText, named: "custom", in: fixture.userProfiles)
+    var file = fixture.userProfiles.appendingPathComponent("custom.\(ProfileFile.fileExtension)")
+    var values = URLResourceValues()
+    values.isHidden = true
+    try file.setResourceValues(values)
+    try #require(try file.resourceValues(forKeys: [.isHiddenKey]).isHidden == true)
+
+    #expect(fixture.layers.list(cwd: nil).contains { $0.name == "custom" && $0.layer == .user })
+  }
+
+  /// A dotfile in a profiles folder is not a profile.
+  @Test func aDotfileIsNotInTheList() throws {
+    let fixture = try Fixture()
+    try fixture.write(Self.customText, named: ".custom", in: fixture.userProfiles)
+
+    #expect(!fixture.layers.list(cwd: nil).contains { $0.name == ".custom" })
+  }
+
   /// A user file with a new name is in the list, at the user layer.
   @Test func aUserFileIsInTheList() throws {
     let fixture = try Fixture()
