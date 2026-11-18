@@ -38,8 +38,24 @@ comments:
     - evidence: `swift build --build-tests` printed "Build complete!" with 0 compiler warnings; `swift test --skip-build` ran 2294 tests in 243 suites, all passed, 1 known issue that was there before this change, exit 0
     - next: review
   timestamp: 2026-11-18T14:38:10.754067+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m7qhnxjbn9apa38w1975zgya
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD; 0 findings, 0 confirmed, 1 refuted, 21 attempted, 0 failed; 15 files reviewed; 2 files in .kanban/ not reviewed (ignore rule).
+    - next: none. The task is in done.
+  timestamp: 2026-11-18T14:41:24.043060+00:00
+- actor: claude-code
+  id: 01m7qhp5ymt139vhtnpeaq92qc
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 15 files
+    - test: green — swift test --skip-build, 2294 tests in 243 suites passed; 0 compiler warnings
+    - commit: 6079dd8
+    - review: clean — 0 findings
+  timestamp: 2026-11-18T14:41:32.628982+00:00
+position_column: done
+position_ordinal: ffffff8180
 title: 'D199: keep the default session name; stop the title from the first prompt'
 ---
 Decision D199 (b) in `TestudoApp/features/decisions.md` (commit 740cd1a). Brief: `/Users/wballard/github/swissarmyhammer/.briefs/at-sessions/acpa-brief-at-sessions.md`, item 5. Plan and order: `impact-at-sessions.md` in the same folder.
