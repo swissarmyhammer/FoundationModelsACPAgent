@@ -349,6 +349,10 @@ enum ACPAgentTelemetry {
     /// a value of the section, because a value can be a secret.
     static let configSection = "config.section"
 
+    /// The name of a model profile. A name is a file name, never the
+    /// content of the profile file.
+    static let profileName = "profile.name"
+
     /// The path of a file that the agent reads or writes. Never the
     /// content of the file.
     static let filePath = "file.path"

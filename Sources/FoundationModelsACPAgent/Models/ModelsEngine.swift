@@ -105,28 +105,75 @@ struct ModelsEngine: Sendable {
   /// - Returns: The profile. The fallback profile of the store
   ///   (``SettingsStore/fallbackProfileName``) when no layer has a value,
   ///   or when the value names a profile that no layer has, as a load
-  ///   does. The profile of ``BundledProfiles/defaultName`` when a profile
-  ///   file does not read.
-  /// - Throws: What the store throws for a level file.
+  ///   does. A log record tells of the fallback of an unknown name.
+  /// - Throws: What the store throws for a level file, the decode error of
+  ///   a `profile` value that does not decode, and the error of a profile
+  ///   file that does not read, as a load does. A log record tells of
+  ///   each such error.
   func selectedProfile() async throws -> ProfileDefinition {
-    guard let setting = try await store.value(at: ProfileConfiguration.keyPath, cwd: nil),
-      let selection: ProfileConfiguration = try? setting.value.decoded()
-    else {
-      return fallbackProfile
+    guard let setting = try await store.value(at: ProfileConfiguration.keyPath, cwd: nil) else {
+      return try fallbackProfile()
+    }
+    let selection: ProfileConfiguration
+    do {
+      selection = try setting.value.decoded()
+    } catch {
+      Self.logFailedRead(of: nil, error: error)
+      throw error
     }
     do {
       return try profileLayers.read(selection.name, cwd: nil)
-    } catch ProfileStoreError.unknownProfile {
-      return fallbackProfile
+    } catch ProfileStoreError.unknownProfile(let name, _) {
+      ACPAgentTelemetry.logger(.configuration).warning(
+        "No layer has the selected profile. The models endpoint uses the fallback profile.",
+        metadata: [ACPAgentTelemetry.LogMetadataKey.profileName: "\(name)"])
+      return try fallbackProfile()
     } catch {
-      return BundledProfiles.defaultProfile
+      Self.logFailedRead(of: selection.name, error: error)
+      throw error
     }
   }
 
-  /// The profile of the fallback name of the store, or the profile of
-  /// ``BundledProfiles/defaultName`` when its file does not read.
-  private var fallbackProfile: ProfileDefinition {
-    (try? profileLayers.read(store.fallbackProfileName, cwd: nil)) ?? BundledProfiles.defaultProfile
+  /// The profile of the fallback name of the store.
+  ///
+  /// - Returns: The profile.
+  /// - Throws: The error of a profile file of that name that does not
+  ///   read. A log record tells of the error. A fallback name that no
+  ///   layer has is a programmer error, because the fallback name is a
+  ///   bundled name: it also stops a debug build.
+  private func fallbackProfile() throws -> ProfileDefinition {
+    let name = store.fallbackProfileName
+    do {
+      return try profileLayers.read(name, cwd: nil)
+    } catch {
+      if case ProfileStoreError.unknownProfile = error {
+        assertionFailure("the fallback profile \(name) is not a bundled profile")
+      }
+      Self.logFailedRead(of: name, error: error)
+      throw error
+    }
+  }
+
+  /// Writes the log record of a read of the selected profile that failed.
+  /// The record holds the key path, the name of the profile and the case
+  /// of the error, never a value of the settings, because a value can be a
+  /// secret.
+  ///
+  /// - Parameters:
+  ///   - name: The name of the profile, or `nil` when the `profile` value
+  ///     did not decode.
+  ///   - error: The error of the read.
+  private static func logFailedRead(of name: String?, error: any Error) {
+    var metadata = ACPAgentTelemetry.errorMetadata(error)
+    metadata[ACPAgentTelemetry.LogMetadataKey.configSection] =
+      "\(ProfileConfiguration.keyPath.joined(separator: "."))"
+    metadata[ACPAgentTelemetry.LogMetadataKey.errorCase] =
+      "\(ACPAgentTelemetry.errorCaseName(of: error))"
+    if let name {
+      metadata[ACPAgentTelemetry.LogMetadataKey.profileName] = "\(name)"
+    }
+    ACPAgentTelemetry.logger(.configuration).error(
+      "The models endpoint cannot read the selected profile.", metadata: metadata)
   }
 
   /// Each profile of the user layer and the bundled profiles that reads, in
@@ -357,10 +404,18 @@ struct ModelsEngine: Sendable {
   /// The slots of the selected profile whose model is in a set.
   ///
   /// - Parameter models: The text forms of the models.
-  /// - Returns: The slots, in order.
+  /// - Returns: The slots, in order. Each slot when the selected profile
+  ///   does not read, so that a subscriber reads the endpoint again and
+  ///   gets the error. A log record tells of the error.
   func slots(holding models: Set<String>) async -> [ModelSlot] {
-    guard let profile = try? await selectedProfile() else {
-      return []
+    let profile: ProfileDefinition
+    do {
+      profile = try await selectedProfile()
+    } catch {
+      ACPAgentTelemetry.logger(.configuration).warning(
+        "The selected profile does not read. The disk change names each slot.",
+        metadata: ACPAgentTelemetry.errorMetadata(error))
+      return ModelSlot.allCases
     }
     return ModelSlot.allCases.filter { slot in
       slot.candidates(in: profile).contains { models.contains($0.stringValue) }

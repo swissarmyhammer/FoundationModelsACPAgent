@@ -448,6 +448,67 @@ import Testing
         == [fixture.store.fallbackProfileName])
   }
 
+  /// The text of a profile file that does not decode.
+  static let badProfileFileText = "slots: []\n"
+
+  /// Writes a file at the user level of a fixture, as an edit by hand does.
+  ///
+  /// - Parameters:
+  ///   - text: The text of the file.
+  ///   - path: The path of the file in the user layer.
+  ///   - fixture: The fixture.
+  static func writeUserFile(_ text: String, at path: String, in fixture: SettingsGraphFixture)
+    throws
+  {
+    let root = try #require(
+      SettingsFoldersFixture.layerRoot(
+        of: .user, in: fixture.settingsFolders, workingDirectory: fixture.firstDirectory))
+    let file = root.appendingPathComponent(path)
+    try FileManager.default.createDirectory(
+      at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try text.write(to: file, atomically: true, encoding: .utf8)
+  }
+
+  /// The messages of the errors of a `profiles` read.
+  ///
+  /// - Parameter fixture: The fixture.
+  /// - Returns: The messages.
+  static func profileErrors(_ fixture: SettingsGraphFixture) async throws -> [String] {
+    try await run(Self.graph(fixture), "{ profiles { name selected } }").messages
+  }
+
+  /// A user `profile` value that does not decode is an error of the read,
+  /// as it is an error of the load of a session.
+  @Test func anUndecodableProfileValueIsAnError() async throws {
+    let fixture = try SettingsGraphFixture(label: "models-undecodable-profile")
+    try Self.writeUserFile(
+      "profile: [small]\n", at: ConfigurationLoader.configFileName, in: fixture)
+
+    #expect(try await !Self.profileErrors(fixture).isEmpty)
+  }
+
+  /// A selected profile file that does not decode is an error of the read,
+  /// as it is an error of the load of a session.
+  @Test func aBadSelectedProfileFileIsAnError() async throws {
+    let fixture = try SettingsGraphFixture(label: "models-bad-selected-file")
+    try Self.writeUserFile(
+      Self.badProfileFileText, at: "\(ProfileFile.folderName)/custom.yaml", in: fixture)
+    try Self.writeUserFile("profile: custom\n", at: ConfigurationLoader.configFileName, in: fixture)
+
+    #expect(try await !Self.profileErrors(fixture).isEmpty)
+  }
+
+  /// A fallback profile file that does not decode is an error of the read,
+  /// not a silent change to the default profile.
+  @Test func aBadFallbackProfileFileIsAnError() async throws {
+    let fixture = try SettingsGraphFixture(label: "models-bad-fallback-file")
+    try Self.writeUserFile(
+      Self.badProfileFileText,
+      at: "\(ProfileFile.folderName)/\(fixture.store.fallbackProfileName).yaml", in: fixture)
+
+    #expect(try await !Self.profileErrors(fixture).isEmpty)
+  }
+
   /// A name that no layer has is refused by the settings store, and the
   /// error names the profiles.
   @Test func anUnknownProfileNameIsRefused() async throws {
