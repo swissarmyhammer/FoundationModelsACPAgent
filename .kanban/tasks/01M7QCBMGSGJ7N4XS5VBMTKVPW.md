@@ -1,10 +1,37 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m7qfjf09yrjrq6kc8dq0ax15
+  text: |-
+    Research done.
+    - The stub agent (`makeStubAgent`) sets only `CODING_DEFAULTS_DIR`. It does not set `SKILLS_DEFAULTS_DIR`, thus each stub session has the built-in skills layer (`BuiltinSkills.directory`) with the `sessions` skill.
+    - The `sessions` folder of Multitool holds only `SKILL.md`, and its body has no template tag. Thus `use skill` gives the body with no file list, and the render is the raw body.
+    - `AgentRunner.catalog()` adds the `skills:` preload warnings (`AgentSkillsPreload.diagnostics`) to the registry diagnostics.
+    - The project `Instructions.md` of a stub session is `<cwd>/.coding/Instructions.md` (`AgentClientHarness.dotfolderName` is `coding`).
+    - Plan: one new suite `SessionsSkillPreloadTests.swift`. It opens a session with `AgentClientHarness.makeInitializedAgent`, writes the `default` project agent with `AgentFolderFixture.writeProjectAgent`, and gets the expected body from `SkillsRegistry(roots: [BuiltinSkills.directory], mode: .open).call(id:)`.
+  timestamp: 2026-11-18T14:04:33.673889+00:00
+- actor: claude-code
+  id: 01m7qfwrc2f90aee112tz6r8g2
+  text: |-
+    Implementation landed. No change to the production code was necessary: the preload code works.
+    - New suite `Tests/FoundationModelsACPAgentTests/SessionsSkillPreloadTests.swift`, 5 tests: body after agent body; no `skills:` key gives no body; `runner.catalog()` gives no `unknownSkill`; with `Instructions.md` the body is not in the instructions; with `Instructions.md` the `skills` tool `use skill` loads the body.
+    - Dead end: the first run of the first test failed. The cause was in the test, not in the package. `SkillsRegistry.call(id:)` gives the body with a leading and a trailing newline. `InstructionsAssembler.basePrompt` trims the agent text, thus the instructions hold the trimmed body. The helper now trims the expected body.
+    - The tests pass on the current code, because the task adds tests for behavior that already works. Each test fails if: the built-in skills layer goes away (tests 1, 3, 5), the preload stops after the agent body (1), the preload adds a skill with no `skills:` key (2), or `Instructions.md` stops replacing the agent text (4).
+
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsACPAgentTests/SessionsSkillPreloadTests.swift
+    - next: test
+
+    ### test — green
+    - evidence: `swift build --build-tests` printed "Build complete!" with no new warning; `swift test --skip-build`: 2290 tests in 243 suites passed, 1 known issue (the existing `withKnownIssue` in HarnessSmokeTests); swiftlint 0 violations on the new file
+    - next: review
+  timestamp: 2026-11-18T14:10:10.946939+00:00
 depends_on:
 - 01M7QCBBA8BX23JY4SFZX4K6R4
-position_column: todo
-position_ordinal: '8580'
+position_column: doing
+position_ordinal: '8180'
 title: 'D200: test that `skills: [sessions]` in AGENT.md puts the skill body in the instructions'
 ---
 Decision D200 in `TestudoApp/features/decisions.md` (commit d1895ba). Brief: `/Users/wballard/github/swissarmyhammer/.briefs/at-sessions/acpa-brief-sessions-skill.md`, change item 3 and the third unit test.
