@@ -69,10 +69,26 @@ comments:
     - evidence: `timeout 1800 swift build --build-tests` printed "Build complete!" with 0 compiler warnings (1 SwiftPM build-graph line "missing creator for mutated node ... mlx-swift_Cmlx.bundle", not a compiler warning, also present before this change). `timeout 1800 swift test --skip-build`: 2324 tests in 247 suites, 1 failure (ResumeChildSyncTests.theWireOfTheResumeFollowsTheRulesOfTheValidator(replays: false), announceBeforeUse violation), 1 known issue (the deliberate withKnownIssue self-test). The failing suite does not use `bounded`, and it passed alone (24 tests). The race is recorded as ^avdk50h.
     - next: review of this finding; ^avdk50h for the race.
   timestamp: 2026-11-18T23:23:35.556913+00:00
+- actor: claude-code
+  id: 01m7rfprjpbgagbyeptbqq984k
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (043a781). 0 findings, 0 confirmed, 0 refuted. 7 review tasks ran, 0 failed. Files reviewed: Tests/FoundationModelsACPAgentTests/Support/BoundedWait.swift and Tests/FoundationModelsACPAgentTests/BoundedWaitTests.swift. The prior finding at BoundedWait.swift:15 is checked.
+    - next: none. The task moved to done.
+  timestamp: 2026-11-18T23:26:08.982194+00:00
+- actor: claude-code
+  id: 01m7rfq7tr44dy5gzaqhen230d
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — BoundedWait.swift, BoundedWaitTests.swift; 1/1 finding checked
+    - test: green — swift test --skip-build, 2324 tests in 247 suites passed on the second full run (the first full run had 1 failure in ResumeChildSyncTests, which passes alone; recorded as ^avdk50h)
+    - commit: 043a781
+    - review: clean — 0 findings
+  timestamp: 2026-11-18T23:26:24.600508+00:00
 depends_on:
 - 01M7NQMF7QKY4Q0E6REQA7BTPC
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: ffffff8480
 title: 'ACPA-6: show a directory message that the session reads with inbox, once'
 ---
 Brief: `/Users/wballard/github/swissarmyhammer/.briefs/at-sessions/acpa-brief-at-sessions.md`, item 3. Decision D199 (f) in `TestudoApp/features/decisions.md`.
