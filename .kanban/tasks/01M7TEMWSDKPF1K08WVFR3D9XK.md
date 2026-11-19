@@ -34,6 +34,13 @@ comments:
     - implement: changed — Tests/FoundationModelsACPAgentTestSupport/IndexPoll.swift (new: `IndexPoll.limit`, `IndexPoll.interval`, `pollIndexUntil(_:)`); the two private copies of `pollLimit` and `pollInterval` are removed from AgentTranscriptSearcherTests and TranscriptSearchUpdatesTests, which now call `pollIndexUntil`. Both findings are checked.
     - test: green — swift build --build-tests "Build complete!", 0 compiler warnings; swift test --skip-build: 2637 tests in 277 suites passed, 1 known issue (intended).
   timestamp: 2026-11-19T19:16:23.903193+00:00
+- actor: claude-code
+  id: 01m7tkyqgaxz6j3kckqzam80qr
+  text: |-
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` (2b0a468): 1 finding (1 confirmed, 1 refuted, 7 attempted, 0 failed). Tests/FoundationModelsACPAgentTestSupport/IndexPoll.swift:10 `code-hygiene/magic-numbers-swift`.
+    - next: Replace the magic numbers in IndexPoll.swift with named constants. Remove this cause from the full file. Then check the item and run the review again.
+  timestamp: 2026-11-19T19:18:53.194496+00:00
 position_column: review
 position_ordinal: '80'
 title: 'AgentTranscriptSearcherTests is flaky: the background search updates of the fixture agent change the index between two reads'
@@ -52,3 +59,12 @@ Fix direction: the test waits until the background updates of the fixture are id
 
 - [x] `Tests/FoundationModelsACPAgentTests/AgentTranscriptSearcherTests.swift:84` `reuse/reuse` — The new `pollLimit` constant redefines a constant that already exists in `TranscriptSearchUpdatesTests` with the same value (3600) and the same doc comment. Two copies of the same wait tuning can drift apart, so one fix would need two edits. Move `pollLimit` and `pollInterval` to one shared internal test helper (for example, beside `pollUntil`) and reference that single definition from both test suites. Do not keep a private copy in each suite.
 - [x] `Tests/FoundationModelsACPAgentTests/AgentTranscriptSearcherTests.swift:87` `reuse/reuse` — The new `pollInterval` constant duplicates the existing `pollInterval` in `TranscriptSearchUpdatesTests` with the same value (`Duration.milliseconds(25)`) and the same comment. Share one definition with `pollLimit` from a common test helper, as described for line 84.
+
+## Review Findings (2026-11-19 13:16)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 3 file(s) reviewed, 6 not reviewed.
+
+> 6 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 6 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTestSupport/IndexPoll.swift:10` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.

@@ -6,8 +6,11 @@ public enum IndexPoll {
   /// The most polls of a wait for the index.
   public static let limit = 3600
 
+  /// The milliseconds between two polls of a wait for the index.
+  public static let intervalMilliseconds = 25
+
   /// The time between two polls of a wait for the index.
-  public static let interval = Duration.milliseconds(25)
+  public static let interval = Duration.milliseconds(intervalMilliseconds)
 }
 
 /// Polls `condition` with the bounds of ``IndexPoll`` until it holds or the limit is reached.
