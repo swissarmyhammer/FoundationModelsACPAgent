@@ -84,9 +84,9 @@ The agent ships three profiles, from the largest to the smallest:
 
 | `profile` | `standard` and `flash` | Download | Target memory |
 |---|---|---|---|
-| `large` | `mlx-community/Qwen3.8-27B-8bit` with its MTP drafter `mlx-community/Qwen3.8-27B-MTP-8bit` | 33.9 GB | 48 GB or more |
+| `large` | `mlx-community/Qwen3.8-27B-8bit` with its MTP drafter `mlx-community/Qwen3.8-27B-MTP-8bit` | 33.0 GB | 48 GB or more |
 | `medium` | `mlx-community/Qwen3.8-27B-4bit` with its MTP drafter `mlx-community/Qwen3.8-27B-MTP-4bit` | 19.3 GB | 32 GB |
-| `small` | `mlx-community/Qwen3.5-9B-4bit` with its MTP drafter `mlx-community/Qwen3.5-9B-MTP-4bit`, and an 8-bit KV cache (`kvBits: 8`) | 9.4 GB | 16 GB or 24 GB |
+| `small` | `mlx-community/Qwen3.5-9B-4bit` with its MTP drafter `mlx-community/Qwen3.5-9B-MTP-4bit`, and an 8-bit KV cache (`kvBits: 8`) | 9.1 GB | 16 GB or 24 GB |
 
 The three profiles have the same `embedding` and `decision` models, and the
 download size includes them.
