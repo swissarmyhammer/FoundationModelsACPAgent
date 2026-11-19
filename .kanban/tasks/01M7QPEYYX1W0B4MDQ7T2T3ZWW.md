@@ -44,10 +44,24 @@ comments:
     - `ProfileFitStub`: the explicit init is removed; the synthesized init has the same label.
     Tests: ModelsGraphTests, ConfigurationLoaderTests, HuggingFaceTokenProviderTests, AgentCompositionTests: 106 passed.
   timestamp: 2026-11-18T23:57:47.352359+00:00
+- actor: claude-code
+  id: 01m7rhp611c8krewm1davxs11c
+  text: |-
+    ### implement — changed
+    - evidence: 7be4fd8 — Sources/FoundationModelsACPAgent/ComposedAgent.swift, Sources/FoundationModelsACPAgent/Configuration/ConfigurationLoader.swift, Tests/FoundationModelsACPAgentTests/ModelsGraphTests.swift, Tests/FoundationModelsACPAgentTests/Support/ProfileFitStub.swift. The `fallbackProfile` finding is fixed in a357f54 (^sc4qx6z); the earlier comment gave a wrong sha prefix. Full suite: 2372 tests in 249 suites passed, 0 compiler warnings
+    - next: review
+  timestamp: 2026-11-19T00:00:47.137464+00:00
+- actor: claude-code
+  id: 01m7rhxm4des6j3b83ffqz2cva
+  text: |-
+    ### review — clean
+    - evidence: review sha 7be4fd8~1..7be4fd8. 4 files reviewed. 0 findings, 0 confirmed, 0 refuted, 7 attempted, 0 failed. All 5 prior items are checked.
+    - next: The task is in done. No more work is necessary.
+  timestamp: 2026-11-19T00:04:50.957023+00:00
 depends_on:
 - 01M7QPE4FQH8810KJV056R9VP9
-position_column: doing
-position_ordinal: '8280'
+position_column: done
+position_ordinal: ffffff8980
 title: 'ACPA-23 (D203): the default profile is the largest that fits; contextTokens and target memory on the models endpoint'
 ---
 Decision D203 in `TestudoApp/features/decisions.md` (commit 4ab65e8). Brief: `/Users/wballard/github/swissarmyhammer/.briefs/profiles/acpa-brief.md`, parts 2 and 5.

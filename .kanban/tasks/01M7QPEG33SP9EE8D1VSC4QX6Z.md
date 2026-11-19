@@ -22,10 +22,24 @@ comments:
     Tests: `ModelsGraphTests.anUndecodableProfileValueIsAnError`, `aBadSelectedProfileFileIsAnError`, `aBadFallbackProfileFileIsAnError` (RED before, GREEN after). Note: the `sah tool kanban task get` CLI did not complete in 120 s in this tree; use the MCP tool.
     This change also removes the cause of the ^t2t3zww finding on `fallbackProfile`.
   timestamp: 2026-11-18T23:55:17.927540+00:00
+- actor: claude-code
+  id: 01m7rhp3ssa1nzxe36kck4qw0p
+  text: |-
+    ### implement — changed
+    - evidence: a357f54 — Sources/FoundationModelsACPAgent/Models/ModelsEngine.swift, Sources/FoundationModelsACPAgent/Telemetry/ACPAgentTelemetry.swift, Tests/FoundationModelsACPAgentTests/ModelsGraphTests.swift; full suite after the three commits: 2372 tests in 249 suites passed, 0 compiler warnings
+    - next: review
+  timestamp: 2026-11-19T00:00:44.857457+00:00
+- actor: claude-code
+  id: 01m7rhtyb3mksvf45ewzdsjqy4
+  text: |-
+    ### review — clean
+    - evidence: review sha a357f54~1..a357f54. 3 files reviewed. 0 findings, 0 confirmed, 1 refuted, 7 attempted, 0 failed. All 3 prior items are checked.
+    - next: The task is in done. No more work is necessary.
+  timestamp: 2026-11-19T00:03:23.107703+00:00
 depends_on:
 - 01M7QPE4FQH8810KJV056R9VP9
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: ffffff8880
 title: 'ACPA-23 (D203): an unknown profile name gives a warning and the fallback, not a load failure'
 ---
 Decision D203 in `TestudoApp/features/decisions.md` (commit 4ab65e8). Brief: `/Users/wballard/github/swissarmyhammer/.briefs/profiles/acpa-brief.md`, part 3.

@@ -1,10 +1,18 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m7rgtz715wzhqa2axbztcdwm
+  text: |-
+    ### review — clean
+    - evidence: review sha d5693f2~1..d5693f2; findings 0, confirmed 0, refuted 0, attempted 7, failed 0. No validator matched README.md, and the engine did not review it.
+    - next: none. The task is in done.
+  timestamp: 2026-11-18T23:45:55.425612+00:00
 depends_on:
 - 01M7QPEYYX1W0B4MDQ7T2T3ZWW
-position_column: todo
-position_ordinal: '9080'
+position_column: done
+position_ordinal: ffffff8680
 title: 'ACPA-23 (D203): `config init` does not write `profile: large`, so the default by fit applies'
 ---
 Found during ^t2t3zww (2026-11-18). Decision D203 in `TestudoApp/features/decisions.md`: with no `profile` set, the agent uses the largest profile that fits, and `small` when no fit can be read.

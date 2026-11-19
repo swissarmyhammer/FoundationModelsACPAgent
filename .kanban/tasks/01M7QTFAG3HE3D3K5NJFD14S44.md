@@ -13,10 +13,24 @@ comments:
   id: 01m7rhkag2jw4y7c41a31m2cng
   text: 'Review fix (2026-11-18): `ProfileDoctor.bytesPerGigabyte` is now an internal `Int64` (the format converts it to `Double`). `DocumentationSyncTests` imports `FoundationModelsACPAgent` with `@testable` and uses `ProfileDoctor.bytesPerGigabyte`; the copy in the test is deleted. DocumentationSyncTests and ProfileDoctorTests: 29 passed.'
   timestamp: 2026-11-18T23:59:13.410294+00:00
+- actor: claude-code
+  id: 01m7rhp7edrshcgx1svjjmrf57
+  text: |-
+    ### implement — changed
+    - evidence: c6815b8 — Sources/FoundationModelsACPAgent/Doctor/ProfileDoctor.swift, Tests/FoundationModelsACPAgentTests/DocumentationSyncTests.swift. Full suite: `timeout 1800 swift test --skip-build` after "Build complete!": 2372 tests in 249 suites passed, 0 compiler warnings
+    - next: review
+  timestamp: 2026-11-19T00:00:48.589112+00:00
+- actor: claude-code
+  id: 01m7rj2vjkhkf7g3wh2n70pszz
+  text: |-
+    ### review — clean
+    - evidence: review sha c6815b8~1..c6815b8. 2 files reviewed. 0 findings, 0 confirmed, 0 refuted, 7 attempted, 0 failed. The 1 prior item is checked.
+    - next: The task is in done. No more work is necessary.
+  timestamp: 2026-11-19T00:07:42.419209+00:00
 depends_on:
 - 01M7QPE4FQH8810KJV056R9VP9
-position_column: doing
-position_ordinal: '8380'
+position_column: done
+position_ordinal: ffffff8a80
 title: 'ACPA-23 (D203): the doctor memory floor is 16 GB, not 32 GB'
 ---
 Found during ^56r9vp9 (2026-11-18). Decision D203 in `TestudoApp/features/decisions.md`: the agent needs a Mac with 16 GB of memory or more.

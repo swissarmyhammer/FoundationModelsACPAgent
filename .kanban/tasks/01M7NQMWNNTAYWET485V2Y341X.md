@@ -1,10 +1,18 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m7rgz9zpenaw6zcbgkwy4p8j
+  text: |-
+    ### review — clean
+    - evidence: review sha e3a8da4~1..e3a8da4; findings 0, confirmed 0, refuted 1, attempted 7, failed 0. The engine reviewed 2 files.
+    - next: none. The task is in done.
+  timestamp: 2026-11-18T23:48:17.526561+00:00
 depends_on:
 - 01M7NQMF7QKY4Q0E6REQA7BTPC
-position_column: todo
-position_ordinal: '8380'
+position_column: done
+position_ordinal: ffffff8780
 title: 'ACPA-6: replay the session_message entries on load and resume'
 ---
 Brief: `/Users/wballard/github/swissarmyhammer/.briefs/at-sessions/acpa-brief-at-sessions.md`, item 4. Decision D199 (f) in `TestudoApp/features/decisions.md`.

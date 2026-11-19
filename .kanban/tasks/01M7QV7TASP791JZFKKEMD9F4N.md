@@ -36,6 +36,10 @@ comments:
   id: 01m7qybeyk7xsavqpqnt5p91nr
   text: 'Dependency available (2026-11-18): Extras origin/main 87d1da9 (code commit 96fea25) has `SessionForkCut.afterTurn(Int)` and `.beforeTurn(Int)`. The other cases are `.lastCompletedTurn`, `.callingToolCall` and `.historyPosition(Int)`. The operation is `SessionDirectory.fork(_ request: SessionForkRequest)`. `.beforeTurn(n)` cuts just before the prompt of turn n; `.afterTurn(n)` cuts at the end of turn n. An index that does not exist, or `.afterTurn(n)` of a turn that still runs, throws `SessionDirectoryError.forkCutOutOfRange`. If this package matches `SessionForkCut` with a switch, add a `default:` or match with `if case`, so a later case does not break the build. Still waiting for Router ^3hxcxee.'
   timestamp: 2026-11-18T18:22:52.883261+00:00
+- actor: claude-code
+  id: 01m7rg6hfnx6z8t9kgg0vy8rg2
+  text: 'Dependency available (2026-11-18): `fork session` / `forkSession` is on FoundationModelsMultitool origin/main, commit bdbebea3 (head 568fa2a5). With no `id`, the tool forks the CALLER at `SessionForkCut.callingToolCall`. Thus, when the Router fork lands (^3hxcxee), make sure that a `fork session` call from a session of this agent reaches `RouterSessionDirectory.fork(_:)` with `.callingToolCall`, and that the Router can find the running tool call of the caller (the cut is the history up to the call, not the call). With no directory fork support, the tool gives FORK_UNSUPPORTED. Add a test: an agent of this server calls `fork session` with no `id`, and the fork has the history up to that call.'
+  timestamp: 2026-11-18T23:34:46.005288+00:00
 depends_on:
 - 01M7QV7B0PDJZY8YAYZNDQKW9S
 position_column: todo
