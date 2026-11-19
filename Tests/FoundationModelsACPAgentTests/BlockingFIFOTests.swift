@@ -39,12 +39,21 @@ import Testing
   /// Opens the read end of the pipe at `pipe`. The open does not wait for a
   /// writer.
   ///
+  /// The open uses `O_NONBLOCK`, and then the helper removes it. Thus a read
+  /// waits for the data and for the end of the file. A read with
+  /// `O_NONBLOCK` fails with `EAGAIN` when a writer holds the pipe and no
+  /// data is there yet (^rh5d00n).
+  ///
   /// - Parameter pipe: The named pipe.
   /// - Returns: The read handle.
   private static func openReadEnd(at pipe: URL) throws -> FileHandle {
     let descriptor = Darwin.open(pipe.path, O_RDONLY | O_NONBLOCK)
     try #require(descriptor >= 0)
-    return FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+    let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+    let flags = fcntl(descriptor, F_GETFL)
+    try #require(flags >= 0)
+    try #require(fcntl(descriptor, F_SETFL, flags & ~O_NONBLOCK) == 0)
+    return handle
   }
 
   /// With no reader, the open ends at its time limit with the error that
