@@ -14,13 +14,6 @@ import Testing
 /// If it does, the next tool call plays two times: one time on the old
 /// backend, and one time on the new backend.
 @Suite struct ScriptedPassCancellationTests {
-  /// The arguments of the tools of this suite.
-  @Generable
-  struct LabelArguments {
-    /// A label, which the tools do not read.
-    var label: String
-  }
-
   /// A tool that cancels the task that calls it, as the tool layer of
   /// Router does at a compaction stop.
   struct CancellingTool: Tool {

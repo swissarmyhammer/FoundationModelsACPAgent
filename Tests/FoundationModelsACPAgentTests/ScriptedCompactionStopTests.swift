@@ -15,13 +15,6 @@ import Testing
 /// backend. The old backend must then play no more steps, so the second
 /// tool call of the pass plays one time, with its own output.
 @Suite struct ScriptedCompactionStopTests {
-  /// The arguments of the ``LabelTool``.
-  @Generable
-  struct LabelArguments {
-    /// The label that the tool gives back.
-    var label: String
-  }
-
   /// A tool that counts its calls and gives back the label of its
   /// arguments.
   struct LabelTool: Tool {
