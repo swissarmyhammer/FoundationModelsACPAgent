@@ -14,13 +14,20 @@ import FoundationModelsMetadataRegistry
 /// One code serves two folders. The agent owns one index over
 /// ``AgentHome/serverSessionSearchDirectory`` for the sessions that its server records. The Mac
 /// app makes a second index over ``AgentHome/clientSessionSearchDirectory`` for the transcripts
-/// of other agents that it showed. The two indexes share nothing. The index keeps no file in its
-/// folder yet: the searcher keeps its catalog in memory.
+/// of other agents that it showed. The two indexes share nothing.
+///
+/// The searcher keeps its catalog and its vectors in the folder of the index, with the
+/// persistence option of the registry (`CatalogPersistence`, D207 step 5). The index keeps no
+/// other file. At its start, the index reads the stored catalog with no embed, and makes its
+/// list of sessions from the stored items, so a new process searches at once. A stored catalog
+/// of an old format, of another embedding model or that is damaged is dropped by the registry:
+/// the index then starts empty, and the next change of each session builds it again. Only one
+/// index may use a folder at a time.
 ///
 /// The host gives the chunks of each session (`SessionSearchChunker.chunks(of:dates:)` of
-/// FoundationModelsACP) and the facts of the session. Each change gives the whole catalog to
-/// the searcher (`update(items:)`), and the registry embeds only the items whose text changed.
-/// The registry has no update of some items yet, so the index gives the full list.
+/// FoundationModelsACP) and the facts of the session. Each change gives the searcher only the
+/// items that changed (`update(upserting:removing:)`): the new and changed items of the
+/// session, and the ids of its items that are gone. The registry embeds only the new texts.
 public actor TranscriptSearchIndex {
   /// The content of one session that the host gives to the index: the chunks of its transcript
   /// and its facts.
@@ -43,7 +50,7 @@ public actor TranscriptSearchIndex {
   }
 
   /// The items of one indexed session.
-  private struct IndexedSession: Sendable {
+  struct IndexedSession: Sendable {
     /// The session item.
     let sessionItem: TranscriptSearchItem
 
@@ -106,8 +113,13 @@ public actor TranscriptSearchIndex {
   /// The folder of the index: the server folder or the client folder of the session search.
   public nonisolated let folder: URL
 
+  /// The id of the embedding model of the stored catalog of an index with no embedder. Such a
+  /// catalog has no vector, and an index with an embedder drops it.
+  public static let keywordOnlyModelID = "keyword-only"
+
   /// The id of the embedding model of the embedder, or `nil` with no embedder. A change of the
-  /// model makes the stored vectors of a catalog of no use.
+  /// model makes the stored vectors of a catalog of no use, so the registry drops the stored
+  /// catalog.
   public nonisolated let modelID: String?
 
   /// Tells whether the process can read a folder now with no prompt. The host gives the rule,
@@ -123,28 +135,52 @@ public actor TranscriptSearchIndex {
   /// The items of each indexed session, by session id.
   private var sessions: [SessionId: IndexedSession] = [:]
 
-  /// The number of changes of ``sessions``. A change of the catalog that a later change overtook
-  /// gives the catalog to the searcher again (``publishCatalog()``).
-  private var catalogVersion = 0
+  /// The last write of a change to the searcher. Each write waits for the write before it, so
+  /// the changes reach the searcher in the order of the changes of ``sessions``.
+  private var lastWrite: Task<Void, Never>?
 
-  /// Makes an empty index. The call embeds nothing and starts no task.
+  /// Makes an index over the stored catalog of its folder. The call embeds nothing: the searcher
+  /// reads the stored items and vectors, and the index makes its list of sessions from the
+  /// stored items. A folder with no stored catalog gives an empty index.
+  ///
+  /// Each diagnostic of the registry is logged with ``ACPAgentTelemetry`` (a dropped stored
+  /// catalog, a failed save), and then goes to `onDiagnostic`.
   ///
   /// - Parameters:
-  ///   - folder: The folder of the index.
+  ///   - folder: The folder of the index. The searcher keeps its catalog in it.
   ///   - embedder: The embedder of the items and the queries: the `embedding` slot of the
   ///     profile, or `nil` for the keyword signals only.
   ///   - modelID: The id of the embedding model of `embedder`, or `nil` with no embedder.
   ///   - readableFolder: Tells whether the process can read a folder now with no prompt.
+  ///   - onDiagnostic: Gets each diagnostic of the registry after the log, or `nil` for none.
   public init(
     folder: URL,
     embedder: (any PooledEmbedding)?,
     modelID: String?,
-    readableFolder: @escaping @Sendable (URL) -> Bool
-  ) {
+    readableFolder: @escaping @Sendable (URL) -> Bool,
+    onDiagnostic: (@Sendable (MetadataDiagnostic) -> Void)? = nil
+  ) async {
     self.folder = folder
     self.modelID = modelID
     self.readableFolder = readableFolder
-    searcher = MetadataSearcher(items: [], mode: .retrieval, embedder: embedder)
+    searcher = await MetadataSearcher(
+      persistence: CatalogPersistence(
+        folder: folder, embeddingModelID: modelID ?? Self.keywordOnlyModelID),
+      mode: .retrieval, embedder: embedder,
+      onDiagnostic: { diagnostic in
+        TranscriptSearchDiagnostics.log(diagnostic)
+        onDiagnostic?(diagnostic)
+      })
+    let restored = Self.restoredSessions(from: await searcher.items())
+    sessions = restored.sessions
+    await write(upserting: [], removing: restored.strayIDs)
+  }
+
+  /// Returns when each change that the index got before this call is written to its folder, or
+  /// the write failed. The shutdown of the agent calls it, so a quit keeps the last change.
+  public func waitForSaves() async {
+    await lastWrite?.value
+    await searcher.waitForSaves()
   }
 
   /// Indexes one session: its session item and the chunk items of its chunks. The items replace
@@ -163,8 +199,10 @@ public actor TranscriptSearchIndex {
 
   /// Indexes a set of sessions and removes the items of other sessions, with one change of the
   /// catalog. The items of each session in `contents` replace the items that the index held for
-  /// it. A reconcile gives each session of a folder in one call, so the searcher gets the
-  /// catalog one time and not one time for each session.
+  /// it. The searcher gets only the items that changed: each new item and each item whose
+  /// content is not the held content, and the id of each held item that is gone. A session whose
+  /// items did not change gives the searcher nothing. A reconcile gives each session of a folder
+  /// in one call, so the searcher gets one update and not one update for each session.
   ///
   /// - Parameters:
   ///   - contents: The content of each session to index, by session id.
@@ -183,11 +221,13 @@ public actor TranscriptSearchIndex {
       })
     let changedTurns = Set(
       indexed.filter { session, new in sessions[session]?.chunkItems != new.chunkItems }.keys)
+    let change = Self.catalogChange(
+      from: sessions, indexing: indexed, removing: removedHeld)
     sessions.merge(indexed) { _, new in new }
     for session in removedHeld {
       sessions.removeValue(forKey: session)
     }
-    await publishCatalog()
+    await write(upserting: change.upserting, removing: change.removing)
     publishChanges(of: changedTurns.union(removedHeld))
   }
 
@@ -203,8 +243,9 @@ public actor TranscriptSearchIndex {
     guard let held = sessions[session], held.metadata != metadata else {
       return
     }
-    sessions[session] = held.replacingMetadata(with: metadata)
-    await publishCatalog()
+    let replaced = held.replacingMetadata(with: metadata)
+    sessions[session] = replaced
+    await write(upserting: [replaced.sessionItem], removing: [])
   }
 
   /// Removes each item of one session. A session that the index does not hold changes nothing.
@@ -310,18 +351,27 @@ public actor TranscriptSearchIndex {
       })
   }
 
-  /// Gives the catalog to the searcher after a change.
+  /// Gives the changed items of one change to the searcher (`update(upserting:removing:)`), and
+  /// returns when the searcher applied them. A change with no item does nothing.
   ///
-  /// An actor runs another call while this one waits for the searcher, so a later change can
-  /// give its catalog first, and this call then gives an older catalog. Thus each call gives the
-  /// catalog again until no change came while it waited: the last call that returns gives the
-  /// newest catalog. The registry does no work for a catalog with the same content.
-  private func publishCatalog() async {
-    catalogVersion += 1
-    var publishedVersion: Int
-    repeat {
-      publishedVersion = catalogVersion
-      await searcher.update(items: catalog)
-    } while publishedVersion != catalogVersion
+  /// An actor runs another call while this one waits for the searcher. Thus each write waits
+  /// for the write before it, and the searcher gets the changes in the order that the index
+  /// made them: a later change of an item never comes before an earlier one.
+  ///
+  /// - Parameters:
+  ///   - upserting: The new and the changed items.
+  ///   - removing: The ids of the items that are gone.
+  private func write(upserting: [TranscriptSearchItem], removing: [String]) async {
+    guard !upserting.isEmpty || !removing.isEmpty else {
+      return
+    }
+    let previous = lastWrite
+    let searcher = searcher
+    let write = Task {
+      await previous?.value
+      await searcher.update(upserting: upserting, removing: removing)
+    }
+    lastWrite = write
+    await write.value
   }
 }

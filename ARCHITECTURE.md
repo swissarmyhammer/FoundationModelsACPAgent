@@ -126,10 +126,17 @@ The transcript search (D207) finds the sessions and the turns that hold a text. 
 - **The index.** `TranscriptSearchIndex` is a public actor over one `MetadataSearcher` of
   FoundationModelsMetadataRegistry. The registry is the engine: its BM25, trigram and cosine
   signals decide the matches. The index has no store, no ranking and no embedding of its own.
-  Each change gives the full catalog to the searcher (`update(items:)`), and the registry embeds
-  only the items whose text changed. The agent holds one index over
-  `AgentHome.serverSessionSearchDirectory` (`RoutedACPAgent.transcriptSearchIndex`). The Mac app
-  makes a second index over `AgentHome.clientSessionSearchDirectory`. The index keeps no file yet.
+  The searcher keeps its catalog and its vectors in the folder of the index with the persistence
+  option of the registry (`CatalogPersistence`, with the model id of the `embedding` slot), and
+  the index keeps no other file. At its start, the index reads the stored items with no embed
+  (`MetadataSearcher.items()`) and makes its list of sessions from them. A stored catalog of an
+  old format, of another model or that is damaged is dropped (`.storedCatalogDropped`), and the
+  next changes build it again. Each change gives the searcher only the items that changed
+  (`update(upserting:removing:)`). The diagnostics of the registry are logged with
+  `ACPAgentTelemetry`. The agent holds one index over `AgentHome.serverSessionSearchDirectory`
+  (`RoutedACPAgent.transcriptSearchIndex`). The Mac app makes a second index over
+  `AgentHome.clientSessionSearchDirectory`. Only one index may use a folder at a time. The
+  shutdown of the agent waits until the updates applied each change and the index saved it.
 - **The updates.** `TranscriptSearchUpdates` keeps the index of the agent current. The agent
   gives each change with no wait, and one task applies the changes in their order
   (`TranscriptSearchApplier`), so a turn never waits for the index and a later change never
@@ -151,8 +158,9 @@ The transcript search (D207) finds the sessions and the turns that hold a text. 
   folder). The reconcile reads nothing in a folder that the rule refuses, and the items of its
   sessions stay. For each other folder it reads the recording root from the settings of the
   folder, the record (`index.md`) and the `session-history.json` of each session folder, and gives
-  the items of each session in one change. It removes the items of each session of the folder
-  that has no history file. It reads no summary of the session directory, because that read
+  the items of each session in one change. The index starts from its stored catalog, so the
+  reconcile gives the searcher only the changed items. It removes the items of each session of
+  the folder that has no history file, also a session that was deleted while the agent was off. It reads no summary of the session directory, because that read
   reads the recording root of each project. The facts of the session item come from the Router
   function that turns a record into a summary (`SessionSummary.init(record:)`), so the name and
   the slug follow the one rule of the Router. There is no rebuild command and no setting (D187).

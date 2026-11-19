@@ -100,6 +100,23 @@ import Testing
     #expect(written.entry(withID: .userMessage(run.response.messageId)) != nil)
   }
 
+  // MARK: - The shutdown
+
+  /// The shutdown of the agent waits until the index applied and saved the last turn: a new
+  /// index over the folder of the agent holds the turn (D207, ^y7nx1g3).
+  @Test(.timeLimit(.minutes(3))) func theShutdownKeepsTheLastTurn() async throws {
+    let fixture = try await Self.fixtureAfterOnePrompt(label: "shutdown")
+    let agentIndex = fixture.harness.agent.transcriptSearchIndex
+
+    await fixture.harness.agent.shutdown()
+    let restored = await TranscriptSearchIndex(
+      folder: agentIndex.folder, embedder: nil, modelID: agentIndex.modelID,
+      readableFolder: { _ in true })
+    await fixture.close()
+
+    #expect(await Self.holdsTheAnswer(fixture.sessionId, in: restored))
+  }
+
   // MARK: - The fork
 
   /// A fork is indexed as its own session, with the copy of the history of its source.
@@ -142,7 +159,7 @@ import Testing
     let fixture = try await Self.fixtureAfterOnePrompt(label: "reconcile")
     let entry = try #require(await fixture.harness.agent.sessions[fixture.sessionId])
     await fixture.close()
-    let index = TranscriptSearchIndex(
+    let index = await TranscriptSearchIndex(
       folder: makeResolvedDirectory(label: "\(Self.label)-reconcile-index"), embedder: nil,
       modelID: nil, readableFolder: { _ in true })
     let updates = TranscriptSearchUpdates(index: index) { _ in nil }
@@ -231,7 +248,7 @@ import Testing
   private static func reconciledSessionItem(
     of fixture: ScriptedPromptFixture, recordingRoot: URL, label: String
   ) async throws -> TranscriptSearchItem? {
-    let index = TranscriptSearchIndex(
+    let index = await TranscriptSearchIndex(
       folder: makeResolvedDirectory(label: "\(Self.label)-\(label)-index"), embedder: nil,
       modelID: nil, readableFolder: { _ in true })
     let updates = TranscriptSearchUpdates(index: index) { _ in nil }

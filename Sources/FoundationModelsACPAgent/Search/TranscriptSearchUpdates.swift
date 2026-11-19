@@ -56,6 +56,10 @@ final class TranscriptSearchUpdates: Sendable {
 
     /// The reconcile of one working folder that the process can read.
     case reconcile(TranscriptSearchFolder)
+
+    /// A mark in the queue: the applier resumes the wait when it comes to the mark, so each
+    /// change before the mark is applied (``waitUntilApplied()``).
+    case mark(CheckedContinuation<Void, Never>)
   }
 
   /// The index that the object keeps current.
@@ -112,6 +116,15 @@ final class TranscriptSearchUpdates: Sendable {
   ///   - session: The session.
   func indexHistory(_ history: SessionMergeEngine, of session: SessionId) {
     changes.yield(.history(session, history, summary: nil))
+  }
+
+  /// Returns when the index applied each change that the object got before this call. The
+  /// shutdown of the agent waits here, and then for the saves of the index, so a quit keeps the
+  /// last change.
+  func waitUntilApplied() async {
+    await withCheckedContinuation { mark in
+      changes.yield(.mark(mark))
+    }
   }
 
   /// Removes the items of each session of a deleted session folder. The call does not wait.
@@ -276,6 +289,8 @@ actor TranscriptSearchApplier {
       await index.index([:], removing: sessions)
     case .reconcile(let folder):
       await reconcile(folder)
+    case .mark(let mark):
+      mark.resume()
     }
   }
 

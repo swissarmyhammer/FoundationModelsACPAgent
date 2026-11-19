@@ -55,7 +55,9 @@ public actor RoutedACPAgent: Agent {
 
   /// The transcript search index of the sessions of this server (D207 (b), Q66), over
   /// ``AgentHome/serverSessionSearchDirectory``. It embeds with the `embedding` slot of
-  /// ``residentProfile``. ``transcriptSearchUpdates`` keeps it current.
+  /// ``residentProfile``, and keeps its catalog in that folder, so the agent starts from the
+  /// stored catalog. ``transcriptSearchUpdates`` keeps it current, and ``shutdown()`` waits for
+  /// its saves.
   nonisolated let transcriptSearchIndex: TranscriptSearchIndex
 
   /// The updates of ``transcriptSearchIndex`` (^en1kt61): the history of each write, each
@@ -619,7 +621,7 @@ public actor RoutedACPAgent: Agent {
     }
     residentProfile = try await configuration.profile.resolveResident(
       router: router, reporting: progress)
-    transcriptSearchIndex = TranscriptSearchIndex(
+    transcriptSearchIndex = await TranscriptSearchIndex(
       folder: home.serverSessionSearchDirectory,
       embedder: ProfileEmbedding(embedder: residentProfile.embedding),
       modelID: residentProfile.embedding.chosen.stringValue,

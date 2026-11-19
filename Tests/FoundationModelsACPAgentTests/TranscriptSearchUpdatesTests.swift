@@ -104,8 +104,8 @@ import ULID
   /// - Returns: The index.
   private static func makeIndex(
     label: String, readableFolder: @escaping @Sendable (URL) -> Bool = { _ in true }
-  ) -> TranscriptSearchIndex {
-    TranscriptSearchIndex(
+  ) async -> TranscriptSearchIndex {
+    await TranscriptSearchIndex(
       folder: makeResolvedDirectory(label: "\(Self.label)-\(label)"), embedder: nil,
       modelID: nil, readableFolder: readableFolder)
   }
@@ -124,7 +124,7 @@ import ULID
   @Test(.timeLimit(.minutes(3))) func aWrittenHistoryGivesTheItemsOfItsSession() async throws {
     let summary = try Self.summary(of: Self.sessionId, title: Self.firstTitle)
     let history = Self.history(answer: "The quokka lives on an island.")
-    let index = Self.makeIndex(label: "history")
+    let index = await Self.makeIndex(label: "history")
     let updates = TranscriptSearchUpdates(index: index) { _ in summary }
 
     updates.indexHistory(history, of: Self.sessionId)
@@ -139,7 +139,7 @@ import ULID
   @Test(.timeLimit(.minutes(3))) func aFailedSummaryReadLetsTheNextChangeGoOn() async throws {
     let summary = try Self.summary(of: Self.sessionId, title: Self.firstTitle)
     let failing = try Self.otherSessionId.ulid()
-    let index = Self.makeIndex(label: "failure")
+    let index = await Self.makeIndex(label: "failure")
     let updates = TranscriptSearchUpdates(index: index) { id in
       guard id != failing else {
         throw SessionDirectoryError.unknownSession(id)
@@ -161,7 +161,7 @@ import ULID
   @Test(.timeLimit(.minutes(3))) func aStartedSessionWithAHistoryIsIndexed() async throws {
     let summary = try Self.summary(of: Self.sessionId, title: Self.firstTitle)
     let history = Self.history(answer: "The quokka lives on an island.")
-    let index = Self.makeIndex(label: "started")
+    let index = await Self.makeIndex(label: "started")
     let updates = TranscriptSearchUpdates(index: index) { _ in nil }
 
     await updates.directoryEventArrived(
@@ -178,7 +178,7 @@ import ULID
     let summary = try Self.summary(of: Self.sessionId, title: Self.firstTitle)
     let renamed = try Self.summary(of: Self.sessionId, title: Self.changedTitle)
     let history = Self.history(answer: "The quokka lives on an island.")
-    let index = Self.makeIndex(label: "rename")
+    let index = await Self.makeIndex(label: "rename")
     let updates = TranscriptSearchUpdates(index: index) { _ in summary }
     updates.indexHistory(history, of: Self.sessionId)
     try await Self.waitUntil { await !index.items(of: Self.sessionId).isEmpty }
@@ -196,7 +196,7 @@ import ULID
     let archived = try Self.summary(of: Self.sessionId, title: Self.changedTitle)
     let current = Mutex(summary)
     let history = Self.history(answer: "The quokka lives on an island.")
-    let index = Self.makeIndex(label: "archive")
+    let index = await Self.makeIndex(label: "archive")
     let updates = TranscriptSearchUpdates(index: index) { _ in current.withLock { $0 } }
     updates.indexHistory(history, of: Self.sessionId)
     try await Self.waitUntil { await !index.items(of: Self.sessionId).isEmpty }
@@ -214,7 +214,7 @@ import ULID
 
   /// The reconcile removes the items of a session of a read folder that has no history file.
   @Test(.timeLimit(.minutes(3))) func theReconcileRemovesASessionWithNoHistoryFile() async throws {
-    let index = Self.makeIndex(label: "reconcile-removed")
+    let index = await Self.makeIndex(label: "reconcile-removed")
     let updates = TranscriptSearchUpdates(index: index) { _ in nil }
     let emptyRoot = makeResolvedDirectory(label: "\(Self.label)-reconcile-removed-root")
     await Self.indexStale(Self.sessionId, folder: Self.folder, in: index)
@@ -227,7 +227,7 @@ import ULID
 
   /// The reconcile keeps the items of a session of a folder that the process cannot read.
   @Test(.timeLimit(.minutes(3))) func theReconcileKeepsTheItemsOfAClosedFolder() async throws {
-    let index = Self.makeIndex(label: "reconcile-closed") { $0 != Self.closedFolder }
+    let index = await Self.makeIndex(label: "reconcile-closed") { $0 != Self.closedFolder }
     let updates = TranscriptSearchUpdates(index: index) { _ in nil }
 
     _ = try await Self.reconcileClosedAndOpenFolders(with: updates)
@@ -237,7 +237,7 @@ import ULID
 
   /// The reconcile asks for no recording root of a folder that the process cannot read.
   @Test(.timeLimit(.minutes(3))) func theReconcileReadsNoRootOfAClosedFolder() async throws {
-    let index = Self.makeIndex(label: "reconcile-no-root") { $0 != Self.closedFolder }
+    let index = await Self.makeIndex(label: "reconcile-no-root") { $0 != Self.closedFolder }
     let updates = TranscriptSearchUpdates(index: index) { _ in nil }
 
     let asked = try await Self.reconcileClosedAndOpenFolders(with: updates)
@@ -248,7 +248,7 @@ import ULID
   /// The reconcile keeps the items of a session whose record (`index.md`) does not read
   /// (D207, ^pqweam5).
   @Test(.timeLimit(.minutes(3))) func theReconcileKeepsTheItemsOfAnUnreadableRecord() async throws {
-    let index = Self.makeIndex(label: "reconcile-bad-record")
+    let index = await Self.makeIndex(label: "reconcile-bad-record")
     let updates = TranscriptSearchUpdates(index: index) { _ in nil }
     let badRoot = try Self.rootWithUnreadableRecord(of: Self.otherSessionId)
     let emptyRoot = makeResolvedDirectory(label: "\(Self.label)-reconcile-bad-record-empty")
