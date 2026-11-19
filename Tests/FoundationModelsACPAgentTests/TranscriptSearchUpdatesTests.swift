@@ -35,13 +35,6 @@ import ULID
   /// The date of each summary.
   private static let summaryDate = Date(timeIntervalSince1970: 1_800_000_000)
 
-  /// The most polls of a wait for the index. The updates run with a low priority, so a full
-  /// parallel test run can keep them back for many seconds.
-  private static let pollLimit = 3600
-
-  /// The time between two polls of a wait for the index.
-  private static let pollInterval = Duration.milliseconds(25)
-
   /// The title of each session before a change.
   private static let firstTitle = "Zebra research"
 
@@ -121,7 +114,7 @@ import ULID
   /// - Parameter condition: Tells whether the wait is over.
   /// - Throws: The cancel of the wait.
   private static func waitUntil(_ condition: () async -> Bool) async throws {
-    try await pollUntil(limit: pollLimit, interval: pollInterval) { await condition() }
+    try await pollIndexUntil { await condition() }
   }
 
   // MARK: - The history of a write

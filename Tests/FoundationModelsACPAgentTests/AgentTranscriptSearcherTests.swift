@@ -79,13 +79,6 @@ import Testing
   /// The tag that ``settle(_:on:)`` adds to a session of the directory.
   private static let settledTag = "settled"
 
-  /// The most polls of a wait for the index. The updates run with a low priority, so a full
-  /// parallel test run can keep them back for many seconds.
-  private static let pollLimit = 3600
-
-  /// The time between two polls of a wait for the index.
-  private static let pollInterval = Duration.milliseconds(25)
-
   // MARK: - Helpers
 
   /// The text of the indexed chunk of ``indexWord(of:on:folder:tail:)``.
@@ -166,7 +159,7 @@ import Testing
     let expected = TranscriptSearchItem(
       session: session, metadata: TranscriptSessionMetadata(summary: tagged))
     let index = agent.transcriptSearchIndex
-    try await pollUntil(limit: pollLimit, interval: pollInterval) {
+    try await pollIndexUntil {
       await index.items(of: session).first == expected
     }
     try #require(await index.items(of: session).first == expected)
