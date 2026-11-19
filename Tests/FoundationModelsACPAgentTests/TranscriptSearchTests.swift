@@ -139,9 +139,10 @@ import Testing
     label: String, embedder: Embedder,
     readableFolder: @escaping @Sendable (URL) -> Bool = { _ in true }
   ) async -> TranscriptSearchIndex {
-    let index = await TranscriptSearchIndex(
+    let index = TranscriptSearchIndex(
       folder: makeResolvedDirectory(label: "TranscriptSearchTests-\(label)-\(embedder.rawValue)"),
       embedder: embedder.embedder, modelID: nil, readableFolder: readableFolder)
+    await index.load()
     await index.index(
       session: zooSession,
       chunks: [

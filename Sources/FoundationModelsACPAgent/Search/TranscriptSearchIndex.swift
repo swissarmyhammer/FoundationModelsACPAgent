@@ -18,11 +18,14 @@ import FoundationModelsMetadataRegistry
 ///
 /// The searcher keeps its catalog and its vectors in the folder of the index, with the
 /// persistence option of the registry (`CatalogPersistence`, D207 step 5). The index keeps no
-/// other file. At its start, the index reads the stored catalog with no embed, and makes its
-/// list of sessions from the stored items, so a new process searches at once. A stored catalog
-/// of an old format, of another embedding model or that is damaged is dropped by the registry:
-/// the index then starts empty, and the next change of each session builds it again. Only one
-/// index may use a folder at a time.
+/// other file. The init only keeps its arguments, and reads nothing. The host then calls
+/// ``load()`` one time: the load reads the stored catalog with no embed, and makes the list of
+/// sessions from the stored items, so a new process searches at once. `RoutedACPAgent` loads
+/// the index of the agent. The Mac app loads the index of its client folder. Each other method
+/// waits for the load, and starts it when no call started it, so a call before ``load()`` is
+/// safe. A stored catalog of an old format, of another embedding model or that is damaged is
+/// dropped by the registry: the index then starts empty, and the next change of each session
+/// builds it again. Only one index may use a folder at a time.
 ///
 /// The host gives the chunks of each session (`SessionSearchChunker.chunks(of:dates:)` of
 /// FoundationModelsACP) and the facts of the session. Each change gives the searcher only the
@@ -129,8 +132,28 @@ public actor TranscriptSearchIndex {
   /// The subscribers of the changes of the index.
   private nonisolated let feed = TranscriptSearchChangeFeed()
 
-  /// The one searcher over the catalog: the `.retrieval` mode with the default weights.
-  private let searcher: MetadataSearcher<TranscriptSearchItem>
+  /// The searcher of the transcript search items.
+  private typealias Searcher = MetadataSearcher<TranscriptSearchItem>
+
+  /// The state of the load of the stored catalog.
+  private enum LoadState {
+    /// No call started the load. The index holds no searcher and no session.
+    case notLoaded
+
+    /// The load started. The task gives the one searcher over the catalog (the `.retrieval`
+    /// mode with the default weights) after the index made its sessions from the stored items.
+    case loading(Task<Searcher, Never>)
+  }
+
+  /// The embedder of the items and the queries, or `nil` for the keyword signals only. The load
+  /// gives it to the searcher.
+  private nonisolated let embedder: (any PooledEmbedding)?
+
+  /// Gets each diagnostic of the registry after the log. The load gives it to the searcher.
+  private nonisolated let onDiagnostic: (@Sendable (MetadataDiagnostic) -> Void)?
+
+  /// The state of the load of the stored catalog.
+  private var loadState = LoadState.notLoaded
 
   /// The items of each indexed session, by session id.
   private var sessions: [SessionId: IndexedSession] = [:]
@@ -139,9 +162,8 @@ public actor TranscriptSearchIndex {
   /// the changes reach the searcher in the order of the changes of ``sessions``.
   private var lastWrite: Task<Void, Never>?
 
-  /// Makes an index over the stored catalog of its folder. The call embeds nothing: the searcher
-  /// reads the stored items and vectors, and the index makes its list of sessions from the
-  /// stored items. A folder with no stored catalog gives an empty index.
+  /// Makes an index over the stored catalog of its folder. The init only keeps its arguments:
+  /// it reads nothing from the folder. Call ``load()`` to read the stored catalog.
   ///
   /// Each diagnostic of the registry is logged with ``ACPAgentTelemetry`` (a dropped stored
   /// catalog, a failed save), and then goes to `onDiagnostic`.
@@ -159,26 +181,34 @@ public actor TranscriptSearchIndex {
     modelID: String?,
     readableFolder: @escaping @Sendable (URL) -> Bool,
     onDiagnostic: (@Sendable (MetadataDiagnostic) -> Void)? = nil
-  ) async {
+  ) {
     self.folder = folder
+    self.embedder = embedder
     self.modelID = modelID
     self.readableFolder = readableFolder
-    searcher = await MetadataSearcher(
-      persistence: CatalogPersistence(
-        folder: folder, embeddingModelID: modelID ?? Self.keywordOnlyModelID),
-      mode: .retrieval, embedder: embedder,
-      onDiagnostic: { diagnostic in
-        TranscriptSearchDiagnostics.log(diagnostic)
-        onDiagnostic?(diagnostic)
-      })
-    let restored = Self.restoredSessions(from: await searcher.items())
-    sessions = restored.sessions
-    await write(upserting: [], removing: restored.strayIDs)
+    self.onDiagnostic = onDiagnostic
+  }
+
+  /// Reads the stored catalog of the folder. The call embeds nothing: the searcher reads the
+  /// stored items and vectors, and the index makes its list of sessions from the stored items.
+  /// It removes from the searcher each stored chunk item of a session with no session item. A
+  /// folder with no stored catalog gives an empty index.
+  ///
+  /// The host calls it one time, after the init. A second call, also at the same time, waits
+  /// for the first load and reads nothing again. Each other method of the index waits for the
+  /// load, and starts it when no call started it.
+  public func load() async {
+    _ = await loadedSearcher()
   }
 
   /// Returns when each change that the index got before this call is written to its folder, or
-  /// the write failed. The shutdown of the agent calls it, so a quit keeps the last change.
+  /// the write failed. The shutdown of the agent calls it, so a quit keeps the last change. An
+  /// index that did not start its load has no change to write, so the call reads nothing.
   public func waitForSaves() async {
+    guard case .loading(let load) = loadState else {
+      return
+    }
+    let searcher = await load.value
     await lastWrite?.value
     await searcher.waitForSaves()
   }
@@ -211,6 +241,7 @@ public actor TranscriptSearchIndex {
   public func index(_ contents: [SessionId: SessionContent], removing removed: Set<SessionId> = [])
     async
   {
+    let searcher = await loadedSearcher()
     let removedHeld = removed.filter { sessions[$0] != nil && contents[$0] == nil }
     guard !contents.isEmpty || !removedHeld.isEmpty else {
       return
@@ -227,7 +258,7 @@ public actor TranscriptSearchIndex {
     for session in removedHeld {
       sessions.removeValue(forKey: session)
     }
-    await write(upserting: change.upserting, removing: change.removing)
+    await write(to: searcher, upserting: change.upserting, removing: change.removing)
     publishChanges(of: changedTurns.union(removedHeld))
   }
 
@@ -240,12 +271,13 @@ public actor TranscriptSearchIndex {
   ///   - session: The session.
   ///   - metadata: The new facts of the session.
   public func update(session: SessionId, metadata: TranscriptSessionMetadata) async {
+    let searcher = await loadedSearcher()
     guard let held = sessions[session], held.metadata != metadata else {
       return
     }
     let replaced = held.replacingMetadata(with: metadata)
     sessions[session] = replaced
-    await write(upserting: [replaced.sessionItem], removing: [])
+    await write(to: searcher, upserting: [replaced.sessionItem], removing: [])
   }
 
   /// Removes each item of one session. A session that the index does not hold changes nothing.
@@ -260,16 +292,18 @@ public actor TranscriptSearchIndex {
   ///
   /// - Parameter session: The session.
   /// - Returns: The items of the session.
-  public func items(of session: SessionId) -> [TranscriptSearchItem] {
-    sessions[session]?.items ?? []
+  public func items(of session: SessionId) async -> [TranscriptSearchItem] {
+    await load()
+    return sessions[session]?.items ?? []
   }
 
   /// The facts of each session that the index holds, by session id. A reconcile reads the
   /// working folder of each session here, to find the sessions of a folder that it read.
   ///
   /// - Returns: The facts of each held session.
-  public func indexedSessions() -> [SessionId: TranscriptSessionMetadata] {
-    sessions.mapValues(\.metadata)
+  public func indexedSessions() async -> [SessionId: TranscriptSessionMetadata] {
+    await load()
+    return sessions.mapValues(\.metadata)
   }
 
   /// Makes a new stream of the changes of the index (D207 (i)). Each call gives a new stream of
@@ -292,8 +326,9 @@ public actor TranscriptSearchIndex {
   ///
   /// - Parameter session: The session.
   /// - Returns: The turns of the session, in the order of the turns.
-  public func turns(of session: SessionId) -> [TranscriptSearchTurn] {
-    sessions[session]?.turns ?? []
+  public func turns(of session: SessionId) async -> [TranscriptSearchTurn] {
+    await load()
+    return sessions[session]?.turns ?? []
   }
 
   /// The turns of each session that the index holds, for a new index of the host (for
@@ -301,8 +336,9 @@ public actor TranscriptSearchIndex {
   /// each session in their order.
   ///
   /// - Returns: The turns.
-  public func allTurns() -> [TranscriptSearchTurn] {
-    sortedSessionIDs.flatMap { sessions[$0]?.turns ?? [] }
+  public func allTurns() async -> [TranscriptSearchTurn] {
+    await load()
+    return sortedSessionIDs.flatMap { sessions[$0]?.turns ?? [] }
   }
 
   /// The matches of the searcher for a query: one match for each item that a signal ranked, in
@@ -313,11 +349,22 @@ public actor TranscriptSearchIndex {
   /// - Returns: The matches of the registry.
   /// - Throws: An error of the searcher. The `.retrieval` mode gives none.
   public func matches(for query: String) async throws -> [Match<TranscriptSearchItem>] {
-    try await searcher.search(intent: query, limit: catalog.count)
+    let searcher = await loadedSearcher()
+    return try await searcher.search(intent: query, limit: heldCatalog.count)
   }
 
-  /// The items of the catalog: the items of each session, in the order of the session ids.
+  /// The items of the catalog: the items of each session, in the order of the session ids. The
+  /// read waits for the load.
   var catalog: [TranscriptSearchItem] {
+    get async {
+      await load()
+      return heldCatalog
+    }
+  }
+
+  /// The items of the catalog that the index holds now, in the order of the session ids. Read
+  /// it only after the load.
+  private var heldCatalog: [TranscriptSearchItem] {
     sortedSessionIDs.flatMap { sessions[$0]?.items ?? [] }
   }
 
@@ -351,6 +398,40 @@ public actor TranscriptSearchIndex {
       })
   }
 
+  /// The searcher after the load. The first call starts the load, and each later call waits
+  /// for the same load.
+  ///
+  /// - Returns: The searcher.
+  private func loadedSearcher() async -> Searcher {
+    if case .loading(let load) = loadState {
+      return await load.value
+    }
+    let load = Task { await openStoredCatalog() }
+    loadState = .loading(load)
+    return await load.value
+  }
+
+  /// Makes the searcher over the stored catalog of the folder, makes the list of sessions from
+  /// the stored items, and removes the stray ids from the searcher. Only ``loadedSearcher()``
+  /// calls it, one time.
+  ///
+  /// - Returns: The searcher.
+  private func openStoredCatalog() async -> Searcher {
+    let onDiagnostic = onDiagnostic
+    let searcher = await Searcher(
+      persistence: CatalogPersistence(
+        folder: folder, embeddingModelID: modelID ?? Self.keywordOnlyModelID),
+      mode: .retrieval, embedder: embedder,
+      onDiagnostic: { diagnostic in
+        TranscriptSearchDiagnostics.log(diagnostic)
+        onDiagnostic?(diagnostic)
+      })
+    let restored = Self.restoredSessions(from: await searcher.items())
+    sessions = restored.sessions
+    await write(to: searcher, upserting: [], removing: restored.strayIDs)
+    return searcher
+  }
+
   /// Gives the changed items of one change to the searcher (`update(upserting:removing:)`), and
   /// returns when the searcher applied them. A change with no item does nothing.
   ///
@@ -359,14 +440,16 @@ public actor TranscriptSearchIndex {
   /// made them: a later change of an item never comes before an earlier one.
   ///
   /// - Parameters:
+  ///   - searcher: The searcher after the load.
   ///   - upserting: The new and the changed items.
   ///   - removing: The ids of the items that are gone.
-  private func write(upserting: [TranscriptSearchItem], removing: [String]) async {
+  private func write(to searcher: Searcher, upserting: [TranscriptSearchItem], removing: [String])
+    async
+  {
     guard !upserting.isEmpty || !removing.isEmpty else {
       return
     }
     let previous = lastWrite
-    let searcher = searcher
     let write = Task {
       await previous?.value
       await searcher.update(upserting: upserting, removing: removing)

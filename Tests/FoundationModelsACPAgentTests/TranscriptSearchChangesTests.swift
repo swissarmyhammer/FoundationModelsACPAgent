@@ -102,9 +102,11 @@ import Testing
   /// - Parameter label: The label of the folder.
   /// - Returns: The index.
   private static func makeIndex(label: String) async -> TranscriptSearchIndex {
-    await TranscriptSearchIndex(
+    let index = TranscriptSearchIndex(
       folder: makeResolvedDirectory(label: "\(Self.label)-\(label)"), embedder: nil,
       modelID: nil, readableFolder: { _ in true })
+    await index.load()
+    return index
   }
 
   /// Reads the first changes of a new stream of an index while `request` runs.

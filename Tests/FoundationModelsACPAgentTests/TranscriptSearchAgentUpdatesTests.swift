@@ -109,9 +109,10 @@ import Testing
     let agentIndex = fixture.harness.agent.transcriptSearchIndex
 
     await fixture.harness.agent.shutdown()
-    let restored = await TranscriptSearchIndex(
+    let restored = TranscriptSearchIndex(
       folder: agentIndex.folder, embedder: nil, modelID: agentIndex.modelID,
       readableFolder: { _ in true })
+    await restored.load()
     await fixture.close()
 
     #expect(await Self.holdsTheAnswer(fixture.sessionId, in: restored))
@@ -159,9 +160,10 @@ import Testing
     let fixture = try await Self.fixtureAfterOnePrompt(label: "reconcile")
     let entry = try #require(await fixture.harness.agent.sessions[fixture.sessionId])
     await fixture.close()
-    let index = await TranscriptSearchIndex(
+    let index = TranscriptSearchIndex(
       folder: makeResolvedDirectory(label: "\(Self.label)-reconcile-index"), embedder: nil,
       modelID: nil, readableFolder: { _ in true })
+    await index.load()
     let updates = TranscriptSearchUpdates(index: index) { _ in nil }
     await index.index(
       session: fixture.sessionId, chunks: [],
@@ -248,9 +250,10 @@ import Testing
   private static func reconciledSessionItem(
     of fixture: ScriptedPromptFixture, recordingRoot: URL, label: String
   ) async throws -> TranscriptSearchItem? {
-    let index = await TranscriptSearchIndex(
+    let index = TranscriptSearchIndex(
       folder: makeResolvedDirectory(label: "\(Self.label)-\(label)-index"), embedder: nil,
       modelID: nil, readableFolder: { _ in true })
+    await index.load()
     let updates = TranscriptSearchUpdates(index: index) { _ in nil }
 
     await updates.reconcile(folders: [fixture.cwd], recordingRoot: { _ in recordingRoot })

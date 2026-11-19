@@ -1,28 +1,34 @@
 import Foundation
 import FoundationModelsACP
+import FoundationModelsACPAgent
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsMultitool
+import FoundationModelsRouter
+import Logging
 import Testing
-import ULID
-
-@testable import FoundationModelsACPAgent
-
-/// The environment variable that turns the measurement of the transcript search on.
-private let measurementSwitchName = "TRANSCRIPT_SEARCH_MEASUREMENT"
 
 /// The measurement of the transcript search index with a realistic history (D207, ^y7nx1g3):
 /// 1,000 sessions of 10 turns, with a stored catalog. It measures the time of a search, the time
-/// of a turn update, and the start time from the stored catalog, and prints the numbers.
+/// of a turn update, and the load time of the stored catalog, and logs the numbers with a
+/// `Logger`.
 ///
-/// The measurement is off by default, so the unit suite stays fast. Set the environment
-/// variable `TRANSCRIPT_SEARCH_MEASUREMENT=1` to run it:
+/// This suite is in the `Benchmarks` package, which the root manifest does not name. The test
+/// tool selects it with its package path, so the unit suite of the root stays fast:
 ///
 /// ```
-/// TRANSCRIPT_SEARCH_MEASUREMENT=1 swift test --filter TranscriptSearchMeasurementTests
+/// swift test --package-path Benchmarks
 /// ```
-@Suite(.enabled(if: ProcessInfo.processInfo.environment[measurementSwitchName] == "1"))
-struct TranscriptSearchMeasurementTests {
+@Suite struct TranscriptSearchMeasurementTests {
   // MARK: - Constants
+
+  /// The log of the report. Its handler writes each line to the standard error of the test
+  /// run, with no bootstrap of the logging system of the process.
+  private static let logger = Logger(label: "TranscriptSearchMeasurement") {
+    StreamLogHandler.standardError(label: $0)
+  }
+
+  /// The id of the embedding model of the fake embedder.
+  private static let modelID = "fake-embedding"
 
   /// The number of sessions of the history.
   private static let sessionCount = 1_000
@@ -171,11 +177,23 @@ struct TranscriptSearchMeasurementTests {
     return String(format: "median %.1f ms, max %.1f ms", median, sorted.last ?? median)
   }
 
-  /// Prints one line of the report.
+  /// Logs one line of the report.
   ///
   /// - Parameter line: The line.
   private static func report(_ line: String) {
-    print("TRANSCRIPT-SEARCH-MEASUREMENT \(line)")
+    logger.info("\(line)")
+  }
+
+  /// The number of items that an index holds: the items of each indexed session.
+  ///
+  /// - Parameter index: The index.
+  /// - Returns: The number of items.
+  private static func itemCount(of index: TranscriptSearchIndex) async -> Int {
+    var count = 0
+    for session in await index.indexedSessions().keys {
+      count += await index.items(of: session).count
+    }
+    return count
   }
 
   /// A request of a query.
@@ -191,17 +209,17 @@ struct TranscriptSearchMeasurementTests {
   // MARK: - The measurement
 
   /// Builds the stored catalog of 1,000 sessions, and measures a search, a turn update and a
-  /// start from the stored catalog.
+  /// load of the stored catalog.
   @Test(.timeLimit(.minutes(30))) func measureOneThousandSessions() async throws {
     let contents = Self.history()
     let directory = makeResolvedDirectory(label: "TranscriptSearchMeasurementTests")
     let embedder = CountingEmbedding(costPerText: Self.embedCost)
-    let index = await TranscriptSearchIndex(
-      folder: directory, embedder: embedder, modelID: "fake-embedding",
-      readableFolder: { _ in true })
+    let index = TranscriptSearchIndex(
+      folder: directory, embedder: embedder, modelID: Self.modelID, readableFolder: { _ in true })
+    await index.load()
     let build = await Self.milliseconds { await index.index(contents) }
     let save = await Self.milliseconds { await index.waitForSaves() }
-    let itemCount = await index.catalog.count
+    let itemCount = await Self.itemCount(of: index)
     Self.report(
       "history: \(Self.sessionCount) sessions, \(Self.turnCount) turns each, \(itemCount) items, "
         + "embed cost \(Self.embedCost) a text")
@@ -241,23 +259,20 @@ struct TranscriptSearchMeasurementTests {
       "turn update (\(Self.turnShape.count) new chunks, embed included): "
         + Self.summary(updateTimes))
     await index.waitForSaves()
-    let storedCount = await index.catalog.count
+    let storedCount = await Self.itemCount(of: index)
 
     let restartEmbedder = CountingEmbedding(costPerText: Self.embedCost)
-    var restarted: TranscriptSearchIndex?
-    let start = await Self.milliseconds {
-      restarted = await TranscriptSearchIndex(
-        folder: directory, embedder: restartEmbedder, modelID: "fake-embedding",
-        readableFolder: { _ in true })
-    }
-    let restored = try #require(restarted)
+    let restored = TranscriptSearchIndex(
+      folder: directory, embedder: restartEmbedder, modelID: Self.modelID,
+      readableFolder: { _ in true })
+    let start = await Self.milliseconds { await restored.load() }
     let firstSearch = try await Self.milliseconds {
       _ = try await restored.search(try Self.request(Self.word(900)), visibleSessions: visible)
     }
     Self.report(
-      String(format: "start from the stored catalog: %.0f ms, first search after it: %.1f ms, "
+      String(format: "load of the stored catalog: %.0f ms, first search after it: %.1f ms, "
         + "texts embedded: %d", start, firstSearch, restartEmbedder.embeddedTextCount))
 
-    #expect(await restored.catalog.count == storedCount)
+    #expect(await Self.itemCount(of: restored) == storedCount)
   }
 }

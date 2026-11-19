@@ -82,7 +82,27 @@ import Testing
     ]).searchChunks
   }
 
-  /// An index over a folder.
+  /// An index over a folder that did not load its stored catalog: the init only keeps its
+  /// arguments.
+  ///
+  /// - Parameters:
+  ///   - folder: The folder of the index.
+  ///   - embedder: The embedder of the index.
+  ///   - modelID: The id of the embedding model.
+  ///   - readableFolder: Tells whether the process can read a folder now.
+  ///   - diagnostics: Records each diagnostic of the registry.
+  /// - Returns: The index.
+  private static func makeUnloadedIndex(
+    in folder: URL, embedder: CountingEmbedding = CountingEmbedding(), modelID: String = modelID,
+    readableFolder: @escaping @Sendable (URL) -> Bool = { _ in true },
+    diagnostics: DiagnosticRecorder = DiagnosticRecorder()
+  ) -> TranscriptSearchIndex {
+    TranscriptSearchIndex(
+      folder: folder, embedder: embedder, modelID: modelID, readableFolder: readableFolder,
+      onDiagnostic: { diagnostics.record($0) })
+  }
+
+  /// An index over a folder that loaded its stored catalog, as the host makes it.
   ///
   /// - Parameters:
   ///   - folder: The folder of the index.
@@ -96,9 +116,17 @@ import Testing
     readableFolder: @escaping @Sendable (URL) -> Bool = { _ in true },
     diagnostics: DiagnosticRecorder = DiagnosticRecorder()
   ) async -> TranscriptSearchIndex {
-    await TranscriptSearchIndex(
-      folder: folder, embedder: embedder, modelID: modelID, readableFolder: readableFolder,
-      onDiagnostic: { diagnostics.record($0) })
+    let index = makeUnloadedIndex(
+      in: folder, embedder: embedder, modelID: modelID, readableFolder: readableFolder,
+      diagnostics: diagnostics)
+    await index.load()
+    return index
+  }
+
+  /// The items of ``sessionId`` in the stored catalog: the session item, then the chunk items.
+  private static var storedItems: [TranscriptSearchItem] {
+    [TranscriptSearchItem(session: sessionId, metadata: metadata)]
+      + chunks.map { TranscriptSearchItem(chunk: $0, session: sessionId) }
   }
 
   /// A new folder that holds the stored catalog of an index with the two sessions in it.
@@ -164,10 +192,68 @@ import Testing
 
     let index = await Self.makeIndex(in: folder)
 
+    #expect(await index.items(of: Self.sessionId) == Self.storedItems)
+  }
+
+  // MARK: - The explicit load
+
+  /// The init reads nothing from the folder: a stored catalog of another embedding model gives
+  /// no drop before the load.
+  @Test(.timeLimit(.minutes(3))) func theInitReadsNoStoredCatalog() async {
+    let folder = await Self.makeStoredFolder(label: "init-reads-nothing")
+    let diagnostics = DiagnosticRecorder()
+
+    _ = Self.makeUnloadedIndex(in: folder, modelID: Self.otherModelID, diagnostics: diagnostics)
+
+    #expect(diagnostics.all.isEmpty)
+  }
+
+  /// Two loads at the same time read the stored catalog one time.
+  @Test(.timeLimit(.minutes(3))) func twoLoadsReadTheStoredCatalogOneTime() async {
+    let folder = await Self.makeStoredFolder(label: "two-loads")
+    let diagnostics = DiagnosticRecorder()
+    let index = Self.makeUnloadedIndex(
+      in: folder, modelID: Self.otherModelID, diagnostics: diagnostics)
+
+    async let first: Void = index.load()
+    async let second: Void = index.load()
+    _ = await (first, second)
+
     #expect(
-      await index.items(of: Self.sessionId)
-        == [TranscriptSearchItem(session: Self.sessionId, metadata: Self.metadata)]
-        + Self.chunks.map { TranscriptSearchItem(chunk: $0, session: Self.sessionId) })
+      diagnostics.all.filter { $0 == .storedCatalogDropped(reason: .embeddingModel) }.count == 1)
+  }
+
+  /// A read that the host makes before the load waits for the load: it gives the stored items.
+  @Test(.timeLimit(.minutes(3))) func aReadBeforeTheLoadGivesTheStoredItems() async {
+    let folder = await Self.makeStoredFolder(label: "read-before-load")
+    let index = Self.makeUnloadedIndex(in: folder)
+
+    #expect(await index.items(of: Self.sessionId) == Self.storedItems)
+  }
+
+  /// A change that the host makes before the load waits for the load: the stored items of the
+  /// other session stay.
+  @Test(.timeLimit(.minutes(3))) func aChangeBeforeTheLoadKeepsTheStoredItems() async {
+    let folder = await Self.makeStoredFolder(label: "change-before-load")
+    let index = Self.makeUnloadedIndex(in: folder)
+
+    await index.index(
+      session: Self.otherSessionId, chunks: Self.chunks(answer: "New tiles."),
+      metadata: Self.otherMetadata)
+
+    #expect(await index.items(of: Self.sessionId) == Self.storedItems)
+  }
+
+  /// A wait for the saves before the load reads nothing from the folder.
+  @Test(.timeLimit(.minutes(3))) func aWaitForTheSavesBeforeTheLoadReadsNothing() async {
+    let folder = await Self.makeStoredFolder(label: "wait-before-load")
+    let diagnostics = DiagnosticRecorder()
+    let index = Self.makeUnloadedIndex(
+      in: folder, modelID: Self.otherModelID, diagnostics: diagnostics)
+
+    await index.waitForSaves()
+
+    #expect(diagnostics.all.isEmpty)
   }
 
   /// A new index gives the stored content of a session again as no change: the stream gives the

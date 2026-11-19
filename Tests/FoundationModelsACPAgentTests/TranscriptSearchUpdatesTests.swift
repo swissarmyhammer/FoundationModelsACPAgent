@@ -105,9 +105,11 @@ import ULID
   private static func makeIndex(
     label: String, readableFolder: @escaping @Sendable (URL) -> Bool = { _ in true }
   ) async -> TranscriptSearchIndex {
-    await TranscriptSearchIndex(
+    let index = TranscriptSearchIndex(
       folder: makeResolvedDirectory(label: "\(Self.label)-\(label)"), embedder: nil,
       modelID: nil, readableFolder: readableFolder)
+    await index.load()
+    return index
   }
 
   /// Waits until a condition over the index holds, or until the poll limit.

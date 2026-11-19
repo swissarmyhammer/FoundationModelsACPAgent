@@ -621,11 +621,14 @@ public actor RoutedACPAgent: Agent {
     }
     residentProfile = try await configuration.profile.resolveResident(
       router: router, reporting: progress)
-    transcriptSearchIndex = await TranscriptSearchIndex(
+    let searchIndex = TranscriptSearchIndex(
       folder: home.serverSessionSearchDirectory,
       embedder: ProfileEmbedding(embedder: residentProfile.embedding),
       modelID: residentProfile.embedding.chosen.stringValue,
       readableFolder: readableFolder)
+    // The init of the index reads nothing. The load reads the stored catalog.
+    await searchIndex.load()
+    transcriptSearchIndex = searchIndex
     transcriptSearchUpdates = TranscriptSearchUpdates(
       index: transcriptSearchIndex,
       summaryReader: Self.directorySummaryReader(router.sessionDirectory))

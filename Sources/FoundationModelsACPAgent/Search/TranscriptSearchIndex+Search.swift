@@ -79,7 +79,7 @@ extension TranscriptSearchIndex {
       return try await matches(for: rankingText).filter { filter.admits($0.item) }.map(
         TranscriptSearchCandidate.init(match:))
     }
-    return catalog.filter { $0.isChunk && filter.admits($0) }.sorted(by: Self.isNewer).map(
+    return await catalog.filter { $0.isChunk && filter.admits($0) }.sorted(by: Self.isNewer).map(
       TranscriptSearchCandidate.init(listed:))
   }
 

@@ -5,9 +5,9 @@ import Synchronization
 /// ``WordBucketEmbedding``.
 ///
 /// A test of the persistence of the transcript search reads ``embeddedTextCount`` to know if the
-/// searcher embedded its items again. A measurement gives a cost for each text, so that each embed
-/// takes a fixed time, as a small real model does.
-final class CountingEmbedding: PooledEmbedding, Sendable {
+/// searcher embedded its items again. The measurement of the `Benchmarks` package gives a cost for
+/// each text, so that each embed takes a fixed time, as a small real model does.
+public final class CountingEmbedding: PooledEmbedding, Sendable {
   /// The embedder that makes the vectors.
   private let vectors = WordBucketEmbedding()
 
@@ -20,12 +20,12 @@ final class CountingEmbedding: PooledEmbedding, Sendable {
   /// Makes an embedder.
   ///
   /// - Parameter costPerText: The time that the embed of one text takes. The default is no time.
-  init(costPerText: Duration = .zero) {
+  public init(costPerText: Duration = .zero) {
     self.costPerText = costPerText
   }
 
   /// The number of texts that the embedder embedded.
-  var embeddedTextCount: Int {
+  public var embeddedTextCount: Int {
     count.withLock { $0 }
   }
 
@@ -34,7 +34,7 @@ final class CountingEmbedding: PooledEmbedding, Sendable {
   /// - Parameter texts: The texts to embed.
   /// - Returns: One vector for each text, in order.
   /// - Throws: The cancel of the wait.
-  func embed(texts: [String]) async throws -> [[Float]] {
+  public func embed(texts: [String]) async throws -> [[Float]] {
     count.withLock { $0 += texts.count }
     if costPerText > .zero {
       try await Task.sleep(for: costPerText * texts.count)

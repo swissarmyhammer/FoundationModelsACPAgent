@@ -90,9 +90,11 @@ import Testing
   private static func makeIndex(label: String, embedder: (any PooledEmbedding)?) async
     -> TranscriptSearchIndex
   {
-    await TranscriptSearchIndex(
+    let index = TranscriptSearchIndex(
       folder: makeResolvedDirectory(label: "TranscriptSearchIndexTests-\(label)"),
       embedder: embedder, modelID: nil, readableFolder: { _ in true })
+    await index.load()
+    return index
   }
 
   /// The id of the first match of a query.

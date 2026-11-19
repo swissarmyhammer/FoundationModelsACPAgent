@@ -962,7 +962,8 @@ code gives the local detail.
 [`cli-plan.md`](cli-plan.md) is the design record of the `acp-agent` command
 line. `swift test` runs the hermetic suites;
 `swift test --package-path IntegrationTests` runs the tiers that spawn a built
-binary or load a real model.
+binary or load a real model. `swift test --package-path Benchmarks` runs the
+measurements, only on demand (see [`Benchmarks/README.md`](Benchmarks/README.md)).
 
 The agent uses the telemetry APIs only: swift-log, swift-distributed-tracing
 and swift-metrics. By default it exports no telemetry: log records at

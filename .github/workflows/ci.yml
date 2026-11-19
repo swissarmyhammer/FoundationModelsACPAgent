@@ -21,6 +21,9 @@ name: CI
 # - The package boundary is the whole selection. No suite reads an
 #   environment variable to decide whether it runs, and the root `swift test`
 #   never sees the slow targets.
+# - The nested `Benchmarks` package holds the measurements. This workflow does
+#   not name it, so the CI does not build or run it: a measurement runs only
+#   on demand, with `swift test --package-path Benchmarks`.
 # - `integration-no-parallel` holds the spawned binaries to one at a time.
 #   Swift Testing starts a test's time limit BEFORE the test takes a
 #   turnstile, so a parallel run spends the limit on queue time and a queued

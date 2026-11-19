@@ -128,8 +128,11 @@ The transcript search (D207) finds the sessions and the turns that hold a text. 
   signals decide the matches. The index has no store, no ranking and no embedding of its own.
   The searcher keeps its catalog and its vectors in the folder of the index with the persistence
   option of the registry (`CatalogPersistence`, with the model id of the `embedding` slot), and
-  the index keeps no other file. At its start, the index reads the stored items with no embed
-  (`MetadataSearcher.items()`) and makes its list of sessions from them. A stored catalog of an
+  the index keeps no other file. The init only keeps its arguments. The host calls `load()`
+  one time after the init: the load makes the searcher, reads the stored items with no embed
+  (`MetadataSearcher.items()`) and makes the list of sessions from them. Each other method waits
+  for the load, and starts it when no call started it. `RoutedACPAgent.init` loads the index of
+  the agent, and the Mac app loads the index of its client folder. A stored catalog of an
   old format, of another model or that is damaged is dropped (`.storedCatalogDropped`), and the
   next changes build it again. Each change gives the searcher only the items that changed
   (`update(upserting:removing:)`). The diagnostics of the registry are logged with
