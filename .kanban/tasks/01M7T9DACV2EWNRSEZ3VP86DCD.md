@@ -30,8 +30,15 @@ comments:
     ### test — green
     - evidence: `timeout 1800 swift build --build-tests` Build complete!, 0 compiler warnings; `timeout 1800 swift test --skip-build` 2602 tests in 272 suites passed, 1 known issue (HarnessSmokeTests, expected), exit 0.
   timestamp: 2026-11-19T17:16:12.590372+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m7td4rxr4vz7sx808yf4svsv
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (7ba6a38). 0 findings, 0 confirmed, 1 refuted, 7 attempted, 0 failed. 4 files reviewed. Not reviewed: 2 .kanban files (ignore rule), README.md (no validator).
+    - next: none. The task is in done. The final status of the agents call is cancelled, as the decision on the card records.
+  timestamp: 2026-11-19T17:19:51.224959+00:00
+position_column: done
+position_ordinal: ffffffa180
 title: An agents call of an inline run that a root cancel stops gets a final status on the wire
 ---
 Found during ^ptasrrj (2026-11-19), in the investigation of the FoundationModelsACPClient test `aCancelOfOneChildEndsOnlyThatChild`.
