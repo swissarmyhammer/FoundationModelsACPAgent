@@ -29,6 +29,37 @@ comments:
     - evidence: `timeout 1800 swift build --build-tests` printed "Build complete!" with 0 compiler warnings (only the SwiftPM note "missing creator for mutated node" of the mlx bundle). `timeout 1800 swift test --skip-build`: 2625 tests in 276 suites passed, 1 known issue (the existing withKnownIssue in HarnessSmokeTests), 0 failures. AgentTranscriptSearcherTests passed on the first run.
     - next: review
   timestamp: 2026-11-19T18:21:20.032147+00:00
+- actor: claude-code
+  id: 01m7th067g4ac9kwrpc73b721g
+  text: |-
+    ### review — findings
+    - evidence: review sha 09cf55b~1..09cf55b — 1 finding (1 confirmed, 6 refuted, 0 failed): Sources/FoundationModelsACPAgent/Search/TranscriptIndexSearchRequest.swift:65
+    - next: add a test for the `sessions:` and `session:` mapping of `init(_ request: SessionSearchRequest)`, then review again.
+  timestamp: 2026-11-19T18:27:15.312832+00:00
+- actor: claude-code
+  id: 01m7thq4efmeqfz73fn92305r7
+  text: |-
+    Finding TranscriptIndexSearchRequest.swift:65 (completeness/inverse-operation-coverage): 3 new tests in Tests/FoundationModelsACPAgentTests/TranscriptSearchSessionIdTests.swift.
+    - `theMultitoolSessionsFilterKeepsItsULIDs` (both embedders): a new index with 3 ULID sessions; a Multitool `sessions:` of 2 ULIDs gives only those 2.
+    - `theMultitoolSessionGivesEachHitOfItsULID` (both embedders): a Multitool `session:` ULID gives only that session, and its hits are equal to the hits of the search by session id of that session. A precondition (#require) checks that those hits hold the 2 chunks of the session.
+    - `theConversionOfAMultitoolRequestKeepsEachField`: `init(_:)` maps query, sessions, includeArchived, preferredFolder, session, limit and cursor one to one (an Equatable compare with values that are not the defaults).
+    The rest of `TranscriptIndexSearchRequest.swift` has no other gap: the memberwise init is used by each test of the file, and the private `sessionId(of:)` is covered by the conversion test.
+
+    Discoveries: (1) With the query word `burrow`, a `session:` search also gives a hit of kind `.session` (entryID "") because the folder `/projects/burrow` holds the word. The test uses the word `rabbit`, which the folder does not hold. (2) With the word-bucket embedder, the `.session` hit still comes back by cosine, so the test compares with the hits of the search by session id, not with a fixed list. (3) The first form of the `session:` test passed under a broken mapping for the `.none` embedder, because only one session held the word. Now the second ULID session holds `rabbit` too, so a lost `session:` gives 2 sessions.
+
+    Proof of failure: one time, I changed `init(_:)` to give `sessions: nil` and `session: nil`. All 3 new tests failed (5 issues, both embedders). Then I put the code back (git diff of Sources is empty).
+  timestamp: 2026-11-19T18:39:47.151507+00:00
+- actor: claude-code
+  id: 01m7thqe3a3s4dcwe9j84k1d0j
+  text: |-
+    ### implement — changed
+    - evidence: Tests/FoundationModelsACPAgentTests/TranscriptSearchSessionIdTests.swift (3 new tests, 5 cases; new fixtures makeEmptyIndex, makeULIDIndex, visible(_:), multitoolRequest); .kanban finding flipped to [x].
+    - next: review
+
+    ### test — green
+    - evidence: `timeout 1800 swift build --build-tests` printed "Build complete!" with 0 compiler warnings (only the SwiftPM note "missing creator for mutated node" of the mlx bundle). `timeout 1800 swift test --skip-build`: 2632 tests in 277 suites passed, 1 known issue (the existing withKnownIssue), 0 failures.
+    - next: review
+  timestamp: 2026-11-19T18:39:57.034448+00:00
 position_column: doing
 position_ordinal: '8180'
 title: 'D207: the client transcript search index accepts any session id, not only a ULID'
@@ -55,3 +86,15 @@ Do this after ^w0dheny (the search speed task), because both change the search c
 - The server searcher still returns ULID sessions to Multitool, and the results are the same as before.
 
 When this lands, push to origin/main and send the sha to the TestudoApp session (testudoapp-9a). #d207 #search
+
+## Review Findings (2026-11-19 12:23)
+
+> Scope: `review sha 09cf55b~1..09cf55b` — reviewed the diffs only — lines this change added or modified. 6 file(s) reviewed, 5 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `ARCHITECTURE.md` — no validator matches this file
+
+- [x] `Sources/FoundationModelsACPAgent/Search/TranscriptIndexSearchRequest.swift:65` `completeness/inverse-operation-coverage` — The Multitool-to-client conversion `init(_ request: SessionSearchRequest)` now maps the `sessions:` and `session:` fields to session ids. No test exercises that mapping. The only Multitool search test passes `sessions: nil` and `session: nil`, so a bug in either mapped field would not be caught. Add one test that builds a `SessionSearchRequest` with a non-nil `sessions:` set of ULIDs and a `session:` ULID, runs it through the Multitool `search` overload, and checks that only the matching ULID session is returned.

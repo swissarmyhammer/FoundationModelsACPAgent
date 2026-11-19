@@ -1,8 +1,16 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '9380'
+comments:
+- actor: claude-code
+  id: 01m7th4gzp79zgzq4x4y5s0kyn
+  text: |-
+    ### review — clean
+    - evidence: review sha 08a774d~1..08a774d (merged at 8ea877b) — 0 findings (0 confirmed, 0 refuted, 7 attempted, 0 failed). 3 files reviewed. ARCHITECTURE.md and README.md had no validator.
+    - next: none. The task is in done.
+  timestamp: 2026-11-19T18:29:37.398887+00:00
+position_column: done
+position_ordinal: ffffffa480
 title: 'D207: the host can read the change stream of the server transcript search index'
 ---
 Gap from the TestudoApp search work (2026-11-19).

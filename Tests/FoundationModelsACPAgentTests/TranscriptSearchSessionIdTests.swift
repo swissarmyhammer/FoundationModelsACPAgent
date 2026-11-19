@@ -23,6 +23,12 @@ import Testing
   /// A session of this server with a ULID as its session id, dated in February.
   private static let ulidSession = SessionId(rawValue: "01KAXN6R4M8ZJ0C2W3Q5T7V9YB")
 
+  /// The second ULID session of the Multitool index, dated in February.
+  private static let secondULIDSession = SessionId(rawValue: "01KAXN6R4M8ZJ0C2W3Q5T7V9YC")
+
+  /// The third ULID session of the Multitool index, dated in February.
+  private static let thirdULIDSession = SessionId(rawValue: "01KAXN6R4M8ZJ0C2W3Q5T7V9YD")
+
   /// The folder of each session of the tests.
   private static let folder = URL(fileURLWithPath: "/projects/burrow", isDirectory: true)
 
@@ -50,27 +56,55 @@ import Testing
   /// The text of the chunk of ``uuidSession``.
   private static let uuidText = "The \(quokkaWord) digs a \(burrowWord)."
 
+  /// The word that the chunks of ``ulidSession`` and of ``secondULIDSession`` hold. The folder of
+  /// the sessions does not hold it, so a search for it gives no hit of the folder.
+  private static let rabbitWord = "rabbit"
+
+  /// The text of the first chunk of ``ulidSession``.
+  private static let ulidText = "A \(rabbitWord) leaves the \(burrowWord)."
+
   /// The wire id of the agent message of ``uuidSession``.
   private static let uuidEntry = "agent:uuid-agent"
 
   /// The wire id of the agent message of ``freeFormSession``.
   private static let freeFormEntry = "agent:free-form-agent"
 
+  /// The wire id of the first agent message of ``ulidSession`` in the Multitool index.
+  private static let firstULIDEntry = "ulid-agent"
+
+  /// The wire id of the second agent message of ``ulidSession`` in the Multitool index.
+  private static let secondULIDEntry = "ulid-agent-again"
+
+  /// The wire id of an agent message, as a hit gives it.
+  ///
+  /// - Parameter entry: The message id of the entry.
+  /// - Returns: The wire id.
+  private static func agentEntryID(_ entry: String) -> String { "agent:\(entry)" }
+
   /// The most sessions of a page of the tests.
   private static let pageLimit = 10
+
+  /// A limit of a request that no other request of the tests uses.
+  private static let unusedLimit = 7
+
+  /// A cursor of a request that no other request of the tests uses.
+  private static let unusedCursor = "cursor-of-the-conversion"
 
   // MARK: - Fixtures
 
   /// One agent chunk with one entry.
   ///
   /// - Parameters:
+  ///   - ordinal: The ordinal of the chunk in its session, which is also its turn.
   ///   - entry: The message id of the one entry of the chunk.
   ///   - date: The date of the chunk.
   ///   - text: The text of the chunk.
   /// - Returns: The chunk.
-  private static func chunk(entry: String, date: Date, text: String) -> SessionSearchChunk {
+  private static func chunk(ordinal: Int = 0, entry: String, date: Date, text: String)
+    -> SessionSearchChunk
+  {
     SessionSearchChunk(
-      turn: 0, ordinal: 0, kind: .agent, author: nil, date: date, title: "", text: text,
+      turn: ordinal, ordinal: ordinal, kind: .agent, author: nil, date: date, title: "", text: text,
       entries: [
         SessionSearchChunk.EntryRange(
           id: .agentMessage(MessageId(rawValue: entry)), range: 0..<text.count)
@@ -86,6 +120,23 @@ import Testing
       name: name, slug: name, tags: [], folder: folder, agentName: nil, recap: "", lastSummary: nil)
   }
 
+  /// A loaded index with no session.
+  ///
+  /// - Parameters:
+  ///   - label: The label of the folder of the index.
+  ///   - embedder: The embedder of the index.
+  /// - Returns: The index.
+  private static func makeEmptyIndex(label: String, embedder: TranscriptSearchTests.Embedder)
+    async -> TranscriptSearchIndex
+  {
+    let index = TranscriptSearchIndex(
+      folder: makeResolvedDirectory(
+        label: "TranscriptSearchSessionIdTests-\(label)-\(embedder.rawValue)"),
+      embedder: embedder.embedder, modelID: nil, readableFolder: { _ in true })
+    await index.load()
+    return index
+  }
+
   /// An index with the three sessions of the tests.
   ///
   /// - Parameters:
@@ -95,11 +146,7 @@ import Testing
   private static func makeIndex(label: String, embedder: TranscriptSearchTests.Embedder) async
     -> TranscriptSearchIndex
   {
-    let index = TranscriptSearchIndex(
-      folder: makeResolvedDirectory(
-        label: "TranscriptSearchSessionIdTests-\(label)-\(embedder.rawValue)"),
-      embedder: embedder.embedder, modelID: nil, readableFolder: { _ in true })
-    await index.load()
+    let index = await makeEmptyIndex(label: label, embedder: embedder)
     await index.index(
       session: uuidSession, chunks: [chunk(entry: "uuid-agent", date: uuidDate, text: uuidText)],
       metadata: metadata(name: "uuid"))
@@ -114,17 +161,87 @@ import Testing
     await index.index(
       session: ulidSession,
       chunks: [
-        chunk(entry: "ulid-agent", date: ulidDate, text: "A rabbit leaves the \(burrowWord).")
+        chunk(entry: firstULIDEntry, date: ulidDate, text: ulidText)
       ],
       metadata: metadata(name: "ulid"))
     return index
   }
 
-  /// The sessions that the directory shows: each session of the tests.
-  private static var visibleSessions: [SessionId: TranscriptSearchVisibleSession] {
-    [uuidSession, freeFormSession, ulidSession].reduce(into: [:]) { visible, session in
+  /// An index with three ULID sessions for the search of Multitool. ``ulidSession`` has two
+  /// chunks that hold ``burrowWord``. Each other session has one such chunk. ``ulidSession`` and
+  /// ``secondULIDSession`` hold ``rabbitWord``.
+  ///
+  /// - Parameters:
+  ///   - label: The label of the folder of the index.
+  ///   - embedder: The embedder of the index.
+  /// - Returns: The index.
+  private static func makeULIDIndex(label: String, embedder: TranscriptSearchTests.Embedder)
+    async -> TranscriptSearchIndex
+  {
+    let index = await makeEmptyIndex(label: "ulid-\(label)", embedder: embedder)
+    await index.index(
+      session: ulidSession,
+      chunks: [
+        chunk(entry: firstULIDEntry, date: ulidDate, text: ulidText),
+        chunk(
+          ordinal: 1, entry: secondULIDEntry, date: ulidDate,
+          text: "The \(rabbitWord) comes back to the \(burrowWord)."),
+      ],
+      metadata: metadata(name: "ulid"))
+    await index.index(
+      session: secondULIDSession,
+      chunks: [
+        chunk(
+          entry: "second-agent", date: ulidDate,
+          text: "A mole digs under the \(burrowWord) of the \(rabbitWord).")
+      ],
+      metadata: metadata(name: "second-ulid"))
+    await index.index(
+      session: thirdULIDSession,
+      chunks: [
+        chunk(entry: "third-agent", date: ulidDate, text: "A fox waits at the \(burrowWord).")
+      ],
+      metadata: metadata(name: "third-ulid"))
+    return index
+  }
+
+  /// The visible sessions of a list of sessions, none of them archived.
+  ///
+  /// - Parameter sessions: The sessions.
+  /// - Returns: The visible sessions.
+  private static func visible(_ sessions: [SessionId]) -> [SessionId:
+    TranscriptSearchVisibleSession]
+  {
+    sessions.reduce(into: [:]) { visible, session in
       visible[session] = TranscriptSearchVisibleSession(folder: folder, isArchived: false)
     }
+  }
+
+  /// The sessions that the directory shows: each session of the tests.
+  private static var visibleSessions: [SessionId: TranscriptSearchVisibleSession] {
+    visible([uuidSession, freeFormSession, ulidSession])
+  }
+
+  /// The sessions that the directory shows for the Multitool index: its three ULID sessions.
+  private static var visibleULIDSessions: [SessionId: TranscriptSearchVisibleSession] {
+    visible([ulidSession, secondULIDSession, thirdULIDSession])
+  }
+
+  /// A request of Multitool.
+  ///
+  /// - Parameters:
+  ///   - text: The text of the query.
+  ///   - sessions: The ULIDs of the directory tokens, or `nil` for each visible session.
+  ///   - session: The ULID of the one session of the search, or `nil`.
+  /// - Returns: The request.
+  /// - Throws: The refusal of a query that does not parse.
+  private static func multitoolRequest(
+    _ text: String = burrowWord, sessions: Set<ULID>? = nil, session: ULID? = nil
+  ) throws -> SessionSearchRequest {
+    SessionSearchRequest(
+      query: try SessionSearchQuery(parsing: text, timeZone: timeZone), sessions: sessions,
+      includeArchived: false, preferredFolder: nil, session: session, limit: pageLimit,
+      cursor: nil)
   }
 
   /// A request by session id of the tests.
@@ -271,13 +388,68 @@ import Testing
     embedder: TranscriptSearchTests.Embedder
   ) async throws {
     let index = await Self.makeIndex(label: "multitool", embedder: embedder)
-    let request = SessionSearchRequest(
-      query: try SessionSearchQuery(parsing: Self.burrowWord, timeZone: Self.timeZone),
-      sessions: nil, includeArchived: false, preferredFolder: nil, session: nil,
-      limit: Self.pageLimit, cursor: nil)
 
-    let page = try await index.search(request, visibleSessions: Self.visibleSessions)
+    let page = try await index.search(
+      Self.multitoolRequest(), visibleSessions: Self.visibleSessions)
 
     #expect(page.sessions.map(\.session) == [try Self.ulidSession.ulid()])
+  }
+
+  /// The `sessions:` ULIDs of a Multitool request keep only those sessions.
+  @Test(arguments: TranscriptSearchTests.Embedder.allCases)
+  func theMultitoolSessionsFilterKeepsItsULIDs(embedder: TranscriptSearchTests.Embedder)
+    async throws
+  {
+    let index = await Self.makeULIDIndex(label: "multitool-sessions", embedder: embedder)
+    let kept: Set<ULID> = [try Self.ulidSession.ulid(), try Self.thirdULIDSession.ulid()]
+
+    let page = try await index.search(
+      Self.multitoolRequest(sessions: kept), visibleSessions: Self.visibleULIDSessions)
+
+    #expect(Set(page.sessions.map(\.session)) == kept)
+  }
+
+  /// The `session:` ULID of a Multitool request gives only that session, with each of its hits:
+  /// the hits that the search by session id gives for the same session, both chunks among them.
+  @Test(arguments: TranscriptSearchTests.Embedder.allCases)
+  func theMultitoolSessionGivesEachHitOfItsULID(embedder: TranscriptSearchTests.Embedder)
+    async throws
+  {
+    let index = await Self.makeULIDIndex(label: "multitool-session", embedder: embedder)
+    let byId = try await index.search(
+      Self.request(Self.rabbitWord, session: Self.ulidSession),
+      visibleSessions: Self.visibleULIDSessions)
+    let sessionHits = try #require(byId.sessions.first).hits
+    try #require(
+      Set(sessionHits.map(\.entryID)).isSuperset(
+        of: [Self.agentEntryID(Self.firstULIDEntry), Self.agentEntryID(Self.secondULIDEntry)]))
+
+    let page = try await index.search(
+      Self.multitoolRequest(Self.rabbitWord, session: try Self.ulidSession.ulid()),
+      visibleSessions: Self.visibleULIDSessions)
+
+    let hitsBySession = Dictionary(
+      page.sessions.map { ($0.session.description, $0.hits) }, uniquingKeysWith: +)
+    #expect(hitsBySession == [Self.ulidSession.rawValue: sessionHits])
+  }
+
+  /// The conversion of a Multitool request gives each field of the request, each ULID as the
+  /// session id of its text.
+  @Test func theConversionOfAMultitoolRequestKeepsEachField() throws {
+    let query = try SessionSearchQuery(parsing: Self.burrowWord, timeZone: Self.timeZone)
+    let multitool = SessionSearchRequest(
+      query: query,
+      sessions: [try Self.secondULIDSession.ulid(), try Self.thirdULIDSession.ulid()],
+      includeArchived: true, preferredFolder: Self.folder, session: try Self.ulidSession.ulid(),
+      limit: Self.unusedLimit, cursor: Self.unusedCursor)
+
+    let converted = TranscriptIndexSearchRequest(multitool)
+
+    #expect(
+      converted
+        == TranscriptIndexSearchRequest(
+          query: query, sessions: [Self.secondULIDSession, Self.thirdULIDSession],
+          includeArchived: true, preferredFolder: Self.folder, session: Self.ulidSession,
+          limit: Self.unusedLimit, cursor: Self.unusedCursor))
   }
 }
