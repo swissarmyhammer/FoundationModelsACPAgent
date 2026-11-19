@@ -638,6 +638,8 @@ public actor RoutedACPAgent: Agent {
   // `closeSession` and `deleteSession` live in
   // `Agent/SessionLifecycle.swift`.
 
+  // `forkSession` lives in `Agent/SessionFork.swift`.
+
   // `prompt` and `sessionCancel` live in `Agent/PromptExecution.swift`.
 
   // MARK: - Capability-gated
@@ -666,4 +668,6 @@ enum ACPMethod {
   static let sessionDelete = "session/delete"
   /// `session/set_config_option`.
   static let sessionSetConfigOption = "session/set_config_option"
+  /// `session/fork` (unstable).
+  static let sessionFork = "session/fork"
 }

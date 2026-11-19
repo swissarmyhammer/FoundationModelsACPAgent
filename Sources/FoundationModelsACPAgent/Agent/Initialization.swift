@@ -114,20 +114,56 @@ extension RoutedACPAgent {
   /// consumption code it describes — `mcp` with the MCP transports of the
   /// mode (``advertisedMCPCapabilities(in:)``), `delete` (a real delete,
   /// not a tombstone), and `additionalDirectories` (multi-root
-  /// confinement). There is no `auth` member, because a local agent has
-  /// no authentication. There is no permission capability: the agent asks
-  /// for no permission before a command.
+  /// confinement). When `servesFork` is `true`, it also carries `fork` with
+  /// the cut flag `_meta.sah.forkCut = true` (``forkCapabilities``). There
+  /// is no `auth` member, because a local agent has no authentication. There
+  /// is no permission capability: the agent asks for no permission before a
+  /// command.
   ///
-  /// - Parameter mode: The tool mode of the agent (``toolMode``).
+  /// - Parameters:
+  ///   - mode: The tool mode of the agent (``toolMode``).
+  ///   - servesFork: Whether the agent announces `session/fork`. The
+  ///     default is ``forkIsServed``.
   /// - Returns: The capabilities of the `initialize` response.
-  public static func advertisedCapabilities(in mode: ToolMode) -> AgentCapabilities {
+  public static func advertisedCapabilities(
+    in mode: ToolMode, servesFork: Bool = forkIsServed
+  ) -> AgentCapabilities {
     AgentCapabilities(
       session: SessionCapabilities(
         additionalDirectories: SessionAdditionalDirectoriesCapabilities(),
         delete: SessionDeleteCapabilities(),
+        fork: servesFork ? forkCapabilities : nil,
         mcp: advertisedMCPCapabilities(in: mode),
         prompt: PromptContent.advertisedCapabilities))
   }
+
+  /// Whether `initialize` announces `session/fork` (D205). It is the one
+  /// switch of the announcement.
+  ///
+  /// It stays `false` until the `session/fork` handler makes the fork
+  /// through the Router. Until then the handler reads and maps the cut, and
+  /// then refuses the request (``forkSession(_:)``). A client must not see
+  /// `fork` before a fork works.
+  public static let forkIsServed = false
+
+  /// The `fork` member of `capabilities.session`: `session/fork` with the
+  /// cut flag `_meta.sah.forkCut = true` (``SAH/ForkCut/advertise(into:)``),
+  /// so a client can send a cut in `_meta.sah.forkCut`.
+  ///
+  /// The encode of the flag does not fail for a `Bool`. If it fails, the
+  /// debug build stops, the release build logs one `error` record, and the
+  /// capability goes out with no cut flag: a fork with no cut still works.
+  static let forkCapabilities: SessionForkCapabilities = {
+    do {
+      return SessionForkCapabilities(meta: try SAH.ForkCut.advertise(into: nil))
+    } catch {
+      assertionFailure("The fork cut flag did not encode: \(error)")
+      ACPAgentTelemetry.logger(.session).error(
+        "The fork cut flag did not encode. The fork capability goes out with no cut flag.",
+        metadata: ACPAgentTelemetry.errorMetadata(error))
+      return SessionForkCapabilities()
+    }
+  }()
 
   /// The MCP transports this agent advertises in `initialize` in one tool
   /// mode: only the transports whose servers the mode can start.

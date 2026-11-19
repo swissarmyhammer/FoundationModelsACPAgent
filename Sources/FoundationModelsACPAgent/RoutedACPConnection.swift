@@ -110,6 +110,15 @@ public final class RoutedACPConnection: Agent {
     try await agent.deleteSession(params, from: id)
   }
 
+  /// Serves `session/fork` for this connection.
+  ///
+  /// - Parameter params: The fork-session request.
+  /// - Returns: The response of the fork.
+  /// - Throws: What ``RoutedACPAgent/forkSession(_:)`` throws.
+  public func forkSession(_ params: ForkSessionRequest) async throws -> ForkSessionResponse {
+    try await agent.forkSession(params, from: id)
+  }
+
   /// Serves `session/set_config_option` for this connection.
   ///
   /// - Parameter params: The set-config-option request.

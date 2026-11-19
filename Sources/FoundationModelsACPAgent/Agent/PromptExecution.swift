@@ -573,15 +573,18 @@ extension RequestError {
     "the working directory of this session does not exist"
 
   /// The invalid-params refusal of a session: JSON-RPC invalid params with
-  /// the session id in `data`, and the reason when there is one. The three
-  /// refusals of this extension are built here, so their shape cannot drift.
+  /// the session id in `data`, and the reason when there is one. The
+  /// refusals of this extension and the refusals of a fork cut
+  /// (`SessionFork.swift`) are built here, so their shape cannot drift.
   ///
   /// - Parameters:
   ///   - id: The id of the session that the refusal names.
   ///   - reason: Why the session cannot take the call, or `nil` for a
   ///     refusal with no `reason` member.
+  ///   - method: The wire name of the refused method, or `nil` for a
+  ///     refusal with no `method` member.
   /// - Returns: The typed invalid-params error.
-  private static func invalidParamsRefusal(
+  static func invalidParamsRefusal(
     id: SessionId, reason: String?, method: String? = nil
   ) -> RequestError {
     var data: [String: FoundationModelsACP.JSONValue] = ["sessionId": .string(id.rawValue)]
