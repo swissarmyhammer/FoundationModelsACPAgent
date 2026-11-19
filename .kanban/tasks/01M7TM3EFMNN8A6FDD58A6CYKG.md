@@ -32,8 +32,16 @@ comments:
     - evidence: `timeout 1800 swift test --skip-build`: 2646 tests, 1 failure (SessionCancelStopsAllWorkTests.aShutdownStopsTheBackgroundChildRunAndCommandAtOnce, 60 s time limit under load; the suite passed alone, 7/7). Build: "Build complete!", 0 compiler warnings (1 build-system line "missing creator for mutated node").
     - next: run the full suite again when the machine has no other build.
   timestamp: 2026-11-19T20:06:04.817073+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m7tpycfht1v82wttvadrhk7s
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (7f246d6). 8 files reviewed. 0 findings, 0 confirmed, 5 refuted, 7 attempted, 0 failed, 0 skipped. The 4 .kanban files are excluded by .reviewignore.
+    - note: The second defect (a trap at top level) is in the LiveAgentServer @main of the client repository, not in this repository. acp-agent already exits with code 1 and gives the reason. A guard test covers this. This is a record, not a finding.
+    - next: The task is in done. Push to origin/main and send the sha to the FoundationModelsACPClient session.
+  timestamp: 2026-11-19T20:11:07.633590+00:00
+position_column: done
+position_ordinal: ffffffa980
 title: 'D203: an old profile map with no preset takes the default by fit, and a profile that does not resolve is a reported error, not a fatal error'
 ---
 Bug report from the FoundationModelsACPClient session (2026-11-19), CI run 44584505762, test `aConnectionModelRunsOneTurnAgainstARealAgent`. Log: /private/tmp/claude-501/-Users-wballard-github-swissarmyhammer-FoundationModelsACPClient/1f1ff490-1f6d-403e-a4b8-a170cd97b235/scratchpad/integ-ci-3.log lines 1544-1560.
