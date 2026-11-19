@@ -246,7 +246,7 @@ extension RoutedACPAgent {
   /// it holds no restored work: the caller does these steps.
   ///
   /// A fork (D205) restores the same way, by its own id. The launcher of the
-  /// session directory built the fork (``launchFork(_:)``): it recorded the
+  /// session directory built the fork (``launchFork(_:for:)``): it recorded the
   /// agent of the source for the fork and wrote the copied history to the
   /// history file of the fork. The restore of a source restores no fork, and
   /// the claims of the restore are the runs of the restored session only

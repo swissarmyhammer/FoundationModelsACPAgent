@@ -253,8 +253,9 @@ public actor RoutedACPAgent: Agent {
   var promptEndWorkCount: [SessionId: Int] = [:]
 
   /// The surfaces that the `session/fork` requests give their forks, from the request to the
-  /// build of the fork through the launcher of the session directory (D205).
-  var forkLaunches = ForkLaunchBook()
+  /// build of the fork through the launcher of the session directory (D205), by the id of each
+  /// request (``whileForkRequestWaits(_:_:)``).
+  var forkLaunches: [ForkLaunchID: RequestedFork] = [:]
 
   /// Records the number of open sessions in the `active_sessions` gauge
   /// (``AgentMetrics``).

@@ -70,9 +70,12 @@ other root session. All of it is in `Sources/FoundationModelsACPAgent/Agent/`.
   `_meta.sah.forkCut` to a turn (`SessionForkPoint`), the call of
   `RouterSessionDirectory.fork(_:)`, and the refusals. The fork gets the MCP servers and the
   additional directories of the request only; an omitted list gives none, as ACP states. The
-  handler keeps that surface and the copied history in the `ForkLaunchBook` of the agent for the
-  launcher, by the source and the connection of the request. One request of a key runs at a
-  time. After the fork call it records the additional directories of the fork in the directory.
+  handler keeps that surface and the copied history in the agent for the launcher, by a new id
+  of the request (`ForkLaunchID`). It sets that id as a task local around the fork call. The
+  Router calls the launcher in the task of that caller, so the launcher reads the id of the
+  request that it builds. A fork of the `sessions` tool or of the `sessions` endpoint runs in
+  another task and has no id. After the fork call the handler records the additional directories
+  of the fork in the directory.
 - **The launcher.** The directory calls `AgentSessionLauncher.forkSession(_:)` after it mapped
   the cut, and before it registers the fork and mails its first prompt. `SessionForkLaunch`
   builds the fork there: it records the agent of the source for the fork, composes the surface

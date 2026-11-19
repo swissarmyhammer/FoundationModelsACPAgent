@@ -19,7 +19,7 @@ import FoundationModelsRouter
 /// - ``forkSession(_:)`` builds each fork of the directory with a surface of
 ///   the agent, and puts it in the session table before the directory
 ///   registers it (D205,
-///   ``RoutedACPAgent/launchFork(_:)``). So the first prompt of a fork runs
+///   ``RoutedACPAgent/launchFork(_:for:)``). So the first prompt of a fork runs
 ///   on the surface of the agent, and the agent holds the fork from its start.
 ///
 /// The launcher holds the agent weakly: the agent holds the directory, and
@@ -57,14 +57,16 @@ final class AgentSessionLauncher: SessionLauncher, @unchecked Sendable {
   ///   `SessionDirectoryError.unknownSession(_:)` when the directory has no
   ///   root session or fork with this id, or the error of the restore.
   func restoreSession(id: ULID) async throws -> any RoutedSession {
-    guard let agent else {
-      throw SessionDirectoryError.noLauncher
-    }
-    return try await agent.restoreSessionForDirectory(id: id)
+    try await liveAgent().restoreSessionForDirectory(id: id)
   }
 
   /// Builds the fork of `request` with a surface of the agent, and gives it
-  /// to the session directory (``RoutedACPAgent/launchFork(_:)``).
+  /// to the session directory (``RoutedACPAgent/launchFork(_:for:)``).
+  ///
+  /// The session directory calls this method in the task of the caller of
+  /// `RouterSessionDirectory.fork(_:)`. So the id of a `session/fork`
+  /// request of the agent (``ForkLaunchID/current``) is set here when that
+  /// request is the caller, and the fork gets the surface of that request.
   ///
   /// - Parameter request: The fork request of the session directory.
   /// - Returns: The fork that the request built, in the session table of
@@ -72,10 +74,18 @@ final class AgentSessionLauncher: SessionLauncher, @unchecked Sendable {
   /// - Throws: `SessionDirectoryError.noLauncher` when the agent is gone, or
   ///   the error of the build. The directory then refuses the fork.
   func forkSession(_ request: SessionLaunchForkRequest) async throws -> any RoutedSession {
+    try await liveAgent().launchFork(request, for: ForkLaunchID.current)
+  }
+
+  /// The agent of the launcher.
+  ///
+  /// - Returns: The agent.
+  /// - Throws: `SessionDirectoryError.noLauncher` when the agent is gone.
+  private func liveAgent() throws -> RoutedACPAgent {
     guard let agent else {
       throw SessionDirectoryError.noLauncher
     }
-    return try await agent.launchFork(request)
+    return agent
   }
 }
 

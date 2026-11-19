@@ -78,10 +78,10 @@ extension RoutedACPAgent {
   /// the source, the cut, no first prompt, and the connection of the request as the client that
   /// asked for it. The fork has the agent, the model profile and the history of the source up to
   /// the cut. The directory asks the launcher of the agent to build the fork
-  /// (``launchFork(_:)``), and the agent keeps the surface of the request for that build
-  /// (``ForkLaunchBook``): the MCP servers and the additional directories of the request only. As
-  /// ACP states, an omitted or empty list gives none: the fork does not get the MCP servers or
-  /// the directories of the source. So the agent holds the fork as its own session from its
+  /// (``launchFork(_:for:)``), and the agent keeps the surface of the request for that build
+  /// (``whileForkRequestWaits(_:_:)``): the MCP servers and the additional directories of the
+  /// request only. As ACP states, an omitted or empty list gives none: the fork does not get the
+  /// MCP servers or the directories of the source. So the agent holds the fork as its own session from its
   /// start, and then it opens the fork for the connection (``openFork(_:activation:placement:)``).
   /// The fork works in the folder of its source, so the `cwd` of the request must be that folder.
   ///
@@ -129,9 +129,6 @@ extension RoutedACPAgent {
     try SessionSetup.requireExistingDirectories(
       workingDirectory: placement.workingDirectory, additionalRoots: placement.additionalRoots)
 
-    let key = ForkLaunchKey(source: sourceId, client: caller.rawValue)
-    await reserveForkLaunch(key)
-    defer { releaseForkLaunch(key) }
     let source = await forkSourceHistory(
       of: (sessions[params.sessionId] ?? entry).history, forkSource: entry.session.parentId,
       sessionId: params.sessionId)
@@ -139,22 +136,23 @@ extension RoutedACPAgent {
     guard let end = source.end(of: point) else {
       throw RequestError.forkCutOutOfRange(point, in: source, id: params.sessionId)
     }
-    forkLaunches.requests[key] = RequestedFork(
-      placement: placement, copiedHistory: source.copiedHistory(endingAt: end), caller: caller)
-    let summary: SessionSummary
+    let directory = sessionDirectory
+    let forkRequest = SessionForkRequest(
+      sourceID: sourceId, cut: point.directoryCut, firstPrompt: nil,
+      requestedByClient: caller.rawValue, forker: .user(clientID: caller.rawValue))
+    let fork: (result: SessionSummary, activation: SessionActivation?)
     do {
-      summary = try await sessionDirectory.fork(
-        SessionForkRequest(
-          sourceID: sourceId, cut: point.directoryCut, firstPrompt: nil,
-          requestedByClient: caller.rawValue, forker: .user(clientID: caller.rawValue)))
+      fork = try await whileForkRequestWaits(
+        RequestedFork(
+          placement: placement, copiedHistory: source.copiedHistory(endingAt: end), caller: caller)
+      ) { try await directory.fork(forkRequest) }
     } catch let refusal as SessionDirectoryError {
       throw RequestError.forkRefusal(refusal, point: point, in: source, id: params.sessionId)
     }
-    return try await openFork(
-      summary, activation: forkLaunches.requests[key]?.activation, placement: placement)
+    return try await openFork(fork.result, activation: fork.activation, placement: placement)
   }
 
-  /// Opens a fork that the launcher built for a `session/fork` request (``launchFork(_:)``) for
+  /// Opens a fork that the launcher built for a `session/fork` request (``launchFork(_:for:)``) for
   /// the connection of the request. The table holds the fork already, with the copied history,
   /// and the connection owns it.
   ///

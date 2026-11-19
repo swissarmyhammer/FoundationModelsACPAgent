@@ -175,12 +175,24 @@ extension RoutedACPAgent {
     guard let choice = composition.agent?.choice else {
       return
     }
+    recordAgent(choice, for: sessionId, in: composition.transcriptRoot)
+  }
+
+  /// Records `choice` as the agent of a session (``SessionAgentStore``). A failed write goes to
+  /// the log and does not fail the session: the next composition of the session then resolves
+  /// its agent again.
+  ///
+  /// - Parameters:
+  ///   - choice: The agent of the session.
+  ///   - sessionId: The id of the session.
+  ///   - transcriptRoot: The recording root of the session.
+  func recordAgent(_ choice: SessionAgentChoice, for sessionId: SessionId, in transcriptRoot: URL) {
     do {
-      try SessionAgentStore.record(choice, for: sessionId, in: composition.transcriptRoot)
+      try SessionAgentStore.record(choice, for: sessionId, in: transcriptRoot)
     } catch {
       ACPAgentTelemetry.logger(.session).warning(
-        "The agent of the new session was not recorded. A resume resolves the agent again.",
-        metadata: ACPAgentTelemetry.sessionMetadata(sessionId))
+        "The agent of the session was not recorded. The next composition of the session resolves the agent again.",
+        metadata: ACPAgentTelemetry.errorMetadata(error, sessionId: sessionId))
     }
   }
 }

@@ -120,6 +120,11 @@ import Testing
   private static let sourceServer = FoundationModelsACP.MCPServer.stdio(
     MCPServerStdio(command: AbsolutePath(rawValue: "fork-test-server"), name: "fork-test-server"))
 
+  /// The MCP server of a `session/fork` request, which the source does not have.
+  private static let requestServer = FoundationModelsACP.MCPServer.stdio(
+    MCPServerStdio(
+      command: AbsolutePath(rawValue: "fork-request-server"), name: "fork-request-server"))
+
   // MARK: - Fixtures
 
   /// The script of the suite: one answer for each prompt.
@@ -420,6 +425,48 @@ import Testing
         cwd: AbsolutePath(rawValue: (cwd ?? fixture.cwd).path), sessionId: fixture.sessionId,
         additionalDirectories: additionalDirectories, mcpServers: mcpServers))
     return try #require(await fixture.harness.agent.sessions[response.sessionId])
+  }
+
+  /// Forks the session of `fixture` through the session directory with no cut, as a client does
+  /// through the `sessions` endpoint, and gives the table entry of the fork.
+  ///
+  /// - Parameters:
+  ///   - fixture: The fixture of the source session.
+  ///   - client: The client that asks for the fork.
+  /// - Returns: The entry of the fork.
+  /// - Throws: The refusal of the session directory, or a failed requirement when the table does
+  ///   not hold the fork.
+  private static func directoryForkEntry(of fixture: ScriptedPromptFixture, client: ConnectionId)
+    async throws -> ActiveSession
+  {
+    let summary = try await fixture.harness.agent.sessionDirectory.fork(
+      SessionForkRequest(
+        sourceID: try #require(ULID(ulidString: fixture.sessionId.rawValue)),
+        cut: .lastCompletedTurn, requestedByClient: client.rawValue,
+        forker: .user(clientID: client.rawValue)))
+    return try #require(
+      await fixture.harness.agent.sessions[SessionId(rawValue: summary.id.description)])
+  }
+
+  /// Runs `body` while a `session/fork` request of `client` for the session of `fixture`, with
+  /// the MCP servers ``requestServer``, waits for its launcher.
+  ///
+  /// - Parameters:
+  ///   - fixture: The fixture of the source session.
+  ///   - client: The connection of the waiting request.
+  ///   - body: The work to run while the request waits.
+  /// - Returns: The result of `body`.
+  /// - Throws: Whatever `body` throws.
+  private static func whileForkRequestWaits<Result: Sendable>(
+    in fixture: ScriptedPromptFixture, client: ConnectionId,
+    _ body: @Sendable () async throws -> Result
+  ) async throws -> Result {
+    let requested = RequestedFork(
+      placement: SessionPlacement(
+        workingDirectory: fixture.cwd, additionalRoots: [], userPresence: .interactive,
+        clientMCPServers: [requestServer]),
+      copiedHistory: SessionMergeEngine(), caller: client)
+    return try await fixture.harness.agent.whileForkRequestWaits(requested, body).result
   }
 
   /// The retained history of a session of the agent of `fixture`.
@@ -947,6 +994,29 @@ import Testing
       of: fixture, additionalDirectories: [AbsolutePath(rawValue: requestDirectory.path)])
 
     #expect(fork.additionalRoots.map(\.path) == [requestDirectory.path])
+  }
+
+  /// A `session/fork` request that waits for its launcher, and a fork that the same client asks
+  /// for through the `sessions` endpoint of the same source at the same time, each get their own
+  /// surface: the request its MCP servers, and the endpoint fork the MCP servers of the source.
+  @Test(.timeLimit(.minutes(1))) func aSessionForkAndAnEndpointForkOfOneClientGetTheirOwnSurfaces()
+    async throws
+  {
+    let fixture = try await ScriptedPromptFixture.make(
+      script: try Self.script(), label: "\(Self.label)-endpoint-fork",
+      mcpServers: [Self.sourceServer])
+    let client = ConnectionId.direct
+
+    let servers = try await Self.whileForkRequestWaits(in: fixture, client: client) {
+      // The endpoint fork runs in a task of its own, as a request of the `sessions` endpoint does.
+      let endpointFork = try await Task.detached {
+        try await Self.directoryForkEntry(of: fixture, client: client)
+      }.value
+      let requestedFork = try await Self.directoryForkEntry(of: fixture, client: client)
+      return [endpointFork.clientMCPServers, requestedFork.clientMCPServers]
+    }
+
+    #expect(servers == [[Self.sourceServer], [Self.requestServer]])
   }
 
   /// A fork request with a `cwd` that is not the folder of the source is invalid params.

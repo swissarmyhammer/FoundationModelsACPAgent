@@ -11,15 +11,21 @@ import FoundationModelsRouter
 // surface of the agent, and the agent holds the fork from its start: a `session/resume` of the
 // fork takes the live fork, and nothing stops and restores it.
 
-/// The key of one `session/fork` request while the launcher builds its fork: the source of the
-/// fork, and the connection that asked for it. The session directory gives the launcher the same
-/// two values (`SessionLaunchForkRequest.sourceID` and `requestedByClient`).
-struct ForkLaunchKey: Hashable, Sendable {
-  /// The id of the source of the fork.
-  let source: ULID
+/// The id of one `session/fork` request while the session directory builds its fork (D205).
+///
+/// The handler of the request sets the id as a task local around its call of
+/// `RouterSessionDirectory.fork(_:)` (``RoutedACPAgent/whileForkRequestWaits(_:_:)``). The
+/// Router calls the launcher of the fork (`SessionLauncher.forkSession(_:)`) in the task of that
+/// caller, with no new task between them, so the launcher reads the id of the request that it
+/// builds (``AgentSessionLauncher/forkSession(_:)``). A fork that the agent did not ask for (the
+/// `fork session` operation of the `sessions` tool, or a fork that a client asks for through the
+/// `sessions` endpoint) runs in another task, so it has no id and cannot take the request.
+struct ForkLaunchID: RawRepresentable, Hashable, Sendable {
+  /// The `session/fork` request that the current task waits for, or `nil` for none.
+  @TaskLocal static var current: ForkLaunchID?
 
-  /// The raw value of the connection of the `session/fork` request.
-  let client: String
+  /// The unique value of the id.
+  let rawValue: UUID
 }
 
 /// What one `session/fork` request gives its fork. The launcher reads it when it builds the
@@ -38,49 +44,30 @@ struct RequestedFork: Sendable {
   var activation: SessionActivation?
 }
 
-/// The `session/fork` requests whose forks the launcher of the session directory builds now
-/// (D205).
-///
-/// The directory calls the launcher with the source and the client of the fork, not with the
-/// request of the agent. So the agent keeps each request by its key (``ForkLaunchKey``) until the
-/// launcher reads it. The directory can call the launchers of two forks in any order, so one key
-/// holds one request at a time: a second request with the same key waits until the first one
-/// ends (``RoutedACPAgent/reserveForkLaunch(_:)``).
-struct ForkLaunchBook: Sendable {
-  /// The keys that a `session/fork` request holds now.
-  var reserved: Set<ForkLaunchKey> = []
-
-  /// The request of each held key, from the time that the request knows its surface.
-  var requests: [ForkLaunchKey: RequestedFork] = [:]
-
-  /// The requests that wait for a key, in the order that they came.
-  var waiters: [ForkLaunchKey: [CheckedContinuation<Void, Never>]] = [:]
-}
-
 extension RoutedACPAgent {
-  /// Waits until no other `session/fork` request holds `key`, and then holds it. The caller
-  /// releases the key with ``releaseForkLaunch(_:)``.
+  /// Runs `body` while `requested` waits for its launcher: the `session/fork` request gets a new
+  /// id (``ForkLaunchID``), the agent keeps the request by that id, and `body` runs with the id
+  /// as the task local ``ForkLaunchID/current``. The agent removes the request when `body` ends.
   ///
-  /// - Parameter key: The source and the client of the fork.
-  func reserveForkLaunch(_ key: ForkLaunchKey) async {
-    while forkLaunches.reserved.contains(key) {
-      await withCheckedContinuation { continuation in
-        forkLaunches.waiters[key, default: []].append(continuation)
-      }
-    }
-    forkLaunches.reserved.insert(key)
-  }
-
-  /// Releases a key that ``reserveForkLaunch(_:)`` held, removes its request, and lets the
-  /// requests that wait for the key go on.
+  /// Each request has its own id, so two requests never share an entry, also for the same source
+  /// and the same client.
   ///
-  /// - Parameter key: The source and the client of the fork.
-  func releaseForkLaunch(_ key: ForkLaunchKey) {
-    forkLaunches.reserved.remove(key)
-    forkLaunches.requests[key] = nil
-    for waiter in forkLaunches.waiters.removeValue(forKey: key) ?? [] {
-      waiter.resume()
+  /// - Parameters:
+  ///   - requested: The surface and the copied history of the request.
+  ///   - body: The work that forks through the session directory.
+  /// - Returns: The result of `body`, and the activation of the fork that the launcher mounted
+  ///   for the request, or `nil` when the launcher mounted no fork for it.
+  /// - Throws: Whatever `body` throws.
+  func whileForkRequestWaits<Result: Sendable>(
+    _ requested: RequestedFork, _ body: @Sendable () async throws -> Result
+  ) async throws -> (result: Result, activation: SessionActivation?) {
+    let launch = ForkLaunchID(rawValue: UUID())
+    forkLaunches[launch] = requested
+    defer { forkLaunches[launch] = nil }
+    let result = try await ForkLaunchID.$current.withValue(launch) {
+      try await body()
     }
+    return (result, forkLaunches[launch]?.activation)
   }
 
   /// Builds the fork of `request` with a surface of this agent, and puts it in the session table:
@@ -104,15 +91,19 @@ extension RoutedACPAgent {
   /// record of the additional directories of a `session/fork` comes after the registration
   /// (``forkSession(_:from:)``).
   ///
-  /// - Parameter request: The fork request of the session directory.
+  /// - Parameters:
+  ///   - request: The fork request of the session directory.
+  ///   - launch: The id of the `session/fork` request that the fork is for
+  ///     (``ForkLaunchID/current``), or `nil` for a fork that no request of this agent asked for.
   /// - Returns: The fork, mounted and not registered.
   /// - Throws: Whatever the load of the configuration, the composition, the build, the write of
   ///   the history or the mount throws. A throw after the composition releases the surface. The
   ///   session directory then refuses the fork and removes its recording folder.
-  func launchFork(_ request: SessionLaunchForkRequest) async throws -> any RoutedSession {
+  func launchFork(_ request: SessionLaunchForkRequest, for launch: ForkLaunchID?) async throws
+    -> any RoutedSession
+  {
     let forkId = SessionId(rawValue: request.forkID.description)
-    let key = request.requestedByClient.map { ForkLaunchKey(source: request.sourceID, client: $0) }
-    let requested = key.flatMap { forkLaunches.requests[$0] }
+    let requested = launch.flatMap { forkLaunches[$0] }
     let placement = requested?.placement ?? sourceForkPlacement(of: request)
     let context = try await loadSessionContext(workingDirectory: placement.workingDirectory)
     recordForkAgent(of: request.sourceID, for: forkId, in: context.transcriptRoot)
@@ -131,8 +122,8 @@ extension RoutedACPAgent {
       let activation = try await mountFork(
         fork, composition: composition, placement: placement, history: history,
         owner: requested?.caller)
-      if let key {
-        forkLaunches.requests[key]?.activation = activation
+      if let launch {
+        forkLaunches[launch]?.activation = activation
       }
       return fork
     } catch {
@@ -194,7 +185,8 @@ extension RoutedACPAgent {
   /// Records the agent of the source of a fork as the agent of the fork
   /// (``SessionAgentStore``), so the composition of the fork and each later restore of it read
   /// the agent of the source. A source with no agent record records nothing: the fork then gets
-  /// the agent of a new session. A failed write goes to the log, with the same result.
+  /// the agent of a new session. A failed write goes to the log, with the same result
+  /// (``recordAgent(_:for:in:)``).
   ///
   /// - Parameters:
   ///   - source: The source of the fork.
@@ -207,13 +199,7 @@ extension RoutedACPAgent {
     else {
       return
     }
-    do {
-      try SessionAgentStore.record(choice, for: forkId, in: transcriptRoot)
-    } catch {
-      ACPAgentTelemetry.logger(.session).warning(
-        "The agent of the source of a fork was not recorded for the fork. The fork gets the agent of a new session.",
-        metadata: ACPAgentTelemetry.errorMetadata(error, sessionId: forkId))
-    }
+    recordAgent(choice, for: forkId, in: transcriptRoot)
   }
 
   /// The history that a fork copies when no `session/fork` request of this agent asked for it:

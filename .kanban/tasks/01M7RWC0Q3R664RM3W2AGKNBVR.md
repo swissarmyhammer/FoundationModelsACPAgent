@@ -69,6 +69,42 @@ comments:
     ### test — green
     - evidence: `swift build --build-tests` printed "Build complete!" with 0 compiler warnings; `timeout 1800 swift test --skip-build` ran 2444 tests in 256 suites, all passed (1 known issue that was already there and is expected: HarnessSmokeTests withKnownIssue).
   timestamp: 2026-11-19T04:48:08.943017+00:00
+- actor: claude-code
+  id: 01m7s2gh92ge4par58w15sne8n
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (079fa6e); 4 findings, 4 confirmed, 4 refuted, 0 failed. AgentSessionLauncher.swift:75 (duplication/duplication), SessionForkLaunch.swift:19 (code-hygiene/dead-code-swift), SessionForkLaunch.swift:22 (code-hygiene/dead-code-swift), SessionForkLaunch.swift:203 (reuse/reuse).
+    - next: Correct each open item in the "Review Findings (2026-11-18 22:49)" section. The gap of the index.md record of a tool fork is on a separate follow-up card. It is not an open item of this task.
+  timestamp: 2026-11-19T04:54:47.842437+00:00
+- actor: claude-code
+  id: 01m7s2sz82sacpqmjhetjvy42n
+  text: |-
+    Picked up the 4 findings of "Review Findings (2026-11-18 22:49)" (2026-11-18). Plan:
+    - Findings 2 and 3: `ForkLaunchKey.source` and `.client` exist only for the (source id, client id) key that matches a waiting `session/fork` request to the launcher call. Per the Router answer on ^qzrg6pd, replace that key with a `@TaskLocal` id of the waiting request (`ForkLaunchID`), set around `sessionDirectory.fork(_:)` in the `session/fork` handler and read in `AgentSessionLauncher.forkSession(_:)`. A `sessions` endpoint fork runs in another task, so it has no value and builds with the surface of its source. This removes `ForkLaunchKey`, the reservation and the waiters (each request has its own id, so two requests never share an entry).
+    - Finding 1: one private `liveAgent()` accessor in `AgentSessionLauncher`.
+    - Finding 4: one helper that records an agent choice and logs the warning; `recordSessionAgent` and `recordForkAgent` both call it.
+    - Test (from ^qzrg6pd): a `session/fork` request that waits and a `sessions` endpoint fork of the same source with the same client id at the same time each get their own surface. The test starts the endpoint fork in a detached task inside the scope of the waiting request, so the order is fixed.
+  timestamp: 2026-11-19T04:59:57.058693+00:00
+- actor: claude-code
+  id: 01m7s39t4ak7pmtywfhqft41qn
+  text: |-
+    Findings corrected (not committed).
+    - Finding 1: `AgentSessionLauncher.liveAgent()` holds the one guard. `restoreSession(id:)` and `forkSession(_:)` both call it.
+    - Findings 2 and 3: `ForkLaunchKey` (with `source` and `client`), `ForkLaunchBook`, `reserveForkLaunch(_:)`, `releaseForkLaunch(_:)` and the waiters are removed. A new `ForkLaunchID` (RawRepresentable on a UUID, with `@TaskLocal static var current`) identifies a waiting `session/fork` request. `RoutedACPAgent.whileForkRequestWaits(_:_:)` puts the request in `forkLaunches: [ForkLaunchID: RequestedFork]`, runs the directory fork call with the id as the task local, gives back the activation, and removes the entry. `AgentSessionLauncher.forkSession(_:)` reads `ForkLaunchID.current` and passes it to `launchFork(_:for:)`. A `sessions` endpoint fork or a tool fork has no id, so it builds with the surface of its source. The `rawValue` property satisfies `RawRepresentable`, so periphery does not report it as assign-only.
+    - Finding 4: `recordAgent(_:for:in:)` in SessionAgentComposition.swift holds the record, the catch and the one log text (with `errorMetadata`). `recordSessionAgent` and `recordForkAgent` both call it.
+    - ARCHITECTURE.md: the handler paragraph now tells about the task-local id, not the (source, connection) key.
+    - New test `aSessionForkAndAnEndpointForkOfOneClientGetTheirOwnSurfaces` (SessionForkHandlerTests). It starts an endpoint fork in a detached task while a `session/fork` request waits, then makes the requested fork in the scope of the request. RED on the old key code (I wrote the helper on the old API first): the endpoint fork got the MCP servers of the waiting request. GREEN after the change.
+  timestamp: 2026-11-19T05:08:36.106385+00:00
+- actor: claude-code
+  id: 01m7s3a2q9rmkdqy228nmvtnpa
+  text: |-
+    ### implement — changed
+    - evidence: 9 files — Sources/FoundationModelsACPAgent/Agent/AgentSessionLauncher.swift, Agent/SessionForkLaunch.swift, Agent/SessionFork.swift, Agent/SessionAgentComposition.swift, Agent/SessionResume.swift (doc link), RoutedACPAgent.swift, ARCHITECTURE.md, Tests/FoundationModelsACPAgentTests/SessionForkHandlerTests.swift, .kanban card. The 4 findings of "Review Findings (2026-11-18 22:49)" are `- [x]`.
+    - next: /review.
+
+    ### test — green
+    - evidence: `swift build --build-tests` printed "Build complete!" with 0 compiler warnings (the only other line is the SwiftPM build-system note "missing creator for mutated node" for the mlx-swift_Cmlx bundle, which is not from the compiler). `timeout 1800 swift test --skip-build`: 2445 tests in 256 suites passed, 1 known issue that was already there (HarnessSmokeTests withKnownIssue), 0 "warning:" lines in the log.
+  timestamp: 2026-11-19T05:08:44.905655+00:00
 depends_on:
 - 01M7QV7TASP791JZFKKEMD9F4N
 position_column: doing
@@ -100,3 +136,34 @@ Follow-up of ^emd9f4n (2026-11-18). Answers of the Router session to two questio
 - A cold resume of a source does not make a second live instance of a fork that the agent holds.
 - A model switch of a source with a fork that the agent holds moves the fork through a restore by its id.
 - A run of a fork is claimed by the fork id. #d205 #fork
+
+## Review Findings (2026-11-18 22:49)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 10 file(s) reviewed, 4 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 2 file(s) not reviewed — no validator matched:
+> - `ARCHITECTURE.md` — no validator matches this file
+> - `README.md` — no validator matches this file
+
+> ⚠️ tool rule 'code-hygiene/disallowed-constructs-swift' declined an item — it judged the rest of the code, and this it could not judge:
+> disallowed-constructs-swift found no file at Sources/FoundationModelsACPAgent/Agent/SessionForkRestore.swift, so its constructs are unread
+
+> ⚠️ tool rule 'code-hygiene/function-length-swift' declined an item — it judged the rest of the code, and this it could not judge:
+> function-length-swift found no file at Sources/FoundationModelsACPAgent/Agent/SessionForkRestore.swift, so its bodies are unread
+
+> ⚠️ tool rule 'code-hygiene/idioms-swift' declined an item — it judged the rest of the code, and this it could not judge:
+> idioms-swift found no file at Sources/FoundationModelsACPAgent/Agent/SessionForkRestore.swift, so its declarations are unread
+
+> ⚠️ tool rule 'code-hygiene/magic-numbers-swift' declined an item — it judged the rest of the code, and this it could not judge:
+> magic-numbers-swift found no file at Sources/FoundationModelsACPAgent/Agent/SessionForkRestore.swift, so its literals are unread
+
+> ⚠️ tool rule 'code-hygiene/missing-docs-swift' declined an item — it judged the rest of the code, and this it could not judge:
+> missing-docs-swift found no file at Sources/FoundationModelsACPAgent/Agent/SessionForkRestore.swift, so its declarations are unread
+
+- [x] `Sources/FoundationModelsACPAgent/Agent/AgentSessionLauncher.swift:75` `duplication/duplication` — The `guard let agent else { throw SessionDirectoryError.noLauncher }` block in the new `forkSession(_:)` is a copy of the same guard in `restoreSession(id:)`. Both methods have the same shape: a weak-agent guard, then a forward to one agent method. Copies of the guard can drift, for example if the error changes for one method only. Add one private accessor such as `private func liveAgent() throws -> RoutedACPAgent` that performs the guard and throws `noLauncher`. Both methods then start with `let agent = try liveAgent()`. This is a small change. If the team prefers no helper for a three-line guard, record that choice and accept this finding as a known, minor copy.
+- [x] `Sources/FoundationModelsACPAgent/Agent/SessionForkLaunch.swift:19` `code-hygiene/dead-code-swift` — var.instance `source` is assignOnlyProperty.
+- [x] `Sources/FoundationModelsACPAgent/Agent/SessionForkLaunch.swift:22` `code-hygiene/dead-code-swift` — var.instance `client` is assignOnlyProperty.
+- [x] `Sources/FoundationModelsACPAgent/Agent/SessionForkLaunch.swift:203` `reuse/reuse` — `recordForkAgent` repeats the record-and-log pattern of `recordSessionAgent`. Both call `SessionAgentStore.record`, both catch the error, and both write the same kind of warning with `ACPAgentTelemetry.sessionMetadata` or `errorMetadata`. The two copies can drift apart in their log text or in their handling of a failed write. Extract the record-and-warn part into one helper that takes a choice, a session id, and a transcript root. Let `recordSessionAgent` and `recordForkAgent` both call it, so the catch and the log text exist in one place.
