@@ -73,7 +73,18 @@ import Testing
   /// The text in ``fieldQuery`` that the size of the page replaces.
   private static let firstPlaceholder = "FIRST"
 
+  /// The number of sessions of ``searchFixture(name:)`` whose chunks hold ``word``.
+  private static let searchedSessionCount = 2
+
   // MARK: - Helpers
+
+  /// The text of the indexed chunk of ``indexWord(of:on:folder:tail:)``.
+  ///
+  /// - Parameter tail: The text of the message after the word.
+  /// - Returns: The text.
+  private static func chunkText(tail: String) -> String {
+    "The \(word) \(tail)"
+  }
 
   /// Indexes one agent message with ``word`` for a session.
   ///
@@ -85,7 +96,7 @@ import Testing
   private static func indexWord(
     of session: SessionId, on agent: RoutedACPAgent, folder: URL, tail: String = snippetTail
   ) async {
-    let text = "The \(word) \(tail)"
+    let text = chunkText(tail: tail)
     await agent.transcriptSearchIndex.index(
       session: session,
       chunks: [
@@ -207,17 +218,19 @@ import Testing
     #expect(page.sessions.map(\.session) == [try fixture.sessionId.ulid()])
   }
 
-  /// The searcher gives no session that the directory does not know.
+  /// The searcher gives no session that the directory does not know: of the two sessions whose
+  /// chunks hold the word, it gives only the session of the directory.
   @Test func theSearcherLeavesOutASessionThatTheDirectoryDoesNotKnow() async throws {
     let fixture = try await ScriptedPromptFixture.make(
       script: [.endPass], label: "\(Self.label)-unknown")
     let agent = fixture.harness.agent
     await Self.indexWord(of: Self.unknownSession, on: agent, folder: fixture.cwd)
+    await Self.indexWord(of: fixture.sessionId, on: agent, folder: fixture.cwd)
 
     let page = try await AgentTranscriptSearcher(agent: agent).search(Self.wordRequest())
     await fixture.close()
 
-    #expect(page.sessions.isEmpty)
+    #expect(page.sessions.map(\.session) == [try fixture.sessionId.ulid()])
   }
 
   // MARK: - The tool and the endpoint
@@ -235,16 +248,26 @@ import Testing
 
   /// The `searchSessions` field of the `sessions` endpoint gives the sessions and the snippets
   /// that the `search sessions` operation of the tool gives.
+  ///
+  /// The test reads the field before the prompt. The end of the prompt writes the history of the
+  /// turn, and the index then gets the chunks of the turn in a task of its own. A field that the
+  /// test reads after the prompt can thus see more chunks than the tool saw.
   @Test func theSearchSessionsFieldGivesTheSessionsAndHitsOfTheTool() async throws {
     let fixture = try await Self.searchFixture(name: "field")
     defer { await fixture.close() }
-    let answer = try await Self.toolAnswer(of: fixture)
-
     let page = try await Self.fieldPage(
       of: fixture.harness.agent, first: Self.pageLimit, after: nil)
 
-    let marks = page.results.flatMap { ["@\($0.shortID)"] + $0.snippets }.filter { !$0.isEmpty }
-    #expect(!page.results.isEmpty && marks.allSatisfy { answer.contains($0) }, "\(answer)")
+    let answer = try await Self.toolAnswer(of: fixture)
+
+    let snippets = Set(page.results.flatMap(\.snippets))
+    let marks = page.results.map { "@\($0.shortID)" } + snippets.filter { !$0.isEmpty }
+    #expect(page.results.count == Self.searchedSessionCount)
+    #expect(
+      snippets.isSuperset(of: [
+        Self.chunkText(tail: Self.snippetTail), Self.chunkText(tail: Self.secondSnippetTail),
+      ]))
+    #expect(marks.allSatisfy { answer.contains($0) }, "\(answer)")
   }
 
   /// The `after` cursor of the `searchSessions` field gives the next page: the pages of one
@@ -256,8 +279,11 @@ import Testing
     let whole = try await Self.fieldPage(of: agent, first: Self.pageLimit, after: nil)
 
     let first = try await Self.fieldPage(of: agent, first: 1, after: nil)
-    let second = try await Self.fieldPage(of: agent, first: 1, after: first.nextCursor)
+    let cursor = try #require(first.nextCursor)
+    let second = try await Self.fieldPage(of: agent, first: 1, after: cursor)
 
+    #expect(whole.results.count == Self.searchedSessionCount)
+    #expect(second.nextCursor == nil)
     #expect(first.results + second.results == whole.results)
   }
 }

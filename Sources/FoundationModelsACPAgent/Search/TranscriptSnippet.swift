@@ -21,6 +21,10 @@ struct TranscriptSnippet: Equatable, Sendable {
   /// The most characters of a snippet.
   static let maximumLength = 200
 
+  /// The divisor of the free characters of a window: the snippet puts this part of the
+  /// characters that its matched words do not use before the first matched word.
+  private static let leadingSlackDivisor = 2
+
   /// The text of the snippet.
   let text: String
 
@@ -154,7 +158,7 @@ struct TranscriptSnippet: Equatable, Sendable {
   {
     let core = words[window.lowerBound].span.lowerBound..<words[window.upperBound].span.upperBound
     let slack = max(0, maximumLength - core.count)
-    let wanted = max(0, min(core.lowerBound - slack / 2, characters.count - maximumLength))
+    let wanted = max(0, min(core.lowerBound - slack / leadingSlackDivisor, characters.count - maximumLength))
     let start = words.first { $0.span.lowerBound >= wanted }.map(\.span.lowerBound) ?? core.lowerBound
     let end = max(cutEnd(of: words, from: start), min(core.upperBound, start + maximumLength))
     let inside = words.compactMap(\.match).filter { $0.lowerBound >= start && $0.upperBound <= end }

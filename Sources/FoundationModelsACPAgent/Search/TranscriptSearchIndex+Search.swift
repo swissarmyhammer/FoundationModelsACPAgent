@@ -7,9 +7,6 @@ import FoundationModelsRouter
 /// The sessions of one search: each session with the candidates that passed the filters, in the
 /// order of the search.
 private struct TranscriptSearchSession {
-  /// The session.
-  let id: SessionId
-
   /// The ULID of the session.
   let ulid: ULID
 
@@ -123,12 +120,20 @@ extension TranscriptSearchIndex {
       let id = candidate.item.sessionId
       if let place = places[id] {
         sessions[place].candidates.append(candidate)
-      } else if let visible = visibleSessions[id], let ulid = ULID(ulidString: id.rawValue) {
-        places[id] = sessions.count
-        sessions.append(
-          TranscriptSearchSession(
-            id: id, ulid: ulid, folder: visible.folder, candidates: [candidate]))
+        continue
       }
+      // The filter admits only an item of a visible session with a ULID, and it reads the same
+      // visible sessions. Thus a miss here is a programmer error, not a race with the directory.
+      guard let visible = visibleSessions[id], let ulid = ULID(ulidString: id.rawValue) else {
+        assertionFailure("session \(id.rawValue) passed the filter but is not visible")
+        ACPAgentTelemetry.logger(.transcriptSearch).error(
+          "The transcript search dropped a session that the filter admitted.",
+          metadata: ACPAgentTelemetry.sessionMetadata(id))
+        continue
+      }
+      places[id] = sessions.count
+      sessions.append(
+        TranscriptSearchSession(ulid: ulid, folder: visible.folder, candidates: [candidate]))
     }
     guard let preferred = preferredFolder.map(comparablePath(of:)) else {
       return sessions
