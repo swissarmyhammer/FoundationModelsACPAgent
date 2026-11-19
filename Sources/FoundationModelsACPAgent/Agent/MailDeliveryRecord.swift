@@ -143,6 +143,33 @@ extension MessageId {
     guard id.rawValue.hasPrefix(incomingViewPrefix) else { return nil }
     return String(id.rawValue.dropFirst(incomingViewPrefix.count))
   }
+
+  /// The key of the mail of the message of an entry (the text of the id of the mail): the id of a
+  /// user message (the id of the user message of a model prompt is the id of its mail), or the key
+  /// of an incoming view of a message from another session.
+  ///
+  /// - Parameters:
+  ///   - entry: An entry of a history.
+  ///   - recipients: The ids that a message from another session must name as its recipient, or
+  ///     `nil` to accept each recipient.
+  /// - Returns: The key, or `nil` for an entry that is no such message.
+  static func mailKey(of entry: SessionEntry, recipients: Set<SessionId>?) -> String? {
+    switch entry.kind {
+    case .userMessage(let message):
+      return message.messageId.rawValue
+    case .sessionMessage(let message):
+      if let recipients {
+        guard case .value(let recipient) = message.recipientSessionId,
+          recipients.contains(recipient)
+        else {
+          return nil
+        }
+      }
+      return mailKey(ofIncomingView: message.messageId)
+    default:
+      return nil
+    }
+  }
 }
 
 /// Makes the delivery records (``MailDeliveryRecord``) of the outputs of one Router session.
@@ -229,15 +256,6 @@ extension SessionMergeEngine {
   /// - Parameter entry: An entry.
   /// - Returns: The mail, or `nil` for an entry that delivered no mail.
   private static func earlierBuildMail(of entry: SessionEntry) -> MailID? {
-    let key: String?
-    switch entry.kind {
-    case .userMessage(let message):
-      key = message.messageId.rawValue
-    case .sessionMessage(let message):
-      key = MessageId.mailKey(ofIncomingView: message.messageId)
-    default:
-      key = nil
-    }
-    return key.flatMap(ULID.init(ulidString:)).map(MailID.init)
+    MessageId.mailKey(of: entry, recipients: nil).flatMap(ULID.init(ulidString:)).map(MailID.init)
   }
 }

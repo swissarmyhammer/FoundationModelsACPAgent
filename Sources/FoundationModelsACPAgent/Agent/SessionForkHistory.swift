@@ -82,31 +82,10 @@ struct ForkSourceHistory: Sendable {
   private var turnMessagePositions: [String: Int] {
     var positions: [String: Int] = [:]
     for (position, entry) in history.entries.enumerated() {
-      guard let key = turnMessageKey(of: entry) else { continue }
+      guard let key = MessageId.mailKey(of: entry, recipients: recipients) else { continue }
       positions[key] = positions[key] ?? position
     }
     return positions
-  }
-
-  /// The text of the id of the mail of the message of an entry, when the entry can be the
-  /// message of a turn.
-  ///
-  /// - Parameter entry: An entry of the history.
-  /// - Returns: The text of the id of the mail, or `nil` for an entry that is no such message.
-  private func turnMessageKey(of entry: SessionEntry) -> String? {
-    switch entry.kind {
-    case .userMessage(let message):
-      return message.messageId.rawValue
-    case .sessionMessage(let message):
-      guard case .value(let recipient) = message.recipientSessionId,
-        recipients.contains(recipient)
-      else {
-        return nil
-      }
-      return MessageId.mailKey(ofIncomingView: message.messageId)
-    default:
-      return nil
-    }
   }
 
   /// The position of the first record of the answer that runs now, or `nil` when no answer runs.
