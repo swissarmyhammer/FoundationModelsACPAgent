@@ -86,6 +86,13 @@ struct ACPEventTranslator {
   /// its pending envelope. The client shows it in place of the envelope JSON.
   static let backgroundRunText = "Running in the background"
 
+  /// The content of the final status of a call whose run a cancel of its prompt stopped (task
+  /// ^vp86dcd).
+  static let cancelledRunText = "The run was cancelled."
+
+  /// The most tokens of runs closed by a cancel that the translator remembers.
+  private static let cancelClosedRunLimit = 4096
+
   // MARK: - The wiring
 
   /// The id of the session this translator reports for, in the logs.
@@ -223,18 +230,51 @@ struct ACPEventTranslator {
   /// status only tells that the call returned. A run goes into this set when it posts its envelope
   /// as progress, or when its call returns the envelope. While it is in the set, its call stays
   /// `in_progress`. The settlement of the run removes it and sends the final status with the
-  /// result text (``projectSettlement(of:)``).
+  /// result text (``projectSettlement(of:)``). The cancel of the prompt of the run also removes
+  /// it, and sends the final status (``closeCancelledRun(of:)``).
   private var detachedRuns: Set<String> = []
 
   /// The completion tokens of the runs of the `agents` calls. An `agents` call carries the link to
   /// its child in `_meta.sah.agentRun`, so it gets no ``BackgroundRunMeta`` marker.
   private var agentRunTokens: Set<String> = []
 
+  /// The completion tokens of the runs whose call the cancel of its prompt closed
+  /// (``closeCancelledRun(of:)``). A settlement of such a run sends no second final status.
+  private var cancelClosedRuns = RecentIDSet<String>(limit: ACPEventTranslator.cancelClosedRunLimit)
+
   /// The wire ids of the calls whose run continues in the background and did not settle. The end
-  /// of a failed or a cancelled prompt does not close these calls, because the settlement of each
-  /// run gives its final status later.
+  /// of a failed prompt does not close these calls, because the settlement of each run gives its
+  /// final status later. A prompt whose answer a cancel stopped closes its own calls
+  /// (``closeCancelledRun(of:)``).
   var openDetachedCallIds: Set<ToolCallId> {
     Set(detachedRuns.map(runCallId))
+  }
+
+  /// Closes the call of a run that the cancel of its prompt stopped (task ^vp86dcd).
+  ///
+  /// A `session/cancel` stops each run of the session, inline or in the background (task
+  /// ^n8pcmtd). Router stops the answer of the prompt and drops each later event of it, also the
+  /// settlement of each run that the answer started: a run that its call still waits for, and a
+  /// run that its call left in the background. Thus no settlement gives the final status of such
+  /// a call. This call gives it: `cancelled`, with ``cancelledRunText`` after the kept display
+  /// items of the call. The run leaves ``detachedRuns``, so the end of the inbox does not close
+  /// the call again, and a later settlement of the run sends nothing.
+  ///
+  /// - Parameter toolCallId: The wire id of an unfinished call of the cancelled prompt.
+  /// - Returns: The final update of the call, or `nil` when no open run of this translator has
+  ///   the call. The caller then closes the call as any other call.
+  mutating func closeCancelledRun(of toolCallId: ToolCallId) -> ToolCallUpdate? {
+    guard let token = detachedRuns.first(where: { runCallId($0) == toolCallId }) else {
+      return nil
+    }
+    detachedRuns.remove(token)
+    cancelClosedRuns.insert(token)
+    settledToolCallIds.insert(toolCallId.rawValue)
+    return ToolCallUpdate(
+      toolCallId: toolCallId,
+      content: keptDisplayItems.content(
+        for: toolCallId, adding: .value([Self.textItem(Self.cancelledRunText)])),
+      status: .value(.cancelled))
   }
 
   /// The diff items and the terminal items that each tool call keeps to its
@@ -908,6 +948,10 @@ struct ACPEventTranslator {
   ///
   /// - Parameter operationEvent: The run's operation event.
   private mutating func projectSettlement(of operationEvent: OperationEvent) async {
+    // The cancel of the prompt of the run already sent the final status of its call.
+    guard !cancelClosedRuns.contains(operationEvent.correlationID) else {
+      return
+    }
     guard operationEvent.kind == .completed else {
       if operationEvent.outcome != nil {
         ACPAgentTelemetry.logger(.promptExecution).warning(

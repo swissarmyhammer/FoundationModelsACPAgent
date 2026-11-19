@@ -79,21 +79,9 @@ import Testing
     var texts: [String: String] = [:]
     for entry in transcript {
       guard case .toolOutput(let output) = entry else { continue }
-      texts[output.id] = output.segments.map(segmentText).joined()
+      texts[output.id] = output.segments.map(AgentsToolTests.segmentText).joined()
     }
     return texts
-  }
-
-  /// The text of one segment.
-  ///
-  /// - Parameter segment: The segment.
-  /// - Returns: The text, or the JSON of a structured segment.
-  private static func segmentText(_ segment: Transcript.Segment) -> String {
-    switch segment {
-    case .text(let text): text.content
-    case .structure(let structure): structure.content.jsonString
-    @unknown default: ""
-    }
   }
 
   /// Plays the script in a budgeted session over the stub loader, with a

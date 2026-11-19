@@ -484,8 +484,10 @@ permit it is ignored.
   for each run that it started. The parent and the sibling sessions go on.
 - `session/cancel` on a parent stops all the work that the parent started, at once: a cancel
   is a command, close to a kill. Each child is cancelled, inline or named in the `background`
-  list, with its own children. A scheduled agent of the parent stays, and fires again at its
-  next time.
+  list, with its own children. Each open `agents` call of the stopped prompt gets one final
+  status `cancelled` with the text "The run was cancelled.", also when its child was inline or
+  in the background of that prompt. A scheduled agent of the parent stays, and fires again at
+  its next time.
 - `session/close` on a root session cancels all the runs below it, nested ones too. Each
   working sub-agent sends `idle` with the stop reason `cancelled`, and the open `agents` call
   of the root gets the final status `cancelled`. `session/close` on a child is refused.

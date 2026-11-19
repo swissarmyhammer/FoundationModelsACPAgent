@@ -787,6 +787,33 @@ private struct ProjectionState {
     }
   }
 
+  /// Sends the final status of each tool call of `ending` that did not finish, in the order of
+  /// the first update of each call.
+  ///
+  /// A call whose run continues in the background keeps its status when the answer of the prompt
+  /// ended: the settlement of its run gives the final status later. When a cancel stopped the
+  /// answer, Router dropped the settlement of each run of the answer, inline or in the
+  /// background, so the translator closes the call of such a run with the reason of the cancel
+  /// (``ACPEventTranslator/closeCancelledRun(of:)``, task ^vp86dcd).
+  ///
+  /// - Parameters:
+  ///   - ending: The prompt that ends.
+  ///   - status: The final status of a call with no open run.
+  ///   - answerStopped: Whether a cancel stopped the answer of the prompt, so its terminal said
+  ///     `cancelled`.
+  private mutating func closeUnfinishedCalls(
+    of ending: OpenPrompt, status: FoundationModelsACP.ToolCallStatus, answerStopped: Bool
+  ) async {
+    let kept = translator.openDetachedCallIds
+    for toolCallId in await ending.toolCalls.unfinishedToolCallIds() {
+      if answerStopped, let closed = translator.closeCancelledRun(of: toolCallId) {
+        await send(.toolCallUpdate(closed))
+      } else if !kept.contains(toolCallId) {
+        await send(.toolCallUpdate(ToolCallUpdate(toolCallId: toolCallId, status: .value(status))))
+      }
+    }
+  }
+
   /// Ends the open prompt of the mail `mailId` with `stop`, or does
   /// nothing when no such prompt is open.
   /// The steps are these.
@@ -797,9 +824,10 @@ private struct ProjectionState {
   /// `idle` when no other prompt is open).
   /// Last, the end work of the prompt.
   ///
-  /// A call whose run continues in the background stays open at the end of a failed or a
-  /// cancelled prompt: the settlement of its run gives its final status later. The end of the
-  /// inbox closes such a call (``closeDetachedCalls()``).
+  /// A call whose run continues in the background stays open when the answer of the prompt
+  /// ended: the settlement of its run gives its final status later. The end of the inbox closes
+  /// such a call (``closeDetachedCalls()``). A prompt whose answer a cancel stopped closes it
+  /// (``closeUnfinishedCalls(of:status:answerStopped:)``).
   ///
   /// - Parameters:
   ///   - mailId: The mail of the prompt.
@@ -809,6 +837,9 @@ private struct ProjectionState {
       return
     }
     let ending = open.remove(at: index)
+    // Router stopped the answer of the prompt only when the terminal itself says `cancelled`. An
+    // answer that ended before the cancel keeps the settlements of its runs.
+    let answerStopped = stop == .cancelled
     var stop = stop
     // A cancelled prompt does not always end with a cancelled terminal.
     // Model work that never checks for cancellation runs to completion.
@@ -836,11 +867,7 @@ private struct ProjectionState {
         modelName: ending.prompt.modelName)
     }
     if let status = PromptExecution.closingStatus(for: stop) {
-      let kept = translator.openDetachedCallIds
-      for toolCallId in await ending.toolCalls.unfinishedToolCallIds()
-      where !kept.contains(toolCallId) {
-        await send(.toolCallUpdate(ToolCallUpdate(toolCallId: toolCallId, status: .value(status))))
-      }
+      await closeUnfinishedCalls(of: ending, status: status, answerStopped: answerStopped)
     }
     if let usage = ending.tally.usageUpdate {
       await send(.usageUpdate(usage))
