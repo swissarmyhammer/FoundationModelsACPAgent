@@ -459,7 +459,10 @@ import Testing
   }
 
   /// Resumes the root on a second connection and reads its wire up to the snapshot of the child
-  /// that follows the response.
+  /// that follows the response. The read ends after ``syncWaitSeconds`` when the snapshot does
+  /// not come. When the request throws, the read gets a cancel at once.
+  ///
+  /// The fixture session is the resumed root, so the trace keeps its events.
   ///
   /// - Parameters:
   ///   - tree: The live tree.
@@ -469,25 +472,16 @@ import Testing
   private static func resumeTrace(
     of tree: LiveTree, on second: AgentClientHarness
   ) async throws -> [WireTraceEvent] {
-    let subscription = second.connection.subscribeToAllSessions()
     let child = tree.childId
-    let first = WireTraceEvent.resumeRequest(id: .number(1), sessionId: tree.rootId)
-    let reader = Task {
-      await subscription.readResumeTrace(startingWith: [first]) { event in
-        if case .update(let stream, let update) = event {
-          return stream == child && update.isStateUpdate
-        }
-        return false
-      }
+    // The validator does not read the id of the request.
+    let request = WireTraceEvent.resumeRequest(id: .number(1), sessionId: tree.rootId)
+    return try await second.connection.subscribeToAllSessions().readResumeTrace(
+      startingWith: [request],
+      settledBy: { $0.isStateUpdate(of: child) },
+      timeout: .seconds(syncWaitSeconds)
+    ) {
+      _ = try await second.connection.resumeSession(tree.replayRequest)
     }
-    let timeout = Task {
-      try? await Task.sleep(for: .seconds(syncWaitSeconds))
-      reader.cancel()
-    }
-    _ = try await second.connection.resumeSession(tree.replayRequest)
-    let trace = await reader.value
-    timeout.cancel()
-    return trace
   }
 
   /// Resumes the root on a second connection, and lets the child act after the take and before
@@ -517,12 +511,7 @@ import Testing
     var root: SessionModel?
     let trace = try await second.connection.subscribeToAllSessions().readSequencedResumeTrace(
       startingWith: [WireTraceEvent.resumeRequest(id: .number(1), sessionId: tree.rootId)],
-      settledBy: { event in
-        if case .update(let stream, let update) = event {
-          return stream == child && update.isStateUpdate
-        }
-        return false
-      },
+      settledBy: { $0.isStateUpdate(of: child) },
       timeout: .seconds(syncWaitSeconds)
     ) {
       defer { holder.release() }
@@ -682,12 +671,7 @@ import Testing
     let request = WireTraceEvent.resumeRequest(id: .number(1), sessionId: tree.rootId)
     return try await connection.subscribeToAllSessions().readResumeTrace(
       startingWith: [request],
-      settledBy: { event in
-        if case .update(let stream, let update) = event {
-          return stream == child && update.isStateUpdate
-        }
-        return false
-      },
+      settledBy: { $0.isStateUpdate(of: child) },
       timeout: .seconds(syncWaitSeconds)
     ) {
       defer { holder.release() }
@@ -1355,6 +1339,17 @@ extension WireTraceEvent {
   fileprivate func isHistory(of child: SessionId) -> Bool {
     if case .update(let stream, let update) = self {
       return stream == child && !update.isStateUpdate
+    }
+    return false
+  }
+
+  /// Whether this event is a `state_update` on the stream of `child`.
+  ///
+  /// - Parameter child: The child.
+  /// - Returns: `true` for such an update.
+  fileprivate func isStateUpdate(of child: SessionId) -> Bool {
+    if case .update(let stream, let update) = self {
+      return stream == child && update.isStateUpdate
     }
     return false
   }
