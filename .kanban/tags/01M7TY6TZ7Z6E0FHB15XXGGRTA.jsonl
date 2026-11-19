@@ -1,0 +1,1 @@
+{"id":"01M7TY6TZ7XM8FY7MZ22BZD3H7","timestamp":"2026-11-19T22:18:04.647281Z","op":"create","item_id":"01M7TY6TZ7Z6E0FHB15XXGGRTA","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: 006b75\n+tag_name: import\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: 006b75\n-tag_name: import\n","transaction_id":null}

@@ -1,0 +1,29 @@
+---
+assignees:
+- claude-code
+position_column: todo
+position_ordinal: 9a80
+title: 'D209: AgentSessionImporter lists the importable sessions of the host roots (Claude Code, Codex)'
+---
+Decision D209 in `TestudoApp/features/decisions.md` (commit 56a8a59; final), parts (a)–(j), (l), (m), with the answers Q81–Q87 in D209 (n). Brief: `/Users/wballard/github/swissarmyhammer/.briefs/import/acpa-brief.md`, change items 1, 2, 5 and 6. Overview: `overview.md` in the same folder. Wave 3.
+
+## Dependencies (not on this board; wait for all shas)
+
+- FoundationModelsACP on `main`: the `ACPImport` target (Claude Code and Codex readers, the metadata scan).
+- FoundationModelsExtras on `main`: `SessionDirectoryOrigin.import`, `SessionImportProvenance`, `SessionSummary.importedFrom`.
+- FoundationModelsMultitool on `main`: the `SessionImporter` protocol and its value types, `list imports`, `import session`, the endpoint fields.
+- FoundationModelsRouter on `main` (for the import task after this one).
+
+## Change
+
+1. **The roots.** `ComposedAgent.compose` (and `RoutedACPAgent.init`) take `importRoots: [ImportSourceAgent: URL]`: the folders of the source agents that the host can read (`~/.claude`, `~/.codex`; the app gives the bookmarked folders in Testudo, the real home folder in OpenTestudo). Default empty. The `acp-agent` CLI gives the real home folder, and `CLAUDE_CONFIG_DIR` when it is set. A source with no root is in `unreadableSources`.
+2. **The scan.** `AgentSessionImporter: SessionImporter`. `importable` lists the files of each root (`projects/*/*.jsonl` for Claude Code; `sessions/**/rollout-*.jsonl` and `archived_sessions/` for Codex), reads the metadata with the `ACPImport` readers, and orders the rows newest first, with the rows of `preferredFolder` first. It keeps the metadata of each file by path, size and modification date in memory, so a second call reads only the changed files.
+3. **Earlier imports.** `previousImports` (the id and the import date of each earlier copy) comes from `importedFrom` of the sessions of the directory (agent and source id). Information only (Q85): it does not change what an import does.
+4. **The wiring.** Give the importer to `SessionsTool` and to the `sessions` endpoint (the Multitool host API), beside the exporter and the searcher.
+5. **No background work.** The importer reads the roots only in a call. It runs no child process (D128), watches nothing, and changes no file of a root.
+
+## Tests
+
+- With fixture roots in a temporary folder: `importable` lists both agents in the right order (newest first, preferred folder first); a changed file is read again, an unchanged file is not; a source with no root is in `unreadableSources`.
+- `previousImports` lists the earlier copies of a source.
+- The import roots stay unchanged (bytes and dates). #d209 #import

@@ -1,8 +1,16 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '9780'
+comments:
+- actor: claude-code
+  id: 01m7tyc3xjc8zq86441mp16mf6
+  text: |-
+    ### review — clean
+    - evidence: review sha f9b97ce~1..f9b97ce: 0 findings, 0 confirmed, 0 refuted. The engine did 7 review tasks. 0 tasks failed and 0 were skipped. It reviewed 2 files.
+    - next: none. The task is in done.
+  timestamp: 2026-11-19T22:20:57.650892+00:00
+position_column: done
+position_ordinal: ffffffaa80
 title: ScheduledAgentEndToEndTests is flaky under a parallel load
 ---
 Found during ^8qsp7hb (2026-11-19, main after 5b71964).

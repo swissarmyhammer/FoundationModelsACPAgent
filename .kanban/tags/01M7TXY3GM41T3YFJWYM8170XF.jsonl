@@ -1,0 +1,1 @@
+{"id":"01M7TXY3GMGB35YZMCKV0R458B","timestamp":"2026-11-19T22:13:18.484180Z","op":"create","item_id":"01M7TXY3GM41T3YFJWYM8170XF","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: 0e8a16\n+tag_name: d208\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: 0e8a16\n-tag_name: d208\n","transaction_id":null}
