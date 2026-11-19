@@ -25,10 +25,17 @@ comments:
     - evidence: `swift build --build-tests` Build complete!, 0 compiler warnings; `timeout 1800 swift test --skip-build`: 2516 tests in 263 suites passed, 1 known issue (intended), 0 warnings. An earlier full run had 1 failure (aDeleteRemovesTheItemsOfTheSession, its 10 s wait was too short under load); the wait budget is now 90 s, and the last full run passed.
     - next: /review
   timestamp: 2026-11-19T13:50:40.240703+00:00
+- actor: claude-code
+  id: 01m7t1qcz0vtj5vzt3x1dwa4mc
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (fb64561). 0 findings, 0 confirmed, 9 refuted, 14 attempted, 0 failed, 0 skipped. 3 files not reviewed: 2 files in .kanban/ (ignore rule), ARCHITECTURE.md (no validator).
+    - next: none. The task is in done.
+  timestamp: 2026-11-19T14:00:18.656775+00:00
 depends_on:
 - 01M7SY663TJBRCSAEXBJEX3G34
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: ffffff9a80
 title: 'D207: keep the transcript search index current (each turn, fork, directory change and delete) and reconcile it at launch'
 ---
 Decision D207. Brief: `/Users/wballard/github/swissarmyhammer/.briefs/search/acpa-brief.md`, change steps 4 and 6.
