@@ -50,6 +50,31 @@ comments:
     - evidence: `swift build --package-path IntegrationTests --build-tests` Build complete!, 0 warnings in project sources; `swift test --package-path IntegrationTests --skip-build --filter SessionsSkillExamplesTests` 6 tests in 1 suite passed; `swift build --build-tests` Build complete!, 0 warnings; `swift test --skip-build` 2379 tests in 250 suites passed (1 known issue, HarnessSmokeTests, which was there before)
     - next: /review
   timestamp: 2026-11-19T00:38:32.134965+00:00
+- actor: claude-code
+  id: 01m7rm3mprgb4vt9sxyk3h2rge
+  text: |-
+    ### review — findings
+    - evidence: `review sha HEAD~1..HEAD` (d1383fd). Counts: 1 finding, 1 confirmed, 0 refuted, 7 attempted, 0 failed. IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Support/SessionsSkillScenario.swift:48 `code-hygiene/magic-numbers-swift`.
+    - next: Replace the magic numbers in SessionsSkillScenario.swift with named constants. Remove this cause from the full file, not only from the line in the finding. Then do the review again.
+  timestamp: 2026-11-19T00:43:05.304379+00:00
+- actor: claude-code
+  id: 01m7rm975ss4hbhjncc0z6gnvd
+  text: |-
+    Finding fix (2026-11-18): `code-hygiene/magic-numbers-swift` at SessionsSkillScenario.swift:48. I removed the cause from the three new files of d1383fd, not only from the line in the finding.
+
+    - SessionsSkillScenario.swift: `Duration.milliseconds(10)` was the literal in the finding. swiftlint `no_magic_numbers` flags a literal in a call argument, also in a `static let`. New constants: `millisecondsPerSecond`, `waitIntervalMilliseconds`, `waitLimitSeconds`. `waitInterval` and `waitPolls` now come from them (20 s / 10 ms = 2000 polls, as before). The doc of `prompts(holding:)` names ``waitLimitSeconds`` and not "20 seconds".
+    - SessionsSkillExamplesTests.swift: the file-level `sessionsSkillExamplesTimeLimitMinutes` for `.timeLimit`, and `instructionsExcerptLength` for `prefix(400)`.
+    - SessionsSkillExamples.swift: the ULID length `26` was written two times in regex literals. A regex literal cannot interpolate a constant, thus the two ULID patterns now use RegexBuilder with `ulidLength` and one `ulidPattern` component. The matches use `wholeMatch`, thus the patterns need no anchors.
+    - Check: swiftlint with `only_rules: [no_magic_numbers]` and `allowed_numbers: [0, 1, -1, 100]` on the three files: 1 violation before, 0 after.
+
+    ### implement — changed
+    - evidence: 3 files — IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Support/SessionsSkillScenario.swift, IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Support/SessionsSkillExamples.swift, IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/SessionsSkillExamplesTests.swift
+    - next: /review
+
+    ### test — green
+    - evidence: `swift build --package-path IntegrationTests --build-tests` Build complete!, 0 warnings in project sources (1 build-system warning "missing creator for mutated node" for the mlx-swift_Cmlx bundle, not a project source); `timeout 1800 swift test --package-path IntegrationTests --skip-build --filter SessionsSkillExamplesTests` 6 tests in 1 suite passed, 0 failed
+    - next: /review
+  timestamp: 2026-11-19T00:46:08.057524+00:00
 depends_on:
 - 01M7QCBBA8BX23JY4SFZX4K6R4
 position_column: doing
@@ -78,3 +103,12 @@ When they do not agree, change the skill text in FoundationModelsMultitool, not 
 
 - The test above passes with the shipped skill text.
 - The test fails with a clear message that names the example that does not agree. #d200 #sessions-skill #d199
+
+## Review Findings (2026-11-18 18:39)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 3 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `IntegrationTests/Tests/FoundationModelsACPAgentIntegrationTests/Support/SessionsSkillScenario.swift:48` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.

@@ -44,11 +44,21 @@ struct SessionsSkillScenario {
   /// The start of each receipt line in the answer of `send message`.
   private static let receiptLinePrefix = "- "
 
-  /// The time between two reads of a state that a test waits for.
-  private static let waitInterval = Duration.milliseconds(10)
+  /// The count of milliseconds in one second.
+  private static let millisecondsPerSecond = 1_000
 
-  /// The most reads of a state that a test waits for: 20 seconds at ``waitInterval``.
-  private static let waitPolls = 2_000
+  /// The time between two reads of a state that a test waits for, in milliseconds.
+  private static let waitIntervalMilliseconds = 10
+
+  /// The longest time that a test waits for a state, in seconds.
+  private static let waitLimitSeconds = 20
+
+  /// The time between two reads of a state that a test waits for.
+  private static let waitInterval = Duration.milliseconds(waitIntervalMilliseconds)
+
+  /// The most reads of a state that a test waits for: ``waitLimitSeconds`` at
+  /// ``waitInterval``.
+  private static let waitPolls = waitLimitSeconds * millisecondsPerSecond / waitIntervalMilliseconds
 
   // MARK: - State
 
@@ -200,8 +210,8 @@ struct SessionsSkillScenario {
     line.dropFirst(receiptLinePrefix.count).prefix { $0.isLetter }.lowercased()
   }
 
-  /// The prompts that the models got with `text` in them. It waits, for at most 20 seconds,
-  /// until one prompt has the text.
+  /// The prompts that the models got with `text` in them. It waits, for at most
+  /// ``waitLimitSeconds``, until one prompt has the text.
   ///
   /// - Parameter text: The text of a message.
   /// - Returns: The prompts with the text, in order. It is empty when no prompt came in time.

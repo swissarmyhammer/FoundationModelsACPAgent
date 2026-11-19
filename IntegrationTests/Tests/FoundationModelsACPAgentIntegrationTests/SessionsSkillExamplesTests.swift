@@ -19,11 +19,17 @@ import ULID
 // The composer of TestudoApp writes it. The stack gives the same receipt word in the answer of
 // `send message`, and the receipt test compares that word.
 
+/// The longest time, in minutes, that one test of ``SessionsSkillExamplesTests`` can run.
+private let sessionsSkillExamplesTimeLimitMinutes = 2
+
 /// The examples of the `sessions` skill against the text that the real stack writes.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2)))
+@Suite(.closesHarnesses, .timeLimit(.minutes(sessionsSkillExamplesTimeLimitMinutes)))
 struct SessionsSkillExamplesTests {
   /// The prefix of the folders of each test.
   private static let label = "SessionsSkillExamplesTests"
+
+  /// The count of characters of the instructions that a failure message shows.
+  private static let instructionsExcerptLength = 400
 
   /// The label of the agent fact line.
   private static let agentLabel = "agent"
@@ -79,7 +85,7 @@ struct SessionsSkillExamplesTests {
 
     #expect(
       instructions.contains(body),
-      "The instructions of the default session do not hold the body of the sessions skill: \(instructions.prefix(400))"
+      "The instructions of the default session do not hold the body of the sessions skill: \(instructions.prefix(Self.instructionsExcerptLength))"
     )
   }
 

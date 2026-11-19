@@ -1,4 +1,5 @@
 import Foundation
+import RegexBuilder
 
 /// The examples of the built-in `sessions` skill that show text that the stack writes (D200): the
 /// header of a message from a session, the two headers of a message from the user with a source
@@ -71,10 +72,22 @@ struct SessionsSkillExamples {
   /// The fewest fence characters of a Markdown code block.
   private static let minimumFenceLength = 3
 
+  /// The count of characters of a ULID in its text form.
+  private static let ulidLength = 26
+
+  /// A ULID in its text form: ``ulidLength`` characters of the Crockford base 32 alphabet.
+  private static var ulidPattern: Regex<Substring> {
+    Regex { Repeat(/[0-9A-HJKMNP-TV-Z]/, count: ulidLength) }
+  }
+
   /// The first line of the example of a message from a session. The capture is the session id,
   /// a ULID.
   private static var sessionHeaderPattern: Regex<(Substring, Substring)> {
-    /^\[message from session ([0-9A-HJKMNP-TV-Z]{26})\]$/
+    Regex {
+      "[message from session "
+      Capture { ulidPattern }
+      "]"
+    }
   }
 
   /// A fact line of the example of a message from a session. The captures are the label and the
@@ -92,7 +105,10 @@ struct SessionsSkillExamples {
   /// The header of a message from the user whose source session the directory does not know. The
   /// capture is the id of the source session, a ULID.
   private static var unknownSourcePattern: Regex<(Substring, Substring)> {
-    /^From the user, in the session ([0-9A-HJKMNP-TV-Z]{26})$/
+    Regex {
+      "From the user, in the session "
+      Capture { ulidPattern }
+    }
   }
 
   /// An item of a nested list of the body.
