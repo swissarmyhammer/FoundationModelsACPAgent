@@ -20,10 +20,27 @@ comments:
   id: 01m7qnr1et6han1a5x3kraex70
   text: 'Dependency available (2026-11-18): the endpoint field `Session.export(format: MARKDOWN, thoughts: Boolean = false): String!` is on FoundationModelsMultitool origin/main, commit 5385bec6. It calls the same `SessionTranscriptExporter` that `SessionsGraph.endpoint(of:exporter:)` gets, and writes no file. Thus give the exporter to `SessionsGraph.endpoint(of:exporter:)` too, not only to `SessionsTool(directory:exporter:)`, and add a test that the endpoint field gives the same text as the tool.'
   timestamp: 2026-11-18T15:52:27.866146+00:00
+- actor: claude-code
+  id: 01m7rjhq228cba0r863txg3hre
+  text: |-
+    ### review — findings
+    - evidence: review sha d260518~1..d260518. 1 finding, 1 confirmed, 0 refuted, 7 files attempted, 0 failed. Sources/FoundationModelsACPAgent/Agent/SessionTranscriptExport.swift:37 (code-hygiene/disallowed-constructs-swift, no_unchecked_sendable).
+    - next: Remove the @unchecked Sendable from the type in SessionTranscriptExport.swift. Use a plain Sendable conformance or a @preconcurrency import. If the type must stay @unchecked Sendable, write the swiftlint disable line with the synchronization invariant. Then run the review again.
+  timestamp: 2026-11-19T00:15:49.314608+00:00
+- actor: claude-code
+  id: 01m7rjjf91jztzzhgv56z5wkh2
+  text: |-
+    ### finish iteration 1 — findings
+    - implement: changed — 8 files (worktree branch, merged on local main)
+    - test: green — merged tree on the family main heads (Multitool 0c22a31): swift test --skip-build, 2379 tests in 250 suites passed
+    - commit: d260518
+    - review: findings — Sources/FoundationModelsACPAgent/Agent/SessionTranscriptExport.swift:37 (no_unchecked_sendable)
+    - next: the repair waits for a free build line.
+  timestamp: 2026-11-19T00:16:14.113283+00:00
 depends_on:
 - 01M7NQMWNNTAYWET485V2Y341X
-position_column: todo
-position_ordinal: '8780'
+position_column: review
+position_ordinal: '80'
 title: 'D202: export a session as Markdown from its retained history (SessionTranscriptExporter)'
 ---
 Decision D202 in `TestudoApp/features/decisions.md` (commit 40450ab). Brief: `/Users/wballard/github/swissarmyhammer/.briefs/export-markdown/acpa-brief.md`. Overview: `overview.md` in the same folder.
@@ -62,3 +79,12 @@ Decision D202 in `TestudoApp/features/decisions.md` (commit 40450ab). Brief: `/U
 - `includeThoughts` true includes a thought; false leaves it out.
 
 When this lands, push to origin/main and send the sha to the TestudoApp session (testudoapp-9a). #d202 #export-markdown
+
+## Review Findings (2026-11-18 18:12)
+
+> Scope: `review sha d260518~1..d260518` — reviewed the diffs only — lines this change added or modified. 7 file(s) reviewed, 1 not reviewed.
+
+> 1 file(s) not reviewed — no validator matched:
+> - `ARCHITECTURE.md` — no validator matches this file
+
+- [ ] `Sources/FoundationModelsACPAgent/Agent/SessionTranscriptExport.swift:37` `code-hygiene/disallowed-constructs-swift` — no_unchecked_sendable: Instead of @unchecked Sendable, write a plain Sendable conformance or a @preconcurrency import. If the type really must be @unchecked Sendable, write // swiftlint:disable:next no_unchecked_sendable above it with the synchronization invariant that makes the type thread-safe.
