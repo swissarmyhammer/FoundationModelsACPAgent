@@ -19,8 +19,22 @@ comments:
     - evidence: `timeout 1800 swift build --build-tests` printed "Build complete!" with 0 compiler warnings (only the SwiftPM note "missing creator for mutated node" of the mlx bundle, from before this change). `timeout 1800 swift test --skip-build`: 2660 tests in 281 suites passed, 0 failures; 1 known issue is the intended withKnownIssue in HarnessSmokeTests.orderedSubsequenceAssertionChecksOrderWithGaps.
     - next: /review
   timestamp: 2026-11-19T22:45:24.252121+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m7v01xvpzg5mmxwdxahxswz9
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (cc05356). 1 finding, 1 confirmed, 1 refuted, 7 review tasks attempted, 0 failed. Tests/FoundationModelsACPAgentTests/SessionSpotlightSettingTests.swift:21 (reuse/reuse).
+    - next: Use SessionsConfiguration.sectionKey in the test in place of the local sessionsKeyPath. Remove the same cause in all of the file. Then commit and review again.
+  timestamp: 2026-11-19T22:50:20.918881+00:00
+- actor: claude-code
+  id: 01m7v0t1cwvrft1yhkj946r002
+  text: |-
+    ### review — clean
+    - evidence: review sha 5fddf81~1..5fddf81; 0 findings, 0 confirmed, 0 refuted; 7 attempted, 0 failed. The item of Review Findings (2026-11-19 16:45) at SessionSpotlightSettingTests.swift:21 is checked; the fix commit 5fddf81 uses SessionsConfiguration.sectionKey.
+    - next: none. The task is in done.
+  timestamp: 2026-11-19T23:03:30.972625+00:00
+position_column: done
+position_ordinal: ffffffac80
 title: 'D207 (i): the sessions.spotlight setting (Boolean, on by default) in the configuration and the settings tool/endpoint'
 ---
 Gap from the TestudoApp session (2026-11-19). Decision D207 (i) and Q73.
@@ -45,3 +59,16 @@ The settings store knows only the `recap` key in the `sessions` section (^na7sm9
 - `sessions.recap` still works.
 
 When this lands, push to origin/main and send the sha to the TestudoApp session (testudoapp-9a). #d207 #search
+
+## Review Findings (2026-11-19 16:45)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 8 file(s) reviewed, 10 not reviewed.
+
+> 8 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 8 file(s)
+
+> 2 file(s) not reviewed — no validator matched:
+> - `README.md` — no validator matches this file
+> - `Sources/FoundationModelsACPAgent/Resources/builtin.config.yaml` — no validator matches this file
+
+- [x] `Tests/FoundationModelsACPAgentTests/SessionSpotlightSettingTests.swift:21` `reuse/reuse` — The test builds the key path of the sessions section from the coding key by hand. The production code already names this key as SessionsConfiguration.sectionKey, so the test repeats an existing constant. Use [SessionsConfiguration.sectionKey] in place of the local sessionsKeyPath, or drop the local constant and reuse the production one.

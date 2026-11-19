@@ -59,8 +59,15 @@ comments:
     - test: `swift build --build-tests` printed "Build complete!" with 0 compiler warnings. `timeout 1800 swift test --skip-build --filter BlockingFIFOTests`: 3 tests passed. `timeout 1800 swift test --skip-build`: 2660 tests in 281 suites, 3 issues (1 known issue in HarnessSmokeTests, 2 issues in one test `TranscriptSearchHostReadTests.theAgentGivesTheTurnsOfAPromptInTheChangeStream()`: 180 s time limit and `holdThePrompt` false). That test uses no named pipe; it is the open flake of card ^m34dssm. A run of `--filter TranscriptSearchHostReadTests` alone: 4 tests passed in 0.793 s. The full run is red for that card only.
     - next: /review
   timestamp: 2026-11-19T22:55:47.919136+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m7v0m240y4700wf8mt96s574
+  text: |-
+    ### review — clean
+    - evidence: review sha 32bb3bf~1..32bb3bf; 0 findings, 0 confirmed, 0 refuted; 7 attempted, 0 failed. All 5 items of Review Findings (2026-11-19 16:33) are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-11-19T23:00:15.104711+00:00
+position_column: done
+position_ordinal: ffffffab80
 title: BlockingFIFO.openWriteEnd(at:) can wait for ever for a reader, and nothing cancels it
 ---
 Found during ^6yqbvx6 (2026-11-19).
