@@ -77,11 +77,13 @@ extension RoutedACPAgent {
   /// The session directory of the Router makes the fork (`RouterSessionDirectory.fork(_:)`), with
   /// the source, the cut, no first prompt, and the connection of the request as the client that
   /// asked for it. The fork has the agent, the model profile and the history of the source up to
-  /// the cut. The agent then opens the fork as its own session
-  /// (``openFork(_:copying:placement:from:)``): with the MCP servers and the additional
-  /// directories of the request only. As ACP states, an omitted or empty list gives none: the
-  /// fork does not get the MCP servers or the directories of the source. The fork works in the
-  /// folder of its source, so the `cwd` of the request must be that folder.
+  /// the cut. The directory asks the launcher of the agent to build the fork
+  /// (``launchFork(_:)``), and the agent keeps the surface of the request for that build
+  /// (``ForkLaunchBook``): the MCP servers and the additional directories of the request only. As
+  /// ACP states, an omitted or empty list gives none: the fork does not get the MCP servers or
+  /// the directories of the source. So the agent holds the fork as its own session from its
+  /// start, and then it opens the fork for the connection (``openFork(_:activation:placement:)``).
+  /// The fork works in the folder of its source, so the `cwd` of the request must be that folder.
   ///
   /// The agent asks for no permission before a tool runs, so a fork needs no permission grant:
   /// each tool that runs in the source runs in the fork too.
@@ -93,7 +95,8 @@ extension RoutedACPAgent {
   ///   invalid-params refusal of a cut, of a `cwd` that is not the folder of the source and of a
   ///   directory that does not exist, the refusal of the session directory
   ///   (``RequestError/forkRefusal(_:point:in:id:)``), an internal error when the fork closed
-  ///   before the agent opened it, or whatever the restore of the fork throws.
+  ///   before the agent opened it, or whatever the build of the fork or the record of its
+  ///   directories throws.
   public func forkSession(_ params: ForkSessionRequest) async throws -> ForkSessionResponse {
     try await forkSession(params, from: .direct)
   }
@@ -126,12 +129,18 @@ extension RoutedACPAgent {
     try SessionSetup.requireExistingDirectories(
       workingDirectory: placement.workingDirectory, additionalRoots: placement.additionalRoots)
 
+    let key = ForkLaunchKey(source: sourceId, client: caller.rawValue)
+    await reserveForkLaunch(key)
+    defer { releaseForkLaunch(key) }
     let source = await forkSourceHistory(
-      of: entry.history, forkSource: entry.session.parentId, sessionId: params.sessionId)
+      of: (sessions[params.sessionId] ?? entry).history, forkSource: entry.session.parentId,
+      sessionId: params.sessionId)
     let point = try Self.forkPoint(of: params.meta, in: source, sessionId: params.sessionId)
     guard let end = source.end(of: point) else {
       throw RequestError.forkCutOutOfRange(point, in: source, id: params.sessionId)
     }
+    forkLaunches.requests[key] = RequestedFork(
+      placement: placement, copiedHistory: source.copiedHistory(endingAt: end), caller: caller)
     let summary: SessionSummary
     do {
       summary = try await sessionDirectory.fork(
@@ -142,55 +151,45 @@ extension RoutedACPAgent {
       throw RequestError.forkRefusal(refusal, point: point, in: source, id: params.sessionId)
     }
     return try await openFork(
-      summary, copying: source.copiedHistory(endingAt: end), placement: placement, from: caller)
+      summary, activation: forkLaunches.requests[key]?.activation, placement: placement)
   }
 
-  /// Opens a fork that the session directory made as a session of the agent, owned by the
-  /// connection of the request.
+  /// Opens a fork that the launcher built for a `session/fork` request (``launchFork(_:)``) for
+  /// the connection of the request. The table holds the fork already, with the copied history,
+  /// and the connection owns it.
   ///
-  /// The agent writes the copied history to the history file of the fork first
-  /// (``SessionHistoryFile``), also when the copy is empty (a cut before the first turn). Thus
-  /// the restore always reads the cut of the request, and never finds the end of the copy from
-  /// the tool calls of the fork (``unrecordedForkHistory(of:)``). Then the restore of the fork (``restoreColdRoot(_:sessionId:context:workingDirectory:additionalRoots:clientMCPServers:userPresence:)``)
-  /// stops the live fork of the directory, which runs the tools of the source, and restores the
-  /// fork onto a surface of its own, with the agent of the source and with the history of the
-  /// file. Thus a later `session/resume` of the fork replays the copied turns, also in a new
-  /// process.
+  /// The session directory holds the fork now, so the agent records the additional directories
+  /// of the request for it (``recordPlacement(of:placement:)``). Then the retained history keeps
+  /// the commands and the options of the response, and the name of the fork goes out after the
+  /// response. A later `session/resume` of the fork takes the live fork, and a resume in a new
+  /// process replays the copied turns from the history file of the fork.
   ///
   /// - Parameters:
   ///   - summary: The summary of the fork.
-  ///   - copied: The history that the fork copies from its source.
+  ///   - activation: The activation of the fork that the launcher mounted, or `nil` when the
+  ///     launcher mounted no fork for the request.
   ///   - placement: Where the fork works, its user presence, and the MCP servers of its client.
-  ///   - caller: The connection of the request, which owns the fork.
   /// - Returns: The response of the fork.
-  /// - Throws: An internal error when the session directory holds no live fork with the id of
-  ///   the summary, whatever the write of the history file throws, or whatever the load of the
-  ///   configuration or the restore throws.
+  /// - Throws: An internal error when the table holds no fork with the id of the summary, or
+  ///   whatever the record of the directories throws.
   private func openFork(
-    _ summary: SessionSummary, copying copied: SessionMergeEngine, placement: SessionPlacement,
-    from caller: ConnectionId
+    _ summary: SessionSummary, activation: SessionActivation?, placement: SessionPlacement
   ) async throws -> ForkSessionResponse {
     let forkId = SessionId(rawValue: summary.id.description)
-    guard let live = sessionDirectory.session(id: summary.id) else {
+    guard let activation, let fork = sessions[forkId]?.session else {
       throw RequestError.internalError(
         detail: "the fork \(forkId.rawValue) closed before the agent opened it")
     }
-    try SessionHistoryFile.write(copied, in: live.recordingDirectory)
-    let context = try await loadSessionContext(workingDirectory: placement.workingDirectory)
-    connections.recordStart(of: forkId, by: caller)
-    let cold = try await restoreColdRoot(
-      summary.id, sessionId: forkId, context: context,
-      workingDirectory: placement.workingDirectory, additionalRoots: placement.additionalRoots,
-      clientMCPServers: placement.clientMCPServers, userPresence: placement.userPresence)
+    try await recordPlacement(of: fork, placement: placement)
     let response = ForkSessionResponse(
-      sessionId: forkId, availableCommands: cold.activation.availableCommands,
-      configOptions: cold.activation.configOptions)
+      sessionId: forkId, availableCommands: activation.availableCommands,
+      configOptions: activation.configOptions)
     // The history records the commands and the options of the response, as for `session/new`.
     sessions[forkId]?.retainedHistory.seed(
       from: NewSessionResponse(
         sessionId: forkId, availableCommands: response.availableCommands,
         configOptions: response.configOptions))
-    announceName(of: cold.restored.session, sessionId: forkId)
+    announceName(of: fork, sessionId: forkId)
     await recordUse(of: forkId)
     ACPAgentTelemetry.logger(.session).info(
       "A session forked.", metadata: ACPAgentTelemetry.sessionMetadata(forkId))

@@ -124,13 +124,16 @@ import Testing
   ///
   /// - Parameters:
   ///   - leafPlay: What the grandchild plays before the kill.
+  ///   - forkingRoot: Whether the root of the chain is a fork (`session/fork`) of the session of
+  ///     the fixture. `false` by default: the root is the session of the fixture.
   ///   - beforeKill: Runs after the sign of `leafPlay` and before the kill.
   /// - Returns: The chain.
   /// - Throws: Whatever the fixture, a wait or `beforeKill` throws.
   static func recordInterruptedChain(
-    leafPlay: LeafPlay, beforeKill: () async throws -> Void
+    leafPlay: LeafPlay, forkingRoot: Bool = false, beforeKill: () async throws -> Void
   ) async throws -> Recording {
-    try await recordChain(endsPrompt: false, leafPlay: leafPlay) { fixture in
+    try await recordChain(endsPrompt: false, leafPlay: leafPlay, forkingRoot: forkingRoot) {
+      fixture in
       try await beforeKill()
       let agent = fixture.harness.agent
       for sessionId in await agent.sessions.keys {
@@ -177,11 +180,13 @@ import Testing
   ///   - endsPrompt: Whether the prompt of the root ends with the stop. A killed process never
   ///     ends it, so the call does not wait for it.
   ///   - leafPlay: What the grandchild plays. ``LeafPlay/textThenHold`` by default.
+  ///   - forkingRoot: Whether the root of the chain is a fork (`session/fork`) of the session of
+  ///     the fixture. `false` by default: the root is the session of the fixture.
   ///   - stopping: Ends the first agent.
   /// - Returns: The chain.
   /// - Throws: Whatever the fixture, a wait or `stopping` throws.
   private static func recordChain(
-    endsPrompt: Bool = true, leafPlay: LeafPlay = .textThenHold,
+    endsPrompt: Bool = true, leafPlay: LeafPlay = .textThenHold, forkingRoot: Bool = false,
     stopping: (ScriptedPromptFixture) async throws -> Void
   ) async throws -> Recording {
     let cwd = makeResolvedDirectory(label: "\(label)-repo")
@@ -200,7 +205,7 @@ import Testing
     ]
     let fixture = try await ScriptedPromptFixture.make(
       script: script, label: label, workingDirectory: cwd)
-    let root = fixture.sessionId
+    let root = forkingRoot ? try await fork(of: fixture) : fixture.sessionId
     let prompt = Task {
       try await fixture.harness.connection.prompt(
         AgentClientHarness.makePromptRequest(sessionId: root, text: rootPrompt))
@@ -215,6 +220,17 @@ import Testing
       _ = try? await prompt.value
     }
     return Recording(cwd: cwd, root: root, child: child, leaf: leaf)
+  }
+
+  /// Sends `session/fork` for the session of `fixture`, with no cut.
+  ///
+  /// - Parameter fixture: The first agent.
+  /// - Returns: The id of the fork.
+  /// - Throws: Whatever the request throws.
+  private static func fork(of fixture: ScriptedPromptFixture) async throws -> SessionId {
+    try await fixture.harness.connection.forkSession(
+      ForkSessionRequest(cwd: AbsolutePath(rawValue: fixture.cwd.path), sessionId: fixture.sessionId)
+    ).sessionId
   }
 
   /// Quits an agent in order: it suspends every live session, and then closes them. A suspended
@@ -286,6 +302,25 @@ import Testing
   }
 
   // MARK: - The tree
+
+  /// The launcher of the session directory restores a recorded fork by its own id. The restore
+  /// claims the run of the fork with the id of the fork, so the child that the fork started comes
+  /// back as a session nested in the fork.
+  @Test
+  func aLauncherRestoreOfAForkRestoresTheChildOfTheFork() async throws {
+    let recording = try await Self.recordInterruptedChain(
+      leafPlay: .textThenHold, forkingRoot: true
+    ) {}
+    let fixture = try await ScriptedPromptFixture.make(
+      script: [.endPass], label: "\(Self.label)-fork-second", workingDirectory: recording.cwd)
+
+    _ = try await AgentSessionLauncher(agent: fixture.harness.agent).restoreSession(
+      id: try recording.root.ulid())
+    let sessions = await fixture.harness.agent.sessions
+    await fixture.close()
+
+    #expect(sessions[recording.child]?.parentSessionId == recording.root)
+  }
 
   /// The child and the grandchild come back as sessions, each with its parent.
   @Test

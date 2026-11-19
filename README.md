@@ -780,7 +780,15 @@ code gives the local detail.
   `session/resume` of the fork replays the copied turns. A cut in the turns
   that a compaction folded, a turn that does not exist and the turn that runs
   give `-32602` with a text for the person. The `fork session` operation of
-  the `sessions` tool forks the calling session at its tool call.
+  the `sessions` tool forks the calling session at its tool call, with the
+  MCP servers and the additional directories of the source.
+  The Router asks the launcher of the agent to build each fork before it
+  registers the fork and sends its first prompt. So the first prompt runs on
+  the tools of the agent, and the agent holds the fork from its start: a
+  `session/resume` of the fork takes the live fork and cancels nothing. A
+  fork restores only by its own id, and the resume of its source does not
+  make a second fork. A model slot switch of a source moves each fork that
+  the agent holds to the new slot too.
 - **An agent run is announced with `subagent_update`.** The agent sends one
   `subagent_update` on the parent session before any message that uses the id
   of the child. The id of the child is the id of its run. The update has the

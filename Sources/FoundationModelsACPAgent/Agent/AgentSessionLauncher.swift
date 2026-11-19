@@ -16,6 +16,11 @@ import FoundationModelsRouter
 /// - ``launchRootSession(for:)`` comes in ACPA-9 Step 7. Until then it
 ///   throws `SessionDirectoryError.noLauncher`, as a directory with no
 ///   launcher does.
+/// - ``forkSession(_:)`` builds each fork of the directory with a surface of
+///   the agent, and puts it in the session table before the directory
+///   registers it (D205,
+///   ``RoutedACPAgent/launchFork(_:)``). So the first prompt of a fork runs
+///   on the surface of the agent, and the agent holds the fork from its start.
 ///
 /// The launcher holds the agent weakly: the agent holds the directory, and
 /// the directory holds the launcher. When the agent is gone, each call
@@ -43,18 +48,34 @@ final class AgentSessionLauncher: SessionLauncher, @unchecked Sendable {
   }
 
   /// Makes the recorded root session `id` live with no client, or gives
-  /// the live session when it is live already.
+  /// the live session when it is live already. A fork is a root session
+  /// in the folder of its source, and it restores by its own id.
   ///
-  /// - Parameter id: The id of the recorded root session.
+  /// - Parameter id: The id of the recorded root session or fork.
   /// - Returns: The live session.
   /// - Throws: `SessionDirectoryError.noLauncher` when the agent is gone,
   ///   `SessionDirectoryError.unknownSession(_:)` when the directory has no
-  ///   root session with this id, or the error of the restore.
+  ///   root session or fork with this id, or the error of the restore.
   func restoreSession(id: ULID) async throws -> any RoutedSession {
     guard let agent else {
       throw SessionDirectoryError.noLauncher
     }
     return try await agent.restoreSessionForDirectory(id: id)
+  }
+
+  /// Builds the fork of `request` with a surface of the agent, and gives it
+  /// to the session directory (``RoutedACPAgent/launchFork(_:)``).
+  ///
+  /// - Parameter request: The fork request of the session directory.
+  /// - Returns: The fork that the request built, in the session table of
+  ///   the agent.
+  /// - Throws: `SessionDirectoryError.noLauncher` when the agent is gone, or
+  ///   the error of the build. The directory then refuses the fork.
+  func forkSession(_ request: SessionLaunchForkRequest) async throws -> any RoutedSession {
+    guard let agent else {
+      throw SessionDirectoryError.noLauncher
+    }
+    return try await agent.launchFork(request)
   }
 }
 
@@ -66,17 +87,22 @@ extension RoutedACPAgent {
   /// `interactive`, as for a session that a client of the user opens: a
   /// client of the user can take the session later.
   ///
-  /// - Parameter id: The id of the recorded root session.
+  /// A fork restores by its own id, as each other root session: the restore
+  /// of its source does not restore it, and a run of the fork is claimed only
+  /// by the restore of the fork (``claimedRuns(of:in:)``).
+  ///
+  /// - Parameter id: The id of the recorded root session or fork.
   /// - Returns: The live session.
   /// - Throws: `SessionDirectoryError.unknownSession(_:)` when the
-  ///   directory has no root session with this id, or the error of the
-  ///   restore.
+  ///   directory has no root session or fork with this id, or the error of
+  ///   the restore.
   func restoreSessionForDirectory(id: ULID) async throws -> any RoutedSession {
     let sessionId = SessionId(rawValue: id.description)
     if let live = liveRoot(sessionId) {
       return live.session
     }
-    guard let summary = try await sessionDirectory.summary(of: id), summary.parentID == nil
+    guard let summary = try await sessionDirectory.summary(of: id),
+      summary.parentID == nil || summary.kind == .fork
     else {
       throw SessionDirectoryError.unknownSession(id)
     }

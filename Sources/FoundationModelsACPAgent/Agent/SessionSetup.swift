@@ -859,9 +859,37 @@ extension RoutedACPAgent {
     }
   }
 
-  /// Mounts one made or restored root Router session into the agent.
-  /// The mount records the placement of the session (``recordPlacement(of:placement:)``).
-  /// It makes the command registry with its bound builtin context.
+  /// Mounts one made or restored root Router session into the agent: it records the placement of
+  /// the session (``recordPlacement(of:placement:)``), and then it mounts the session
+  /// (``mountSession(_:composition:placement:history:)``). A replay-only session has no cwd on
+  /// disk, so it records no placement.
+  ///
+  /// - Parameters:
+  ///   - session: The root Router session to mount.
+  ///   - composition: What the composition pipeline built for it.
+  ///   - placement: Where the session works, and its user presence.
+  ///   - history: The retained history of the session: empty for a new
+  ///     session, the kept history for a resumed one.
+  /// - Returns: The session id, and the command list and the
+  ///   config-option list that the response announces.
+  /// - Throws: Whatever ``recordPlacement(of:placement:)`` or the mount throws.
+  func activateSession(
+    _ session: any RoutedSession,
+    composition: SessionComposition,
+    placement: SessionPlacement,
+    history: SessionMergeEngine
+  ) async throws -> SessionActivation {
+    if !composition.isReplayOnly {
+      try await recordPlacement(of: session, placement: placement)
+    }
+    return try await mountSession(
+      session, composition: composition, placement: placement, history: history)
+  }
+
+  /// Mounts one root Router session into the agent, with no record of its placement.
+  /// The launcher of a fork mounts the fork before the session directory registers it, so it
+  /// records the placement later (D205).
+  /// The mount makes the command registry with its bound builtin context.
   /// It makes the table entry with its retained history (the one build of a session,
   /// ``registerSession(_:sessionId:parent:build:events:)``).
   /// It publishes the command set.
@@ -880,19 +908,15 @@ extension RoutedACPAgent {
   ///     session, the kept history for a resumed one.
   /// - Returns: The session id, and the command list and the
   ///   config-option list that the response announces.
-  /// - Throws: Whatever ``recordPlacement(of:placement:)`` throws.
-  func activateSession(
+  /// - Throws: Whatever the registration of the session throws
+  ///   (``registerSession(_:sessionId:parent:build:events:)``).
+  func mountSession(
     _ session: any RoutedSession,
     composition: SessionComposition,
     placement: SessionPlacement,
     history: SessionMergeEngine
   ) async throws -> SessionActivation {
     let workingDirectory = placement.workingDirectory
-    // A replay-only session has no cwd on disk, so it records nothing.
-    if !composition.isReplayOnly {
-      try await recordPlacement(of: session, placement: placement)
-    }
-
     let sessionId = SessionId(rawValue: session.id.description)
 
     // Assemble the command registry now the session exists.
@@ -977,7 +1001,7 @@ extension RoutedACPAgent {
   ///   - placement: Where the session works.
   /// - Throws: The error of the project file save.
   ///   `SessionDirectoryError.unknownSession` when the session directory of the router does not hold the session.
-  private func recordPlacement(of session: any RoutedSession, placement: SessionPlacement)
+  func recordPlacement(of session: any RoutedSession, placement: SessionPlacement)
     async throws
   {
     try ProjectStore(directory: home.projectsDirectory).register(

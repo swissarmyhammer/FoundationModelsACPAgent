@@ -7,6 +7,11 @@ import Logging
 /// the Router session and restores it onto the handle of the new slot.
 /// The restore keeps the id, the recording folder and the lineage. It adds
 /// one `modelChanged` event to the transcript of each moved session.
+///
+/// The restore of a session moves only the recorded forks of the session that
+/// have no live session (D205). A fork that the agent holds keeps its slot in
+/// that restore, so the agent moves it with a switch of its own, by its id
+/// (``moveHeldForks(of:to:)``).
 extension RoutedACPAgent {
   /// Switches the generation slot of a session.
   ///
@@ -94,7 +99,9 @@ extension RoutedACPAgent {
   /// because it removes the entry of the id.
   ///
   /// When the restore fails, the session is restored onto its old slot, so
-  /// the client keeps a session that works.
+  /// the client keeps a session that works. When the restore works, each fork
+  /// of the session that the agent holds moves to the slot too
+  /// (``moveHeldForks(of:to:)``).
   ///
   /// - Parameters:
   ///   - sessionId: The session to move.
@@ -116,6 +123,36 @@ extension RoutedACPAgent {
         metadata: ACPAgentTelemetry.errorMetadata(error, sessionId: sessionId))
       await returnToSlot(of: entry, in: sessionId)
       throw RequestError.internalError(detail: "the model slot switch failed")
+    }
+    await moveHeldForks(of: replaced.id, to: slot)
+  }
+
+  /// Moves each fork of a session that the agent holds onto the slot of the
+  /// session. The restore of the session moved only the recorded forks that
+  /// have no live session, so the agent switches each held fork by its own id
+  /// (``applyModelSlot(_:to:)``), and the fork moves its own held forks in
+  /// the same way. A fork with an open prompt switches when its last prompt
+  /// ends. The client of a fork that switched gets the new options
+  /// (``reconcileConfigOptions(for:)``). A switch that fails goes to the log,
+  /// and the fork keeps its slot.
+  ///
+  /// - Parameters:
+  ///   - source: The id of the session that moved.
+  ///   - slot: The slot that the session moved to.
+  private func moveHeldForks(of source: ULID, to slot: ModelSlot) async {
+    let forks = sessions.compactMap { sessionId, entry in
+      entry.parentSessionId == nil && !entry.isClosed && entry.session.parentId == source
+        ? sessionId : nil
+    }
+    for fork in forks {
+      do {
+        try await applyModelSlot(slot, to: fork)
+        await reconcileConfigOptions(for: fork)
+      } catch {
+        ACPAgentTelemetry.logger(.session).warning(
+          "A fork did not move with the model slot switch of its source. The fork keeps its slot.",
+          metadata: ACPAgentTelemetry.errorMetadata(error, sessionId: fork))
+      }
     }
   }
 

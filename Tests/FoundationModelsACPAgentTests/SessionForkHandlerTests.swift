@@ -75,6 +75,19 @@ import Testing
   /// The arguments of a `fork session` call with no id.
   private static let forkSessionArguments = #"{"op":"fork session"}"#
 
+  /// The prompt whose answer calls `fork session` with no id and with a first prompt.
+  private static let forkWithPromptPrompt = "Fork with a first prompt"
+
+  /// The first prompt of the fork that ``forkWithPromptPrompt`` makes.
+  private static let forkFirstPrompt = "Work in the fork"
+
+  /// The text of the answer to the first prompt of the fork. It comes after the hold.
+  private static let forkAnswerText = "Fork answer"
+
+  /// The arguments of a `fork session` call with no id and with ``forkFirstPrompt``.
+  private static let forkSessionWithPromptArguments =
+    #"{"op":"fork session","message":"\#(forkFirstPrompt)"}"#
+
   /// The snippet that the tool prompt runs.
   private static let toolCode = "1 + 1"
 
@@ -111,7 +124,8 @@ import Testing
 
   /// The script of the suite: one answer for each prompt.
   ///
-  /// - Parameter hold: The hold of the answer of turn 3.
+  /// - Parameter hold: The hold of the answer of turn 3, of the answer to the result of the gated
+  ///   run, and of the answer to the first prompt of a tool fork.
   /// - Returns: The script.
   /// - Throws: The encode error of the tool call.
   private static func script(holding hold: ScriptedHold = ScriptedHold()) throws
@@ -132,6 +146,15 @@ import Testing
       .onPrompt(
         containing: forkPrompt,
         play: [.toolCall(name: sessionsToolName, argumentsJSON: forkSessionArguments), .endPass]),
+      .onPrompt(
+        containing: forkWithPromptPrompt,
+        play: [
+          .toolCall(name: sessionsToolName, argumentsJSON: forkSessionWithPromptArguments),
+          .endPass,
+        ]),
+      .onPrompt(
+        containing: forkFirstPrompt,
+        play: [.holdUntilReleased(hold), .textDelta(forkAnswerText), .endPass]),
       .onPrompt(containing: firstNote, play: [.textDelta(notesReply), .endPass]),
       .onPrompt(
         containing: runPrompt,
@@ -483,16 +506,30 @@ import Testing
       matching: SessionQuery(kind: .fork, includesRecorded: true))
   }
 
-  /// Runs the prompt whose answer calls `fork session`, and gives the fork that the call made.
+  /// Runs a prompt whose answer calls `fork session`, and gives the fork that the call made.
   ///
-  /// - Parameter fixture: The fixture, after turn 1.
+  /// - Parameters:
+  ///   - fixture: The fixture, after turn 1.
+  ///   - prompt: The prompt whose answer calls `fork session`: ``forkPrompt`` by default.
   /// - Returns: The summary of the fork.
   /// - Throws: Whatever the prompt or the query throws.
-  private static func forkFromTheTool(on fixture: ScriptedPromptFixture) async throws
-    -> SessionSummary
-  {
-    try await ScriptedPromptFixture.runPrompt(on: fixture, text: forkPrompt, count: twoTurns)
+  private static func forkFromTheTool(
+    on fixture: ScriptedPromptFixture, prompt: String = forkPrompt
+  ) async throws -> SessionSummary {
+    try await ScriptedPromptFixture.runPrompt(on: fixture, text: prompt, count: twoTurns)
     return try #require(try await forks(in: fixture).first)
+  }
+
+  /// The agent text of the updates of one session.
+  ///
+  /// - Parameters:
+  ///   - sessionId: The session.
+  ///   - updates: The updates that the client got.
+  /// - Returns: The text of the agent message chunks of the session, in order.
+  private static func agentChunkTexts(
+    of sessionId: SessionId, in updates: [UpdateSessionNotification]
+  ) -> [String] {
+    ScriptedPromptFixture.agentChunkTexts(in: updates.filter { $0.sessionId == sessionId })
   }
 
   /// Resumes a session of the agent of `fixture` over the connection of `fixture`, with the
@@ -829,6 +866,21 @@ import Testing
     #expect(Self.compactedHistory.forkEnd(keepingToolCalls: []) == nil)
   }
 
+  /// A model slot switch of a source moves the fork that the agent holds onto the new slot. The
+  /// restore of the source does not move a live fork, so the agent restores the fork by its id.
+  @Test(.timeLimit(.minutes(1))) func aModelSlotSwitchOfTheSourceMovesItsFork() async throws {
+    let fixture = try await Self.makeFixture("source-slot")
+    try await ScriptedPromptFixture.runPrompt(on: fixture, text: Self.firstPrompt)
+    let fork = try await Self.fork(fixture)
+
+    _ = try await fixture.harness.connection.setSessionConfigOption(
+      SetSessionConfigOptionRequest(
+        configId: ConfigOptions.modelOptionId, sessionId: fixture.sessionId,
+        value: .id(SessionConfigValueId(rawValue: ModelSlot.flash.rawValue))))
+
+    #expect(await fixture.harness.agent.sessions[fork.sessionId]?.selectedSlot == .flash)
+  }
+
   /// A model slot switch of a fork restores the fork from the recording root, and the fork
   /// works on the new slot.
   @Test(.timeLimit(.minutes(1))) func aModelSlotSwitchOfTheForkSelectsTheNewSlot() async throws {
@@ -949,6 +1001,49 @@ import Testing
     let replayed = try await Self.resume(SessionId(rawValue: summary.id.description), in: fixture)
 
     #expect(Self.userTexts(of: replayed) == [Self.firstPrompt, Self.forkPrompt])
+  }
+
+  /// The first prompt of a fork that `fork session` made runs on the surface that the agent gave
+  /// the fork, and the agent holds the fork from its start. Thus a `session/resume` of the fork
+  /// while the prompt runs takes the live fork, and the prompt ends with its answer.
+  @Test(.timeLimit(.minutes(1))) func theFirstPromptOfAToolForkEndsAfterAResumeOfTheFork()
+    async throws
+  {
+    let hold = ScriptedHold()
+    let fixture = try await Self.makeFixture("tool-first-prompt", holding: hold)
+    try await ScriptedPromptFixture.runPrompt(on: fixture, text: Self.firstPrompt)
+    let summary = try await Self.forkFromTheTool(on: fixture, prompt: Self.forkWithPromptPrompt)
+    let forkId = SessionId(rawValue: summary.id.description)
+
+    _ = try await Self.resume(forkId, in: fixture)
+    hold.release()
+    _ = try await ScriptedPromptFixture.waitForUpdates(
+      of: fixture.collector, toReach: "the answer to the first prompt of the fork"
+    ) { Self.agentChunkTexts(of: forkId, in: $0).contains(Self.forkAnswerText) }
+
+    #expect(
+      try await Self.history(of: forkId, in: fixture).entries.contains { entry in
+        guard case .agentMessage(let message) = entry.kind else { return false }
+        return Self.text(of: message.content) == Self.forkAnswerText
+      })
+  }
+
+  /// A cold `session/resume` of the source of a fork that `fork session` made does not make a
+  /// second live fork: the fork that the agent holds stays the live fork of the session
+  /// directory.
+  @Test(.timeLimit(.minutes(1))) func aColdResumeOfTheSourceKeepsTheHeldToolFork() async throws {
+    let fixture = try await Self.makeFixture("tool-cold-source")
+    try await ScriptedPromptFixture.runPrompt(on: fixture, text: Self.firstPrompt)
+    let summary = try await Self.forkFromTheTool(on: fixture)
+    _ = try await fixture.harness.connection.closeSession(
+      CloseSessionRequest(sessionId: fixture.sessionId))
+
+    _ = try await Self.resume(fixture.sessionId, in: fixture)
+    let held = try #require(
+      await fixture.harness.agent.sessions[SessionId(rawValue: summary.id.description)]?.session)
+    let live = try #require(fixture.harness.agent.sessionDirectory.session(id: summary.id))
+
+    #expect((held as AnyObject) === (live as AnyObject))
   }
 }
 

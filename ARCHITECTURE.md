@@ -63,31 +63,46 @@ the shipped binary, the arguments of the command line, or the shell tool.
 ## Forks
 
 A fork (D205) is a root ACP session with a copy of the history of its source up to a cut. The
-Router makes it, and the agent serves it as each other root session. All of it is in
-`Sources/FoundationModelsACPAgent/Agent/`.
+Router maps the cut, and the agent builds the fork with its own surface and serves it as each
+other root session. All of it is in `Sources/FoundationModelsACPAgent/Agent/`.
 
 - **The handler.** `SessionFork` serves `session/fork`: the checks, the map of the cut in
   `_meta.sah.forkCut` to a turn (`SessionForkPoint`), the call of
   `RouterSessionDirectory.fork(_:)`, and the refusals. The fork gets the MCP servers and the
   additional directories of the request only; an omitted list gives none, as ACP states. The
-  handler writes the history file of each fork, also an empty one.
+  handler keeps that surface and the copied history in the `ForkLaunchBook` of the agent for the
+  launcher, by the source and the connection of the request. One request of a key runs at a
+  time. After the fork call it records the additional directories of the fork in the directory.
+- **The launcher.** The directory calls `AgentSessionLauncher.forkSession(_:)` after it mapped
+  the cut, and before it registers the fork and mails its first prompt. `SessionForkLaunch`
+  builds the fork there: it records the agent of the source for the fork, composes the surface
+  (the surface of the `session/fork` request, else the MCP servers, the directories and the user
+  presence of the source for a fork of the `fork session` operation of the `sessions` tool),
+  calls `SessionLaunchForkRequest.makeFork(tools:)` one time, writes the history file of the
+  fork (also an empty one), and puts the fork in the session table. So the first prompt runs on
+  the surface of the agent, and a `session/resume` of the fork takes the live fork: nothing stops
+  and restores it. A tool fork records no additional directories in its `index.md`, because the
+  Router gives no way to change the record of a fork before it registers it.
 - **The turns.** The projector of each session records each delivered mail and the end of each
   answer in the retained history (`MailDeliveryRecord`, history only: no client gets them, and
   a replay leaves them out). `SessionForkHistory` counts the turns from these records with the
   rule of the Router: one turn for each delivered mail of a user message or of a message of
   another session, in the order of delivery. It rounds a cut to the edge of a batch, never cuts
   past the start of the answer that runs, and cuts the retained history at the same turn: a user
-  message moves to its delivery in the copy. It also finds the cut of a fork that the
-  `fork session` operation of the `sessions` tool made. A history file of an earlier build gets
-  the records that that build counted when it is read.
-- **The restore.** `SessionForkRestore` holds the steps of the cold restore for a fork: it stops
-  the live fork of the directory, which runs the tools of the source, gives the fork the agent of
-  its source, and gives a fork with no history file the history that it copied. Only a fork of
-  the `fork session` operation has no history file. When the tool calls do not tell its cut, the
-  fork copies no entry, never the whole source.
+  message moves to its delivery in the copy. For a fork of the `fork session` operation it finds
+  the cut from the tool calls of the fork transcript; when they do not tell the cut, the fork
+  copies no entry, never the whole source. A history file of an earlier build gets the records
+  that that build counted when it is read.
+- **The restore.** A fork restores only by its own id (`restoreColdRoot`, and
+  `AgentSessionLauncher.restoreSession(id:)` for the directory). The restore of a source restores
+  no fork, and a run of a fork is claimed only by the restore of the fork. A model slot switch
+  of a source moves each fork that the agent holds with a switch of its own, by its id
+  (`ModelSlotSwitch`): the restore of the source moves only the recorded forks that have no live
+  session.
 
-The dependency direction does not change: the agent calls the session directory of the Router,
-and the Router does not call the agent for a fork.
+The compile-time dependency direction does not change: the agent calls the session directory of
+the Router, and the Router calls the agent for a fork only through the `SessionLauncher` port
+that the Router declares.
 
 ## Settings
 
