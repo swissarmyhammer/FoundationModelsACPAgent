@@ -104,10 +104,17 @@ comments:
     - evidence: `timeout 1800 swift build --build-tests` printed "Build complete!" with 0 compiler warnings (only the SwiftPM note "missing creator for mutated node" for the mlx bundle). `timeout 1800 swift test --skip-build`: 2460 tests in 256 suites passed, 0 failures, 1 known issue (HarnessSmokeTests, by design), 0 skipped.
     - next: review
   timestamp: 2026-11-19T06:18:12.817376+00:00
+- actor: claude-code
+  id: 01m7s7dstqeqy6rypjh632w3vg
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (3b2a30c). 0 findings, 0 confirmed, 0 refuted. 7 review tasks attempted, 0 failed, 0 skipped. All items of the prior Review Findings sections are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-11-19T06:20:41.175456+00:00
 depends_on:
 - 01M7RWC0Q3R664RM3W2AGKNBVR
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: ffffff9780
 title: 'D205: the record of a tool fork has the directories of its source, and the launcher knows which session/fork request it builds'
 ---
 Found during ^agknbvr (2026-11-18). Both items need a Router API change; the Router session (foundationmodelsrouter-f1) is asked. Do not start until the Router sends the sha.
