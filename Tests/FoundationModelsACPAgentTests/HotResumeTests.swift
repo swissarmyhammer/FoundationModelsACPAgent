@@ -234,6 +234,9 @@ import Testing
     let root: SessionModel
   }
 
+  /// The error of a setup step that a test makes fail on purpose.
+  private struct SetupFailure: Error {}
+
   // MARK: - Fixtures
 
   /// Makes the fixture of a root whose prompt starts the child, with the given steps of the
@@ -275,11 +278,11 @@ import Testing
       childSteps: [
         .holdUntilReleased(textHold), .textDelta(childText), .holdUntilReleased(hold), .endPass,
       ])
-    let tree = try await openPrompt(of: fixture, hold: hold)
-    async let lateText: Void = release(textHold, after: childTextDelay)
-    try await waitForTheTextOfTheChild(of: tree)
-    await lateText
-    return tree
+    return try await openPrompt(of: fixture, hold: hold) { tree in
+      async let lateText: Void = release(textHold, after: childTextDelay)
+      try await waitForTheTextOfTheChild(of: tree)
+      await lateText
+    }
   }
 
   /// Releases a hold after a delay. A cancelled sleep releases the hold at once.
@@ -305,8 +308,8 @@ import Testing
       .textDelta(childText), .holdUntilReleased(window), .textDelta(windowFirstText),
       .textDelta(windowSecondText), .holdUntilReleased(hold), .endPass,
     ])
-    let tree = try await openPrompt(of: fixture, hold: hold)
-    try await waitForTheTextOfTheChild(of: tree)
+    let tree = try await openPrompt(
+      of: fixture, hold: hold, settledBy: waitForTheTextOfTheChild(of:))
     return WindowTree(tree: tree, window: window)
   }
 
@@ -324,8 +327,8 @@ import Testing
       .textDelta(childText), .holdUntilReleased(window), kind.step, .textDelta(childTextAfter),
       .endPass,
     ])
-    let tree = try await openPrompt(of: fixture, hold: ScriptedHold())
-    try await waitForTheTextOfTheChild(of: tree)
+    let tree = try await openPrompt(
+      of: fixture, hold: ScriptedHold(), settledBy: waitForTheTextOfTheChild(of:))
     return WindowTree(tree: tree, window: window)
   }
 
@@ -336,10 +339,10 @@ import Testing
   private static func startAskingTree() async throws -> LiveTree {
     let fixture = try await makeTreeFixture(
       childSteps: [.elicit(message: question), .textDelta(childTextAfter), .endPass])
-    let tree = try await openPrompt(of: fixture, hold: ScriptedHold())
-    let recorder = try #require(fixture.harness.elicitations)
-    _ = try await recorder.waitForCreates(count: requestsOfOneQuestion)
-    return tree
+    return try await openPrompt(of: fixture, hold: ScriptedHold()) { _ in
+      let recorder = try #require(fixture.harness.elicitations)
+      _ = try await recorder.waitForCreates(count: requestsOfOneQuestion)
+    }
   }
 
   /// Starts a root with an open prompt and a child that plays its text, waits on the window
@@ -375,8 +378,8 @@ import Testing
     let fixture = try await ScriptedPromptFixture.make(
       script: script, label: label, workingDirectory: cwd, projectConfigYAML: gatedConfigYAML,
       secretStore: gate)
-    let tree = try await openPrompt(of: fixture, hold: hold)
-    try await waitForTheTextOfTheChild(of: tree)
+    let tree = try await openPrompt(
+      of: fixture, hold: hold, settledBy: waitForTheTextOfTheChild(of:))
     return GatedTree(tree: tree, window: window, gate: gate)
   }
 
@@ -395,31 +398,45 @@ import Testing
     let fixture = try await makeTreeFixture(
       childSteps: [.textDelta(childText), .holdUntilReleased(hold), .endPass],
       wire: wire.replacingAgentEnd(with: holder))
-    let tree = try await openPrompt(of: fixture, hold: hold)
-    try await waitForTheTextOfTheChild(of: tree)
+    let tree = try await openPrompt(
+      of: fixture, hold: hold, settledBy: waitForTheTextOfTheChild(of:))
     return HeldReplayTree(tree: tree, holder: holder)
   }
 
-  /// Sends the prompt of the root and waits until the client holds an update of the child.
+  /// Sends the prompt of the root, waits until the client holds an update of the child, and then
+  /// runs `settle` on the tree.
+  ///
+  /// The returned tree keeps the prompt task open. The test cancels it with
+  /// `defer { tree.prompt.cancel() }`, so the task stops on each exit path of the test.
   ///
   /// - Parameters:
   ///   - fixture: The first agent and its connection.
   ///   - hold: The hold of the child script.
+  ///   - settle: The last step of the setup, for example a wait for the text of the child.
   /// - Returns: The live tree.
-  /// - Throws: Whatever the wait throws.
+  /// - Throws: Whatever the wait or `settle` throws. The prompt task gets a cancel then, so no
+  ///   prompt stays after a setup that fails.
   private static func openPrompt(
-    of fixture: ScriptedPromptFixture, hold: ScriptedHold
+    of fixture: ScriptedPromptFixture, hold: ScriptedHold,
+    settledBy settle: (LiveTree) async throws -> Void
   ) async throws -> LiveTree {
     let root = fixture.sessionId
     let prompt = Task {
       try await fixture.harness.connection.prompt(
         AgentClientHarness.makePromptRequest(sessionId: root, text: rootMarker))
     }
-    let updates = try await fixture.collector.wait(for: "an update of the child") { updates in
-      updates.contains { $0.sessionId != root }
+    do {
+      let updates = try await fixture.collector.wait(for: "an update of the child") { updates in
+        updates.contains { $0.sessionId != root }
+      }
+      let child = try #require(updates.first { $0.sessionId != root }?.sessionId)
+      let tree = LiveTree(fixture: fixture, prompt: prompt, hold: hold, childId: child)
+      try await settle(tree)
+      return tree
+    } catch {
+      prompt.cancel()
+      throw error
     }
-    let child = try #require(updates.first { $0.sessionId != root }?.sessionId)
-    return LiveTree(fixture: fixture, prompt: prompt, hold: hold, childId: child)
   }
 
   /// Waits until the first connection holds ``childText`` on the stream of the child of a tree.
@@ -803,12 +820,35 @@ import Testing
     return ScriptedPromptFixture.idleStopReason(in: updates.filter { $0.sessionId == root })
   }
 
+  // MARK: - The setup
+
+  /// A setup step that throws after the prompt of the root is open cancels the prompt task. So
+  /// no prompt stays after a setup that fails.
+  @Test func aSetupStepThatThrowsCancelsTheOpenPrompt() async throws {
+    let hold = ScriptedHold()
+    let fixture = try await Self.makeTreeFixture(
+      childSteps: [.textDelta(Self.childText), .holdUntilReleased(hold), .endPass])
+    var prompt: Task<PromptResponse, any Error>?
+
+    await #expect(throws: SetupFailure.self) {
+      _ = try await Self.openPrompt(of: fixture, hold: hold) { tree in
+        prompt = tree.prompt
+        throw SetupFailure()
+      }
+    }
+
+    #expect(try #require(prompt).isCancelled)
+    hold.release()
+    await fixture.close()
+  }
+
   // MARK: - The work goes on
 
   /// A hot resume leaves the open prompt of the root open: it ends as the script says, never
   /// as `cancelled`.
   @Test func aHotResumeDoesNotCancelTheOpenPrompt() async throws {
     let tree = try await Self.startLiveTree()
+    defer { tree.prompt.cancel() }
     let second = try await Self.openSecondConnection(to: tree)
     _ = try await Self.resumeTrace(of: tree, on: second)
 
@@ -822,6 +862,7 @@ import Testing
   /// new connection sees the end.
   @Test func theChildRunEndsNormallyAfterAHotResume() async throws {
     let tree = try await Self.startLiveTree()
+    defer { tree.prompt.cancel() }
     let second = try await Self.openSecondConnection(to: tree)
     _ = try await Self.resumeTrace(of: tree, on: second)
     let child = tree.childId
@@ -844,6 +885,7 @@ import Testing
   /// sends the history of the child.
   @Test func theReplayAnnouncesTheChildBeforeItsHistory() async throws {
     let tree = try await Self.startLiveTree()
+    defer { tree.prompt.cancel() }
     let second = try await Self.openSecondConnection(to: tree)
     let child = tree.childId
 
@@ -861,6 +903,7 @@ import Testing
   /// The replay sends the text of the child under the id of the child, before the response.
   @Test func theReplayHoldsTheHistoryOfTheChildBeforeTheResponse() async throws {
     let tree = try await Self.startLiveTree()
+    defer { tree.prompt.cancel() }
     let second = try await Self.openSecondConnection(to: tree)
     let child = tree.childId
 
@@ -876,6 +919,7 @@ import Testing
   /// The wire of a hot resume follows the rules of the sub-agent trace validator.
   @Test func theWireOfAHotResumeFollowsTheRulesOfTheValidator() async throws {
     let tree = try await Self.startLiveTree()
+    defer { tree.prompt.cancel() }
     let second = try await Self.openSecondConnection(to: tree)
 
     let trace = try await Self.resumeTrace(of: tree, on: second)
@@ -1060,6 +1104,7 @@ import Testing
   @Test(arguments: QuestionKind.allCases)
   func theAnswerToAQuestionOfTheWindowReachesTheChild(kind: QuestionKind) async throws {
     let windowTree = try await Self.startQuestionWindowTree(asking: kind)
+    defer { windowTree.tree.prompt.cancel() }
     let wire = try await Self.resumeAcrossAQuestionWindow(of: windowTree)
     let child = windowTree.tree.childId
 
@@ -1080,6 +1125,7 @@ import Testing
   @Test(arguments: QuestionKind.allCases)
   func aQuestionOfTheWindowIsAskedOnceOnTheNewOwner(kind: QuestionKind) async throws {
     let windowTree = try await Self.startQuestionWindowTree(asking: kind)
+    defer { windowTree.tree.prompt.cancel() }
     let wire = try await Self.resumeAcrossAQuestionWindow(of: windowTree)
 
     try await Self.answerQuestion(kind, of: wire.root)
@@ -1152,6 +1198,7 @@ import Testing
   /// The new connection owns the root after the resume.
   @Test func theNewConnectionOwnsTheRootAfterAHotResume() async throws {
     let tree = try await Self.startLiveTree()
+    defer { tree.prompt.cancel() }
     let second = try await Self.openSecondConnection(to: tree)
     _ = try await Self.resumeTrace(of: tree, on: second)
 
@@ -1166,6 +1213,7 @@ import Testing
   /// new connection only.
   @Test func theOldConnectionGetsNoUpdateAfterAHotResume() async throws {
     let tree = try await Self.startLiveTree()
+    defer { tree.prompt.cancel() }
     let second = try await Self.openSecondConnection(to: tree)
     _ = try await Self.resumeTrace(of: tree, on: second)
     let countAtResume = await tree.fixture.collector.updates.count
@@ -1183,6 +1231,7 @@ import Testing
   /// old connection keeps its one request, and gets no second.
   @Test func aPendingQuestionOfTheChildIsAskedOnceOnTheNewOwner() async throws {
     let tree = try await Self.startAskingTree()
+    defer { tree.prompt.cancel() }
     let second = try await Self.openSecondConnection(to: tree)
     let recorder = try #require(second.elicitations)
 
@@ -1198,6 +1247,7 @@ import Testing
   /// The old connection does not get the question a second time.
   @Test func theOldConnectionIsNotAskedTheQuestionAgain() async throws {
     let tree = try await Self.startAskingTree()
+    defer { tree.prompt.cancel() }
     let second = try await Self.openSecondConnection(to: tree)
     let recorder = try #require(second.elicitations)
     let root = try await second.client.resumeSession(tree.replayRequest)
@@ -1214,6 +1264,7 @@ import Testing
   /// The answer of the new owner reaches the child, and the child plays its next text.
   @Test func theAnswerOfTheNewOwnerReachesTheChild() async throws {
     let tree = try await Self.startAskingTree()
+    defer { tree.prompt.cancel() }
     let second = try await Self.openSecondConnection(to: tree)
     let root = try await second.client.resumeSession(tree.replayRequest)
 
@@ -1237,6 +1288,7 @@ import Testing
     let unsupportedMode = ElicitationRelay.DeclineReason.unsupportedMode.rawValue
     let records = try await TelemetryCapture.run(forbidding: []) { context in
       let tree = try await Self.startAskingTree()
+      defer { tree.prompt.cancel() }
       let second = try await Self.openSecondConnection(
         to: tree, capabilities: Self.urlOnlyCapabilities)
       _ = try await second.client.resumeSession(tree.replayRequest)
@@ -1279,6 +1331,7 @@ import Testing
   /// replay through, so the request fails before it takes the session.
   @Test func aFailedHotResumeLeavesTheOwnerAsItWas() async throws {
     let tree = try await Self.startLiveTree()
+    defer { tree.prompt.cancel() }
     let agent = tree.fixture.harness.agent
     let ownerBefore = agent.connections.owner(of: tree.rootId)
 
@@ -1292,6 +1345,7 @@ import Testing
   /// A hot resume that fails leaves the live session open, with its prompt running to its end.
   @Test func aFailedHotResumeLeavesTheLiveSessionUsable() async throws {
     let tree = try await Self.startLiveTree()
+    defer { tree.prompt.cancel() }
     let agent = tree.fixture.harness.agent
 
     _ = try? await agent.resumeSession(tree.replayRequest)
