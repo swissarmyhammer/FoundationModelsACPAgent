@@ -1,18 +1,22 @@
 import Foundation
 import FoundationModelsACP
+import FoundationModelsExtras
 import FoundationModelsRouter
 
-/// The folder of one recorded session: its record (`index.md`) and the folder that holds it.
+/// The folder of one recorded session: the summary of its record (`index.md`) and the folder
+/// that holds it.
 struct RecordedSessionFolder: Sendable {
-  /// The record of the session.
-  let record: SessionRecord
+  /// The summary of the session that the Router makes from its record
+  /// (`SessionSummary.init(record:)`): the one rule that turns a record into a name, a slug and
+  /// the facts of the session.
+  let summary: SessionSummary
 
   /// The folder of the session: `<root>/<id>/`, or `<root>/<source>/<id>/` for a fork.
   let directory: URL
 
   /// The session id.
   var sessionId: SessionId {
-    SessionId(rawValue: record.sessionId.description)
+    SessionId(rawValue: summary.id.description)
   }
 
   /// The folder of each session recorded under `directory`, at any depth: each session folder
@@ -26,7 +30,7 @@ struct RecordedSessionFolder: Sendable {
   static func all(under directory: URL) throws -> [RecordedSessionFolder] {
     try RouterSessionDirectory.recordedSessions(in: directory).flatMap { record in
       let folder = RecordedSessionFolder(
-        record: record,
+        summary: SessionSummary(record: record),
         directory: directory.appendingPathComponent(
           record.sessionId.ulidString, isDirectory: true))
       return [folder] + (try all(under: folder.directory))
@@ -56,7 +60,8 @@ enum RecordedHistoryRead: Sendable {
       }
       return .content(
         TranscriptSearchIndex.SessionContent(
-          chunks: history.searchChunks, metadata: TranscriptSessionMetadata(record: session.record))
+          chunks: history.searchChunks,
+          metadata: TranscriptSessionMetadata(summary: session.summary))
       )
     } catch {
       ACPAgentTelemetry.logger(.transcriptSearch).warning(
