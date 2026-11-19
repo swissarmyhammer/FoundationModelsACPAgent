@@ -263,6 +263,46 @@ import Testing
     #expect(try capture.bytes().isEmpty)
   }
 
+  /// The name of the project profile that does not resolve on the stub
+  /// path.
+  private static let unresolvableProfileName = "unresolvable"
+
+  /// A project profile file whose decision model is a GGUF file that the
+  /// stub tree does not have, so the stub router cannot size it and the
+  /// profile does not resolve.
+  private static let unresolvableProfileDocument = """
+    decision: ["stub-owner/no-such-gguf/no-such-model.gguf"]
+    """
+
+  /// A profile that does not resolve exits 1 (task ^8a6cykg). The reason
+  /// names the profile and goes to stderr; the process does not trap.
+  @Test
+  func aProfileThatDoesNotResolveExitsErrorWithItsReason() async throws {
+    let fixture = ConfigCommandFixture(label: "ExitCodeTests-unresolvable")
+    let profiles = fixture.projectDirectory.appendingPathComponent(ProfileFile.folderName)
+    try FileManager.default.createDirectory(at: profiles, withIntermediateDirectories: true)
+    try Self.unresolvableProfileDocument.write(
+      to: profiles.appendingPathComponent("\(Self.unresolvableProfileName).yaml"),
+      atomically: true, encoding: .utf8)
+    try fixture.writeProjectConfig("profile: \(Self.unresolvableProfileName)\n")
+    let capture = try AnswerCapture(label: "ExitCodeTests-unresolvable-answer")
+    let run = try #require(
+      try AcpAgentCommand.parseAsRoot(
+        ["run", "--cwd", fixture.workspace.path, Self.promptText])
+        as? AcpAgentCommand.Run)
+    let environment = try fixture.makeStubEnvironment()
+
+    let error = try #require(
+      await #expect(throws: ProfileResolutionError.self) {
+        _ = try await run.perform(environment: environment, into: capture.writer)
+      })
+
+    #expect(AcpAgentCommand.exitOutcome(for: error) == AcpAgentCommand.ExitOutcome(.error))
+    #expect(
+      AcpAgentCommand.fullMessage(for: error).contains(
+        "profile \"\(Self.unresolvableProfileName)\" did not resolve"))
+  }
+
   /// The ArgumentParser usage error exits 2, and not the library's own
   /// `EX_USAGE`.
   @Test func theArgumentParserUsageErrorExitsUsage() {

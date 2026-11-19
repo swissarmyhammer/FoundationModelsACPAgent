@@ -1,8 +1,39 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '9880'
+comments:
+- actor: claude-code
+  id: 01m7tmfp1znfby68nx6anwt3kb
+  text: |-
+    Research is done.
+    - Defect 1 cause: `ProfileConfiguration.init(from:)` decodes the old map form with no `preset` to `name = BundledProfiles.defaultName` ("large"). `ConfigurationLoader.resolvingProfile` uses the fallback only when `root.value(at: profile) == nil`. The map is present, so the loader keeps "large" and does not use the fallback. `SettingsStore` runs the same steps (`loadedConfiguration`). `ModelsEngine.selectedProfile()` has the same defect: it decodes the map and reads "large". `profile: null` has the same defect too (decodeIfPresent gives nil, the default name "large" stays, and the key is present).
+    - Budget: `Router.estimateFit` and `Router.resolve` both read `hostBudget()` of the same probe. `ComposedAgent.compose` gives `profileFitSource ?? router` to `fallbackName(using:)`, the same router as the resolution. So the budgets agree on the agent path; the cause is the decode, not the budget.
+    - Defect 2: the trap "Error raised at top level" is in the client repository: `LiveAgentServer.main() async throws` (`@main`) in FoundationModelsACPClient/IntegrationTests/LiveAgentServer. It builds `RoutedACPAgent` itself and lets the thrown `ProfileResolutionError` escape `main`. In this repository, `AcpAgentCommand.launch(modelChoice:)` catches each error and exits by `exitAfterFailure` (stderr, code 1). The only resolution is in `RoutedACPAgent.init`, before the wire opens; `session/new` resolves no profile.
+  timestamp: 2026-11-19T19:28:08.767962+00:00
+- actor: claude-code
+  id: 01m7tpn0hhxgsqk2x3x1gkhqg3
+  text: |-
+    Implementation is done (no commit).
+    - Cause of "large": `ProfileConfiguration.init(from:)` decodes the old map form with no `preset` (and `profile: ~`) to the in-code default `large`, and `ConfigurationLoader.resolvingProfile` used the fallback only when the `profile` key was absent. The budget was not the cause: `Router.estimateFit` and `Router.resolve` read the same `hostBudget()`, and `ComposedAgent.compose` gives the same router to `fallbackName(using:)`.
+    - Fix: new `ProfileConfiguration.name(of:)` (the string, or the `preset` string; else nil). `ConfigurationLoader.resolvingProfile` (and thus `SettingsStore`) and `ModelsEngine.selectedProfile()` use the fallback when the value gives no name.
+    - Tests: `OldProfileMapFallbackTests` (loader name, definition, retired-key warnings, null value, composition with a fit stub where only small fits gives small), `ModelsGraphTests.theOldMapFormWithNoPresetSelectsTheFallback`, `FitFallbackBudgetTests` (a router on the 26,800,603,136-byte budget where large does not fit chooses a smaller profile, and the same router resolves it), `ExitCodeTests.aProfileThatDoesNotResolveExitsErrorWithItsReason`. `ConfigurationLoaderTests.theOtherKeysOfTheOldMapFormGiveWarnings` asserted the old wrong value (`large`); it now asserts the fallback.
+    - RED: the six defect-1 tests failed before the fix. The budget tests and the CLI exit test passed at the first run: that behavior was already correct, and they stay as guards.
+    - Defect 2: the trap is in the client repository (`LiveAgentServer.main() async throws`, `@main`). `acp-agent` already catches each error in `AcpAgentCommand.launch` and exits 1 with the reason on stderr; the new CLI test proves it. `session/new` resolves no profile in this agent (the one resolution is in `RoutedACPAgent.init`, before the wire), thus no refusal path was added. A card for the client `@main` was sent to the FoundationModelsACPClient board.
+    - Full suite: 2646 tests, 1 failure: `SessionCancelStopsAllWorkTests.aShutdownStopsTheBackgroundChildRunAndCommandAtOnce` hit its 60 s time limit under load; the suite passed alone in 0.5 s. Not related to this change.
+  timestamp: 2026-11-19T20:06:00.497459+00:00
+- actor: claude-code
+  id: 01m7tpn4rh8j9v50663bhmgr8g
+  text: |-
+    ### implement — changed
+    - evidence: Sources/FoundationModelsACPAgent/Configuration/AgentConfiguration.swift, Configuration/ConfigurationLoader.swift, Models/ModelsEngine.swift; Tests: OldProfileMapFallbackTests.swift (new), FitFallbackBudgetTests.swift (new), ExitCodeTests.swift, ModelsGraphTests.swift, ConfigurationLoaderTests.swift
+    - next: review
+
+    ### test — red
+    - evidence: `timeout 1800 swift test --skip-build`: 2646 tests, 1 failure (SessionCancelStopsAllWorkTests.aShutdownStopsTheBackgroundChildRunAndCommandAtOnce, 60 s time limit under load; the suite passed alone, 7/7). Build: "Build complete!", 0 compiler warnings (1 build-system line "missing creator for mutated node").
+    - next: run the full suite again when the machine has no other build.
+  timestamp: 2026-11-19T20:06:04.817073+00:00
+position_column: doing
+position_ordinal: '8180'
 title: 'D203: an old profile map with no preset takes the default by fit, and a profile that does not resolve is a reported error, not a fatal error'
 ---
 Bug report from the FoundationModelsACPClient session (2026-11-19), CI run 44584505762, test `aConnectionModelRunsOneTurnAgainstARealAgent`. Log: /private/tmp/claude-501/-Users-wballard-github-swissarmyhammer-FoundationModelsACPClient/1f1ff490-1f6d-403e-a4b8-a170cd97b235/scratchpad/integ-ci-3.log lines 1544-1560.

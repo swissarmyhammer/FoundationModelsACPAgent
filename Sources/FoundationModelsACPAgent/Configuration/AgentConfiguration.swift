@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsExtras
 import FoundationModelsRouter
 
 /// A configuration section whose keys the loader checks before the decode:
@@ -294,7 +295,9 @@ public struct FontRoleConfiguration: Codable, Equatable, Sendable, KeyCheckedSec
 /// (``BundledProfiles/fallbackName(using:)``).
 ///
 /// The old map form of the section loads: its `preset` key gives the name,
-/// and each other key (``retiredKeys``) gives a warning and is ignored.
+/// and each other key (``retiredKeys``) gives a warning and is ignored. The
+/// old map form with no `preset` gives no name, thus the loader uses the
+/// fallback profile for it, as for a load where no layer sets the key.
 public struct ProfileConfiguration: Codable, Equatable, Sendable {
   /// The key of the old map form that gives the name.
   public static let presetKey = "preset"
@@ -340,6 +343,32 @@ public struct ProfileConfiguration: Codable, Equatable, Sendable {
     let container = try decoder.container(keyedBy: AnyCodingKey.self)
     name = try container.decodeIfPresent(String.self, forKey: AnyCodingKey(stringValue: Self.presetKey))
       ?? name
+  }
+
+  /// The name of the profile that one `profile` value gives: the string,
+  /// or the `preset` string of the old map form.
+  ///
+  /// The decode of a value with no name, such as the old map form with no
+  /// `preset`, keeps the in-code default `large`. A load must not use that
+  /// default: it uses the fallback profile, which is the largest bundled
+  /// profile that fits the machine (D203). Each reader of the settings
+  /// that selects a profile calls this function to know if the value gives
+  /// a name.
+  ///
+  /// - Parameter value: The value of the `profile` key.
+  /// - Returns: The name, or `nil` when the value gives no name.
+  static func name(of value: YAMLValue) -> String? {
+    switch value {
+    case .string(let name):
+      return name
+    case .dictionary(let keys):
+      guard case .string(let name) = keys[presetKey] else {
+        return nil
+      }
+      return name
+    case .int, .double, .bool, .array, .null:
+      return nil
+    }
   }
 
   /// Encodes the name as one string.

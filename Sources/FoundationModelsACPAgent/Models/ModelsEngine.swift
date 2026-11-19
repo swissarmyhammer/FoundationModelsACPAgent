@@ -104,6 +104,7 @@ struct ModelsEngine: Sendable {
   ///
   /// - Returns: The profile. The fallback profile of the store
   ///   (``SettingsStore/fallbackProfileName``) when no layer has a value,
+  ///   when the value gives no name (``ProfileConfiguration/name(of:)``),
   ///   or when the value names a profile that no layer has, as a load
   ///   does. A log record tells of the fallback of an unknown name.
   /// - Throws: What the store throws for a level file, the decode error of
@@ -120,6 +121,9 @@ struct ModelsEngine: Sendable {
     } catch {
       Self.logFailedRead(of: nil, error: error)
       throw error
+    }
+    guard ProfileConfiguration.name(of: setting.value) != nil else {
+      return try fallbackProfile()
     }
     do {
       return try profileLayers.read(selection.name, cwd: nil)

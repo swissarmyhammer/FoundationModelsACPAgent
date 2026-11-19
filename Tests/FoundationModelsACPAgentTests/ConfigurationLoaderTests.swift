@@ -1146,7 +1146,7 @@ import Testing
         .retiredKey(section: "profile", key: "name"),
         .retiredKey(section: "profile", key: "standard"),
       ])
-    #expect(loaded.configuration.profile == AgentConfiguration().profile)
+    #expect(loaded.configuration.profile.name == BundledProfiles.smallestName)
   }
 
   /// An unknown key of the old map form is an error.

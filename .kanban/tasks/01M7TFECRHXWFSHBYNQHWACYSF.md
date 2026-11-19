@@ -1,8 +1,19 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '9680'
+comments:
+- actor: claude-code
+  id: 01m7tma8fhrkgt7ge5v1kyhcv6
+  text: |-
+    ### result — no reproduce, closed (2026-11-19)
+    - Evidence: the only copy of par-22.log is /private/tmp/claude-501/-Users-wballard-github-swissarmyhammer-FoundationModelsACPAgent/7f79398c-4f24-456b-834d-3e154f4ed223/scratchpad/runs/par-22.log. It is exactly 172032 bytes (42 x 4096) and ends in the middle of a line ("Test theRestoredGrandchildRunsAgain() passed after 14.8"), with no test issue. The times of the ^jstmpxs loop show that run 22 was still active more than 6 minutes after its last line, and that the next run started about 600 s after run 22 started. Thus the run probably HUNG and `timeout 600` stopped it; it probably did not crash.
+    - No crash report: ~/Library/Logs/DiagnosticReports/ has no .ips file for FoundationModelsACPAgentPackageTests, swiftpm-testing-helper or xctest, on any date.
+    - New loop on main f382d51: 100 runs of `timeout 600 swift test --skip-build --parallel --filter 'Redrive|Resume|Restored|Subagent'`: pass=100 fail=0, 0 timeouts, 0 truncated logs, 22-52 s each. A watchdog that samples a run after 240 s never fired. Logs: /private/tmp/claude-501/-Users-wballard-github-swissarmyhammer-FoundationModelsACPAgent/7f79398c-4f24-456b-834d-3e154f4ed223/scratchpad/hwruns/ (par-summary.txt).
+    - The hang was before the ^jstmpxs fix (97903c2), which removed one ordering race of a restored run; it was not proved to be the same cause.
+    - No code change. If a parallel resume run hangs again, open a new card with a stack sample of the hung process.
+  timestamp: 2026-11-19T19:25:11.025829+00:00
+position_column: done
+position_ordinal: ffffffa880
 title: A parallel run of the resume suites stopped once in the middle of its log, with no test issue
 ---
 Found during ^jstmpxs (2026-11-19).

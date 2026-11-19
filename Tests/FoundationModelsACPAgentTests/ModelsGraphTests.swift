@@ -456,6 +456,23 @@ import Testing
         == [fixture.store.fallbackProfileName])
   }
 
+  /// A user `profile` in the old map form with no `preset` gives no name,
+  /// and selects the fallback profile, as the load of a session does.
+  @Test func theOldMapFormWithNoPresetSelectsTheFallback() async throws {
+    let fixture = try SettingsGraphFixture(
+      label: "models-old-map-no-preset", secretStore: InMemorySecretStore(),
+      fallbackProfileName: BundledProfiles.smallestName)
+    try Self.writeUserFile(
+      "profile:\n  standard: [\"mlx-community/Qwen3-4B-4bit\"]\n",
+      at: ConfigurationLoader.configFileName, in: fixture)
+
+    let rows = try await Self.profiles(Self.graph(fixture))
+
+    #expect(
+      rows.compactMap { $0["selected"] as? Bool == true ? $0["name"] as? String : nil }
+        == [fixture.store.fallbackProfileName])
+  }
+
   /// The text of a profile file that does not decode.
   static let badProfileFileText = "slots: []\n"
 

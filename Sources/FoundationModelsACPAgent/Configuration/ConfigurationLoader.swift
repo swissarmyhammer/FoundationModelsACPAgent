@@ -502,8 +502,10 @@ public struct ConfigurationLoader: Sendable {
 
   /// `configuration` with the profile file of its profile name, read from
   /// the layers of the working directory of this loader. When no layer of
-  /// the configuration sets `profile`, the name is
-  /// ``fallbackProfileName``. When no layer of the profiles has the name,
+  /// the configuration gives a profile name, the name is
+  /// ``fallbackProfileName``. A layer that sets `profile` to the old map
+  /// form with no `preset`, or to `null`, gives no name
+  /// (``ProfileConfiguration/name(of:)``). When no layer of the profiles has the name,
   /// the profile is the profile of ``fallbackProfileName``, a warning names
   /// the value and every available name, and the name of the configuration
   /// does not change.
@@ -511,7 +513,7 @@ public struct ConfigurationLoader: Sendable {
   /// - Parameters:
   ///   - configuration: The decoded configuration.
   ///   - root: The merged tree that `configuration` decodes from. It tells
-  ///     if a layer sets `profile`.
+  ///     if a layer gives a profile name.
   ///   - warnings: The warnings of the load. This adds one
   ///     ``ConfigurationWarning/unknownProfile(name:available:fallback:)``
   ///     when no layer has the name.
@@ -523,7 +525,7 @@ public struct ConfigurationLoader: Sendable {
     warnings: inout [ConfigurationWarning]
   ) throws -> AgentConfiguration {
     var resolved = configuration
-    if root.value(at: ProfileConfiguration.keyPath) == nil {
+    if root.value(at: ProfileConfiguration.keyPath).flatMap(ProfileConfiguration.name(of:)) == nil {
       resolved.profile.name = fallbackProfileName
     }
     let available = profileLayers.names(cwd: workingDirectory)
