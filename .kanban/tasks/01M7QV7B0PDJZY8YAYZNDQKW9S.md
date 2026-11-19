@@ -35,8 +35,15 @@ comments:
     - evidence: c668feb — Sources/FoundationModelsACPAgent/Agent/SessionFork.swift, Sources/FoundationModelsACPAgent/Agent/SessionForkHistory.swift, Tests/FoundationModelsACPAgentTests/SessionForkTests.swift. `swift build --build-tests`: Build complete!, 0 compiler warnings. SessionForkTests + SessionForkHandlerTests: 33 pass.
     - next: review the task again.
   timestamp: 2026-11-19T03:24:29.859047+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m7rxw7wwnvmef4yjsg7dsz1y
+  text: |-
+    ### review — clean
+    - evidence: review sha c668feb~1..c668feb; 0 findings, 0 confirmed, 0 refuted, 7 attempted, 0 failed. 3 files reviewed. The 2 .kanban files are excluded by .reviewignore. All prior findings are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-11-19T03:33:48.572765+00:00
+position_column: done
+position_ordinal: ffffff9180
 title: 'D205: announce session/fork with the forkCut flag; map an ACP message id to a history position'
 ---
 Decision D205 in `TestudoApp/features/decisions.md` (commit 483664d). Brief: `/Users/wballard/github/swissarmyhammer/.briefs/fork/acpa-brief.md`, changes 1 and 2. Overview: `overview.md` in the same folder.

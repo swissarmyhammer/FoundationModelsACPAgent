@@ -96,10 +96,17 @@ comments:
     - evidence: cb11d45 — Sources/FoundationModelsACPAgent/Agent/SessionFork.swift, Sources/FoundationModelsACPAgent/Agent/SessionForkHistory.swift, Sources/FoundationModelsACPAgent/Agent/SessionForkRestore.swift, Tests/FoundationModelsACPAgentTests/SessionForkHandlerTests.swift, README.md, ARCHITECTURE.md. `swift build --build-tests`: Build complete!, 0 compiler warnings. `timeout 1800 swift test --skip-build`: 2422 tests in 254 suites pass (1 known issue: the pre-existing `withKnownIssue` in HarnessSmokeTests).
     - next: review the task again. Not pushed.
   timestamp: 2026-11-19T03:30:31.564936+00:00
+- actor: claude-code
+  id: 01m7rxzq35s92k8rzvq89q887y
+  text: |-
+    ### review — clean
+    - evidence: review sha cb11d45~1..cb11d45; 0 findings, 0 confirmed, 0 refuted, 7 attempted, 0 failed. 4 files reviewed. The 4 .kanban files are excluded by .reviewignore. No validator matches ARCHITECTURE.md and README.md. All prior findings and the decision item are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-11-19T03:35:42.437300+00:00
 depends_on:
 - 01M7QV7B0PDJZY8YAYZNDQKW9S
-position_column: doing
-position_ordinal: '8280'
+position_column: done
+position_ordinal: ffffff9280
 title: 'D205: session/fork makes the fork through the Router, with the grants, MCP servers and directories of the source'
 ---
 Decision D205 in `TestudoApp/features/decisions.md` (commit 483664d). Brief: `/Users/wballard/github/swissarmyhammer/.briefs/fork/acpa-brief.md`, changes 3 and 4. Overview: `overview.md` in the same folder.
