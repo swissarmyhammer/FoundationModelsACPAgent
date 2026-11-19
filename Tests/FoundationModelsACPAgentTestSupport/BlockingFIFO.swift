@@ -18,11 +18,17 @@ public enum BlockingFIFO {
   /// keep a reader back for a long time, so the limit is large. It is finite,
   /// so a reader that never comes makes the test fail and does not stop the
   /// test process for ever.
-  public static let defaultReaderWait = Duration.seconds(120)
+  public static let defaultReaderWait = Duration.seconds(defaultReaderWaitSeconds)
+
+  /// The number of seconds of ``defaultReaderWait``.
+  private static let defaultReaderWaitSeconds = 120
 
   /// The time between two attempts to open the write end while no reader
   /// holds the pipe.
-  private static let openRetryInterval = Duration.milliseconds(10)
+  private static let openRetryInterval = Duration.milliseconds(openRetryIntervalMilliseconds)
+
+  /// The number of milliseconds of ``openRetryInterval``.
+  private static let openRetryIntervalMilliseconds = 10
 
   /// The `errno` values of an open with `O_NONBLOCK` that tell the caller to
   /// try again: no reader holds the pipe (`ENXIO`), or a signal stopped the
@@ -68,6 +74,29 @@ public enum BlockingFIFO {
   public static func openWriteEnd(
     at path: URL, waitingAtMost limit: Duration = defaultReaderWait
   ) async throws -> FileHandle {
+    try await openWriteEnd(at: path, waitingAtMost: limit, onNoReaderYet: {})
+  }
+
+  /// Opens the write end of the pipe at `path` when a reader holds the pipe
+  /// open, and calls `onNoReaderYet` after each attempt that found no reader.
+  ///
+  /// The open is the same as ``openWriteEnd(at:waitingAtMost:)``. A test uses
+  /// `onNoReaderYet` to know that the open waits for a reader, for example to
+  /// cancel the task only while it waits between two attempts.
+  ///
+  /// - Parameters:
+  ///   - path: The path of the pipe.
+  ///   - limit: The longest time to wait for a reader.
+  ///   - onNoReaderYet: The hook that the open calls after each attempt that
+  ///     found no reader, before it waits for the next attempt.
+  /// - Returns: The write handle. It closes its descriptor when it is
+  ///   released.
+  /// - Throws: ``BlockingFIFOError/noReader(path:limit:)`` when no reader
+  ///   came in the time `limit`, `CancellationError` when the task was
+  ///   cancelled, or another open error as a `POSIXError`.
+  public static func openWriteEnd(
+    at path: URL, waitingAtMost limit: Duration, onNoReaderYet: () -> Void
+  ) async throws -> FileHandle {
     let clock = ContinuousClock()
     let deadline = clock.now.advanced(by: limit)
     while true {
@@ -78,6 +107,7 @@ public enum BlockingFIFO {
       guard clock.now < deadline else {
         throw BlockingFIFOError.noReader(path: path.path, limit: limit)
       }
+      onNoReaderYet()
       try await Task.sleep(for: openRetryInterval, clock: clock)
     }
   }

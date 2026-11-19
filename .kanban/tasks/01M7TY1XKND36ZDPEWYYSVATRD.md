@@ -33,8 +33,34 @@ comments:
     - evidence: review sha HEAD~1..HEAD; 5 findings (5 confirmed, 1 refuted, 0 failed) — Tests/FoundationModelsACPAgentTestSupport/BlockingFIFO.swift:21, Tests/FoundationModelsACPAgentTestSupport/BlockingFIFO.swift:25, Tests/FoundationModelsACPAgentTests/BlockingFIFOTests.swift:26, Tests/FoundationModelsACPAgentTests/BlockingFIFOTests.swift:62, Tests/FoundationModelsACPAgentTests/BlockingFIFOTests.swift:72
     - next: correct each finding in the "Review Findings (2026-11-19 16:33)" section, then run the review again.
   timestamp: 2026-11-19T22:36:30.163735+00:00
-position_column: review
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m7tzy72m4mgs7vzdn8vfgw8s
+  text: |-
+    Picked up the 5 review findings.
+    - swiftlint 0.65.1 with only `no_magic_numbers` and `allowed_numbers: [0, 1, -1, 100]` reports BlockingFIFO.swift at the two `static let` values (120 and 10), and nothing in BlockingFIFOTests.swift.
+    - Plan for the cancel test: an overload `openWriteEnd(at:waitingAtMost:onNoReaderYet:)` calls a hook after each attempt that found no reader. The old signature stays and forwards with an empty hook, so the doc links in NamedPipe.swift and StubChunkGateWriter.swift stay valid and those files do not change. The test cancels only after the first hook call.
+    - The cancel test uses a finite wait (10 s) in place of the 3600 s wait. A loop that ignores the cancel then ends with `noReader` and the test fails with a clear message. The earlier discovery is that `.timeLimit` does not end a test whose task never returns, so the 3600 s wait would make a broken loop hang the run.
+  timestamp: 2026-11-19T22:48:19.284594+00:00
+- actor: claude-code
+  id: 01m7v0btga6bzvdcg29j8jhbd5
+  text: |-
+    Findings corrected. All 5 items are `- [x]`. The text of finding 5 now says "the require macro", and the stray tag `require` is gone (tags: flaky, test).
+    - Magic numbers (findings 1 and 2): BlockingFIFO.swift now has `defaultReaderWaitSeconds = 120` and `openRetryIntervalMilliseconds = 10`, as `IndexPoll.intervalMilliseconds` does. swiftlint 0.65.1 (`no_magic_numbers`, `allowed_numbers: [0, 1, -1, 100]`) reports nothing in BlockingFIFO.swift and BlockingFIFOTests.swift.
+    - Reuse (finding 3): `makePipe(label:)` in the tests now calls `NamedPipe.makeDirectory(holding:label:)` and appends the pipe name. The copy of the directory and pipe code is deleted.
+    - Cancel test (finding 4): new overload `openWriteEnd(at:waitingAtMost:onNoReaderYet:)` calls the hook after each attempt that found no reader, before the sleep. The old signature forwards with an empty hook, so NamedPipe.swift and StubChunkGateWriter.swift did not change. The test waits for the first hook call on an `AsyncStream`, and only then cancels. The test wait is 10 s (`waitThatTheCancelEnds`), so an open that ignores the cancel ends with `noReader` and the test fails clearly; `.timeLimit(.minutes(1))` stays.
+    - Break proof: with `try Task.checkCancellation()` removed and the sleep changed to `try? await Task.sleep`, the cancel test failed after 10.002 s: "expected error of type CancellationError, but no reader opened the named pipe ... in 10.0 seconds of type BlockingFIFOError was thrown instead". The code was then put back. Note: removing only `Task.checkCancellation()` does not break the cancel during the wait, because `Task.sleep` itself throws `CancellationError`; the loop top check covers a cancel before the first attempt.
+    - Concurrency (finding 5): `defer { opener.cancel() }` directly after each of the two `Task { }` in the test file.
+  timestamp: 2026-11-19T22:55:45.162972+00:00
+- actor: claude-code
+  id: 01m7v0bx6f16vkh9n6szm7hy2j
+  text: |-
+    ### implement — changed
+    - evidence: Tests/FoundationModelsACPAgentTestSupport/BlockingFIFO.swift, Tests/FoundationModelsACPAgentTests/BlockingFIFOTests.swift
+    - test: `swift build --build-tests` printed "Build complete!" with 0 compiler warnings. `timeout 1800 swift test --skip-build --filter BlockingFIFOTests`: 3 tests passed. `timeout 1800 swift test --skip-build`: 2660 tests in 281 suites, 3 issues (1 known issue in HarnessSmokeTests, 2 issues in one test `TranscriptSearchHostReadTests.theAgentGivesTheTurnsOfAPromptInTheChangeStream()`: 180 s time limit and `holdThePrompt` false). That test uses no named pipe; it is the open flake of card ^m34dssm. A run of `--filter TranscriptSearchHostReadTests` alone: 4 tests passed in 0.793 s. The full run is red for that card only.
+    - next: /review
+  timestamp: 2026-11-19T22:55:47.919136+00:00
+position_column: doing
+position_ordinal: '8180'
 title: BlockingFIFO.openWriteEnd(at:) can wait for ever for a reader, and nothing cancels it
 ---
 Found during ^6yqbvx6 (2026-11-19).
@@ -53,7 +79,7 @@ In a full parallel run under load, one test process hung until the loop killed i
 
 - A write-end open with no reader ends with a clear error within the time limit.
 - A cancel of the task that waits ends the wait.
-- The normal case (a reader comes) still works. #test #flaky
+- The normal case (a reader comes) still works.
 
 ## Review Findings (2026-11-19 16:33)
 
@@ -62,8 +88,9 @@ In a full parallel run under load, one test process hung until the loop killed i
 > 4 file(s) not reviewed — excluded by an ignore rule:
 > - `.kanban/ (from .reviewignore)` — 4 file(s)
 
-- [ ] `Tests/FoundationModelsACPAgentTestSupport/BlockingFIFO.swift:21` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.
-- [ ] `Tests/FoundationModelsACPAgentTestSupport/BlockingFIFO.swift:25` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.
-- [ ] `Tests/FoundationModelsACPAgentTests/BlockingFIFOTests.swift:26` `reuse/reuse` — The test helper `makePipe(label:)` rebuilds a pipe directory by hand: it calls `makeResolvedDirectory`, appends the file name, and then calls `BlockingFIFO.makePipe`. The same test target already has `NamedPipe.makeDirectory(holding:label:)`, which does exactly this. The new code therefore duplicates an existing helper that the author could have called, and the two copies can drift apart. Replace the body of `makePipe(label:)` with a call to `NamedPipe.makeDirectory(holding: "pipe", label: "BlockingFIFOTests-\(label)")`, then append the file name to the returned directory. Or make the helper return the directory and use it from the tests.
-- [ ] `Tests/FoundationModelsACPAgentTests/BlockingFIFOTests.swift:62` `test-integrity/no-test-cheating` — The cancel test calls `opener.cancel()` right after creating the task. The task most likely has not started, so the first `Task.checkCancellation()` in `openWriteEnd` throws before any sleep. The test then passes without showing that a cancel ends the wait during the retry sleep, which is the behavior its doc comment claims. A broken cancel inside the sleep loop would still pass. Make sure the task is inside the wait before cancelling. For example, wait until the task has made at least one failed attempt (a short sleep or a signal from a test hook), then call `cancel()`. Keep the `.timeLimit` so a cancel that is ignored still fails the test.
-- [ ] `Tests/FoundationModelsACPAgentTests/BlockingFIFOTests.swift:72` `swift/concurrency` — The unstructured Task that runs openWriteEnd is not cancelled if the test fails before it awaits opener.value. If openReadEnd(at:) fails at its #require on line 75, the test body exits early, and the opener task keeps waiting for a reader for up to unreachedReaderWait (3600 s). The task is only cancelled on the success path. Cancel the task on every exit path, for example by adding `defer { opener.cancel() }` directly after line 72. Cancelling a task that has already finished is harmless.
+- [x] `Tests/FoundationModelsACPAgentTestSupport/BlockingFIFO.swift:21` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.
+- [x] `Tests/FoundationModelsACPAgentTestSupport/BlockingFIFO.swift:25` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.
+- [x] `Tests/FoundationModelsACPAgentTests/BlockingFIFOTests.swift:26` `reuse/reuse` — The test helper `makePipe(label:)` rebuilds a pipe directory by hand: it calls `makeResolvedDirectory`, appends the file name, and then calls `BlockingFIFO.makePipe`. The same test target already has `NamedPipe.makeDirectory(holding:label:)`, which does exactly this. The new code therefore duplicates an existing helper that the author could have called, and the two copies can drift apart. Replace the body of `makePipe(label:)` with a call to `NamedPipe.makeDirectory(holding: "pipe", label: "BlockingFIFOTests-\(label)")`, then append the file name to the returned directory. Or make the helper return the directory and use it from the tests.
+- [x] `Tests/FoundationModelsACPAgentTests/BlockingFIFOTests.swift:62` `test-integrity/no-test-cheating` — The cancel test calls `opener.cancel()` right after creating the task. The task most likely has not started, so the first `Task.checkCancellation()` in `openWriteEnd` throws before any sleep. The test then passes without showing that a cancel ends the wait during the retry sleep, which is the behavior its doc comment claims. A broken cancel inside the sleep loop would still pass. Make sure the task is inside the wait before cancelling. For example, wait until the task has made at least one failed attempt (a short sleep or a signal from a test hook), then call `cancel()`. Keep the `.timeLimit` so a cancel that is ignored still fails the test.
+- [x] `Tests/FoundationModelsACPAgentTests/BlockingFIFOTests.swift:72` `swift/concurrency` — The unstructured Task that runs openWriteEnd is not cancelled if the test fails before it awaits opener.value. If openReadEnd(at:) fails at the require macro on line 75, the test body exits early, and the opener task keeps waiting for a reader for up to unreachedReaderWait (3600 s). The task is only cancelled on the success path. Cancel the task on every exit path, for example by adding `defer { opener.cancel() }` directly after line 72. Cancelling a task that has already finished is harmless.
+#flaky #test
