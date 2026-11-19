@@ -38,6 +38,11 @@ public final class ScriptedPlaybook: Sendable {
     /// The index of the next pass to play.
     var nextPass = 0
 
+    /// The steps of the pass at ``nextPass`` that did not play yet, or
+    /// `nil` to play that pass from its start. The next call plays these
+    /// steps in place of the pass.
+    var openPassRest: [ScriptedPassStep]?
+
     /// The progress of a new backend: no session is chosen yet.
     init() {}
 
@@ -49,8 +54,47 @@ public final class ScriptedPlaybook: Sendable {
     init(continuing entries: [Transcript.Entry], of script: ScriptedStubScript) {
       guard let firstPrompt = entries.first(where: Self.isPrompt) else { return }
       let promptText = CharacterCountTokenCounter.content(of: firstPrompt)
-      passes = script.passes(forFirstPrompt: promptText) ?? []
+      let passes = script.passes(forFirstPrompt: promptText) ?? []
+      self.passes = passes
       nextPass = entries.count(where: Self.isEndedPass)
+      if passes.indices.contains(nextPass) {
+        openPassRest = Self.rest(of: passes[nextPass], openIn: entries)
+      }
+    }
+
+    /// The steps of `pass` that did not play yet, when `pass` is the open
+    /// pass of `entries` and some of its tool calls played.
+    ///
+    /// The open pass is the entries after the last pass that ended. Router
+    /// can stop it at a tool result and continue it on a new backend with a
+    /// continuation prompt, one time or more. Its first `.prompt` entry is
+    /// the prompt that the pass answers, and each `.toolOutput` entry is a
+    /// tool call of the pass that played.
+    ///
+    /// - Parameters:
+    ///   - pass: The steps of the open pass.
+    ///   - entries: The transcript that a new backend starts from.
+    /// - Returns: The steps after the last tool call that played, or `nil`
+    ///   when no tool call of the open pass played.
+    private static func rest(
+      of pass: [ScriptedPassStep], openIn entries: [Transcript.Entry]
+    ) -> [ScriptedPassStep]? {
+      let openStart = entries.lastIndex(where: isEndedPass).map { $0 + 1 } ?? entries.startIndex
+      let openEntries = entries[openStart...]
+      let playedCalls = openEntries.count(where: isToolOutput)
+      guard playedCalls > 0, let openPrompt = openEntries.first(where: isPrompt) else { return nil }
+      let steps = ScriptedPassStep.resolved(
+        pass, forPrompt: CharacterCountTokenCounter.content(of: openPrompt))
+      return ScriptedPassStep.remaining(steps, afterToolCalls: playedCalls)
+    }
+
+    /// Whether `entry` is a `.toolOutput` entry.
+    ///
+    /// - Parameter entry: The entry.
+    /// - Returns: `true` for a `.toolOutput` entry.
+    private static func isToolOutput(_ entry: Transcript.Entry) -> Bool {
+      if case .toolOutput = entry { return true }
+      return false
     }
 
     /// Whether `entry` is a `.prompt` entry.
@@ -120,10 +164,13 @@ public final class ScriptedPlaybook: Sendable {
   ///
   /// A playbook of sessions continues the script of `seededEntries`. The
   /// first `.prompt` entry chooses the session, and the passes that ended
-  /// in the entries do not play again. A pass that did not end, for
-  /// example a pass that the stop of the process interrupted at a gate,
-  /// plays again from its start. Entries with no `.prompt` entry, and no
-  /// entries, give a playbook that chooses by its own first prompt.
+  /// in the entries do not play again. A pass that did not end continues
+  /// after its last tool call that played, for example a pass that Router
+  /// stopped at a tool result to compact. A pass that did not end and has
+  /// no tool call that played, for example a pass that the stop of the
+  /// process interrupted at a gate before its first tool call, plays again
+  /// from its start. Entries with no `.prompt` entry, and no entries, give
+  /// a playbook that chooses by its own first prompt.
   ///
   /// - Parameter seededEntries: The transcript the new backend starts
   ///   from, or empty for a fresh backend.
@@ -164,8 +211,11 @@ public final class ScriptedPlaybook: Sendable {
       let passes = progress.passes ?? script.passes(forFirstPrompt: prompt) ?? []
       progress.passes = passes
       guard progress.nextPass < passes.count else { return nil }
-      defer { progress.nextPass += 1 }
-      return passes[progress.nextPass]
+      defer {
+        progress.nextPass += 1
+        progress.openPassRest = nil
+      }
+      return progress.openPassRest ?? passes[progress.nextPass]
     }
   }
 }

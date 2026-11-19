@@ -45,7 +45,8 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
 
   /// The prefix of every synthesized SDK tool-call id. The suffix is
   /// the one-based ordinal of the call, so a test addresses the first
-  /// scripted call as `scripted-call-1`.
+  /// scripted call as `scripted-call-1`. A backend that starts from
+  /// seeded entries counts the tool calls of those entries first.
   public static let scriptedCallIdPrefix = "scripted-call-"
 
   /// The schema name the synthesized structured output segment
@@ -59,7 +60,8 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     /// The appended SDK entries, in append order.
     var entries: [Transcript.Entry] = []
 
-    /// The number of tool calls played so far.
+    /// The number of tool calls played so far, with the tool calls of
+    /// the seeded entries.
     var playedToolCallCount = 0
 
     /// The `.reasoning` entry of the pass in flight, or `nil` before
@@ -134,7 +136,26 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
       seededEntries.isEmpty
       ? [Self.instructionsEntry(instructions: instructions, tools: tools)]
       : seededEntries
-    synthesized.withLock { $0.entries = opening }
+    let seededCalls = Self.toolCallCount(in: seededEntries)
+    synthesized.withLock { state in
+      state.entries = opening
+      state.playedToolCallCount = seededCalls
+    }
+  }
+
+  /// The number of tool calls in the `.toolCalls` entries of `entries`.
+  ///
+  /// A backend that continues a transcript counts its calls from this
+  /// number, so the id of each call stays different from the ids of the
+  /// calls that the transcript holds.
+  ///
+  /// - Parameter entries: The entries to read.
+  /// - Returns: The number of tool calls.
+  private static func toolCallCount(in entries: [Transcript.Entry]) -> Int {
+    entries.reduce(0) { count, entry in
+      guard case .toolCalls(let calls) = entry else { return count }
+      return count + calls.count
+    }
   }
 
   /// Plays one pass of the script for `prompt`.

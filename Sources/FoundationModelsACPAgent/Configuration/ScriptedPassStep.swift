@@ -96,6 +96,63 @@ public enum ScriptedPassStep: Sendable, Equatable {
   case endPass
 }
 
+// MARK: - The rest of a pass that stopped
+
+extension ScriptedPassStep {
+  /// Whether the step makes one tool call when it plays. A question step
+  /// makes one `runCode` call.
+  var makesToolCall: Bool {
+    switch self {
+    case .toolCall, .toolCallFromFile, .elicit, .permission:
+      true
+    case .textDelta, .reasoning, .fail, .hold, .holdUntilReleased, .gate, .writeFile, .onPrompt,
+      .endPass:
+      false
+    }
+  }
+
+  /// The steps of a pass that answers `prompt`, with no branch: each
+  /// ``onPrompt(containing:play:)`` step whose marker `prompt` contains
+  /// has its steps in its place, and each other branch is removed.
+  ///
+  /// The steps play as `steps` play for `prompt`: an ``endPass`` step in a
+  /// branch ends the pass, here and there.
+  ///
+  /// - Parameters:
+  ///   - steps: The steps of the pass.
+  ///   - prompt: The prompt of the pass.
+  /// - Returns: The steps with no branch.
+  static func resolved(_ steps: [ScriptedPassStep], forPrompt prompt: String) -> [ScriptedPassStep] {
+    steps.flatMap { step -> [ScriptedPassStep] in
+      guard case .onPrompt(let marker, let branch) = step else { return [step] }
+      return prompt.contains(marker) ? resolved(branch, forPrompt: prompt) : []
+    }
+  }
+
+  /// The steps of a pass that did not play yet, after `playedCalls` tool
+  /// calls of the pass played.
+  ///
+  /// A model call stops at a tool result, thus the steps up to the step of
+  /// the last played tool call played. The text that those steps streamed
+  /// does not stream again.
+  ///
+  /// - Parameters:
+  ///   - steps: The steps of the pass, with no branch
+  ///     (``resolved(_:forPrompt:)``).
+  ///   - playedCalls: The number of tool calls of the pass that played.
+  /// - Returns: The steps after the step of the last played tool call.
+  ///   All the steps when no tool call played, and no step when more tool
+  ///   calls played than the pass has.
+  static func remaining(
+    _ steps: [ScriptedPassStep], afterToolCalls playedCalls: Int
+  ) -> [ScriptedPassStep] {
+    guard playedCalls > 0 else { return steps }
+    let callIndices = steps.indices.filter { steps[$0].makesToolCall }
+    guard callIndices.count >= playedCalls else { return [] }
+    return Array(steps[(callIndices[playedCalls - 1] + 1)...])
+  }
+}
+
 /// The SDK failure a ``ScriptedPassStep/fail(_:)`` step throws.
 ///
 /// The cases are `Equatable` markers; ``error`` makes the real
