@@ -154,6 +154,16 @@ The transcript search (D207) finds the sessions and the turns that hold a text. 
   the items of each session in one change. It removes the items of each session of the folder
   that has no history file. It reads no summary of the session directory, because that read
   reads the recording root of each project. There is no rebuild command and no setting (D187).
+- **The changes for Spotlight (D207 (i)).** `TranscriptSearchIndex.changes()` gives each
+  subscriber its own `AsyncStream` of `TranscriptSearchChange`, after the index applied the
+  change: `.indexed` with each turn (`TranscriptSearchTurn`: the session, the turn index, the
+  date and the text of each chunk with its kind) of a session whose chunks changed, and
+  `.removed` for a session that it removed. The index emits in `index(_:removing:)`, so a turn,
+  a fork, a delete and the reconcile each give their changes. A new session item (a rename, an
+  archive) gives no change. `turns(of:)` and `allTurns()` give the same turns from the items.
+  Each stream keeps the newest 1,024 changes that its subscriber did not read
+  (`TranscriptSearchChangeFeed`), so a slow subscriber never stops the index. This package does
+  not import Core Spotlight: the app writes the items and selects the kinds (Q71).
 
 The dependency direction is one way: the agent gives changes to the updates, the updates change
 the index, and the index calls the registry. The index does not depend on the agent, so the Mac

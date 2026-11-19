@@ -58,6 +58,17 @@ public actor TranscriptSearchIndex {
       [sessionItem] + chunkItems
     }
 
+    /// The turns of the session, from its chunk items.
+    var turns: [TranscriptSearchTurn] {
+      let chunks = chunkItems.compactMap { item -> SessionSearchChunk? in
+        guard case .chunk(let chunk) = item.content else {
+          return nil
+        }
+        return chunk
+      }
+      return TranscriptSearchTurn.turns(of: sessionItem.sessionId, chunks: chunks)
+    }
+
     /// Makes the items of one session from its content.
     ///
     /// - Parameters:
@@ -102,6 +113,9 @@ public actor TranscriptSearchIndex {
   /// Tells whether the process can read a folder now with no prompt. The host gives the rule,
   /// so this package keeps no app path.
   public nonisolated let readableFolder: @Sendable (URL) -> Bool
+
+  /// The subscribers of the changes of the index.
+  private nonisolated let feed = TranscriptSearchChangeFeed()
 
   /// The one searcher over the catalog: the `.retrieval` mode with the default weights.
   private let searcher: MetadataSearcher<TranscriptSearchItem>
@@ -163,13 +177,18 @@ public actor TranscriptSearchIndex {
     guard !contents.isEmpty || !removedHeld.isEmpty else {
       return
     }
-    for (session, content) in contents {
-      sessions[session] = IndexedSession(session: session, content: content)
-    }
+    let indexed = Dictionary(
+      uniqueKeysWithValues: contents.map {
+        ($0.key, IndexedSession(session: $0.key, content: $0.value))
+      })
+    let changedTurns = Set(
+      indexed.filter { session, new in sessions[session]?.chunkItems != new.chunkItems }.keys)
+    sessions.merge(indexed) { _, new in new }
     for session in removedHeld {
       sessions.removeValue(forKey: session)
     }
     await publishCatalog()
+    publishChanges(of: changedTurns.union(removedHeld))
   }
 
   /// Replaces only the session item of a session that the index holds: its chunk items stay as
@@ -212,6 +231,39 @@ public actor TranscriptSearchIndex {
     sessions.mapValues(\.metadata)
   }
 
+  /// Makes a new stream of the changes of the index (D207 (i)). Each call gives a new stream of
+  /// its own: the turns of each session whose chunks the index changed, and each session that
+  /// the index removed, after the index applied the change. New facts of a session (a rename,
+  /// the tags, the recap, an archive) change no turn, so they give no change. The stream ends
+  /// when the index goes away.
+  ///
+  /// The index never waits for a subscriber. The stream holds the newest
+  /// ``TranscriptSearchChangeFeed/defaultBufferLimit`` changes that its subscriber did not
+  /// read, and it drops the oldest ones. A subscriber that lost changes reads ``allTurns()``.
+  ///
+  /// - Returns: The stream of the changes after this call.
+  public nonisolated func changes() -> AsyncStream<TranscriptSearchChange> {
+    feed.subscribe()
+  }
+
+  /// The turns of one session, from its chunk items: the same turns that a change of the
+  /// session gives. A session that the index does not hold has none.
+  ///
+  /// - Parameter session: The session.
+  /// - Returns: The turns of the session, in the order of the turns.
+  public func turns(of session: SessionId) -> [TranscriptSearchTurn] {
+    sessions[session]?.turns ?? []
+  }
+
+  /// The turns of each session that the index holds, for a new index of the host (for
+  /// example a new Spotlight index): the sessions in the order of their ids, and the turns of
+  /// each session in their order.
+  ///
+  /// - Returns: The turns.
+  public func allTurns() -> [TranscriptSearchTurn] {
+    sortedSessionIDs.flatMap { sessions[$0]?.turns ?? [] }
+  }
+
   /// The matches of the searcher for a query: one match for each item that a signal ranked, in
   /// the order of the fused score, highest first. The searcher has no filter, so the search asks
   /// for as many matches as the catalog has items, and the caller filters the matches.
@@ -225,7 +277,37 @@ public actor TranscriptSearchIndex {
 
   /// The items of the catalog: the items of each session, in the order of the session ids.
   private var catalog: [TranscriptSearchItem] {
-    sessions.keys.sorted { $0.rawValue < $1.rawValue }.flatMap { sessions[$0]?.items ?? [] }
+    sortedSessionIDs.flatMap { sessions[$0]?.items ?? [] }
+  }
+
+  /// The ids of the indexed sessions, in their order.
+  private var sortedSessionIDs: [SessionId] {
+    Self.sorted(sessions.keys)
+  }
+
+  /// Session ids in their order.
+  ///
+  /// - Parameter ids: The session ids.
+  /// - Returns: The ids, in the order of their raw values.
+  private static func sorted(_ ids: some Sequence<SessionId>) -> [SessionId] {
+    ids.sorted { $0.rawValue < $1.rawValue }
+  }
+
+  /// Gives the subscribers the change of each session that a change of the catalog touched, in
+  /// the order of the session ids. The change gives the state of the session now: a later change
+  /// can have come while the catalog went to the searcher, so an older state never comes after
+  /// a newer one. A session that the index holds gives its turns, and another session gives
+  /// its removal.
+  ///
+  /// - Parameter touched: The sessions whose chunk items the change of the catalog changed.
+  private func publishChanges(of touched: Set<SessionId>) {
+    feed.publish(
+      Self.sorted(touched).map { session in
+        guard let held = sessions[session] else {
+          return .removed(session: session)
+        }
+        return .indexed(session: session, turns: held.turns)
+      })
   }
 
   /// Gives the catalog to the searcher after a change.
