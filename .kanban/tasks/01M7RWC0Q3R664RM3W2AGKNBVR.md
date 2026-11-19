@@ -6,6 +6,31 @@ comments:
   id: 01m7rx2tge7cpjhp0vtsp10qve
   text: 'Dependency available (2026-11-18): Router ^1vesqjj is on origin/main at de36cd24. Removed public API: `SessionTreeRestorationError.notARootSession`, `RestoredSessionTree.session(_:)` and `RestoredSessionTree.children(of:)`. I checked: this package does not use them (the `children(of:)` calls in the tests are on this package''s own `SessionTree`), so the build does not break. Restore a fork only by its own id; a fork that the directory holds does not move on a model switch, so move it with a restore by its id. This task still waits for Router ^vhy7017 (the launcher operation).'
   timestamp: 2026-11-19T03:19:55.662902+00:00
+- actor: claude-code
+  id: 01m7rytrtrdg31v7q8kejckf27
+  text: |-
+    Dependency available (2026-11-18): Router ^vhy7017 is on origin/main at 4435599b. The launcher operation:
+
+        // SessionLauncher
+        func forkSession(_ request: SessionLaunchForkRequest) async throws -> any RoutedSession
+        // default (protocol extension): try await request.makeFork()   — the tools of the source
+
+        public struct SessionLaunchForkRequest: Sendable {
+            public let sourceID: ULID
+            public let forkID: ULID
+            public let forkedAtHistoryOrdinal: Int
+            public let workingDirectory: URL
+            public let requestedByClient: String?
+            public func makeFork(tools: [any Tool]) async throws -> any RoutedSession  // this agent's surface
+            public func makeFork() async throws -> any RoutedSession                    // the source's tools
+        }
+        public enum SessionLaunchForkError: Error, Sendable, Equatable {
+            case forkAlreadyMade(ULID), notTheRequestedFork(ULID), requestClosed(ULID)
+        }
+
+    Rules: call `request.makeFork(tools:)` ONE time inside `forkSession` and return that session. The Router has done the cut, so do not map it again. `RouterSessionDirectory.fork(_:)` maps the cut, calls the launcher, checks that the session is the requested fork, registers it, and only THEN mails the first prompt. So no prompt runs before this agent's surface is in place, and the agent holds the fork from its start (no stop/restore). The request closes when the fork call ends: a later or second build throws, and a build in flight at the close discards its fork. If the launcher throws, nothing is registered and the fork folder is removed. The current launcher compiles with the default.
+    This task starts after ^ccx24tw, because both change Agent/SessionFork*.swift.
+  timestamp: 2026-11-19T03:50:28.952663+00:00
 depends_on:
 - 01M7QV7TASP791JZFKKEMD9F4N
 position_column: todo

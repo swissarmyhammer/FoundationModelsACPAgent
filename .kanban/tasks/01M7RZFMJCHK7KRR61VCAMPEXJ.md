@@ -38,8 +38,15 @@ comments:
     - evidence: Tests/FoundationModelsACPAgentTests/EchoTranscriptTests.swift (new). `swift build --build-tests` Build complete!, 0 compiler warnings; full `timeout 1800 swift test --skip-build` (together with ^ccx24tw): 2440 tests in 256 suites pass, 1 known issue (pre-existing). The finding is flipped to [x].
     - next: review.
   timestamp: 2026-11-19T04:23:42.212172+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m7s0wknrgfdt2qsevhtfdn25
+  text: |-
+    ### review — clean
+    - evidence: `review sha 85b1d06~1..85b1d06` — 0 findings, 0 confirmed, 1 refuted, 7 attempted, 0 failed. The prior finding is checked.
+    - next: The task is in done.
+  timestamp: 2026-11-19T04:26:26.360842+00:00
+position_column: done
+position_ordinal: ffffff9380
 title: 'D205 bug: Fork from Here after two echo turns says "no such turn", and turn 2 reuses the agent message id of turn 1'
 ---
 Bug report from the TestudoApp session (2026-11-18). Found by TestudoApp IntegrationTests `SessionForkIntegrationTests.forkFromHereOnTurnTwo`, on ACPAgent 8b591b1a and Router de36cd24. The test is disabled in the app until this is fixed.

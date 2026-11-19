@@ -41,10 +41,17 @@ comments:
     - evidence: Sources/FoundationModelsACPAgent/Agent/MailDeliveryRecord.swift, Sources/FoundationModelsACPAgent/Agent/SessionForkHistory.swift. `swift build --build-tests` Build complete!, 0 compiler warnings; full `timeout 1800 swift test --skip-build`: 2440 tests in 256 suites pass, 1 known issue (pre-existing). The finding is flipped to [x].
     - next: review.
   timestamp: 2026-11-19T04:24:01.213274+00:00
+- actor: claude-code
+  id: 01m7s0zb0g8maxgags6h2hg1r4
+  text: |-
+    ### review — clean
+    - evidence: `review sha 696d4cb~1..696d4cb` — 0 findings, 0 confirmed, 0 refuted, 7 attempted, 0 failed. The prior finding is checked.
+    - next: The task is in done.
+  timestamp: 2026-11-19T04:27:55.792156+00:00
 depends_on:
 - 01M7QV7TASP791JZFKKEMD9F4N
-position_column: doing
-position_ordinal: '8280'
+position_column: done
+position_ordinal: ffffff9480
 title: 'D205: the fork turn count of the agent agrees with the Router (action commands, queued prompts, batches, a running answer)'
 ---
 Found during ^emd9f4n (2026-11-18). Decision D205. The agreed rule (see the comments of ^emd9f4n): one turn for each DELIVERED mail whose body is `.userMessage` or `.agentMessage`, from any route, in delivery order, from the source's own journal. The agent copies the retained ACP history of the source up to the cut, and the Router copies its journal up to the same cut. When the two counts disagree, the client of the fork shows a history that is not the history that the fork model has.
