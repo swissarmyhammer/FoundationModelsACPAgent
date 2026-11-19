@@ -51,8 +51,15 @@ comments:
     - evidence: `swift build --build-tests` Build complete!, 0 compiler warnings; `timeout 1800 swift test --skip-build`: 2669 tests in 282 suites passed (1 known issue is the deliberate withKnownIssue in HarnessSmokeTests). RED seen first: the build failed on the missing `SessionShareHost` API.
     - next: review
   timestamp: 2026-11-19T23:12:19.666333+00:00
-position_column: doing
-position_ordinal: '8280'
+- actor: claude-code
+  id: 01m7v1p647f5y4st51b5hr41pt
+  text: |-
+    ### review — findings
+    - evidence: review sha 5def2b0~1..5def2b0; 1 finding (1 confirmed, 3 refuted) — Sources/FoundationModelsACPAgent/Agent/SubscriberFeed.swift:22
+    - next: implement the open item in the Review Findings (2026-11-19 17:13) section, then review again.
+  timestamp: 2026-11-19T23:18:53.319999+00:00
+position_column: review
+position_ordinal: '80'
 title: 'D208: the server session snapshot and the host sharer for the sessions tool'
 ---
 Decision D208 in `TestudoApp/features/decisions.md` (commit d803f1a; final), parts (g) and (k), with the answers Q74–Q80 in D208 (m). Brief: `/Users/wballard/github/swissarmyhammer/.briefs/share/acpa-brief.md`. Overview: `overview.md` in the same folder. Wave 2.
@@ -89,3 +96,16 @@ Do not start until both shas come.
 - The host gets one turn-end event for each turn.
 
 When this lands, push to origin/main and send the sha to the TestudoApp session (testudoapp-9a). #d208 #share
+
+## Review Findings (2026-11-19 17:13)
+
+> Scope: `review sha 5def2b0~1..5def2b0` — reviewed the diffs only — lines this change added or modified. 17 file(s) reviewed, 8 not reviewed.
+
+> 6 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 6 file(s)
+
+> 2 file(s) not reviewed — no validator matched:
+> - `ARCHITECTURE.md` — no validator matches this file
+> - `README.md` — no validator matches this file
+
+- [ ] `Sources/FoundationModelsACPAgent/Agent/SubscriberFeed.swift:22` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.

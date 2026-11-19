@@ -1,5 +1,10 @@
 import Synchronization
 
+/// The number of events that the stream of one subscriber of a ``SubscriberFeed`` holds when the
+/// subscriber does not read them, by default. It is at file level, because a generic type cannot
+/// hold a stored static property.
+private let subscriberFeedDefaultBufferLimit = 1024
+
 /// The subscribers of one source of events. Each subscriber gets its own stream of each event
 /// after it subscribed.
 ///
@@ -19,7 +24,7 @@ final class SubscriberFeed<Element: Sendable>: Sendable {
   /// The number of events that the stream of one subscriber holds when the subscriber does not
   /// read them, by default.
   static var defaultBufferLimit: Int {
-    1024
+    subscriberFeedDefaultBufferLimit
   }
 
   /// The number of events that the stream of one subscriber holds.
