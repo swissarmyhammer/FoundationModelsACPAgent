@@ -20,11 +20,12 @@ struct TranscriptSearchFilter: Sendable {
   /// The sessions that the session directory shows, by session id.
   let visibleSessions: [SessionId: TranscriptSearchVisibleSession]
 
-  /// The sessions of the directory tokens, or `nil` for each visible session.
-  let sessions: Set<ULID>?
+  /// The sessions of the directory tokens, or `nil` for each visible session. A session id can
+  /// be any string (^bm6spcd).
+  let sessions: Set<SessionId>?
 
   /// The one session of a search for Find Next Hit, or `nil`.
-  let session: ULID?
+  let session: SessionId?
 
   /// True to keep the archived sessions.
   let includeArchived: Bool
@@ -43,8 +44,10 @@ struct TranscriptSearchFilter: Sendable {
   /// - Parameters:
   ///   - request: The request.
   ///   - visibleSessions: The sessions that the session directory shows.
-  init(request: SessionSearchRequest, visibleSessions: [SessionId: TranscriptSearchVisibleSession])
-  {
+  init(
+    request: TranscriptIndexSearchRequest,
+    visibleSessions: [SessionId: TranscriptSearchVisibleSession]
+  ) {
     self.visibleSessions = visibleSessions
     sessions = request.sessions
     session = request.session
@@ -60,12 +63,12 @@ struct TranscriptSearchFilter: Sendable {
   /// session, and archived only with `is:archived`.
   ///
   /// - Parameters:
-  ///   - ulid: The ULID of the session.
+  ///   - id: The id of the session.
   ///   - visible: The facts of the session in the directory.
   /// - Returns: `true` when the session passes.
-  func admits(_ ulid: ULID, visible: TranscriptSearchVisibleSession) -> Bool {
-    let inSessions = sessions?.contains(ulid) ?? true
-    let isTheSession = session.map { $0 == ulid } ?? true
+  func admits(_ id: SessionId, visible: TranscriptSearchVisibleSession) -> Bool {
+    let inSessions = sessions?.contains(id) ?? true
+    let isTheSession = session.map { $0 == id } ?? true
     return inSessions && isTheSession && (includeArchived || !visible.isArchived)
   }
 

@@ -25,6 +25,9 @@ extension TranscriptSearchIndex {
   /// a snippet. A folder of a session of the page that the process cannot read goes into the
   /// unavailable folders.
   ///
+  /// A session id can be any string (^bm6spcd): the client index of an app holds the sessions
+  /// of other ACP agents, whose session ids are UUIDs or other strings.
+  ///
   /// - Parameters:
   ///   - request: The request. The directory tokens of its query are resolved into its
   ///     sessions and its archive flag.
@@ -34,8 +37,9 @@ extension TranscriptSearchIndex {
   /// - Throws: ``TranscriptSearchError/invalidCursor`` for a cursor that a search did not give,
   ///   or an error of the searcher.
   public func search(
-    _ request: SessionSearchRequest, visibleSessions: [SessionId: TranscriptSearchVisibleSession]
-  ) async throws -> SessionSearchPage {
+    _ request: TranscriptIndexSearchRequest,
+    visibleSessions: [SessionId: TranscriptSearchVisibleSession]
+  ) async throws -> TranscriptIndexSearchPage {
     let offset = try TranscriptSearchCursor.offset(of: request.cursor)
     let filter = TranscriptSearchFilter(request: request, visibleSessions: visibleSessions)
     let rankingText = request.query.rankingText
@@ -59,12 +63,61 @@ extension TranscriptSearchIndex {
     }
     let page = sessions.dropFirst(offset).prefix(limit)
     let next = offset + page.count < sessions.count ? offset + page.count : nil
-    return SessionSearchPage(
+    return TranscriptIndexSearchPage(
       sessions: page.map(withHits).map {
         Self.result(of: $0, hits: $0.candidates.prefix(Self.hitsOfASession), queryTerms: queryTerms)
       },
       nextCursor: next.map(TranscriptSearchCursor.cursor(of:)), unavailableFolders: []
     ).withUnavailableFolders(of: page.map(\.folder), readable: readableFolder)
+  }
+
+  /// One page of the sessions that match a request of the search of Multitool, whose sessions
+  /// are ULIDs (D207 (c), (e)).
+  ///
+  /// The search is the search by session id (a ``TranscriptIndexSearchRequest``) over the
+  /// visible sessions whose ids are ULIDs. A session with another id cannot be a
+  /// `SessionSearchResult`, so it does not pass, and the order, the filters and the cursor of
+  /// the other sessions do not change. The session directory gives the id of each session as the
+  /// text of its ULID, which is the session id that ``TranscriptIndexSearchRequest/init(_:)``
+  /// makes of a ULID of the request.
+  ///
+  /// - Parameters:
+  ///   - request: The request of Multitool.
+  ///   - visibleSessions: The sessions that the session directory shows now, with their folder
+  ///     and their archive state. An item of another session does not pass.
+  /// - Returns: The page, with the ULID of each session.
+  /// - Throws: ``TranscriptSearchError/invalidCursor`` for a cursor that a search did not give,
+  ///   or an error of the searcher.
+  public func search(
+    _ request: SessionSearchRequest, visibleSessions: [SessionId: TranscriptSearchVisibleSession]
+  ) async throws -> SessionSearchPage {
+    let page = try await search(
+      TranscriptIndexSearchRequest(request),
+      visibleSessions: visibleSessions.filter { ULID(ulidString: $0.key.rawValue) != nil })
+    return SessionSearchPage(
+      sessions: page.sessions.compactMap(Self.multitoolResult(of:)), nextCursor: page.nextCursor,
+      unavailableFolders: page.unavailableFolders)
+  }
+
+  /// The result of Multitool of a session whose id is a ULID.
+  ///
+  /// The search of Multitool searches only the sessions whose ids are ULIDs, so each of its
+  /// results has a ULID. A miss is a programmer error.
+  ///
+  /// - Parameter result: The result by session id.
+  /// - Returns: The result with the ULID of the session, or `nil` when the id is not a ULID.
+  private static func multitoolResult(of result: TranscriptIndexSearchResult)
+    -> SessionSearchResult?
+  {
+    guard let ulid = ULID(ulidString: result.session.rawValue) else {
+      assertionFailure("the search of Multitool gave a session whose id is not a ULID")
+      ACPAgentTelemetry.logger(.transcriptSearch).error(
+        "The transcript search of Multitool gave a session whose id is not a ULID.",
+        metadata: ACPAgentTelemetry.sessionMetadata(result.session))
+      return nil
+    }
+    return SessionSearchResult(
+      session: ulid, score: result.score, hitCount: result.hitCount, hits: result.hits)
   }
 
   /// The number of sessions that a page needs in each group of the order: the sessions before
@@ -194,13 +247,13 @@ extension TranscriptSearchIndex {
   /// - Returns: The page.
   private static func hitPage(
     of session: TranscriptSearchSession?, offset: Int, limit: Int, queryTerms: Set<String>
-  ) -> SessionSearchPage {
+  ) -> TranscriptIndexSearchPage {
     guard let session else {
-      return SessionSearchPage(sessions: [], nextCursor: nil, unavailableFolders: [])
+      return TranscriptIndexSearchPage(sessions: [], nextCursor: nil, unavailableFolders: [])
     }
     let hits = session.candidates.dropFirst(offset).prefix(limit)
     let next = offset + hits.count < session.hitCount ? offset + hits.count : nil
-    return SessionSearchPage(
+    return TranscriptIndexSearchPage(
       sessions: [result(of: session, hits: hits, queryTerms: queryTerms)],
       nextCursor: next.map(TranscriptSearchCursor.cursor(of:)), unavailableFolders: [])
   }
@@ -215,14 +268,14 @@ extension TranscriptSearchIndex {
   private static func result(
     of session: TranscriptSearchSession, hits: ArraySlice<TranscriptSearchCandidate>,
     queryTerms: Set<String>
-  ) -> SessionSearchResult {
-    SessionSearchResult(
-      session: session.ulid, score: session.score, hitCount: session.hitCount,
+  ) -> TranscriptIndexSearchResult {
+    TranscriptIndexSearchResult(
+      session: session.id, score: session.score, hitCount: session.hitCount,
       hits: hits.map { $0.hit(queryTerms: queryTerms) })
   }
 }
 
-extension SessionSearchPage {
+extension TranscriptIndexSearchPage {
   /// This page with the folders that the process cannot read now as its unavailable folders,
   /// each one time, in order.
   ///
@@ -232,12 +285,12 @@ extension SessionSearchPage {
   /// - Returns: The page.
   fileprivate func withUnavailableFolders(
     of folders: [URL], readable: @Sendable (URL) -> Bool
-  ) -> SessionSearchPage {
+  ) -> TranscriptIndexSearchPage {
     var unavailable: [URL] = []
     for folder in folders where !readable(folder) && !unavailable.contains(folder) {
       unavailable.append(folder)
     }
-    return SessionSearchPage(
+    return TranscriptIndexSearchPage(
       sessions: sessions, nextCursor: nextCursor, unavailableFolders: unavailable)
   }
 }

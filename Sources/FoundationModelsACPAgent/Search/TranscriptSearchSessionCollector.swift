@@ -18,11 +18,8 @@ import FoundationModelsRouter
 struct TranscriptSearchSessionCollector {
   /// One session that the collector keeps.
   struct CollectedSession {
-    /// The id of the session.
+    /// The id of the session. It can be any string (^bm6spcd).
     let id: SessionId
-
-    /// The ULID of the session.
-    let ulid: ULID
 
     /// The folder of the session.
     let folder: URL
@@ -42,12 +39,10 @@ struct TranscriptSearchSessionCollector {
     ///
     /// - Parameters:
     ///   - id: The id of the session.
-    ///   - ulid: The ULID of the session.
     ///   - folder: The folder of the session.
     ///   - candidate: The first item of the session that passed each filter.
-    fileprivate init(id: SessionId, ulid: ULID, folder: URL, candidate: TranscriptSearchCandidate) {
+    fileprivate init(id: SessionId, folder: URL, candidate: TranscriptSearchCandidate) {
       self.id = id
-      self.ulid = ulid
       self.folder = folder
       hitCount = 1
       candidates = [candidate]
@@ -88,7 +83,7 @@ struct TranscriptSearchSessionCollector {
     case unseen
 
     /// The session passed the session filters, and no item of it passed each filter yet.
-    case admitted(ulid: ULID, isPreferred: Bool)
+    case admitted(isPreferred: Bool)
 
     /// The collector keeps the session at a place of its group.
     case collected(isPreferred: Bool, place: Int)
@@ -197,7 +192,7 @@ struct TranscriptSearchSessionCollector {
       return false
     case .collected:
       return countsHits
-    case .admitted(_, let isPreferred):
+    case .admitted(let isPreferred):
       guard count(isPreferred: isPreferred) < wanted else {
         slots[slot].standing = .ignored
         return false
@@ -226,9 +221,9 @@ struct TranscriptSearchSessionCollector {
       preferred[place].add(candidate, keeping: keptHits)
     case .collected(_, let place):
       others[place].add(candidate, keeping: keptHits)
-    case .admitted(let ulid, let isPreferred):
+    case .admitted(let isPreferred):
       let session = CollectedSession(
-        id: slots[slot].id, ulid: ulid, folder: slots[slot].visible.folder, candidate: candidate)
+        id: slots[slot].id, folder: slots[slot].visible.folder, candidate: candidate)
       slots[slot].standing = .collected(
         isPreferred: isPreferred, place: count(isPreferred: isPreferred))
       if isPreferred {
@@ -264,13 +259,11 @@ struct TranscriptSearchSessionCollector {
   /// - Returns: The admitted state of the session, or `nil` when it does not pass.
   private func admission(of slot: Int) -> Standing? {
     let session = slots[slot]
-    guard let ulid = ULID(ulidString: session.id.rawValue),
-      filter.admits(ulid, visible: session.visible)
-    else {
+    guard filter.admits(session.id, visible: session.visible) else {
       return nil
     }
     let isPreferred = preferredPath.map { Self.comparablePath(of: session.visible.folder) == $0 }
-    return .admitted(ulid: ulid, isPreferred: isPreferred ?? false)
+    return .admitted(isPreferred: isPreferred ?? false)
   }
 
   /// The path of a folder to compare two folders: the standard file path.

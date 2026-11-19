@@ -167,6 +167,14 @@ The transcript search (D207) finds the sessions and the turns that hold a text. 
   reads the recording root of each project. The facts of the session item come from the Router
   function that turns a record into a summary (`SessionSummary.init(record:)`), so the name and
   the slug follow the one rule of the Router. There is no rebuild command and no setting (D187).
+- **The search and its session ids.** A session id of the index can be any string (the ACP
+  `SessionId`), because the client index of the Mac app holds the sessions of other ACP agents,
+  whose ids are UUIDs or other strings. `TranscriptSearchIndex.search(_:visibleSessions:)` with a
+  `TranscriptIndexSearchRequest` gives a `TranscriptIndexSearchPage` of
+  `TranscriptIndexSearchResult` values, each with its `SessionId`. The search of Multitool
+  (`SessionSearchRequest`, `SessionSearchPage`) uses ULIDs: its overload searches only the
+  visible sessions whose ids are ULIDs, and gives the ULID of each session. The agent
+  (`AgentTranscriptSearcher`) uses that overload.
 - **The changes for Spotlight (D207 (i)).** `TranscriptSearchIndex.changes()` gives each
   subscriber its own `AsyncStream` of `TranscriptSearchChange`, after the index applied the
   change: `.indexed` with each turn (`TranscriptSearchTurn`: the session, the turn index, the
