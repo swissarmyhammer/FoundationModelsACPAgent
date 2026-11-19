@@ -75,6 +75,11 @@ final class TranscriptSearchUpdates: Sendable {
   /// directory, and the task of the reconcile at launch.
   private let tasks = Mutex<[Task<Void, Never>]>([])
 
+  /// The task of the reconcile at launch, or `nil` before
+  /// ``startReconcile(folders:recordingRoot:)``. ``waitUntilApplied()`` waits until the task put
+  /// each folder in the queue.
+  private let launchReconcile = Mutex<Task<Void, Never>?>(nil)
+
   /// Makes the object. It starts the task that applies the changes.
   ///
   /// - Parameters:
@@ -119,9 +124,11 @@ final class TranscriptSearchUpdates: Sendable {
   }
 
   /// Returns when the index applied each change that the object got before this call. The
-  /// shutdown of the agent waits here, and then for the saves of the index, so a quit keeps the
-  /// last change.
+  /// reconcile at launch is such a change from the time that it starts: the call first waits
+  /// until its task put each folder in the queue. The shutdown of the agent waits here, and then
+  /// for the saves of the index, so a quit keeps the last change.
   func waitUntilApplied() async {
+    await launchReconcile.withLock { $0 }?.value
     await withCheckedContinuation { mark in
       changes.yield(.mark(mark))
     }
@@ -204,6 +211,7 @@ final class TranscriptSearchUpdates: Sendable {
       await self?.reconcile(folders: projectFolders, recordingRoot: recordingRoot)
     }
     tasks.withLock { $0.append(reconcile) }
+    launchReconcile.withLock { $0 = reconcile }
   }
 
   /// Reconciles the index with the history files of a set of working folders.

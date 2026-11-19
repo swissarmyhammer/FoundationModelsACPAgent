@@ -76,6 +76,16 @@ import Testing
   /// The number of sessions of ``searchFixture(name:)`` whose chunks hold ``word``.
   private static let searchedSessionCount = 2
 
+  /// The tag that ``settle(_:on:)`` adds to a session of the directory.
+  private static let settledTag = "settled"
+
+  /// The most polls of a wait for the index. The updates run with a low priority, so a full
+  /// parallel test run can keep them back for many seconds.
+  private static let pollLimit = 3600
+
+  /// The time between two polls of a wait for the index.
+  private static let pollInterval = Duration.milliseconds(25)
+
   // MARK: - Helpers
 
   /// The text of the indexed chunk of ``indexWord(of:on:folder:tail:)``.
@@ -94,7 +104,7 @@ import Testing
   ///   - folder: The folder of the session.
   ///   - tail: The text of the message after the word.
   private static func indexWord(
-    of session: SessionId, on agent: RoutedACPAgent, folder: URL, tail: String = snippetTail
+    of session: SessionId, on agent: RoutedACPAgent, folder: URL, tail: String
   ) async {
     let text = chunkText(tail: tail)
     await agent.transcriptSearchIndex.index(
@@ -110,6 +120,56 @@ import Testing
       metadata: TranscriptSessionMetadata(
         name: "", slug: "", tags: [], folder: folder, agentName: nil, recap: nil,
         lastSummary: nil))
+  }
+
+  /// Indexes ``word`` for a set of sessions with no change of the background updates of the
+  /// agent to come (^fr3d9xk).
+  ///
+  /// The agent changes its index in the background. The reconcile at launch removes the items
+  /// of each session of the fixture folder, because no session of the fixture has a history
+  /// file. An event of the session directory (a `started`, a `factsChanged` with the name of the
+  /// session) replaces the session item. Thus the call first waits until the reconcile at launch
+  /// is applied, and then indexes the chunks. It then settles each session that the directory
+  /// knows (``settle(_:on:)``).
+  ///
+  /// - Parameters:
+  ///   - tails: The text after the word in the chunk of each session.
+  ///   - agent: The agent whose index gets the chunks.
+  ///   - folder: The folder of the sessions.
+  /// - Throws: The error of the directory, or the failure of a session that does not settle.
+  private static func indexSettled(
+    _ tails: KeyValuePairs<SessionId, String>, on agent: RoutedACPAgent, folder: URL
+  ) async throws {
+    await agent.transcriptSearchUpdates.waitUntilApplied()
+    for (session, tail) in tails {
+      await indexWord(of: session, on: agent, folder: folder, tail: tail)
+    }
+    for (session, _) in tails {
+      if try await agent.sessionDirectory.summary(of: try session.ulid()) != nil {
+        try await settle(session, on: agent)
+      }
+    }
+  }
+
+  /// Waits until the index of the agent applied each event of the session directory for one
+  /// session. The call adds ``settledTag`` to the session, and waits until the index holds the
+  /// session item of the tagged session. The events of the directory come to the index in
+  /// order, so each earlier event of the session is applied too.
+  ///
+  /// - Parameters:
+  ///   - session: A session of the directory that the index holds.
+  ///   - agent: The agent.
+  /// - Throws: The error of the directory, or the failure of an index that does not apply the
+  ///   tag.
+  private static func settle(_ session: SessionId, on agent: RoutedACPAgent) async throws {
+    let tagged = try await agent.sessionDirectory.addTags([settledTag], to: try session.ulid())
+    let expected = TranscriptSearchItem(
+      session: session, metadata: TranscriptSessionMetadata(summary: tagged))
+    let index = agent.transcriptSearchIndex
+    try await pollUntil(limit: pollLimit, interval: pollInterval) {
+      await index.items(of: session).first == expected
+    }
+    try #require(await index.items(of: session).first == expected)
   }
 
   /// The request of a search of ``word`` in each visible session.
@@ -144,8 +204,8 @@ import Testing
     let second = try await fixture.harness.connection.newSession(
       AgentClientHarness.makeNewSessionRequest(cwd: fixture.cwd)
     ).sessionId
-    await indexWord(of: fixture.sessionId, on: agent, folder: fixture.cwd)
-    await indexWord(of: second, on: agent, folder: fixture.cwd, tail: secondSnippetTail)
+    try await indexSettled(
+      [fixture.sessionId: snippetTail, second: secondSnippetTail], on: agent, folder: fixture.cwd)
     try #"{"op":"search sessions","query":"\#(word)"}"#
       .write(toFile: argumentsPath, atomically: true, encoding: .utf8)
     return fixture
@@ -173,6 +233,7 @@ import Testing
   private static func fieldPage(of agent: RoutedACPAgent, first: Int, after: String?) async throws
     -> FieldPage
   {
+    await agent.transcriptSearchUpdates.waitUntilApplied()
     var variables: [String: Map] = ["query": .string(word)]
     variables["after"] = after.map(Map.string)
     let reply = try await SessionsGraph.endpoint(of: agent.sessionDirectory).execute(
@@ -210,7 +271,9 @@ import Testing
     let fixture = try await ScriptedPromptFixture.make(
       script: [.endPass], label: "\(Self.label)-found")
     let agent = fixture.harness.agent
-    await Self.indexWord(of: fixture.sessionId, on: agent, folder: fixture.cwd)
+    try await Self.indexSettled(
+      [fixture.sessionId: Self.snippetTail], on: agent, folder: fixture.cwd)
+    await agent.transcriptSearchUpdates.waitUntilApplied()
 
     let page = try await AgentTranscriptSearcher(agent: agent).search(Self.wordRequest())
     await fixture.close()
@@ -224,8 +287,10 @@ import Testing
     let fixture = try await ScriptedPromptFixture.make(
       script: [.endPass], label: "\(Self.label)-unknown")
     let agent = fixture.harness.agent
-    await Self.indexWord(of: Self.unknownSession, on: agent, folder: fixture.cwd)
-    await Self.indexWord(of: fixture.sessionId, on: agent, folder: fixture.cwd)
+    try await Self.indexSettled(
+      [Self.unknownSession: Self.snippetTail, fixture.sessionId: Self.snippetTail], on: agent,
+      folder: fixture.cwd)
+    await agent.transcriptSearchUpdates.waitUntilApplied()
 
     let page = try await AgentTranscriptSearcher(agent: agent).search(Self.wordRequest())
     await fixture.close()

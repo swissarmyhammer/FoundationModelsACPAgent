@@ -48,6 +48,10 @@ import ULID
   /// The title of a session after a change.
   private static let changedTitle = "Quokka research"
 
+  /// The time that a slow read of a recording root takes. The reconcile at launch then puts its
+  /// folder in the queue after a wait that does not wait for the reconcile.
+  private static let slowRootRead = Duration.milliseconds(200)
+
   // MARK: - Fixtures
 
   /// A history of one user message and one agent message.
@@ -223,6 +227,25 @@ import ULID
 
     await updates.reconcile(folders: [Self.folder], recordingRoot: { _ in emptyRoot })
     try await Self.waitUntil { await index.items(of: Self.sessionId).isEmpty }
+
+    #expect(await index.items(of: Self.sessionId).isEmpty)
+  }
+
+  /// The wait for the applied changes waits for the reconcile at launch: the reconcile of a
+  /// folder whose recording root reads slowly is applied when the wait returns.
+  @Test(.timeLimit(.minutes(3))) func theWaitIncludesTheReconcileAtLaunch() async throws {
+    let index = await Self.makeIndex(label: "launch-reconcile")
+    let updates = TranscriptSearchUpdates(index: index) { _ in nil }
+    let emptyRoot = makeResolvedDirectory(label: "\(Self.label)-launch-reconcile-root")
+    await Self.indexStale(Self.sessionId, folder: Self.folder, in: index)
+
+    updates.startReconcile(
+      folders: { [Self.folder] },
+      recordingRoot: { _ in
+        try await Task.sleep(for: Self.slowRootRead)
+        return emptyRoot
+      })
+    await updates.waitUntilApplied()
 
     #expect(await index.items(of: Self.sessionId).isEmpty)
   }
