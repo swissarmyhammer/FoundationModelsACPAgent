@@ -458,6 +458,8 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
   /// plays the steps of each ``ScriptedPassStep/onPrompt(containing:play:)``
   /// whose marker `prompt` contains, and stops at the pass end.
   ///
+  /// The play checks for a cancel before each step, and stops there.
+  ///
   /// - Parameters:
   ///   - steps: The steps to play, in order.
   ///   - prompt: The prompt the pass answers.
@@ -466,13 +468,19 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
   ///   - yield: Receives each text delta, in order.
   /// - Returns: `true` when an ``ScriptedPassStep/endPass`` step ended
   ///   the play, and `false` when the play ran out of steps.
-  /// - Throws: ``ScriptedModelError/unknownTool(_:)`` for a tool the
+  /// - Throws: `CancellationError` when the task is cancelled before a
+  ///   step, ``ScriptedModelError/unknownTool(_:)`` for a tool the
   ///   session was not handed, or the invoked tool's own error.
   private func play(
     _ steps: [ScriptedPassStep], prompt: String, turn: (any ScriptedPassTurn)?,
     yield: (String) -> Void
   ) async throws -> Bool {
     for step in steps {
+      // Router stops a model call at a tool result with a cancel of its
+      // task, and continues the answer on a new backend (task ^ptasrrj).
+      // This backend must then play no more steps. If it plays the next
+      // step, that step plays two times, or the new backend skips it.
+      try Task.checkCancellation()
       switch step {
       case .textDelta(let text):
         yield(text)
@@ -591,6 +599,9 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
   /// The tool body runs with no model lock: the pass leaves the model
   /// before the body, and waits for it again after the body.
   ///
+  /// A task that is cancelled during the body appends no `.toolOutput`
+  /// entry, as a real model session whose call stopped records none.
+  ///
   /// - Parameters:
   ///   - name: The name of the tool to invoke.
   ///   - argumentsJSON: The fixed arguments, as JSON.
@@ -599,7 +610,8 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
   /// - Returns: The value the tool returned.
   /// - Throws: ``ScriptedModelError/unknownTool(_:)`` when no handed
   ///   tool has `name`, `CancellationError` when the task is cancelled
-  ///   while the pass waits for the model again, or the tool's own error.
+  ///   during the body or while the pass waits for the model again, or
+  ///   the tool's own error.
   @discardableResult
   private func invokeTool(
     named name: String, argumentsJSON: String, turn: (any ScriptedPassTurn)?
@@ -611,6 +623,11 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     let callId = appendToolCallsEntry(name: name, arguments: content)
     turn?.leave()
     let output = try await ToolInvoker.invoke(tool, content: content)
+    // A cancel in the tool body is a stop of the model call, as Router
+    // does at a compaction stop. A real model session then records no
+    // output of the call. Router adds the result itself to the transcript
+    // that the next backend starts from (task ^ptasrrj).
+    try Task.checkCancellation()
     try await turn?.takeAgain()
     appendToolOutputEntry(callId: callId, name: name, output: output)
     return output

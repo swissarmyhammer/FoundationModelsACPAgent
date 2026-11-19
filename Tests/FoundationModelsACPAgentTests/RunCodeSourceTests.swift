@@ -54,9 +54,37 @@ import Testing
   /// The words the parse failure starts with.
   private static let failureOpening = "The snippet failed:"
 
-  /// One line of the over-long snippet. The head of the recorded
-  /// source starts with it.
-  private static let longSnippetLine = "// one line of the over-long snippet\n"
+  /// Line `number` of the over-long snippet. The head of the recorded
+  /// source starts with line 1.
+  ///
+  /// Each line has a different shape. The repetition watch of Router
+  /// reads the arguments of a call while the call is in flight, and stops
+  /// a call whose lines repeat. The scripted pass then stops too, and the
+  /// call never runs (task ^ptasrrj). The watch ignores digits, so the
+  /// line gives its number in letters.
+  ///
+  /// - Parameter number: The one-based number of the line.
+  /// - Returns: The line, with its line break.
+  private static func longSnippetLine(_ number: Int) -> String {
+    "// line \(letters(of: number)) of the over-long snippet\n"
+  }
+
+  /// The letters of the lowercase alphabet, in order.
+  private static let alphabet = Array("abcdefghijklmnopqrstuvwxyz")
+
+  /// `number` written in base 26 with the letters of ``alphabet``.
+  ///
+  /// - Parameter number: A number that is zero or more.
+  /// - Returns: The letters, most significant first.
+  private static func letters(of number: Int) -> String {
+    var rest = number
+    var text = ""
+    repeat {
+      text.insert(alphabet[rest % alphabet.count], at: text.startIndex)
+      rest /= alphabet.count
+    } while rest > 0
+    return text
+  }
 
   /// How many lines the over-long snippet holds. The product is more
   /// than 70,000 bytes, well past any plausible record bound.
@@ -226,7 +254,7 @@ import Testing
   @Test("an over-long snippet keeps at least its head")
   func anOverLongSnippetKeepsAtLeastItsHead() async throws {
     let snippet =
-      String(repeating: Self.longSnippetLine, count: Self.longSnippetLineCount)
+      (1...Self.longSnippetLineCount).map(Self.longSnippetLine).joined()
       + Self.workingSnippet
     let run = try await Self.runOnePrompt(code: snippet, label: "RunCodeSourceTests-long")
 
