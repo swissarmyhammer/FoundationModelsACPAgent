@@ -567,12 +567,18 @@ public enum ToolCatalog {
   /// endpoint: the Pinned and Recent lists of the server and the switch to
   /// a session (ACPA-9, D118). Each tool over the same directory gives the
   /// same endpoint instance, thus all sessions share one cursor sequence.
+  /// The tool gets the transcript exporter of the agent
+  /// (``CatalogContext/transcriptExporter``) for its `export session`
+  /// operation, and gives it to that endpoint for the `export` field
+  /// (`SessionsGraph.endpoint(of:exporter:)`, D202).
   ///
   /// - Parameter context: The catalog context of the session.
   /// - Returns: The tool, or `nil` when the context has no directory.
   /// - Throws: The error of the operation table of `SessionsTool`.
   static func makeSessionsTool(context: CatalogContext) throws -> SessionsTool? {
-    try context.sessionDirectory.map { try SessionsTool(directory: $0) }
+    try context.sessionDirectory.map {
+      try SessionsTool(directory: $0, exporter: context.transcriptExporter)
+    }
   }
 
   /// The `settings` tool of a session: a ``SettingsTool`` over the one

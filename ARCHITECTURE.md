@@ -51,8 +51,8 @@ lives. All of it is in `Sources/FoundationModelsACPAgent/Agent/`.
   tree. `ElicitationRelay` reads the hold of its tree when a question starts.
 
 The dependency direction is one way. The agent depends on the Agents package for the runs, on the
-Router for the sessions, and on the ACP wire package for the types and the trace validator. None
-of these packages depends on the agent.
+Router for the sessions, and on the ACP wire package for the types, the trace validator and the
+Markdown renderer (`ACPMarkdown`). None of these packages depends on the agent.
 
 Tests prove this in process. The suites (for example `SubagentCancelTests`,
 `SubagentSessionsReplayTests`, `ChildSessionProjectionTests`, `RedriveInterruptedRunsTests` and
