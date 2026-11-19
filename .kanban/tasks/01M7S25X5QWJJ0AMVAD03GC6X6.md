@@ -34,6 +34,21 @@ comments:
     - evidence: `timeout 1800 swift build --build-tests` printed "Build complete!" with 0 compiler warnings (only the SwiftPM build-system note "missing creator for mutated node" for the mlx bundle). `timeout 1800 swift test --skip-build`: 2448 tests in 256 suites passed, 0 failures, 1 known issue (HarnessSmokeTests, it is there by design), 0 skipped.
     - next: review
   timestamp: 2026-11-19T05:41:54.187611+00:00
+- actor: claude-code
+  id: 01m7s5cchxv2rv9ammx7pxenmr
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD; 2 findings (2 confirmed, 2 refuted, 0 failed); Sources/FoundationModelsACPAgent/Agent/SessionForkLaunch.swift:71, Sources/FoundationModelsACPAgent/Agent/SessionForkLaunch.swift:75 (code-hygiene/magic-numbers-swift)
+    - next: replace the magic numbers with named constants in all of SessionForkLaunch.swift, then review again.
+  timestamp: 2026-11-19T05:44:57.661215+00:00
+- actor: claude-code
+  id: 01m7s5gd1bdc5gmm3z8v6x05g0
+  text: |-
+    ### implement — changed
+    - evidence: Sources/FoundationModelsACPAgent/Agent/SessionForkLaunch.swift — the two literals now come from `defaultForkCallRecordTimeLimitSeconds` and `forkCallRecordLookIntervalMilliseconds` (the pattern of ScriptedGate). The file has no other numeric literal. swiftlint `no_magic_numbers` (allowed [0, 1, -1, 100]) gave 2 violations before and 0 after. Both findings are `- [x]`.
+    - test: `timeout 1800 swift build --build-tests` printed "Build complete!" with 0 compiler warnings; `swift test --skip-build --filter SessionForkHandlerTests`: 33 tests passed.
+    - next: commit, then review.
+  timestamp: 2026-11-19T05:47:09.227246+00:00
 depends_on:
 - 01M7RWC0Q3R664RM3W2AGKNBVR
 position_column: doing
@@ -55,3 +70,16 @@ The launcher of this agent (`Agent/SessionForkLaunch.swift`) copies the retained
 
 - A tool fork where the record of the calling tool call is held back until after the launcher starts: the fork has the turns before the call.
 - A tool fork where the record never comes: the fork call fails with the clear error, and no fork is registered. #d205 #fork
+
+## Review Findings (2026-11-18 23:42)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 4 file(s) reviewed, 5 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `ARCHITECTURE.md` — no validator matches this file
+
+- [x] `Sources/FoundationModelsACPAgent/Agent/SessionForkLaunch.swift:71` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.
+- [x] `Sources/FoundationModelsACPAgent/Agent/SessionForkLaunch.swift:75` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.

@@ -68,11 +68,19 @@ extension RoutedACPAgent {
   /// The default of ``forkCallRecordTimeLimit``. The record of a tool call is one step of the
   /// projector of the source and one step of this actor, so it comes in much less time. The
   /// limit leaves room for a projector that waits on a slow send to the client.
-  static let defaultForkCallRecordTimeLimit = Duration.seconds(10)
+  static let defaultForkCallRecordTimeLimit = Duration.seconds(
+    defaultForkCallRecordTimeLimitSeconds)
+
+  /// The length of ``defaultForkCallRecordTimeLimit``, in seconds.
+  private static let defaultForkCallRecordTimeLimitSeconds = 10
 
   /// The time between two looks at the retained history of the source while the launcher waits
   /// for the record of the calling tool call (``forkCallRecordTimeLimit``).
-  static let forkCallRecordLookInterval = Duration.milliseconds(10)
+  static let forkCallRecordLookInterval = Duration.milliseconds(
+    forkCallRecordLookIntervalMilliseconds)
+
+  /// The length of ``forkCallRecordLookInterval``, in milliseconds.
+  private static let forkCallRecordLookIntervalMilliseconds = 10
 
   /// Runs `body` while `requested` waits for its launcher: the `session/fork` request gets a new
   /// id (``ForkLaunchID``), the agent keeps the request by that id, and `body` runs with the id
