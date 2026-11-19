@@ -28,7 +28,7 @@ import Testing
   static let message = "CHILD-HALF-WAY-REPORT"
 
   /// The final text of the child.
-  private static let finalText = "CHILD-FINAL-RESULT"
+  static let finalText = "CHILD-FINAL-RESULT"
 
   /// The marker of the prompt of the child in the test of `send agent`.
   private static let waitingChildMarker = "CHILD-WAITS-FOR-A-MESSAGE-NOW"
@@ -62,6 +62,21 @@ import Testing
   /// - Returns: The run.
   /// - Throws: Whatever the fixture or a wait throws.
   static func runMessengerChild() async throws -> Run {
+    let started = try await startMessengerChild()
+    await started.fixture.close()
+    return Run(
+      cwd: started.fixture.cwd, root: started.fixture.sessionId, child: started.child,
+      notifications: await started.fixture.collector.updates)
+  }
+
+  /// Starts the root session with a child that sends one message and finishes, and waits until the
+  /// child ended and the prompt of the root session returned. The fixture stays open: the caller
+  /// closes it.
+  ///
+  /// - Returns: The open fixture, and the id of the child.
+  /// - Throws: Whatever the fixture or a wait throws.
+  static func startMessengerChild() async throws -> (fixture: ScriptedPromptFixture, child: SessionId)
+  {
     let cwd = makeResolvedDirectory(label: "\(label)-repo")
     try AgentsToolTests.writeAgent(named: childAgent, in: cwd)
     let sendCaller = ScriptedPassStep.toolCall(
@@ -91,9 +106,7 @@ import Testing
     }
     _ = try await prompt.value
     let child = try #require(ended.first { $0.sessionId != root }?.sessionId)
-    await fixture.close()
-    return Run(
-      cwd: cwd, root: root, child: child, notifications: await fixture.collector.updates)
+    return (fixture, child)
   }
 
   @Test("the message of a child to its caller is an outgoing view in the child stream")

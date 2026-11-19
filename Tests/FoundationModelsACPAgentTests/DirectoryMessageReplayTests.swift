@@ -111,6 +111,51 @@ import Testing
             .filter { $0.sessionId == target }.map(\.update)
         })
     }
+
+    /// Waits until the turn that the message started ended: the target sent an `idle` after its
+    /// reply. The work of the target ends after the last output of the turn, so the end work of
+    /// the turn is done.
+    func waitForTheEndOfTheTurn() async throws {
+      let target = self.target
+      _ = try await fixture.collector.wait(for: "the turn of the target ended") { updates in
+        let own = updates.filter { $0.sessionId == target }.map(\.update)
+        guard let reply = own.firstIndex(where: isReplyChunk) else { return false }
+        return own[reply...].contains { update in
+          if case .stateUpdate(.idle) = update { return true }
+          return false
+        }
+      }
+    }
+
+    /// Reads the history file of the target. The first agent stays open: no `session/close`
+    /// wrote the file.
+    ///
+    /// - Returns: The transcript updates of the file, as a replay gives them.
+    func writtenHistory() async throws -> [SessionUpdate] {
+      let entry = try #require(await fixture.harness.agent.sessions[target])
+      let history = try #require(try SessionHistoryFile.read(from: entry.transcriptDirectory))
+      return history.replayedTranscriptUpdates
+    }
+
+    /// Resumes the target in a second agent, which reads the history file of the target, while
+    /// the first agent stays open. It is the resume after a hard stop of the first process: no
+    /// `session/close` wrote the file.
+    ///
+    /// - Returns: The updates of the target that the second client got after the resume
+    ///   request, in order.
+    func resumeColdWithNoClose() async throws -> [SessionUpdate] {
+      let target = self.target
+      let second = try await ScriptedPromptFixture.make(
+        script: [.endPass], label: "\(label)-no-close-second", workingDirectory: fixture.cwd)
+      defer { await second.close() }
+      let countBefore = await second.collector.updates.count
+      _ = try await second.harness.connection.resumeSession(
+        ResumeSessionRequest(
+          cwd: AbsolutePath(rawValue: fixture.cwd.path), sessionId: target,
+          replayFrom: .start(ReplayFromStart())))
+      return await second.collector.updates.dropFirst(countBefore)
+        .filter { $0.sessionId == target }.map(\.update)
+    }
   }
 
   /// Whether an update is a live chunk of the reply of the target.
@@ -126,13 +171,24 @@ import Testing
   /// - Parameter update: The update.
   /// - Returns: `true` for an `agent_message` whose content holds the text of the reply.
   private static func isReplayedReply(_ update: SessionUpdate) -> Bool {
+    isReplayedAgentMessage(update, holding: replyText)
+  }
+
+  /// Whether an update is a whole `agent_message` whose content holds `text`.
+  ///
+  /// - Parameters:
+  ///   - update: The update.
+  ///   - text: The text to find.
+  /// - Returns: `true` for an `agent_message` whose content holds `text`.
+  private static func isReplayedAgentMessage(_ update: SessionUpdate, holding text: String) -> Bool
+  {
     guard let message = agentMessageReplace(of: update),
       let blocks = patchValue(message.content)
     else {
       return false
     }
     return blocks.contains { block in
-      if case .text(let text) = block { return text.text.contains(replyText) }
+      if case .text(let content) = block { return content.text.contains(text) }
       return false
     }
   }
@@ -215,6 +271,74 @@ import Testing
     let view = try #require(replay.firstIndex { $0.sessionMessagePayload?.firstText == Self.messageText })
     let reply = try #require(replay.firstIndex(where: Self.isReplayedReply))
     #expect(view < reply)
+  }
+
+  // MARK: - The write of the history at the end of a turn that a message started
+
+  @Test("a turn that a directory message started writes the view to the history file")
+  func aMessageTurnWritesTheViewToTheHistoryFile() async throws {
+    let delivered = try await Delivered.make(name: "write-view", from: nil)
+    defer { await delivered.fixture.close() }
+    try await delivered.waitForTheEndOfTheTurn()
+
+    let written = try await delivered.writtenHistory()
+
+    #expect(Self.messageViews(in: written) == [delivered.liveView])
+  }
+
+  @Test("a turn that a directory message started writes the reply to the history file")
+  func aMessageTurnWritesTheReplyToTheHistoryFile() async throws {
+    let delivered = try await Delivered.make(name: "write-reply", from: nil)
+    defer { await delivered.fixture.close() }
+    try await delivered.waitForTheEndOfTheTurn()
+
+    let written = try await delivered.writtenHistory()
+
+    #expect(written.contains(where: Self.isReplayedReply))
+  }
+
+  @Test("a resume from disk with no close of the first agent replays the turn of the message")
+  func aResumeWithNoCloseReplaysTheMessageTurn() async throws {
+    let delivered = try await Delivered.make(name: "no-close", from: nil)
+    defer { await delivered.fixture.close() }
+    try await delivered.waitForTheEndOfTheTurn()
+
+    let replay = try await delivered.resumeColdWithNoClose()
+
+    #expect(Self.messageViews(in: replay) == [delivered.liveView])
+    #expect(replay.contains(where: Self.isReplayedReply))
+  }
+
+  /// Finds the transcript directory of a session under a working directory. The table of the
+  /// agent drops a child when the child ended, so the test finds the directory on disk.
+  ///
+  /// - Parameters:
+  ///   - sessionId: The session.
+  ///   - root: The working directory that holds the recordings.
+  /// - Returns: The directory whose name is the id of the session, or `nil` when there is none.
+  private static func transcriptDirectory(of sessionId: SessionId, under root: URL) -> URL? {
+    let items = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)
+    while let item = items?.nextObject() as? URL {
+      if item.lastPathComponent == sessionId.rawValue {
+        return item
+      }
+    }
+    return nil
+  }
+
+  @Test("a turn that a mail of the agents tool started writes the history file of the child")
+  func anAgentsMailTurnWritesTheHistoryFileOfTheChild() async throws {
+    let started = try await SubagentMessageWireTests.startMessengerChild()
+    defer { await started.fixture.close() }
+    let directory = try #require(
+      Self.transcriptDirectory(of: started.child, under: started.fixture.cwd))
+
+    let history = try #require(try SessionHistoryFile.read(from: directory))
+
+    #expect(
+      history.replayedTranscriptUpdates.contains {
+        Self.isReplayedAgentMessage($0, holding: SubagentMessageWireTests.finalText)
+      })
   }
 
   // MARK: - The messages of the agents tool
