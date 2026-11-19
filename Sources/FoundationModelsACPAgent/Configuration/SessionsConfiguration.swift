@@ -67,6 +67,12 @@ extension SettingsStore {
   /// the store, and an outside write of a level file that the store
   /// watches, thus applies at the next call, with no restart.
   ///
+  /// When an outside write makes a held level file unreadable, the reload
+  /// fails and the level keeps its last good tree (``loadErrors(cwd:)``
+  /// gives the load error). The call then gives the value of that last good
+  /// tree, not the default. ``isSessionRecapOnNow(for:)`` gives the same
+  /// value at the same moment.
+  ///
   /// - Parameter workingDirectory: The working directory of the session.
   /// - Returns: The merged value: the session level of the folder, else the
   ///   user level, else the builtin default (true).
@@ -91,8 +97,15 @@ extension SettingsStore {
   /// store reads it again, apply at the next call, with no restart. A level
   /// that the store does not hold yet is read from its file.
   ///
-  /// When the read or the decode fails, the call logs a warning and gives
-  /// the default, ``SessionsConfiguration/defaultRecap`` (the recap is on).
+  /// When an outside write makes a held level file unreadable, the reload
+  /// fails and the level keeps its last good tree, as in the store. The call
+  /// then gives the value of that last good tree, not the default: the same
+  /// value that ``isSessionRecapOn(for:)`` gives at the same moment.
+  ///
+  /// When the read of a level that the store does not hold fails, or when
+  /// the decode of the merged value fails, the call logs a warning and
+  /// gives the default, ``SessionsConfiguration/defaultRecap`` (the recap is
+  /// on).
   ///
   /// - Parameter workingDirectory: The working directory of the session.
   /// - Returns: The merged value: the session level of the folder, else the

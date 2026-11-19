@@ -31,6 +31,37 @@ comments:
     - evidence: `swift build --build-tests` printed "Build complete!" with 0 compiler warnings (all project sources recompiled); `timeout 1800 swift test --skip-build`: 2474 tests in 258 suites passed, 1 known issue (the existing withKnownIssue in HarnessSmokeTests), 0 failures
     - next: /review
   timestamp: 2026-11-19T12:07:10.529353+00:00
+- actor: claude-code
+  id: 01m7svceva837m61xgjp5m2v0j
+  text: |-
+    ### review — clean
+    - evidence: review sha 41533a1~1..41533a1. 0 findings (0 confirmed, 0 refuted). 7 files attempted, 0 failed, 0 skipped. No validator matched README.md and Sources/FoundationModelsACPAgent/Resources/builtin.config.yaml, so the engine did not review these 2 files.
+    - next: review sha HEAD~1..HEAD (a68880c). The task goes to done only if that review is also clean.
+  timestamp: 2026-11-19T12:09:28.682524+00:00
+- actor: claude-code
+  id: 01m7svj6fxxq7qknenq0dp481x
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (a68880c). 4 findings (4 confirmed, 3 refuted). 7 files attempted, 0 failed, 0 skipped. Sources/FoundationModelsACPAgent/Configuration/SettingsStore.swift:790 (reuse/reuse), Sources/FoundationModelsACPAgent/Configuration/SettingsStore.swift:800 (reuse/reuse), Sources/FoundationModelsACPAgent/Configuration/SettingsStore.swift:847 (completeness/invariant-propagation), Tests/FoundationModelsACPAgentTests/SessionRecapSettingTests.swift:102 (completeness/inverse-operation-coverage). The review of 41533a1~1..41533a1 before this one was clean.
+    - next: Do the 4 items in the "Review Findings (2026-11-19 06:09)" section. Then review the fix commit again. The task stays in review.
+  timestamp: 2026-11-19T12:12:36.733977+00:00
+- actor: claude-code
+  id: 01m7svnyf4ec4qwmavfe6yefkf
+  text: 'Findings pass (2026-11-19) research. Finding 3 is the KEEP case. When the reload of a held level fails, `SettingsStore.reloaded(_:)` sets `loadError`, and the level keeps its last good `root` and `text`. `value(at:cwd:)` (thus `isSessionRecapOn(for:)`) merges `levelState(of:).tree` and does not throw. Thus the async read gives the last good value. The `levelRoots` copy stays the same. The contract goes into the doc comments of `isSessionRecapOn(for:)` and `isSessionRecapOnNow(for:)`. Plan for findings 1 and 2: `mergedSettings(over:)` becomes nonisolated. A new nonisolated `mergedSettings(for:treeOf:)` maps the watched levels and merges them, and both the async path and `mergedRootNow` call it. A nested `LevelFile` value (layer, file, `read()`) is the one lookup and read helper of `levelState(of:)`, `levelTreeNow(of:)` and `defaultsTrees()`.'
+  timestamp: 2026-11-19T12:14:39.588181+00:00
+- actor: claude-code
+  id: 01m7svxbrf22fskpb1yc4k3mmq
+  text: |-
+    Findings pass done in the main tree, not committed. (1) `mergedSettings(over:)` is now nonisolated. The new nonisolated `mergedSettings(for:treeOf:)` is the one merge: the async `mergedSettings(for:)` gives it `{ try levelState(of: $0).tree }`, and `mergedRootNow(for:)` gives it `levelTreeNow(of:)`. (2) The new nested `LevelFile` (layer, `file`, `read()`) and `levelFile(of:)` (it replaces `layer(of level:)`) are the one lookup and read rule of `levelState(of:)`, `levelTreeNow(of:)` and `defaultsTrees()`. (3) KEEP case: the store keeps the last good tree of a held level after a failed reload, so the sync read does the same. The contract is in the doc comments of `isSessionRecapOn(for:)`, `isSessionRecapOnNow(for:)` and `mergedRootNow(for:)`. Test `bothReadsKeepTheLastGoodValueOfALevelThatBecomesUnreadable`: one load error, and both reads give false. (4) Tests `aUserLevelTurnsTheRecapOffForAFolderWithNoLevel` (both reads false) and `aFolderLevelTurnsTheRecapOnOverAUserLevelThatTurnsItOff` (both reads true). The 3 new tests passed at the first run, because they cover behavior that was already there. No production behavior changed.
+
+    ### implement — changed
+    - evidence: Sources/FoundationModelsACPAgent/Configuration/SettingsStore.swift, Sources/FoundationModelsACPAgent/Configuration/SessionsConfiguration.swift, Tests/FoundationModelsACPAgentTests/SessionRecapSettingTests.swift
+    - next: /review
+
+    ### test — green
+    - evidence: `swift build --build-tests` printed "Build complete!" with 0 compiler warnings (the only warning line is the build-system "missing creator for mutated node" note for the mlx bundle, which was there before the edit); `timeout 1800 swift test --skip-build`: 2477 tests in 258 suites passed, 1 known issue (the existing withKnownIssue in HarnessSmokeTests), 0 failures
+    - next: /review
+  timestamp: 2026-11-19T12:18:42.575816+00:00
 position_column: doing
 position_ordinal: '8180'
 title: 'D206: the sessions.recap setting (user and folder level), given to the Router as its recap policy'
@@ -66,3 +97,19 @@ Do not start until the Router sends the sha of its D206 work. Then bump the thre
 - The `settings` endpoint reads and writes the key at the user and folder levels.
 
 When this lands, push to origin/main and send the sha to the TestudoApp session (testudoapp-9a). #d206 #recap
+
+## Review Findings (2026-11-19 06:09)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 5 file(s) reviewed, 8 not reviewed.
+
+> 6 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 6 file(s)
+
+> 2 file(s) not reviewed — no validator matched:
+> - `ARCHITECTURE.md` — no validator matches this file
+> - `README.md` — no validator matches this file
+
+- [x] `Sources/FoundationModelsACPAgent/Configuration/SettingsStore.swift:790` `reuse/reuse` — mergedRootNow(for:) repeats the merge body of the existing store function at line 678 (`SettingsLevel.watched(cwd:).map { ... }` then `mergedSettings(over:)`). It differs only in the per-level tree source: levelTreeNow(of:) instead of levelState(of:).tree. Two copies of the same merge sequence can drift apart. A future change to the level order or to the defaults layer would have to be made twice. Extract one helper that takes the level-tree provider as a closure, for example `mergedTrees(over levelTree: (SettingsLevel) throws -> MergedSettings.LevelTree, cwd:)`. Pass `{ try levelState(of: $0).tree }` from the existing path and `levelTreeNow(of:)` from mergedRootNow. Keep the nonisolated path for the synchronous read.
+- [x] `Sources/FoundationModelsACPAgent/Configuration/SettingsStore.swift:800` `reuse/reuse` — levelTreeNow(of:) repeats the lookup and read steps of levelState(of:): it resolves the layer, computes the config file, reads the text, and renders the tree. levelState(of:) at lines 717-732 does the same steps, and only the cache and the watcher differ. The file-to-tree rule now exists in two functions. Extract a nonisolated helper such as `readTree(of level:) throws -> (layer, file, text, root)` that both functions call. levelState keeps its cache and watcher. levelTreeNow keeps its lookup in levelRoots and skips the watcher.
+- [x] `Sources/FoundationModelsACPAgent/Configuration/SettingsStore.swift:847` `completeness/invariant-propagation` — A held level that becomes unreadable after an outside write keeps its last good tree in `levelRoots`, so the synchronous read returns the old recap value. It does not fall back to the default. The default-on-failure rule in `isSessionRecapOnNow` (SessionsConfiguration.swift:94-95) is therefore applied only to a level the store has never loaded, not to a level it holds. Decide the contract for a held level that becomes unreadable. If the doc is right, make `levelTreeNow` or `mergedRootNow` treat a held level with a `loadError` as a failed read, so it logs and gives the default. Otherwise correct the doc at SessionsConfiguration.swift:94-95 and the `isSessionRecapOnNow` doc. Then add one test: a store-held folder level that turns the recap off, followed by an outside write of invalid YAML, asserting the value the contract names.
+- [x] `Tests/FoundationModelsACPAgentTests/SessionRecapSettingTests.swift:102` `completeness/inverse-operation-coverage` — The synchronous recap read is tested only with a folder level that turns the recap off. No test sets `recap: false` at the user level and checks that `isSessionRecapOnNow(for:)` returns false for a folder with no level of its own. The user level is a separate layer in `mergedRootNow` and `levelTreeNow`, so its path is untested. Add one test. Write `recapOffYAML` to the user-level config of the fixture, then assert `fixture.store.isSessionRecapOnNow(for: fixture.firstDirectory) == false`. A folder-level `recap: true` override may be added to show the session level wins.

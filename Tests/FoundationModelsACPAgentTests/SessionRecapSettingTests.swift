@@ -25,6 +25,23 @@ import Testing
   /// A folder level whose `recap` is not a Boolean, so the decode fails.
   private static let badYAML = "sessions:\n  recap: [1, 2]\n"
 
+  /// A level file that does not parse, so a read of the file fails.
+  private static let unreadableYAML = "sessions: [not closed\n"
+
+  /// The synchronous read and the store read of the recap of a folder.
+  ///
+  /// - Parameters:
+  ///   - store: The settings store.
+  ///   - workingDirectory: The working directory of the session.
+  /// - Returns: The value of ``SettingsStore/isSessionRecapOnNow(for:)``
+  ///   and the value of ``SettingsStore/isSessionRecapOn(for:)``.
+  /// - Throws: What ``SettingsStore/isSessionRecapOn(for:)`` throws.
+  private static func recapReads(of store: SettingsStore, cwd workingDirectory: URL) async throws
+    -> (now: Bool, store: Bool)
+  {
+    (store.isSessionRecapOnNow(for: workingDirectory), try await store.isSessionRecapOn(for: workingDirectory))
+  }
+
   /// The arguments of an `updateSetting` call of `sessions.recap` at the
   /// session level of a folder.
   ///
@@ -158,6 +175,47 @@ import Testing
       Self.badYAML, in: try fixture.sessionRoot(of: fixture.firstDirectory))
 
     #expect(fixture.store.isSessionRecapOnNow(for: fixture.firstDirectory) == true)
+  }
+
+  /// A held folder level with `recap: false` that becomes unreadable after
+  /// an outside write keeps its last good tree. The synchronous read and
+  /// the store read agree: the recap stays off.
+  @Test(.timeLimit(.minutes(1))) func bothReadsKeepTheLastGoodValueOfALevelThatBecomesUnreadable()
+    async throws
+  {
+    let fixture = try SettingsGraphFixture(label: "recap-unreadable")
+    let workingDirectory = fixture.firstDirectory
+    let sessionRoot = try fixture.sessionRoot(of: workingDirectory)
+    try ConfigFileFixture.write(Self.recapOffYAML, in: sessionRoot)
+    try await fixture.store.startWatching(cwd: workingDirectory)
+
+    try ConfigFileFixture.write(Self.unreadableYAML, in: sessionRoot)
+    await fixture.store.reload(ConfigCommandFixture.configURL(in: sessionRoot))
+
+    #expect(try await fixture.store.loadErrors(cwd: workingDirectory).count == 1)
+    #expect(try await Self.recapReads(of: fixture.store, cwd: workingDirectory) == (false, false))
+  }
+
+  /// A user level with `recap: false` turns the recap off for a folder
+  /// that has no level of its own, in the synchronous read and in the
+  /// store read.
+  @Test func aUserLevelTurnsTheRecapOffForAFolderWithNoLevel() async throws {
+    let fixture = try SettingsGraphFixture(label: "recap-user-off")
+    try ConfigFileFixture.write(Self.recapOffYAML, in: try fixture.userRoot)
+
+    #expect(try await Self.recapReads(of: fixture.store, cwd: fixture.firstDirectory) == (false, false))
+  }
+
+  /// A folder level with `recap: true` turns the recap on for its folder
+  /// over a user level with `recap: false`, in the synchronous read and in
+  /// the store read.
+  @Test func aFolderLevelTurnsTheRecapOnOverAUserLevelThatTurnsItOff() async throws {
+    let fixture = try SettingsGraphFixture(label: "recap-user-off-folder-on")
+    try ConfigFileFixture.write(Self.recapOffYAML, in: try fixture.userRoot)
+    try ConfigFileFixture.write(
+      Self.recapOnYAML, in: try fixture.sessionRoot(of: fixture.firstDirectory))
+
+    #expect(try await Self.recapReads(of: fixture.store, cwd: fixture.firstDirectory) == (true, true))
   }
 
   // MARK: - The settings endpoint
