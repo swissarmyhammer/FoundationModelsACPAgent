@@ -1001,9 +1001,10 @@ extension RoutedACPAgent {
   /// Clears one finished prompt from the list of open prompts. Runs after
   /// the prompt ended. The ``SessionProjector`` runs it for a model
   /// prompt, and the command dispatch runs it for an `.action` command.
-  /// It first writes the retained history of the session
-  /// (``writeHistory(of:)``), so a new process can resume the session with
-  /// the messages of this prompt. When no prompt is open any more, it then
+  /// It first ends the turn (``turnEnded(_:)``): it writes the retained
+  /// history of the session, so a new process can resume the session with
+  /// the messages of this prompt, and it gives the turn end to the
+  /// subscribers of ``turnEnds()``. When no prompt is open any more, it then
   /// applies the model slot switch that a client asked for while a prompt
   /// was open (``applyPendingModelSlot(of:)``). It then
   /// reconciles the config-option state: a prompt that ran on a model the
@@ -1016,7 +1017,7 @@ extension RoutedACPAgent {
   func promptFinished(_ owner: PromptStateOwner, sessionId: SessionId) async {
     promptEndWorkCount[sessionId, default: 0] += 1
     defer { endPromptEndWork(of: sessionId) }
-    writeHistory(of: sessionId)
+    turnEnded(sessionId)
     sessions[sessionId]?.openPrompts.removeAll { $0 === owner }
     guard sessions[sessionId]?.openPrompts.isEmpty ?? false else {
       return

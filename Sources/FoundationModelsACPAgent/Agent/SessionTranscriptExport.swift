@@ -11,6 +11,9 @@ import FoundationModelsRouter
 // endpoint need the Markdown of a session. The agent makes it from the retained history of the
 // session: the same updates that `session/resume` replays. The renderer of FoundationModelsACP
 // makes the text. Thus the agent and the UI give the same document for the same session.
+//
+// The snapshot of a session for a share (D208) comes from the same updates, through
+// `SessionSnapshot.build` of FoundationModelsACP. A session with no history gives the same error.
 
 /// The error of an export of a session that has no history in this server.
 ///
@@ -64,6 +67,61 @@ final class AgentTranscriptExporter: SessionTranscriptExporter, Sendable {
   }
 }
 
+extension AgentTranscriptExporter: SessionSnapshotSource {
+  /// The snapshot of a session (``RoutedACPAgent/snapshot(of:options:)``). The agent gives the
+  /// exporter as the source of its ``HostSessionSharer``, so the sharer holds the agent weakly.
+  ///
+  /// - Parameters:
+  ///   - session: The id of the session.
+  ///   - options: The content rules of the share.
+  /// - Returns: The snapshot.
+  /// - Throws: ``SessionTranscriptExportError/noHistory`` when the agent is gone or has no history
+  ///   of the session, or the error of a read of the history.
+  func snapshot(of session: ULID, options: SessionSnapshot.Options) async throws -> SessionSnapshot
+  {
+    guard let agent else {
+      throw SessionTranscriptExportError.noHistory
+    }
+    return try await agent.snapshot(of: session, options: options)
+  }
+}
+
+/// The transcript updates of a session for an export, and the summary of the session.
+private struct ExportedTranscript {
+  /// The transcript updates that a `session/resume` replays.
+  let updates: [SessionUpdate]
+
+  /// The summary of the session in the directory, or `nil` when the directory does not know the
+  /// session.
+  let summary: SessionSummary?
+}
+
+extension RoutedACPAgent: SessionSnapshotSource {
+  /// The snapshot of a session for a share (D208), from its retained history.
+  ///
+  /// The updates are the transcript updates of ``transcriptMarkdown(of:includeThoughts:)``, so the
+  /// snapshot of the server is the snapshot that the UI makes from the updates that it shows. A
+  /// `nil` title of `options` takes the title of the session in the session directory, and a `nil`
+  /// agent name takes the name of the agent of the session. The same history and the same options
+  /// always give the same snapshot.
+  ///
+  /// - Parameters:
+  ///   - session: The id of the session.
+  ///   - options: The content rules of the share.
+  /// - Returns: The snapshot.
+  /// - Throws: ``SessionTranscriptExportError/noHistory`` when this server has no history of the
+  ///   session, or the error of a read of the directory, the configuration or the history file.
+  public func snapshot(of session: ULID, options: SessionSnapshot.Options) async throws
+    -> SessionSnapshot
+  {
+    let exported = try await exportedTranscript(of: session)
+    var resolved = options
+    resolved.title = options.title ?? exported.summary?.title
+    resolved.agentName = options.agentName ?? exported.summary?.agentName
+    return SessionSnapshot.build(updates: exported.updates, options: resolved)
+  }
+}
+
 extension RoutedACPAgent {
   /// The Markdown of the transcript of a session, from its retained history.
   ///
@@ -80,14 +138,26 @@ extension RoutedACPAgent {
   /// - Throws: ``SessionTranscriptExportError/noHistory`` when this server has no history of the
   ///   session, or the error of a read of the directory, the configuration or the history file.
   func transcriptMarkdown(of id: ULID, includeThoughts: Bool) async throws -> String {
+    let exported = try await exportedTranscript(of: id)
+    let options = SessionMarkdown.Options(
+      includeThoughts: includeThoughts, title: exported.summary?.title,
+      agentName: exported.summary?.agentName, labels: .english)
+    return SessionMarkdown.render(updates: exported.updates, options: options)
+  }
+
+  /// The transcript updates of a session for an export or a snapshot, from its retained history
+  /// (``SessionMergeEngine/replayedTranscriptUpdates``), and the summary of the session.
+  ///
+  /// - Parameter id: The id of the session.
+  /// - Returns: The updates and the summary.
+  /// - Throws: ``SessionTranscriptExportError/noHistory`` when this server has no history of the
+  ///   session, or the error of a read of the directory, the configuration or the history file.
+  fileprivate func exportedTranscript(of id: ULID) async throws -> ExportedTranscript {
     let summary = try await sessionDirectory.summary(of: id)
     guard let history = try await exportedHistory(of: id, summary: summary) else {
       throw SessionTranscriptExportError.noHistory
     }
-    let options = SessionMarkdown.Options(
-      includeThoughts: includeThoughts, title: summary?.title, agentName: summary?.agentName,
-      labels: .english)
-    return SessionMarkdown.render(updates: history.replayedTranscriptUpdates, options: options)
+    return ExportedTranscript(updates: history.replayedTranscriptUpdates, summary: summary)
   }
 
   /// The retained history of a session for an export.

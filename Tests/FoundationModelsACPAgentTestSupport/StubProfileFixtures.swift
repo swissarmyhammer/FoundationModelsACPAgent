@@ -70,6 +70,9 @@ import Tracing
 ///     sandboxed. The default reads the test process, which is not
 ///     sandboxed. A suite that tests the check of the mode gives
 ///     `.fixed(_:)`.
+///   - sessionShareHost: The share calls of the host that the `sessions`
+///     tool of each session uses, or `nil` (the default) for an agent with
+///     no sharer. A suite of the share of a session gives fake calls here.
 ///   - prepareRouter: The work on the router before the agent resolves its
 ///     profile. A suite that drives the timers of its runs gives the router
 ///     a `ManualRunClock` here. It does nothing by default.
@@ -91,6 +94,7 @@ public func makeStubAgent(
   userDeviceTokens: Set<String> = [],
   mode: ToolMode = .open,
   sandboxProbe: SandboxProbe = .live,
+  sessionShareHost: SessionShareHost? = nil,
   prepareRouter: @Sendable (Router) async -> Void = { _ in }
 ) async throws -> RoutedACPAgent {
   // A custom home over throwaway folders, so no test reads or writes the
@@ -117,12 +121,13 @@ public func makeStubAgent(
     inlineSettleGrace: inlineSettleGrace,
     secretStore: secretStore,
     userDeviceTokens: userDeviceTokens,
-    modelStorage: offlineModelStorage(of: home))
+    modelStorage: offlineModelStorage(of: home),
+    sessionShareHost: sessionShareHost)
 }
 
 // MARK: - The defaults layer of a stub agent
 
-/// The defaults layer that ``makeStubAgent(name:cacheDirectory:recordingsDirectory:userDirectory:loader:configuration:tracer:inlineSettleGrace:environment:secretStore:userDeviceTokens:mode:sandboxProbe:prepareRouter:)``
+/// The defaults layer that ``makeStubAgent(name:cacheDirectory:recordingsDirectory:userDirectory:loader:configuration:tracer:inlineSettleGrace:environment:secretStore:userDeviceTokens:mode:sandboxProbe:sessionShareHost:prepareRouter:)``
 /// gives each agent: the lowest layer of the configuration stack, below the
 /// user layer and the project layer.
 ///

@@ -65,6 +65,17 @@ public actor RoutedACPAgent: Agent {
   /// the turn.
   nonisolated let transcriptSearchUpdates: TranscriptSearchUpdates
 
+  /// The share calls of the host (D208), or `nil` for a host with no share. With calls, the
+  /// `sessions` tool of each session gets a ``HostSessionSharer`` over them
+  /// (``CatalogContext/sessionSharer``).
+  nonisolated let sessionShareHost: SessionShareHost?
+
+  /// The subscribers of the turn ends of the sessions of this server (``turnEnds()``).
+  nonisolated let turnEndFeed = SubscriberFeed<SessionId> {
+    ACPAgentTelemetry.logger(.session).warning(
+      "A subscriber of the turn ends is slow. It lost its oldest turn end.")
+  }
+
   /// The session directory of the router that resolved
   /// ``residentProfile`` (`Router.sessionDirectory`). Each session that
   /// the profile vends or restores registers in it, so the agent changes
@@ -538,6 +549,10 @@ public actor RoutedACPAgent: Agent {
   ///   - modelStorage: The reader of the model storage of the `models`
   ///     endpoint, or `nil` (the default) for a `ModelStorage` over
   ///     ``AgentHome/modelCacheDirectory`` with the token of the environment.
+  ///   - sessionShareHost: The share calls of the host (D208), or `nil` (the default) for a
+  ///     host with no share: the share operations of the `sessions` tool then give
+  ///     `SHARING_UNAVAILABLE`. With calls, the tool shares a session through a
+  ///     ``HostSessionSharer`` over them, with the snapshot of ``snapshot(of:options:)``.
   ///   - fallbackProfileName: The profile of each session load where no
   ///     layer sets `profile`, or where the name is unknown
   ///     (``SettingsStore/fallbackProfileName``), or `nil` (the default)
@@ -570,6 +585,7 @@ public actor RoutedACPAgent: Agent {
     secretStore: (any SecretStore)? = nil,
     userDeviceTokens: Set<String> = [],
     modelStorage: (any ModelStorageSource)? = nil,
+    sessionShareHost: SessionShareHost? = nil,
     fallbackProfileName: String? = nil,
     readableFolder: @escaping @Sendable (URL) -> Bool = RoutedACPAgent.everyFolderIsReadable
   ) async throws {
@@ -589,6 +605,7 @@ public actor RoutedACPAgent: Agent {
     self.sessionUseRecorder = Self.makeSessionUseRecorder(directory: router.sessionDirectory)
     self.hooks = hooks
     self.userDeviceTokens = userDeviceTokens
+    self.sessionShareHost = sessionShareHost
     self.settingsFolders = SettingsFolders(name: name, home: home, environment: environment)
     self.environment = environment
     self.inlineSettleGrace = inlineSettleGrace

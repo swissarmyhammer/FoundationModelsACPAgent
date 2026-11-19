@@ -236,7 +236,7 @@ extension RoutedACPAgent {
       runCallJoins: build.runCallJoins,
       stateLedger: stateLedger,
       liftMailDeliveryPause: { [weak self] in await self?.liftMailDeliveryPause(of: sessionId) },
-      mailTurnEnded: { [weak self] in await self?.writeHistory(of: sessionId) },
+      mailTurnEnded: { [weak self] in await self?.turnEnded(sessionId) },
       recordDelivery: { [weak self] in await self?.recordInHistory($0, of: sessionId) })
     if let events {
       await projector.attach(

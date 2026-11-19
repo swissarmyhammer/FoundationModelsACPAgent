@@ -12,6 +12,18 @@ comments:
     - Errors: `ImportReadError.noReadableRecord`, `.notThisFormat`.
     - For ^fvz5m50: the updates fold in `SessionMergeEngine` with no unknown entry; a compaction is a `compaction_update` (status completed). For the model transcript: a tool call is a `tool_call_update` (pending, with title and kind), then content chunks, then a final status update; thoughts are `agent_thought_chunk`.
   timestamp: 2026-11-19T22:24:21.186196+00:00
+- actor: claude-code
+  id: 01m7v0pd5ts7svnf78gm5cr13j
+  text: |-
+    Dependency available (2026-11-19): the Multitool `SessionImporter` protocol is on origin/main, commit d8bfae93 (head f47cd992; tested against Extras cdc6179). Still waiting for Router part 2 (^0hdvn00, `RouterSessionDirectory.importSession(_:transcript:)`) for ^fvz5m50; this task (^ck8e0sx) can start now.
+    API (Sendable, Equatable, Codable, public memberwise inits):
+    - `protocol SessionImporter: Sendable { func importable(_ request: ImportableSessionsRequest) async throws -> ImportableSessionsPage; func importSession(_ request: SessionImportOrder) async throws -> SessionImportResult }`
+    - `ImportableSessionsRequest` (agent, folder, preferredFolder, limit, cursor); `ImportableSession` (agent, sourceID, sourcePath, title, folder, lastDate, turnCount, previousImports); `SessionPreviousImport` (session, importedAt); `ImportableSessionsPage` (sessions, nextCursor, unreadableSources); `SessionImportOrder` (agent, source, folder, name); `SessionImportResult` (session, name, skippedRecordCount).
+    - NEW: `public enum SessionImportError: Error` with `.sourceUnreadable(agent: String)` (no grant for that agent's folder) and `.folderUnavailable(URL)` (the target folder does not exist or has no grant). Throw these: Multitool maps them to NO_SOURCE_ACCESS and IMPORT_FOLDER_UNAVAILABLE; any other error gives IMPORT_FAILED.
+    - Host API: `SessionsTool(directory:exporter:searcher:sharer:importer:)`, `SessionsGraph.endpoint(of:exporter:searcher:sharer:importer:)` (nil default). No importer: IMPORT_UNAVAILABLE.
+    - After an import, Multitool reads the new session's name and short id from the directory, so `importSession` must make the session in the directory (through `SessionDirectory.importSession`) before it returns (^fvz5m50).
+    NOTE: the sharer task ^7bgkh9p (in work) also changes the SessionsTool/endpoint calls; do this task after it, or merge with care.
+  timestamp: 2026-11-19T23:01:31.962061+00:00
 position_column: todo
 position_ordinal: 9a80
 title: 'D209: AgentSessionImporter lists the importable sessions of the host roots (Claude Code, Codex)'

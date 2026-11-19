@@ -145,6 +145,12 @@ public struct CatalogContext: Sendable {
   /// `MISSING_SEARCHER`.
   public let transcriptSearcher: (any SessionTranscriptSearcher)?
 
+  /// The sharer of the sessions of the agent (D208), or `nil` for a catalog whose host gives no
+  /// share calls. The `sessions` tool gives it to the `share session`, `update share` and `stop
+  /// sharing` operations and to the `sessions` endpoint. With no sharer, they give
+  /// `SHARING_UNAVAILABLE`.
+  public let sessionSharer: (any SessionSharer)?
+
   /// The `models` endpoint of the agent (``RoutedACPAgent/modelsEndpoint``),
   /// or `nil` for a catalog that has no agent. With an endpoint, the session
   /// gets a top-level `models` tool over it.
@@ -198,6 +204,8 @@ public struct CatalogContext: Sendable {
   ///     sessions, or `nil` (the default) for none (``transcriptExporter``).
   ///   - transcriptSearcher: The searcher of the transcripts of the
   ///     sessions, or `nil` (the default) for none (``transcriptSearcher``).
+  ///   - sessionSharer: The sharer of the sessions, or `nil` (the default) for none
+  ///     (``sessionSharer``).
   ///   - modelsEndpoint: The `models` endpoint of the agent, or `nil` (the
   ///     default) for no `models` tool (``modelsEndpoint``).
   ///   - mcpServerRegistry: The MCP server registry of the agent, or `nil`
@@ -223,6 +231,7 @@ public struct CatalogContext: Sendable {
     sessionDirectory: (any SessionDirectory)? = nil,
     transcriptExporter: (any SessionTranscriptExporter)? = nil,
     transcriptSearcher: (any SessionTranscriptSearcher)? = nil,
+    sessionSharer: (any SessionSharer)? = nil,
     modelsEndpoint: ModelsGraph? = nil,
     mcpServerRegistry: MCPServerRegistry? = nil,
     marketplaceMount: MarketplaceMount? = nil
@@ -234,6 +243,7 @@ public struct CatalogContext: Sendable {
     self.sessionDirectory = sessionDirectory
     self.transcriptExporter = transcriptExporter
     self.transcriptSearcher = transcriptSearcher
+    self.sessionSharer = sessionSharer
     self.agentRunHost = agentRunHost
     self.snapshotStore = snapshotStore
     self.settingsEndpoint = settingsEndpoint

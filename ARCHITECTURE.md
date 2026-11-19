@@ -183,7 +183,7 @@ The transcript search (D207) finds the sessions and the turns that hold a text. 
   a fork, a delete and the reconcile each give their changes. A new session item (a rename, an
   archive) gives no change. `turns(of:)` and `allTurns()` give the same turns from the items.
   Each stream keeps the newest 1,024 changes that its subscriber did not read
-  (`TranscriptSearchChangeFeed`), so a slow subscriber never stops the index. This package does
+  (`TranscriptSearchChangeFeed`, a `SubscriberFeed`), so a slow subscriber never stops the index. This package does
   not import Core Spotlight: the app writes the items and selects the kinds (Q71).
 - **The host reads the server changes (^twh8ceh).** The index of the agent stays internal.
   `RoutedACPAgent.transcriptSearchChanges` and `ComposedAgent.transcriptSearchChanges` give a
@@ -195,6 +195,26 @@ The transcript search (D207) finds the sessions and the turns that hold a text. 
 The dependency direction is one way: the agent gives changes to the updates, the updates change
 the index, and the index calls the registry. The index does not depend on the agent, so the Mac
 app can use it alone.
+
+## The share of a session
+
+A share (D208) is a snapshot of a session that the host keeps. The agent makes the snapshot, and
+the host saves it and gives the link. This package does not know where the host keeps a share.
+
+- **The snapshot.** `RoutedACPAgent.snapshot(of:options:)` builds a `SessionSnapshot` of
+  `ACPMarkdown` from the transcript updates of the Markdown export (`SessionTranscriptExport`).
+  The export and the snapshot use one read of the retained history, and a session with no
+  history gives the same `noHistory` error. `RoutedACPAgent` and `AgentTranscriptExporter`
+  conform to the public `SessionSnapshotSource`.
+- **The sharer.** The host gives its share calls as a `SessionShareHost` to the initializer of
+  `RoutedACPAgent` (or to `ComposedAgent.compose`). The agent gives each `sessions` tool a
+  `HostSessionSharer` over them, through `CatalogContext.sessionSharer`. Its source is an
+  `AgentTranscriptExporter`, which holds the agent weakly, so the sharer makes no cycle.
+- **The turn ends (Keep Updated).** `RoutedACPAgent.turnEnds()` gives each subscriber the id
+  of the session at each prompt end and at each end of a turn that a mail started, after the
+  write of the history (`SessionTurnEnds`). The host updates a share with Keep Updated on; the
+  agent does not. The stream and the transcript search changes use one feed type
+  (`SubscriberFeed`).
 
 ## Settings
 

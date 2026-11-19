@@ -162,6 +162,9 @@ struct ScriptedPromptFixture {
   ///   - inlineSettleGrace: How long a tool call waits for its run inline
   ///     before the run goes to the background. A test of a background run
   ///     gives `0`, so each run goes to the background at once.
+  ///   - sessionShareHost: The share calls of the host, or `nil` (the
+  ///     default) for an agent with no sharer. A test of the share of a
+  ///     session gives fake calls here.
   ///   - wire: The transport pair of the connection. The in-process pair
   ///     by default. A test that must stop a frame of the agent gives a
   ///     pair whose agent end keeps it back.
@@ -185,6 +188,7 @@ struct ScriptedPromptFixture {
     secretStore: any SecretStore = InMemorySecretStore(),
     hostTools: [any FoundationModels.Tool] = [],
     inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
+    sessionShareHost: SessionShareHost? = nil,
     wire: HarnessWire = .makeInMemory()
   ) async throws -> ScriptedPromptFixture {
     try await make(
@@ -204,6 +208,7 @@ struct ScriptedPromptFixture {
       secretStore: secretStore,
       hostTools: hostTools,
       inlineSettleGrace: inlineSettleGrace,
+      sessionShareHost: sessionShareHost,
       wire: wire)
   }
 
@@ -258,6 +263,9 @@ struct ScriptedPromptFixture {
   ///   - inlineSettleGrace: How long a tool call waits for its run inline
   ///     before the run goes to the background. A test of a background run
   ///     gives `0`, so each run goes to the background at once.
+  ///   - sessionShareHost: The share calls of the host, or `nil` (the
+  ///     default) for an agent with no sharer. A test of the share of a
+  ///     session gives fake calls here.
   ///   - wire: The transport pair of the connection. The in-process pair
   ///     by default. A test that must stop a frame of the agent gives a
   ///     pair whose agent end keeps it back.
@@ -282,6 +290,7 @@ struct ScriptedPromptFixture {
     secretStore: any SecretStore = InMemorySecretStore(),
     hostTools: [any FoundationModels.Tool] = [],
     inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
+    sessionShareHost: SessionShareHost? = nil,
     wire: HarnessWire = .makeInMemory()
   ) async throws -> ScriptedPromptFixture {
     let userDirectory = makeResolvedDirectory(label: "\(label)-user")
@@ -298,7 +307,8 @@ struct ScriptedPromptFixture {
       configuration: configuration,
       tracer: tracer,
       inlineSettleGrace: inlineSettleGrace,
-      secretStore: secretStore
+      secretStore: secretStore,
+      sessionShareHost: sessionShareHost
     ) { router in
       if let runClock {
         await router.useRunClock(runClock)

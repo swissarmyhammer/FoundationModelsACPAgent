@@ -748,6 +748,26 @@ The host cannot write to the index of the server. Each turn
 (`TranscriptSearchTurn`) gives the kind of each chunk, so the host selects the
 kinds that it shows.
 
+### The share of a session
+
+The `sessions` tool has the operations `share session`, `update share` and
+`stop sharing`. The agent makes the snapshot of a session from its retained
+history (`RoutedACPAgent.snapshot(of:options:)`, the same updates as the
+Markdown export), and the host keeps the share. A host gives its share calls as
+a `SessionShareHost` to `ComposedAgent.compose(sessionShareHost:)` (or to the
+initializer of `RoutedACPAgent`): one call that saves a snapshot as a new
+share, one that updates it, one that stops it, one that reads the current
+share, and a stream of the changes of the shares from outside the agent. The
+agent gives the tool a `HostSessionSharer` over them. With no calls, the share
+operations give `SHARING_UNAVAILABLE`. A host can also make a
+`HostSessionSharer` itself, with the agent as its `SessionSnapshotSource`.
+
+The agent does not update a share at the end of a turn. A host with a share
+whose Keep Updated is on reads `ComposedAgent.turnEnds()` (or
+`RoutedACPAgent.turnEnds()`): a new `AsyncStream` of the id of the session at
+the end of each prompt and of each turn that a message from another session
+started, and updates the share.
+
 ## Instructions
 
 The base system prompt of a session is the `default` agent: an `AGENT.md`

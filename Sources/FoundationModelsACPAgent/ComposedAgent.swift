@@ -203,6 +203,10 @@ public struct ComposedAgent: Sendable {
   ///     reconcile of the transcript search index at launch reads only such folders. The
   ///     default, ``RoutedACPAgent/everyFolderIsReadable(_:)``, reads each folder. An app in
   ///     the App Sandbox gives the folders that it holds a bookmark for.
+  ///   - sessionShareHost: The share calls of the host (D208), or `nil` (the default) for a
+  ///     host with no share. The composition gives them to the initializer of
+  ///     ``RoutedACPAgent``: the `sessions` tool of each session then shares a session through a
+  ///     ``HostSessionSharer`` over them.
   /// - Returns: The composed agent, the model path it was built over, and
   ///   the configuration the load resolved.
   /// - Throws: `ToolModeError.openModeInSandbox` when `mode` is `.open` in
@@ -230,7 +234,8 @@ public struct ComposedAgent: Sendable {
     sessionToolFactories: [SessionToolFactory] = [],
     reporting progress: ResolutionProgress? = nil,
     profileFitSource: (any ProfileFitEstimating)? = nil,
-    readableFolder: @escaping @Sendable (URL) -> Bool = RoutedACPAgent.everyFolderIsReadable
+    readableFolder: @escaping @Sendable (URL) -> Bool = RoutedACPAgent.everyFolderIsReadable,
+    sessionShareHost: SessionShareHost? = nil
   ) async throws -> ComposedAgent {
     // The check comes first, so a wrong mode fails before the router
     // builds and before any tool registers.
@@ -268,6 +273,7 @@ public struct ComposedAgent: Sendable {
       modelStorage: modelStorage
         ?? ModelStorage(
           cacheDirectory: home.modelCacheDirectory, tokenProvider: huggingFaceTokenProvider),
+      sessionShareHost: sessionShareHost,
       fallbackProfileName: fallbackProfileName,
       readableFolder: readableFolder)
     await agent.registerSessionToolFactories(sessionToolFactories)
@@ -295,6 +301,15 @@ public struct ComposedAgent: Sendable {
   /// the server.
   public var transcriptSearchChanges: TranscriptSearchChanges {
     agent.transcriptSearchChanges
+  }
+
+  /// Makes a new stream of the turn ends of the sessions of the server
+  /// (``RoutedACPAgent/turnEnds()`` of ``agent``). A host with a share that Keep Updated is on
+  /// for updates the share at each turn end of its session (D208 Q74).
+  ///
+  /// - Returns: The stream of the turn ends after this call.
+  public func turnEnds() -> AsyncStream<SessionId> {
+    agent.turnEnds()
   }
 
   /// Binds ``agent`` to the agent side of `transport`, so a client
