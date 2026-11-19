@@ -89,6 +89,13 @@ comments:
     - Tests: `aResumeOfAForkBeforeTheFirstTurnReplaysNoTurn`, `aForkThatLeftOutNoToolCallHasNoKnownEnd`, `aForkWithNoMCPServersGetsNoServers`, `aForkWithNoDirectoriesGetsNoDirectories` (each failed first); `aForkWithMCPServersGetsTheServersOfTheRequest` now forks a source with no servers and requests one.
     - README.md and ARCHITECTURE.md state the new rules.
   timestamp: 2026-11-19T03:30:21.221686+00:00
+- actor: claude-code
+  id: 01m7rxp7gcmjdztmepx7etcqm8
+  text: |-
+    ### implement — changed
+    - evidence: cb11d45 — Sources/FoundationModelsACPAgent/Agent/SessionFork.swift, Sources/FoundationModelsACPAgent/Agent/SessionForkHistory.swift, Sources/FoundationModelsACPAgent/Agent/SessionForkRestore.swift, Tests/FoundationModelsACPAgentTests/SessionForkHandlerTests.swift, README.md, ARCHITECTURE.md. `swift build --build-tests`: Build complete!, 0 compiler warnings. `timeout 1800 swift test --skip-build`: 2422 tests in 254 suites pass (1 known issue: the pre-existing `withKnownIssue` in HarnessSmokeTests).
+    - next: review the task again. Not pushed.
+  timestamp: 2026-11-19T03:30:31.564936+00:00
 depends_on:
 - 01M7QV7B0PDJZY8YAYZNDQKW9S
 position_column: doing
