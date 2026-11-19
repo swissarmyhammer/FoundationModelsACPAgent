@@ -18,8 +18,28 @@ comments:
     - The cause is not in the Router. Not committed; push and the sha for TestudoApp (testudoapp-9a) are for the coordinator.
     - next: review.
   timestamp: 2026-11-19T04:10:55.130999+00:00
+- actor: claude-code
+  id: 01m7s05cmnexvsp1mvd0t4g56x
+  text: |-
+    ### review — findings
+    - evidence: review sha 994950d~1..994950d; 1 finding (1 confirmed, 0 refuted, 0 failed) — Sources/FoundationModelsACPAgent/Configuration/EchoModel.swift:259 (completeness/inverse-operation-coverage)
+    - next: add a round-trip test that restores two echo turns through makeSession(transcript:), then review again.
+  timestamp: 2026-11-19T04:13:45.493224+00:00
+- actor: claude-code
+  id: 01m7s0qhw04n9hn1r4acskwqfy
+  text: |-
+    Finding fixed (completeness/inverse-operation-coverage). New suite `Tests/FoundationModelsACPAgentTests/EchoTranscriptTests.swift` gives each write path of the echo transcript a read-back: `respond(to:maxTokens:)` (two answers give two turns), `streamResponse(to:maxTokens:)` (the same), `makeFork()` (the fork holds the turns of its source), `makeSession(transcript:)` and `makeSession(transcript:tools:)` (a restore holds the turns of the transcript; one test with two arguments), and the round trip through the agent: two echo turns, `markSessionClosed`, `session/resume`. The Router journal gives the transcript to the restore of the echo model, and the restored backend holds the same two user texts (prompt entries) and the same two agent messages (response entries). A test container `RestoreKeepingEchoContainer` forwards each factory to `EchoLLMContainer` and keeps the restored backends.
+    These tests examine existing behavior, so they passed at once with the fix in place. To show that they can fail, I changed `EchoLLMContainer.makeSession(transcript:)` to `EchoSessionBackend()` for one run: the 2 restore cases and `aResumedSessionHoldsItsTwoTurns` failed, the respond, stream and fork tests passed. Then I restored the source; the production code has no change.
+  timestamp: 2026-11-19T04:23:40.672897+00:00
+- actor: claude-code
+  id: 01m7s0qkc41pndw93e89b2vp84
+  text: |-
+    ### implement — changed
+    - evidence: Tests/FoundationModelsACPAgentTests/EchoTranscriptTests.swift (new). `swift build --build-tests` Build complete!, 0 compiler warnings; full `timeout 1800 swift test --skip-build` (together with ^ccx24tw): 2440 tests in 256 suites pass, 1 known issue (pre-existing). The finding is flipped to [x].
+    - next: review.
+  timestamp: 2026-11-19T04:23:42.212172+00:00
 position_column: doing
-position_ordinal: '8280'
+position_ordinal: '8180'
 title: 'D205 bug: Fork from Here after two echo turns says "no such turn", and turn 2 reuses the agent message id of turn 1'
 ---
 Bug report from the TestudoApp session (2026-11-18). Found by TestudoApp IntegrationTests `SessionForkIntegrationTests.forkFromHereOnTurnTwo`, on ACPAgent 8b591b1a and Router de36cd24. The test is disabled in the app until this is fixed.
@@ -50,3 +70,12 @@ Bug report from the TestudoApp session (2026-11-18). Found by TestudoApp Integra
 - The same with a scripted (non-echo) model.
 
 When this lands, push to origin/main and send the sha to the TestudoApp session (testudoapp-9a). #d205 #fork #bug
+
+## Review Findings (2026-11-18 22:11)
+
+> Scope: `review sha 994950d~1..994950d` — reviewed the diffs only — lines this change added or modified. 2 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Sources/FoundationModelsACPAgent/Configuration/EchoModel.swift:259` `completeness/inverse-operation-coverage` — The change makes the restore side of the echo transcript work. `makeSession(transcript:)` now builds `EchoSessionBackend(entries: Array(transcript))`, so a restored echo session keeps its turns. No test reads the echo transcript back through this path. The new suite only forks, through `makeFork()`, which calls the `entries:` init directly. A restore that drops the entries would pass every new test, and a restored echo session would again lose its turns in the journal, which is the bug ^campexj. Add a round-trip test. Run two echo turns, restore the session through `makeSession(transcript:)` (for example, a restart through the session directory of the Router), and assert that the restored history has the same two agent messages and the same user texts. Use `makeSession(transcript:)` in the test, not only `makeFork()`.
