@@ -149,6 +149,12 @@ actor SessionProjector {
   ///     Router holds run mail only until the next user-type mail carries it, so a session that
   ///     takes a mail is not paused (``RoutedACPAgent/liftMailDeliveryPause(of:)``). Nothing by
   ///     default.
+  ///   - mailTurnEnded: The end work of a turn that a mail started and that no prompt owns: a
+  ///     delivered directory message, a user message from another session, or a mail of the
+  ///     `agents` tool. The projector calls it at the terminal event of that mail, after each
+  ///     update of the turn went into the history and before the `idle` of the turn. The agent
+  ///     writes the retained history there (``RoutedACPAgent/writeHistory(of:)``). Nothing by
+  ///     default.
   init(
     sessionId: SessionId,
     parentSessionId: SessionId? = nil,
@@ -158,7 +164,8 @@ actor SessionProjector {
     relay: ElicitationRelay?,
     runCallJoins: RunCallJoinTable,
     stateLedger: SessionStateLedger? = nil,
-    liftMailDeliveryPause: @escaping @Sendable () async -> Void = {}
+    liftMailDeliveryPause: @escaping @Sendable () async -> Void = {},
+    mailTurnEnded: @escaping @Sendable () async -> Void = {}
   ) {
     self.relay = relay
     self.runCallJoins = runCallJoins
@@ -192,7 +199,8 @@ actor SessionProjector {
         stateLedger: stateLedger,
         background: background,
         settlements: settlements,
-        liftMailDeliveryPause: liftMailDeliveryPause)
+        liftMailDeliveryPause: liftMailDeliveryPause,
+        mailTurnEnded: mailTurnEnded)
       if let relay {
         let endElicitation: ElicitationEndHandler = { end in await relay.end(end) }
         state.translator.endElicitation = endElicitation
@@ -452,6 +460,9 @@ private struct ProjectionState {
   /// Lifts the pause of the mail delivery in force of the session, at each `mailDelivered` event.
   let liftMailDeliveryPause: @Sendable () async -> Void
 
+  /// The end work of a turn that a mail started and that no prompt owns.
+  let mailTurnEnded: @Sendable () async -> Void
+
   /// The open prompts, in the order that they opened. A stream message
   /// goes alone in its submission, so an event holds the `MailID` of at
   /// most one prompt.
@@ -587,6 +598,7 @@ private struct ProjectionState {
     } else {
       runTally = translator.tally
     }
+    let endsMailTurn = endsTurnOfUnownedMail(event)
     for prompt in open.map(\.prompt) {
       if let stop = await Self.stop(
         of: event, ending: prompt, sessionId: translator.sessionId,
@@ -595,9 +607,36 @@ private struct ProjectionState {
         await endPrompt(prompt.mailId, stop: stop)
       }
     }
+    // The end of a prompt writes the history in the end work of the prompt. A turn that a mail
+    // started has no prompt, so the projector starts the same end work here.
+    if endsMailTurn {
+      await mailTurnEnded()
+    }
     if case .signalDone(let signal) = event {
       await signalDone(signal)
     }
+  }
+
+  /// Whether `event` is the terminal event of a turn that a mail started and that no open prompt
+  /// owns. The terminal events are `answered`, `answerFailed`, `cancelled` and `lost`, as for a
+  /// prompt (``stop(of:ending:sessionId:parent:)``). A terminal whose mails
+  /// include the mail of an open prompt ends that prompt, and the end work of the prompt runs.
+  ///
+  /// - Parameter event: The event.
+  /// - Returns: `true` when the event ends a turn that no open prompt owns.
+  private func endsTurnOfUnownedMail(_ event: SessionEvent) -> Bool {
+    let mailIds: [MailID]
+    switch event {
+    case .answered(let answer):
+      mailIds = answer.mailIds
+    case .answerFailed(let failure):
+      mailIds = failure.mailIds
+    case .cancelled(let id), .lost(let id):
+      mailIds = [id]
+    default:
+      return false
+    }
+    return !open.contains { mailIds.contains($0.prompt.mailId) }
   }
 
   /// Ends the run of the session: the one `usage_update` of the run, then the end of the work

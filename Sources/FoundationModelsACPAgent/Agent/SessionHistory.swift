@@ -484,6 +484,10 @@ extension RoutedACPAgent {
 
   /// Writes the retained history of a session to its file
   /// (``SessionHistoryFile``), so a new process can replay it.
+  /// The end of a prompt writes it (``promptFinished(_:sessionId:)``), and `session/close` writes it.
+  /// The end of a turn that a mail started writes it too (``SessionProjector``), so a resume after
+  /// a hard stop keeps that turn. Each write is one step of this actor, with no suspension, so two
+  /// writes do not overlap, and the last write has the newest history.
   /// A history with no transcript entry writes nothing, so a session with no prompt leaves no directory.
   /// A replay-only session writes nothing either.
   /// It ran no prompt, so its file stays as the session that ran left it.
