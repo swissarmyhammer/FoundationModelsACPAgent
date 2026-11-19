@@ -55,9 +55,13 @@ public actor RoutedACPAgent: Agent {
 
   /// The transcript search index of the sessions of this server (D207 (b), Q66), over
   /// ``AgentHome/serverSessionSearchDirectory``. It embeds with the `embedding` slot of
-  /// ``residentProfile``. The updates of each turn, fork, change of the directory and delete
-  /// come in a later change (^en1kt61); until then the index is empty.
+  /// ``residentProfile``. ``transcriptSearchUpdates`` keeps it current.
   nonisolated let transcriptSearchIndex: TranscriptSearchIndex
+
+  /// The updates of ``transcriptSearchIndex`` (^en1kt61): the history of each write, each
+  /// change of the session directory, each delete, and the reconcile at launch. They run off
+  /// the turn.
+  nonisolated let transcriptSearchUpdates: TranscriptSearchUpdates
 
   /// The session directory of the router that resolved
   /// ``residentProfile`` (`Router.sessionDirectory`). Each session that
@@ -539,6 +543,11 @@ public actor RoutedACPAgent: Agent {
   ///     `router` as the fit source. A host that loaded its start-up
   ///     configuration with a choice gives that choice here, so the agent
   ///     makes no second choice.
+  ///   - readableFolder: Tells whether the process can read a working folder now with no
+  ///     prompt (D207): an app in the App Sandbox gives the folders that it holds a bookmark
+  ///     for. The reconcile of the transcript search index at launch reads only such folders.
+  ///     The default, ``everyFolderIsReadable(_:)``, reads each folder, as the `acp-agent` CLI
+  ///     can.
   /// - Throws: `ToolModeError.openModeInSandbox` when `mode` is `open`
   ///   and `sandboxProbe` tells that the process is sandboxed, before any
   ///   other work; `ProfileResolutionError` when the profile does not
@@ -559,7 +568,8 @@ public actor RoutedACPAgent: Agent {
     secretStore: (any SecretStore)? = nil,
     userDeviceTokens: Set<String> = [],
     modelStorage: (any ModelStorageSource)? = nil,
-    fallbackProfileName: String? = nil
+    fallbackProfileName: String? = nil,
+    readableFolder: @escaping @Sendable (URL) -> Bool = RoutedACPAgent.everyFolderIsReadable
   ) async throws {
     try mode.validate(probe: sandboxProbe)
     let chosenProfileName: String
@@ -613,7 +623,10 @@ public actor RoutedACPAgent: Agent {
       folder: home.serverSessionSearchDirectory,
       embedder: ProfileEmbedding(embedder: residentProfile.embedding),
       modelID: residentProfile.embedding.chosen.stringValue,
-      readableFolder: Self.everyFolderIsReadable)
+      readableFolder: readableFolder)
+    transcriptSearchUpdates = TranscriptSearchUpdates(
+      index: transcriptSearchIndex,
+      summaryReader: Self.directorySummaryReader(router.sessionDirectory))
     modelsEndpoint = ModelsGraph(
       store: settingsStore,
       storage: modelStorage ?? ModelStorage(cacheDirectory: home.modelCacheDirectory),
@@ -637,6 +650,9 @@ public actor RoutedACPAgent: Agent {
     await router.sessionDirectory.useRecapPolicy { workingDirectory in
       recapSettings.isSessionRecapOnNow(for: workingDirectory)
     }
+    // The transcript search index follows each change of the directory, and reconciles the
+    // folders of the project store in the background (D207, ^en1kt61).
+    startTranscriptSearchUpdates(reading: router.sessionDirectory)
   }
 
   // MARK: - The order rule

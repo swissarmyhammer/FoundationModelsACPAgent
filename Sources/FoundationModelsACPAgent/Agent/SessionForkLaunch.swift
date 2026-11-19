@@ -179,7 +179,8 @@ extension RoutedACPAgent {
   ///
   /// The agent writes the copied history to the history file of the fork first
   /// (``SessionHistoryFile``), also when the copy is empty. Thus each later restore of the fork
-  /// reads the copy, also in a new process. The hooks of the fork see the key of its folder, as
+  /// reads the copy, also in a new process. The copy then goes to the transcript search index
+  /// as the history of the fork, off the turn. The hooks of the fork see the key of its folder, as
   /// for each other session of the folder. The connection of a `session/fork` request owns the
   /// fork before the mount, so each update of the mount goes to it. A fork with no owner keeps
   /// its updates in its retained history until a connection takes it with `session/resume`.
@@ -198,6 +199,7 @@ extension RoutedACPAgent {
   ) async throws -> SessionActivation {
     let forkId = SessionId(rawValue: fork.id.description)
     try SessionHistoryFile.write(history, in: fork.recordingDirectory)
+    transcriptSearchUpdates.indexHistory(history, of: forkId)
     SnapshotSessionKeys.shared.record(
       HookLineage(workingDirectory: placement.workingDirectory, origin: .forked).sessionKey,
       for: forkId)

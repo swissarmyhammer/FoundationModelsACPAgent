@@ -198,6 +198,11 @@ public struct ComposedAgent: Sendable {
   ///     composition of each session runs them with the context of the
   ///     session (``SessionToolContext``), and mounts the tools after the
   ///     tools of the catalog. The default is none.
+  ///   - readableFolder: Tells whether the process can read a working folder now with no
+  ///     prompt. The composition gives it to the initializer of ``RoutedACPAgent``: the
+  ///     reconcile of the transcript search index at launch reads only such folders. The
+  ///     default, ``RoutedACPAgent/everyFolderIsReadable(_:)``, reads each folder. An app in
+  ///     the App Sandbox gives the folders that it holds a bookmark for.
   /// - Returns: The composed agent, the model path it was built over, and
   ///   the configuration the load resolved.
   /// - Throws: `ToolModeError.openModeInSandbox` when `mode` is `.open` in
@@ -224,7 +229,8 @@ public struct ComposedAgent: Sendable {
     modelStorage: (any ModelStorageSource)? = nil,
     sessionToolFactories: [SessionToolFactory] = [],
     reporting progress: ResolutionProgress? = nil,
-    profileFitSource: (any ProfileFitEstimating)? = nil
+    profileFitSource: (any ProfileFitEstimating)? = nil,
+    readableFolder: @escaping @Sendable (URL) -> Bool = RoutedACPAgent.everyFolderIsReadable
   ) async throws -> ComposedAgent {
     // The check comes first, so a wrong mode fails before the router
     // builds and before any tool registers.
@@ -262,7 +268,8 @@ public struct ComposedAgent: Sendable {
       modelStorage: modelStorage
         ?? ModelStorage(
           cacheDirectory: home.modelCacheDirectory, tokenProvider: huggingFaceTokenProvider),
-      fallbackProfileName: fallbackProfileName)
+      fallbackProfileName: fallbackProfileName,
+      readableFolder: readableFolder)
     await agent.registerSessionToolFactories(sessionToolFactories)
     return ComposedAgent(
       agent: agent, modelSource: modelSource, configuration: configuration)

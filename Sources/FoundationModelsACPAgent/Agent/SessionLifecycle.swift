@@ -61,6 +61,10 @@ extension RoutedACPAgent {
   /// (``removeSnapshotTimeline(of:recorded:)``). Only a delete removes it:
   /// `session/close` and the start of the agent keep it.
   ///
+  /// The delete removes the items of the session from the transcript search index, and the
+  /// items of each session recorded inside its folder: a fork records in the folder of its
+  /// source, so the delete removes its files too.
+  ///
   /// - Parameter params: The request naming the session to delete.
   /// - Returns: The empty response.
   /// - Throws: The order rule's invalid-request error.
@@ -97,7 +101,10 @@ extension RoutedACPAgent {
     let recorded = Self.recordedSessions(under: roots)
     let sessionKey = snapshotKey(
       of: params.sessionId, workingDirectory: entry?.workingDirectory, recorded: recorded)
+    let searchSessions = Self.transcriptSearchSessions(
+      deleting: params.sessionId, folderName: rootId.ulidString, under: roots)
     removeSessionTree(ulidString: rootId.ulidString, from: roots)
+    transcriptSearchUpdates.remove(searchSessions)
     SnapshotSessionKeys.shared.forget(params.sessionId)
     if let sessionKey {
       await removeSnapshotTimeline(

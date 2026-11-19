@@ -595,6 +595,10 @@ enum ACPAgentTelemetry {
     /// The code context leases: a release for a manager that the table does
     /// not hold.
     case codeContext = "CodeContext"
+
+    /// The updates of the transcript search index: a session whose facts or
+    /// history did not read, and a folder that the reconcile did not read.
+    case transcriptSearch = "TranscriptSearch"
   }
 
   /// Makes a new logger for `category`.

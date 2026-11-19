@@ -173,6 +173,16 @@ import Testing
         == ["Hello there?", "Hi there."])
   }
 
+  /// New facts of a session that the index does not hold add no item: a session gets its items
+  /// from its history.
+  @Test func newFactsOfASessionThatTheIndexDoesNotHoldAddNoItem() async throws {
+    let index = Self.makeIndex(label: "facts-not-held", embedder: nil)
+
+    await index.update(session: Self.sessionId, metadata: Self.metadata)
+
+    #expect(await index.items(of: Self.sessionId).isEmpty)
+  }
+
   /// Two indexes with different folders are independent: the server index finds a word of its
   /// session, and the client index finds nothing.
   @Test func twoIndexesWithDifferentFoldersAreIndependent() async throws {

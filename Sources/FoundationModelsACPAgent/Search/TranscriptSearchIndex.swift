@@ -20,11 +20,35 @@ import FoundationModelsMetadataRegistry
 /// The host gives the chunks of each session (`SessionSearchChunker.chunks(of:dates:)` of
 /// FoundationModelsACP) and the facts of the session. Each change gives the whole catalog to
 /// the searcher (`update(items:)`), and the registry embeds only the items whose text changed.
+/// The registry has no update of some items yet, so the index gives the full list.
 public actor TranscriptSearchIndex {
+  /// The content of one session that the host gives to the index: the chunks of its transcript
+  /// and its facts.
+  public struct SessionContent: Sendable {
+    /// The chunks of the transcript of the session, from `SessionSearchChunker.chunks(of:dates:)`.
+    public let chunks: [SessionSearchChunk]
+
+    /// The facts of the session.
+    public let metadata: TranscriptSessionMetadata
+
+    /// Makes the content of a session.
+    ///
+    /// - Parameters:
+    ///   - chunks: The chunks of the transcript of the session.
+    ///   - metadata: The facts of the session.
+    public init(chunks: [SessionSearchChunk], metadata: TranscriptSessionMetadata) {
+      self.chunks = chunks
+      self.metadata = metadata
+    }
+  }
+
   /// The items of one indexed session.
   private struct IndexedSession: Sendable {
     /// The session item.
     let sessionItem: TranscriptSearchItem
+
+    /// The facts of the session that ``sessionItem`` holds.
+    let metadata: TranscriptSessionMetadata
 
     /// The chunk items, in the order of the chunks.
     let chunkItems: [TranscriptSearchItem]
@@ -32,6 +56,39 @@ public actor TranscriptSearchIndex {
     /// The session item, then the chunk items.
     var items: [TranscriptSearchItem] {
       [sessionItem] + chunkItems
+    }
+
+    /// Makes the items of one session from its content.
+    ///
+    /// - Parameters:
+    ///   - session: The session.
+    ///   - content: The chunks and the facts of the session.
+    init(session: SessionId, content: SessionContent) {
+      self.init(
+        session: session, metadata: content.metadata,
+        chunkItems: content.chunks.map { TranscriptSearchItem(chunk: $0, session: session) })
+    }
+
+    /// Makes the items of one session from its facts and its chunk items.
+    ///
+    /// - Parameters:
+    ///   - session: The session.
+    ///   - metadata: The facts of the session.
+    ///   - chunkItems: The chunk items of the session.
+    init(
+      session: SessionId, metadata: TranscriptSessionMetadata, chunkItems: [TranscriptSearchItem]
+    ) {
+      sessionItem = TranscriptSearchItem(session: session, metadata: metadata)
+      self.metadata = metadata
+      self.chunkItems = chunkItems
+    }
+
+    /// The same chunk items with a new session item.
+    ///
+    /// - Parameter metadata: The new facts of the session.
+    /// - Returns: The items with the new session item.
+    func replacingMetadata(with metadata: TranscriptSessionMetadata) -> IndexedSession {
+      IndexedSession(session: sessionItem.sessionId, metadata: metadata, chunkItems: chunkItems)
     }
   }
 
@@ -87,9 +144,47 @@ public actor TranscriptSearchIndex {
   public func index(
     session: SessionId, chunks: [SessionSearchChunk], metadata: TranscriptSessionMetadata
   ) async {
-    sessions[session] = IndexedSession(
-      sessionItem: TranscriptSearchItem(session: session, metadata: metadata),
-      chunkItems: chunks.map { TranscriptSearchItem(chunk: $0, session: session) })
+    await index([session: SessionContent(chunks: chunks, metadata: metadata)])
+  }
+
+  /// Indexes a set of sessions and removes the items of other sessions, with one change of the
+  /// catalog. The items of each session in `contents` replace the items that the index held for
+  /// it. A reconcile gives each session of a folder in one call, so the searcher gets the
+  /// catalog one time and not one time for each session.
+  ///
+  /// - Parameters:
+  ///   - contents: The content of each session to index, by session id.
+  ///   - removed: The sessions whose items to remove. A session that the index does not hold
+  ///     changes nothing.
+  public func index(_ contents: [SessionId: SessionContent], removing removed: Set<SessionId> = [])
+    async
+  {
+    let removedHeld = removed.filter { sessions[$0] != nil && contents[$0] == nil }
+    guard !contents.isEmpty || !removedHeld.isEmpty else {
+      return
+    }
+    for (session, content) in contents {
+      sessions[session] = IndexedSession(session: session, content: content)
+    }
+    for session in removedHeld {
+      sessions.removeValue(forKey: session)
+    }
+    await publishCatalog()
+  }
+
+  /// Replaces only the session item of a session that the index holds: its chunk items stay as
+  /// they are. A change of the session directory (a rename, the tags, the recap, an archive or
+  /// an unarchive) gives the new facts here. A session that the index does not hold changes
+  /// nothing, because a session with no indexed transcript gets its items from its history.
+  ///
+  /// - Parameters:
+  ///   - session: The session.
+  ///   - metadata: The new facts of the session.
+  public func update(session: SessionId, metadata: TranscriptSessionMetadata) async {
+    guard let held = sessions[session], held.metadata != metadata else {
+      return
+    }
+    sessions[session] = held.replacingMetadata(with: metadata)
     await publishCatalog()
   }
 
@@ -97,10 +192,24 @@ public actor TranscriptSearchIndex {
   ///
   /// - Parameter session: The session.
   public func remove(session: SessionId) async {
-    guard sessions.removeValue(forKey: session) != nil else {
-      return
-    }
-    await publishCatalog()
+    await index([:], removing: [session])
+  }
+
+  /// The items that the index holds for one session: the session item, then the chunk items in
+  /// the order of the chunks. A session that the index does not hold has none.
+  ///
+  /// - Parameter session: The session.
+  /// - Returns: The items of the session.
+  public func items(of session: SessionId) -> [TranscriptSearchItem] {
+    sessions[session]?.items ?? []
+  }
+
+  /// The facts of each session that the index holds, by session id. A reconcile reads the
+  /// working folder of each session here, to find the sessions of a folder that it read.
+  ///
+  /// - Returns: The facts of each held session.
+  public func indexedSessions() -> [SessionId: TranscriptSessionMetadata] {
+    sessions.mapValues(\.metadata)
   }
 
   /// The matches of the searcher for a query: one match for each item that a signal ranked, in

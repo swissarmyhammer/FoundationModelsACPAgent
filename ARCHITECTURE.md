@@ -113,6 +113,52 @@ The compile-time dependency direction does not change: the agent calls the sessi
 the Router, and the Router calls the agent for a fork only through the `SessionLauncher` port
 that the Router declares.
 
+## Transcript search
+
+The transcript search (D207) finds the sessions and the turns that hold a text. All of it is in
+`Sources/FoundationModelsACPAgent/Search/`.
+
+- **The items.** `TranscriptSearchItem` is one item of the catalog: a chunk of the transcript of
+  a session (`SessionSearchChunker` of FoundationModelsACP makes the chunks from the retained
+  history, `SessionMergeEngine+SearchChunks`), or the session itself, with its facts
+  (`TranscriptSessionMetadata`: the name, the slug, the tags, the folder, the agent, the recap
+  and the last summary).
+- **The index.** `TranscriptSearchIndex` is a public actor over one `MetadataSearcher` of
+  FoundationModelsMetadataRegistry. The registry is the engine: its BM25, trigram and cosine
+  signals decide the matches. The index has no store, no ranking and no embedding of its own.
+  Each change gives the full catalog to the searcher (`update(items:)`), and the registry embeds
+  only the items whose text changed. The agent holds one index over
+  `AgentHome.serverSessionSearchDirectory` (`RoutedACPAgent.transcriptSearchIndex`). The Mac app
+  makes a second index over `AgentHome.clientSessionSearchDirectory`. The index keeps no file yet.
+- **The updates.** `TranscriptSearchUpdates` keeps the index of the agent current. The agent
+  gives each change with no wait, and one task applies the changes in their order
+  (`TranscriptSearchApplier`), so a turn never waits for the index and a later change never
+  comes before an earlier one. A failure is logged, and the next change goes on.
+  - After each write of a history file (`writeHistory(of:)` at the end of a prompt, of a mail
+    turn and of `session/close`, and the copy of a fork in `SessionForkLaunch`), the history goes
+    to the index: its chunk items and its session item, with the summary of the session
+    directory.
+  - The updates read the events of the session directory. `factsChanged` (a rename, the tags,
+    the recap) gives the new session item only. `archived` and `unarchived` give the session item
+    that the directory reads. `started` of a session with a history in the session table gives
+    its history: the directory registers a fork after the write of its copy, so the fork is
+    indexed as its own session with its live facts.
+  - `session/delete` removes the items of the session, and of each session recorded inside its
+    folder (a fork records in the folder of its source).
+- **The reconcile.** At launch, a task with a low priority reads the working folders of the
+  project store. The host gives the rule "this folder is readable now" as a closure
+  (`readableFolder` of `RoutedACPAgent.init` and `ComposedAgent.compose`; the default reads each
+  folder). The reconcile reads nothing in a folder that the rule refuses, and the items of its
+  sessions stay. For each other folder it reads the recording root from the settings of the
+  folder, the record (`index.md`) and the `session-history.json` of each session folder, and gives
+  the items of each session in one change. It removes the items of each session of the folder
+  that has no history file. It reads no summary of the session directory, because that read
+  reads the recording root of each project. There is no rebuild command and no setting (D187).
+
+The dependency direction is one way: the agent gives changes to the updates, the updates change
+the index, and the index calls the registry. The index does not depend on the agent, so the Mac
+app can use it alone.
+
 ## Settings
 
 The agent settings live in memory in one `SettingsStore` (in

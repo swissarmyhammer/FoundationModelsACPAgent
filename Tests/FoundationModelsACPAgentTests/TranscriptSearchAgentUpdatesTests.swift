@@ -1,0 +1,162 @@
+import Foundation
+import FoundationModelsACP
+import FoundationModelsACPAgentTestSupport
+import FoundationModelsExtras
+import Testing
+
+@testable import FoundationModelsACPAgent
+
+/// The agent keeps its transcript search index current (D207, ^en1kt61): each turn, each fork
+/// and each delete changes the items of its session, off the turn, and the reconcile reads the
+/// history files of a folder.
+@Suite(.closesHarnesses) struct TranscriptSearchAgentUpdatesTests {
+  // MARK: - Constants
+
+  /// The prefix that names the throwaway folders of each test.
+  private static let label = "TranscriptSearchAgentUpdatesTests"
+
+  /// A word that only the answer of the scripted model holds.
+  private static let answerWord = "quokka"
+
+  /// The script of each prompt: one answer with ``answerWord``.
+  private static let script: [ScriptedPassStep] = [
+    .textDelta("The \(answerWord) lives on an island."), .endPass,
+  ]
+
+  /// The most polls of a wait for the index. The updates run with a low priority, so a full
+  /// parallel test run can keep them back for many seconds.
+  private static let pollLimit = 3600
+
+  /// The time between two polls of a wait for the index.
+  private static let pollInterval = Duration.milliseconds(25)
+
+  // MARK: - Fixtures
+
+  /// A fixture that ran one prompt with the answer of ``script``.
+  ///
+  /// - Parameter label: The label of the folders of the test.
+  /// - Returns: The fixture.
+  /// - Throws: Whatever the fixture or the prompt throws.
+  private static func fixtureAfterOnePrompt(label: String) async throws -> ScriptedPromptFixture {
+    let fixture = try await ScriptedPromptFixture.make(
+      script: script, label: "\(Self.label)-\(label)")
+    try await ScriptedPromptFixture.runPrompt(on: fixture, text: "Where does it live?")
+    return fixture
+  }
+
+  /// Whether the items of a session hold a chunk with ``answerWord``.
+  ///
+  /// - Parameters:
+  ///   - session: The session.
+  ///   - index: The index.
+  /// - Returns: `true` when a chunk item of the session holds the word.
+  private static func holdsTheAnswer(_ session: SessionId, in index: TranscriptSearchIndex) async
+    -> Bool
+  {
+    await index.items(of: session).contains { item in
+      guard case .chunk(let chunk) = item.content else {
+        return false
+      }
+      return chunk.text.contains(answerWord)
+    }
+  }
+
+  /// Waits until a condition over the index holds, or until the poll limit.
+  ///
+  /// - Parameter condition: Tells whether the wait is over.
+  /// - Throws: The cancel of the wait.
+  private static func waitUntil(_ condition: () async -> Bool) async throws {
+    try await pollUntil(limit: pollLimit, interval: pollInterval) { await condition() }
+  }
+
+  // MARK: - The turn
+
+  /// The end of a prompt gives the chunk items of its session to the index.
+  @Test(.timeLimit(.minutes(3))) func aTurnGivesTheItemsOfItsSession() async throws {
+    let fixture = try await Self.fixtureAfterOnePrompt(label: "turn")
+    let index = fixture.harness.agent.transcriptSearchIndex
+
+    try await Self.waitUntil { await Self.holdsTheAnswer(fixture.sessionId, in: index) }
+    await fixture.close()
+
+    #expect(await Self.holdsTheAnswer(fixture.sessionId, in: index))
+  }
+
+  /// A summary of the directory that does not read does not stop the turn: the turn ends, and
+  /// the end of the prompt writes its history with the user message of the response.
+  @Test(.timeLimit(.minutes(3))) func aFailedIndexUpdateDoesNotStopTheTurn() async throws {
+    let fixture = try await ScriptedPromptFixture.make(
+      script: Self.script, label: "\(Self.label)-failure")
+    await fixture.harness.agent.transcriptSearchUpdates.useSummaryReader { id in
+      throw SessionDirectoryError.unknownSession(id)
+    }
+
+    let run = try await ScriptedPromptFixture.runPrompt(on: fixture, text: "Where does it live?")
+    let entry = try #require(await fixture.harness.agent.sessions[fixture.sessionId])
+    await fixture.close()
+
+    let written = try #require(try SessionHistoryFile.read(from: entry.transcriptDirectory))
+    #expect(written.entry(withID: .userMessage(run.response.messageId)) != nil)
+  }
+
+  // MARK: - The fork
+
+  /// A fork is indexed as its own session, with the copy of the history of its source.
+  @Test(.timeLimit(.minutes(3))) func aForkIsIndexedAsItsOwnSession() async throws {
+    let fixture = try await Self.fixtureAfterOnePrompt(label: "fork")
+    let index = fixture.harness.agent.transcriptSearchIndex
+
+    let fork = try await fixture.harness.connection.forkSession(
+      ForkSessionRequest(
+        cwd: AbsolutePath(rawValue: fixture.cwd.path), sessionId: fixture.sessionId)
+    ).sessionId
+    try await Self.waitUntil { await Self.holdsTheAnswer(fork, in: index) }
+    await fixture.close()
+
+    #expect(await Self.holdsTheAnswer(fork, in: index))
+  }
+
+  // MARK: - The delete
+
+  /// `session/delete` removes each item of the session.
+  @Test(.timeLimit(.minutes(3))) func aDeleteRemovesTheItemsOfTheSession() async throws {
+    let fixture = try await Self.fixtureAfterOnePrompt(label: "delete")
+    let index = fixture.harness.agent.transcriptSearchIndex
+    try await Self.waitUntil { await Self.holdsTheAnswer(fixture.sessionId, in: index) }
+    try #require(await Self.holdsTheAnswer(fixture.sessionId, in: index))
+
+    _ = try await fixture.harness.connection.deleteSession(
+      DeleteSessionRequest(sessionId: fixture.sessionId))
+    try await Self.waitUntil { await index.items(of: fixture.sessionId).isEmpty }
+    await fixture.close()
+
+    #expect(await index.items(of: fixture.sessionId).isEmpty)
+  }
+
+  // MARK: - The reconcile
+
+  /// The reconcile gives the chunks of the history file of a session that changed since the
+  /// index read it.
+  @Test(.timeLimit(.minutes(3))) func theReconcileGivesTheChunksOfAChangedFile() async throws {
+    let fixture = try await Self.fixtureAfterOnePrompt(label: "reconcile")
+    let entry = try #require(await fixture.harness.agent.sessions[fixture.sessionId])
+    await fixture.close()
+    let index = TranscriptSearchIndex(
+      folder: makeResolvedDirectory(label: "\(Self.label)-reconcile-index"), embedder: nil,
+      modelID: nil, readableFolder: { _ in true })
+    let updates = TranscriptSearchUpdates(index: index) { _ in nil }
+    await index.index(
+      session: fixture.sessionId, chunks: [],
+      metadata: TranscriptSessionMetadata(
+        name: "", slug: "", tags: [], folder: fixture.cwd, agentName: nil, recap: nil,
+        lastSummary: nil))
+
+    await updates.reconcile(folders: [fixture.cwd], recordingRoot: { _ in entry.transcriptRoot })
+    try await Self.waitUntil { await Self.holdsTheAnswer(fixture.sessionId, in: index) }
+
+    let written = try #require(try SessionHistoryFile.read(from: entry.transcriptDirectory))
+    #expect(
+      await index.items(of: fixture.sessionId).dropFirst().elementsEqual(
+        written.searchChunks.map { TranscriptSearchItem(chunk: $0, session: fixture.sessionId) }))
+  }
+}

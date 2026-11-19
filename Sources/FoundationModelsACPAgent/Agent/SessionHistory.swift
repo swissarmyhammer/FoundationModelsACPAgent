@@ -563,6 +563,8 @@ extension RoutedACPAgent {
   /// It ran no prompt, so its file stays as the session that ran left it.
   /// A failed write is logged.
   /// The history in the table stays, and the next write tries again.
+  /// After a write, the history goes to the transcript search index, off the turn
+  /// (``TranscriptSearchUpdates/indexHistory(_:of:)``).
   ///
   /// - Parameter sessionId: The session whose history to write.
   func writeHistory(of sessionId: SessionId) {
@@ -570,8 +572,10 @@ extension RoutedACPAgent {
     else {
       return
     }
+    let history = entry.history
     do {
-      try SessionHistoryFile.write(entry.history, in: entry.transcriptDirectory)
+      try SessionHistoryFile.write(history, in: entry.transcriptDirectory)
+      transcriptSearchUpdates.indexHistory(history, of: sessionId)
     } catch {
       ACPAgentTelemetry.logger(.session).error(
         "The retained history of a session was not written.",
