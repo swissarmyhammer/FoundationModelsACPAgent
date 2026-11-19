@@ -101,7 +101,7 @@ import Testing
     let fixture = try await ScriptedPromptFixture.make(
       script: [.endPass], label: "\(label)-second", workingDirectory: recording.cwd)
     let connection = fixture.harness.connection
-    let subscription = connection.subscribeToAllSessions()
+    let subscription = fixture.subscribeToTheResumeWire()
     let reader = Task { await subscription.readResumeTrace() }
     _ = try await connection.resumeSession(
       ResumeSessionRequest(

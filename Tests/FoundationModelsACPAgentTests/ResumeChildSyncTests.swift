@@ -161,15 +161,10 @@ import Testing
   ) async throws -> Wire {
     let fixture = try await secondAgent(for: recording)
     let connection = fixture.harness.connection
-    let subscription = connection.subscribeToAllSessions()
+    let subscription = fixture.subscribeToTheResumeWire()
     let first = WireTraceEvent.resumeRequest(id: requestId, sessionId: recording.root)
-    // The second agent opened its own session with `session/new`. That session sends its name
-    // after the response, and the update can come after the read starts. The client knew the
-    // session before the resume, and it is not in the resumed tree, so its events stay out.
-    let ownSession: Set = [fixture.sessionId]
     let reader = Task {
-      await subscription.readResumeTrace(
-        startingWith: [first], leavingOut: ownSession, settledBy: settledBy)
+      await subscription.readResumeTrace(startingWith: [first], settledBy: settledBy)
     }
     try await beforeRequest(fixture)
     let call = request(recording, replayFrom: cursor(replays: replays))

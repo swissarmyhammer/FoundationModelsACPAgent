@@ -113,7 +113,7 @@ import Testing
     let fixture = try await ScriptedPromptFixture.make(
       script: [.endPass], label: "\(label)-second", workingDirectory: recording.cwd)
     let connection = fixture.harness.connection
-    let subscription = connection.subscribeToAllSessions()
+    let subscription = fixture.subscribeToTheResumeWire()
     let first = WireTraceEvent.resumeRequest(id: .number(1), sessionId: recording.root)
     let request = ResumeSessionRequest(
       cwd: AbsolutePath(rawValue: recording.cwd.path), sessionId: recording.root)

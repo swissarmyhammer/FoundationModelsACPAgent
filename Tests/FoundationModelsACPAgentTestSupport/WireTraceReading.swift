@@ -108,6 +108,8 @@ extension SessionEventSubscription {
   ///
   /// - Parameters:
   ///   - first: The events that came before the subscription, for example the resume request.
+  ///   - knownSessions: The sessions whose events are not part of the trace, as in
+  ///     ``readResumeTrace(startingWith:leavingOut:settledBy:)``.
   ///   - settledBy: Tells the last event to read after the response, as in
   ///     ``readResumeTrace(startingWith:leavingOut:settledBy:)``.
   ///   - timeout: The longest time that the read waits.
@@ -116,12 +118,14 @@ extension SessionEventSubscription {
   /// - Throws: The error of `request`. The read is cancelled then.
   public func readResumeTrace(
     startingWith first: [WireTraceEvent] = [],
+    leavingOut knownSessions: Set<SessionId> = [],
     settledBy: (@Sendable (WireTraceEvent) -> Bool)? = nil,
     timeout: Duration,
     whileRunning request: () async throws -> Void
   ) async throws -> [WireTraceEvent] {
     try await readSequencedResumeTrace(
-      startingWith: first, settledBy: settledBy, timeout: timeout, whileRunning: request
+      startingWith: first, leavingOut: knownSessions, settledBy: settledBy, timeout: timeout,
+      whileRunning: request
     ).map(\.event)
   }
 
@@ -132,6 +136,8 @@ extension SessionEventSubscription {
   ///
   /// - Parameters:
   ///   - first: The events that came before the subscription, for example the resume request.
+  ///   - knownSessions: The sessions whose events are not part of the trace, as in
+  ///     ``readResumeTrace(startingWith:leavingOut:settledBy:)``.
   ///   - settledBy: Tells the last event to read after the response, as in
   ///     ``readResumeTrace(startingWith:leavingOut:settledBy:)``.
   ///   - timeout: The longest time that the read waits.
@@ -141,11 +147,15 @@ extension SessionEventSubscription {
   /// - Throws: The error of `request`. The read is cancelled then.
   public func readSequencedResumeTrace(
     startingWith first: [WireTraceEvent] = [],
+    leavingOut knownSessions: Set<SessionId> = [],
     settledBy: (@Sendable (WireTraceEvent) -> Bool)? = nil,
     timeout: Duration,
     whileRunning request: () async throws -> Void
   ) async throws -> [SequencedTraceEvent] {
-    let reader = Task { await readSequencedResumeTrace(startingWith: first, settledBy: settledBy) }
+    let reader = Task {
+      await readSequencedResumeTrace(
+        startingWith: first, leavingOut: knownSessions, settledBy: settledBy)
+    }
     let limit = Task {
       do {
         try await Task.sleep(for: timeout)

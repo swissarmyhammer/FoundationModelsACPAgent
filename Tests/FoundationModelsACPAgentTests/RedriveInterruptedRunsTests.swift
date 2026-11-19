@@ -223,7 +223,7 @@ import Testing
   ) async throws -> Wire {
     let fixture = try await secondAgent(for: recording)
     let connection = fixture.harness.connection
-    let subscription = connection.subscribeToAllSessions()
+    let subscription = fixture.subscribeToTheResumeWire()
     let first = WireTraceEvent.resumeRequest(id: .number(1), sessionId: recording.root)
     let sessions = [recording.child, recording.leaf]
     let seen = Mutex(RedriveSeen())

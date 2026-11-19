@@ -358,7 +358,7 @@ import Testing
       script: [.endPass], label: "\(label)-agents-second", workingDirectory: run.cwd)
     defer { await second.close() }
     let connection = second.harness.connection
-    let trace = try await connection.subscribeToAllSessions().readResumeTrace(
+    let trace = try await second.subscribeToTheResumeWire().readResumeTrace(
       timeout: .seconds(traceWaitSeconds)
     ) {
       _ = try await connection.resumeSession(
