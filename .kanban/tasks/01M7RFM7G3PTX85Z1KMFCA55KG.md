@@ -1,8 +1,16 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '9280'
+comments:
+- actor: claude-code
+  id: 01m7rmmpw213he7je9zbkfyzc3
+  text: |-
+    ### review — clean
+    - evidence: review sha 91d6cb9~1..91d6cb9; 5 files reviewed; 0 findings, 0 confirmed, 2 refuted, 7 attempted, 0 failed, 0 skipped.
+    - next: none. The task is in done.
+  timestamp: 2026-11-19T00:52:24.578992+00:00
+position_column: done
+position_ordinal: ffffff8d80
 title: A turn that a mail started writes session-history.json, so a resume after a crash keeps it
 ---
 Found during ^v2y341x (2026-11-18).

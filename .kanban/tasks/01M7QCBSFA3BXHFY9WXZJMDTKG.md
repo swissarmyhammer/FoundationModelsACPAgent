@@ -75,10 +75,27 @@ comments:
     - evidence: `swift build --package-path IntegrationTests --build-tests` Build complete!, 0 warnings in project sources (1 build-system warning "missing creator for mutated node" for the mlx-swift_Cmlx bundle, not a project source); `timeout 1800 swift test --package-path IntegrationTests --skip-build --filter SessionsSkillExamplesTests` 6 tests in 1 suite passed, 0 failed
     - next: /review
   timestamp: 2026-11-19T00:46:08.057524+00:00
+- actor: claude-code
+  id: 01m7rmfqffja46my5hhdx8aj7p
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (2d71c29). 0 findings, 0 confirmed, 1 refuted, 7 attempted, 0 failed, 0 skipped. 5 files reviewed. All prior findings are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-11-19T00:49:41.359528+00:00
+- actor: claude-code
+  id: 01m7rmg5cff70zd4gd7azsxsf4
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — 3 IntegrationTests files (named constants); 1/1 finding checked
+    - test: green — IntegrationTests SessionsSkillExamplesTests 6 tests passed; unit suite 2383 tests in 250 suites passed on the merged tree
+    - commit: 2d71c29 (first commit d1383fd)
+    - review: clean — 0 findings
+    - The examples of the sessions skill agree with the real stack, so no Multitool card was necessary.
+  timestamp: 2026-11-19T00:49:55.599340+00:00
 depends_on:
 - 01M7QCBBA8BX23JY4SFZX4K6R4
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: ffffff8c80
 title: 'D200: integration test that the sessions skill examples agree with the real stack output'
 ---
 Decision D200 in `TestudoApp/features/decisions.md` (commit d1895ba). Brief: `/Users/wballard/github/swissarmyhammer/.briefs/at-sessions/acpa-brief-sessions-skill.md`, the integration test. Draft skill text: `sessions-skill-SKILL.md` in the same folder.

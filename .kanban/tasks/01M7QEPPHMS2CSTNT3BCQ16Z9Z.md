@@ -50,10 +50,27 @@ comments:
     - evidence: `swift build --build-tests` -> Build complete!, 0 compiler warnings (1 llbuild line "missing creator for mutated node" on the mlx-swift_Cmlx bundle, not a compiler diagnostic); `timeout 1800 swift test --skip-build` -> 2379 tests in 250 suites passed, 1 known issue (the expected `withKnownIssue` in HarnessSmokeTests).
     - next: review
   timestamp: 2026-11-19T00:41:14.552849+00:00
+- actor: claude-code
+  id: 01m7rm6k6whfc4x7j47v7a0t51
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit 4937e28). 0 findings, 0 confirmed, 0 refuted. 7 engine tasks attempted, 0 failed. 1 file reviewed: `Sources/FoundationModelsACPAgent/Agent/SessionTranscriptExport.swift`. The 2 `.kanban/` files are excluded by `.reviewignore`. The prior finding (`SessionTranscriptExport.swift:37` `no_unchecked_sendable`) is checked.
+    - next: none. The task is in `done`.
+  timestamp: 2026-11-19T00:44:42.076877+00:00
+- actor: claude-code
+  id: 01m7rm726wwvcnpnysm7gc3rps
+  text: |-
+    ### finish iteration 2 — clean
+    - implement: changed — Sources/FoundationModelsACPAgent/Agent/SessionTranscriptExport.swift; 1/1 finding checked
+    - test: green — swift test --skip-build, 2379 tests in 250 suites passed; 0 compiler warnings
+    - commit: 4937e28
+    - review: clean — 0 findings
+    - push: with ^zjmdtkg, because its commit d1383fd is between the export commits on local main.
+  timestamp: 2026-11-19T00:44:57.436428+00:00
 depends_on:
 - 01M7NQMWNNTAYWET485V2Y341X
-position_column: doing
-position_ordinal: '8280'
+position_column: done
+position_ordinal: ffffff8b80
 title: 'D202: export a session as Markdown from its retained history (SessionTranscriptExporter)'
 ---
 Decision D202 in `TestudoApp/features/decisions.md` (commit 40450ab). Brief: `/Users/wballard/github/swissarmyhammer/.briefs/export-markdown/acpa-brief.md`. Overview: `overview.md` in the same folder.
