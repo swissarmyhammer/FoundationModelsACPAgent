@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModels
+import Synchronization
 import FoundationModelsHooks
 import FoundationModelsRouter
 import Tracing
@@ -35,12 +36,28 @@ import Tracing
 /// and without a download: the text is real, and it is the same on every
 /// run.
 ///
+/// The backend keeps a transcript: one `.prompt` entry and one `.response`
+/// entry for each answer. The Router records its journal from the
+/// transcript of the backend, so each echo answer is a turn of the journal,
+/// and the `.response` entry ends the agent message of the answer. A
+/// backend with no transcript gave a journal with no turn: a fork cut on a
+/// turn was refused, and two answers shared one agent message (bug
+/// ^campexj).
+///
 /// A class, not a struct, because `LanguageModelSessionBackend` requires
-/// `AnyObject`. The type holds no state, so its `Sendable` conformance is
-/// compiler-checked — no `@unchecked` assertion is needed.
+/// `AnyObject`. A `Mutex` keeps the transcript, so the `Sendable`
+/// conformance is compiler-checked — no `@unchecked` assertion is needed.
 public final class EchoSessionBackend: LanguageModelSessionBackend {
+  /// The transcript entries of the backend, under the lock.
+  private let entries: Mutex<[Transcript.Entry]>
+
   /// Creates a backend that echoes every prompt.
-  public init() {}
+  ///
+  /// - Parameter entries: The transcript to start from: empty for a new
+  ///   session, or the transcript of a restore or of a fork.
+  public init(entries: [Transcript.Entry] = []) {
+    self.entries = Mutex(entries)
+  }
 
   /// Answers with the prompt itself.
   ///
@@ -49,7 +66,8 @@ public final class EchoSessionBackend: LanguageModelSessionBackend {
   ///   - maxTokens: The token ceiling, which the echo ignores.
   /// - Returns: `prompt`.
   public func respond(to prompt: String, maxTokens: Int?) async throws -> String {
-    prompt
+    record(answering: prompt)
+    return prompt
   }
 
   /// Answers with the prompt itself. The echo has no sampler, so the grammar
@@ -76,24 +94,37 @@ public final class EchoSessionBackend: LanguageModelSessionBackend {
     String, Error
   > {
     AsyncThrowingStream { continuation in
+      record(answering: prompt)
       continuation.yield(prompt)
       continuation.finish()
     }
   }
 
-  /// Makes a fork of the session. The echo holds no state, so a fork is a
-  /// new backend.
+  /// Makes a fork of the session: a new backend with a copy of the
+  /// transcript.
   ///
   /// - Returns: A new echo backend.
   public func makeFork() -> any LanguageModelSessionBackend {
-    EchoSessionBackend()
+    EchoSessionBackend(entries: transcriptEntries())
   }
 
   /// The transcript entries of the backend.
   ///
-  /// - Returns: No entry, because the echo keeps no transcript.
+  /// - Returns: The entries, in order.
   public func transcriptEntries() -> [Transcript.Entry] {
-    []
+    entries.withLock { $0 }
+  }
+
+  /// Appends the entries of one answer: the prompt, and the echo of it as
+  /// the response.
+  ///
+  /// - Parameter prompt: The prompt, which is also the answer.
+  private func record(answering prompt: String) {
+    let segments: [Transcript.Segment] = [.text(Transcript.TextSegment(content: prompt))]
+    entries.withLock { entries in
+      entries.append(.prompt(Transcript.Prompt(segments: segments)))
+      entries.append(.response(Transcript.Response(segments: segments)))
+    }
   }
 
   /// The token counts of the last answer.
@@ -220,24 +251,24 @@ public struct EchoLLMContainer: LoadedLLMContainer {
     EchoSessionBackend()
   }
 
-  /// Makes a session backend that echoes.
+  /// Makes a session backend that echoes, over a restored transcript.
   ///
-  /// - Parameter transcript: The transcript to restore, which the echo ignores.
-  /// - Returns: A new echo backend.
+  /// - Parameter transcript: The transcript to restore.
+  /// - Returns: A new echo backend with the entries of `transcript`.
   public func makeSession(transcript: Transcript) -> any LanguageModelSessionBackend {
-    EchoSessionBackend()
+    EchoSessionBackend(entries: Array(transcript))
   }
 
-  /// Makes a session backend that echoes.
+  /// Makes a session backend that echoes, over a restored transcript.
   ///
   /// - Parameters:
-  ///   - transcript: The transcript to restore, which the echo ignores.
+  ///   - transcript: The transcript to restore.
   ///   - tools: The tools, which the echo never calls.
-  /// - Returns: A new echo backend.
+  /// - Returns: A new echo backend with the entries of `transcript`.
   public func makeSession(
     transcript: Transcript, tools: [any Tool]
   ) -> any LanguageModelSessionBackend {
-    EchoSessionBackend()
+    makeSession(transcript: transcript)
   }
 }
 
