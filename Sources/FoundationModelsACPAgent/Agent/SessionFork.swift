@@ -1,4 +1,7 @@
+import Foundation
 import FoundationModelsACP
+import FoundationModelsExtras
+import FoundationModelsRouter
 
 /// The point of the history of a source session where a fork cuts it (D205), as the agent reads
 /// it from a `session/fork` request.
@@ -17,6 +20,18 @@ enum SessionForkPoint: Equatable, Sendable {
 
   /// The index of the first turn of a history.
   static let firstTurn = 0
+
+  /// The cut that the session directory takes for this point (`SessionForkCut`).
+  var directoryCut: SessionForkCut {
+    switch self {
+    case .lastCompletedTurn:
+      return .lastCompletedTurn
+    case .afterTurn(let turn):
+      return .afterTurn(turn)
+    case .beforeTurn(let turn):
+      return .beforeTurn(turn)
+    }
+  }
 }
 
 /// The side of a message where a fork cut is, for each side that the agent knows
@@ -55,23 +70,33 @@ extension RoutedACPAgent {
   ///
   /// The handler runs the checks of each session method in their order: the order rule, the
   /// session in the table, and the capabilities of the session. Then it reads the cut in
-  /// `_meta.sah.forkCut` and maps it to a point of the source history
-  /// (``forkPoint(of:in:sessionId:)``).
+  /// `_meta.sah.forkCut` and maps it to a turn of the source history
+  /// (``forkPoint(of:in:sessionId:recipients:)``).
   ///
-  /// This build does not make the fork: the fork through the Router is the next step. So, after
-  /// the map, the request gets the internal error ``RequestError/forkNotServed(id:)``, and
-  /// `initialize` does not announce `fork` (``forkIsServed``).
+  /// The session directory of the Router makes the fork (`RouterSessionDirectory.fork(_:)`), with
+  /// the source, the cut, no first prompt, and the connection of the request as the client that
+  /// asked for it. The fork has the agent, the model profile and the history of the source up to
+  /// the cut. The agent then opens the fork as its own session
+  /// (``openFork(_:copying:placement:from:)``): with the MCP servers of the request, else of the
+  /// source, and with the additional directories of the request, else of the source. The fork
+  /// works in the folder of its source, so the `cwd` of the request must be that folder.
+  ///
+  /// The agent asks for no permission before a tool runs, so a fork needs no permission grant:
+  /// each tool that runs in the source runs in the fork too.
   ///
   /// - Parameter params: The request naming the source session and the cut.
-  /// - Returns: The response of the fork.
+  /// - Returns: The id, the command list and the configuration options of the fork.
   /// - Throws: The order rule's invalid-request error, `RequestError.unknownSession` for an id no
   ///   session of the table holds, the refusal of a method that the session does not permit, the
-  ///   invalid-params refusal of a cut, and then ``RequestError/forkNotServed(id:)``.
+  ///   invalid-params refusal of a cut, of a `cwd` that is not the folder of the source and of a
+  ///   directory that does not exist, the refusal of the session directory
+  ///   (``RequestError/forkRefusal(_:point:in:id:)``), or whatever the restore of the fork throws.
   public func forkSession(_ params: ForkSessionRequest) async throws -> ForkSessionResponse {
     try await forkSession(params, from: .direct)
   }
 
-  /// Forks one session for one connection: the work of ``forkSession(_:)``.
+  /// Forks one session for one connection: the work of ``forkSession(_:)``. The connection owns
+  /// the fork, and the updates of the fork go out on it.
   ///
   /// - Parameters:
   ///   - params: The request naming the source session and the cut.
@@ -82,14 +107,158 @@ extension RoutedACPAgent {
     -> ForkSessionResponse
   {
     try requireInitialized(before: ACPMethod.sessionFork, from: caller)
-    guard let entry = sessions[params.sessionId] else {
+    guard let entry = sessions[params.sessionId],
+      let sourceId = ULID(ulidString: params.sessionId.rawValue)
+    else {
       throw RequestError.unknownSession(id: params.sessionId)
     }
     try requirePermitted(ACPMethod.sessionFork, on: params.sessionId)
-    // The map refuses a cut that is not valid before any fork exists. The fork through the
-    // Router takes the point when this build makes the fork.
-    _ = try Self.forkPoint(of: params.meta, in: entry.history, sessionId: params.sessionId)
-    throw RequestError.forkNotServed(id: params.sessionId)
+    try Self.requireSourceFolder(params.cwd, of: entry, sessionId: params.sessionId)
+    let placement = SessionPlacement(
+      workingDirectory: entry.workingDirectory,
+      additionalRoots: try Self.forkAdditionalRoots(of: params, source: entry),
+      userPresence: userPresence(of: caller),
+      clientMCPServers: params.mcpServers ?? entry.clientMCPServers)
+    try SessionSetup.requireExistingDirectories(
+      workingDirectory: placement.workingDirectory, additionalRoots: placement.additionalRoots)
+
+    let recipients = await forkRecipients(of: entry.session.parentId, sessionId: params.sessionId)
+    let source = ForkSourceHistory.snapshot(of: entry.history, recipients: recipients)
+    let point = try Self.forkPoint(
+      of: params.meta, in: source.history, sessionId: params.sessionId, recipients: recipients)
+    guard let end = source.end(of: point) else {
+      throw RequestError.forkCutOutOfRange(point, in: source, id: params.sessionId)
+    }
+    let summary: SessionSummary
+    do {
+      summary = try await sessionDirectory.fork(
+        SessionForkRequest(
+          sourceID: sourceId, cut: point.directoryCut, firstPrompt: nil,
+          requestedByClient: caller.rawValue, forker: .user(clientID: caller.rawValue)))
+    } catch let refusal as SessionDirectoryError {
+      throw RequestError.forkRefusal(refusal, point: point, in: source, id: params.sessionId)
+    }
+    return try await openFork(
+      summary, copying: source.copiedHistory(endingAt: end), placement: placement, from: caller)
+  }
+
+  /// Opens a fork that the session directory made as a session of the agent, owned by the
+  /// connection of the request.
+  ///
+  /// The agent writes the copied history to the history file of the fork first
+  /// (``SessionHistoryFile``). Then the restore of the fork (``restoreColdRoot(_:sessionId:context:workingDirectory:additionalRoots:clientMCPServers:userPresence:)``)
+  /// stops the live fork of the directory, which runs the tools of the source, and restores the
+  /// fork onto a surface of its own, with the agent of the source and with the history of the
+  /// file. Thus a later `session/resume` of the fork replays the copied turns, also in a new
+  /// process.
+  ///
+  /// - Parameters:
+  ///   - summary: The summary of the fork.
+  ///   - copied: The history that the fork copies from its source.
+  ///   - placement: Where the fork works, its user presence, and the MCP servers of its client.
+  ///   - caller: The connection of the request, which owns the fork.
+  /// - Returns: The response of the fork.
+  /// - Throws: Whatever the load of the configuration or the restore throws.
+  private func openFork(
+    _ summary: SessionSummary, copying copied: SessionMergeEngine, placement: SessionPlacement,
+    from caller: ConnectionId
+  ) async throws -> ForkSessionResponse {
+    let forkId = SessionId(rawValue: summary.id.description)
+    if let live = sessionDirectory.session(id: summary.id), !copied.entries.isEmpty {
+      try SessionHistoryFile.write(copied, in: live.recordingDirectory)
+    }
+    let context = try await loadSessionContext(workingDirectory: placement.workingDirectory)
+    connections.recordStart(of: forkId, by: caller)
+    let cold = try await restoreColdRoot(
+      summary.id, sessionId: forkId, context: context,
+      workingDirectory: placement.workingDirectory, additionalRoots: placement.additionalRoots,
+      clientMCPServers: placement.clientMCPServers, userPresence: placement.userPresence)
+    let response = ForkSessionResponse(
+      sessionId: forkId, availableCommands: cold.activation.availableCommands,
+      configOptions: cold.activation.configOptions)
+    // The history records the commands and the options of the response, as for `session/new`.
+    sessions[forkId]?.retainedHistory.seed(
+      from: NewSessionResponse(
+        sessionId: forkId, availableCommands: response.availableCommands,
+        configOptions: response.configOptions))
+    announceName(of: cold.restored.session, sessionId: forkId)
+    await recordUse(of: forkId)
+    ACPAgentTelemetry.logger(.session).info(
+      "A session forked.", metadata: ACPAgentTelemetry.sessionMetadata(forkId))
+    return response
+  }
+
+  /// Checks that the `cwd` of a fork request is the folder of the source: a fork works in the
+  /// folder of its source.
+  ///
+  /// - Parameters:
+  ///   - cwd: The `cwd` of the request.
+  ///   - source: The entry of the source.
+  ///   - sessionId: The source, for the refusal.
+  /// - Throws: The refusal of a relative path, or
+  ///   ``RequestError/mismatchedWorkingDirectory(id:requested:recorded:)``.
+  private static func requireSourceFolder(
+    _ cwd: AbsolutePath, of source: ActiveSession, sessionId: SessionId
+  ) throws {
+    let requested = try SessionSetup.validatedWorkingDirectory(path: cwd.rawValue, field: .cwd)
+      .standardizedFileURL.path
+    let folder = source.workingDirectory.standardizedFileURL.path
+    guard requested == folder else {
+      throw RequestError.mismatchedWorkingDirectory(
+        id: sessionId, requested: requested, recorded: folder)
+    }
+  }
+
+  /// The additional directories of a fork: those of the request, else those of the source.
+  ///
+  /// - Parameters:
+  ///   - params: The fork request.
+  ///   - source: The entry of the source.
+  /// - Returns: The directories, in order.
+  /// - Throws: The refusal of a path that is not valid.
+  private static func forkAdditionalRoots(of params: ForkSessionRequest, source: ActiveSession)
+    throws -> [URL]
+  {
+    guard let requested = params.additionalDirectories else {
+      return source.additionalRoots
+    }
+    return try SessionSetup.additionalRoots(fromPaths: requested.map(\.rawValue))
+  }
+
+  /// The ids that an incoming message of the history of a session names as its recipient: the
+  /// session, and each session that it is a fork of. A fork copies the history of its source, so
+  /// an incoming message of the copy names the source.
+  ///
+  /// - Parameters:
+  ///   - forkSource: The session that the session is a fork of, or `nil`.
+  ///   - sessionId: The session.
+  /// - Returns: The ids.
+  func forkRecipients(of forkSource: ULID?, sessionId: SessionId) async -> Set<SessionId> {
+    var recipients: Set<SessionId> = [sessionId]
+    var next = forkSource
+    while let source = next, recipients.insert(SessionId(rawValue: source.description)).inserted {
+      next = await self.forkSource(of: source)
+    }
+    return recipients
+  }
+
+  /// The session that a session is a fork of, from the session directory.
+  ///
+  /// - Parameter id: The session.
+  /// - Returns: The source, or `nil` when the session is no fork or the directory does not know
+  ///   it. A read that fails goes to the log.
+  func forkSource(of id: ULID) async -> ULID? {
+    do {
+      guard let summary = try await sessionDirectory.summary(of: id), summary.kind == .fork else {
+        return nil
+      }
+      return summary.parentID
+    } catch {
+      ACPAgentTelemetry.logger(.session).warning(
+        "The summary of a session did not read. The agent does not know if it is a fork.",
+        metadata: ACPAgentTelemetry.errorMetadata(error))
+      return nil
+    }
   }
 
   /// Reads the cut of a `session/fork` request and maps it to a point of the source history.
@@ -113,12 +282,15 @@ extension RoutedACPAgent {
   ///   - meta: The `_meta` of the request, or `nil`.
   ///   - history: The retained history of the source session.
   ///   - sessionId: The source session, for the refusal.
+  ///   - recipients: The ids that an incoming message of the history names as its recipient
+  ///     (``forkRecipients(of:sessionId:)``), or `nil` for the source alone.
   /// - Returns: The fork point.
   /// - Throws: An invalid-params refusal for a `_meta.sah.forkCut` member that is not a cut, for
   ///   a side that the agent does not know, and for a message id that no message of the history
   ///   has.
   static func forkPoint(
-    of meta: JSONValue?, in history: SessionMergeEngine, sessionId: SessionId
+    of meta: FoundationModelsACP.JSONValue?, in history: SessionMergeEngine, sessionId: SessionId,
+    recipients: Set<SessionId>? = nil
   ) throws -> SessionForkPoint {
     guard let cut = SAH.ForkCut.extract(from: meta) else {
       guard !hasForkCutMember(meta) else {
@@ -132,7 +304,7 @@ extension RoutedACPAgent {
     guard let position = history.messagePosition(of: cut.messageId) else {
       throw RequestError.unknownForkCutMessage(cut.messageId, id: sessionId)
     }
-    guard let turn = history.turn(holding: position, receivedBy: [sessionId]) else {
+    guard let turn = history.turn(holding: position, receivedBy: recipients ?? [sessionId]) else {
       return .beforeTurn(SessionForkPoint.firstTurn)
     }
     switch side {
@@ -149,7 +321,7 @@ extension RoutedACPAgent {
   ///
   /// - Parameter meta: The `_meta` of the request, or `nil`.
   /// - Returns: `true` when the member is there with a value.
-  private static func hasForkCutMember(_ meta: JSONValue?) -> Bool {
+  private static func hasForkCutMember(_ meta: FoundationModelsACP.JSONValue?) -> Bool {
     guard case .object(let members) = meta, case .object(let sah) = members[SAH.metaKey],
       let cut = sah[SAH.ForkCut.metaKey]
     else {
@@ -198,18 +370,102 @@ extension RequestError {
       method: ACPMethod.sessionFork)
   }
 
-  /// The error of a `session/fork` request with a valid cut while this build makes no fork. An
-  /// internal error, with the session id in `data`.
+  /// The text of the refusal of a fork cut in the turns that a compaction folded. The summary of
+  /// the compaction also tells of the turns after such a cut, so the session directory refuses it.
+  static let compactedForkCutText =
+    "This part of the session was compacted. Fork from a later turn."
+
+  /// The text of the refusal of a fork cut on a turn that the session does not have.
+  static let missingForkTurnText =
+    "The session has no such turn. Fork from a turn that the session shows."
+
+  /// The text of the refusal of a fork cut after the turn that runs now.
+  static let runningForkTurnText =
+    "This turn still runs. Fork from a completed turn, or wait until this turn ends."
+
+  /// The text of the refusal of a fork of a session that records nothing to disk.
+  static let unforkableSessionText =
+    "This session records nothing to disk, so it cannot be forked."
+
+  /// The text of the refusal of a fork of an archived session.
+  static let archivedForkSourceText =
+    "This session is archived. Unarchive it before you fork it."
+
+  /// The text of the refusal of a fork of a session that the session directory does not know.
+  static let unknownForkSourceText = "The session directory does not know this session."
+
+  /// The refusal of a fork cut that the session directory found out of range
+  /// (`SessionDirectoryError.forkCutOutOfRange`). Invalid params, with a text for the person:
   ///
-  /// - Parameter id: The source session of the fork.
-  /// - Returns: The typed internal error.
-  static func forkNotServed(id: SessionId) -> RequestError {
+  /// - ``compactedForkCutText`` when the cut is in the turns that a compaction folded. The agent
+  ///   sees the compaction entries in its own history (``ForkSourceHistory/isFolded(_:)``).
+  /// - ``runningForkTurnText`` when the cut is after the turn that runs now.
+  /// - ``missingForkTurnText`` for each other cut: a turn that the session does not have.
+  ///
+  /// - Parameters:
+  ///   - point: The point of the cut.
+  ///   - source: The history of the source at the time of the fork.
+  ///   - id: The source session of the fork.
+  /// - Returns: The typed invalid-params error.
+  static func forkCutOutOfRange(
+    _ point: SessionForkPoint, in source: ForkSourceHistory, id: SessionId
+  ) -> RequestError {
+    if source.isFolded(point) {
+      return forkRefusal(text: compactedForkCutText, id: id)
+    }
+    if source.isAfterRunningTurn(point) {
+      return forkRefusal(text: runningForkTurnText, id: id)
+    }
+    return forkRefusal(text: missingForkTurnText, id: id)
+  }
+
+  /// The refusal of a fork that the session directory refused.
+  ///
+  /// - A cut out of range: ``forkCutOutOfRange(_:in:id:)``.
+  /// - A source that records nothing to disk: invalid params with ``unforkableSessionText``.
+  /// - An archived source: invalid params with ``archivedForkSourceText``.
+  /// - A source that the directory does not know: invalid params with ``unknownForkSourceText``.
+  /// - Each other error: an internal error with the error in `data`.
+  ///
+  /// - Parameters:
+  ///   - error: The error of the session directory.
+  ///   - point: The point of the cut.
+  ///   - source: The history of the source at the time of the fork.
+  ///   - id: The source session of the fork.
+  /// - Returns: The typed error.
+  static func forkRefusal(
+    _ error: SessionDirectoryError, point: SessionForkPoint, in source: ForkSourceHistory,
+    id: SessionId
+  ) -> RequestError {
+    switch error {
+    case .forkCutOutOfRange:
+      return forkCutOutOfRange(point, in: source, id: id)
+    case .forkUnsupported:
+      return forkRefusal(text: unforkableSessionText, id: id)
+    case .archivedSession:
+      return forkRefusal(text: archivedForkSourceText, id: id)
+    case .unknownSession:
+      return forkRefusal(text: unknownForkSourceText, id: id)
+    default:
+      return internalError(detail: "the session directory did not fork the session: \(error)")
+    }
+  }
+
+  /// One refusal of a fork: invalid params, with the text for the person as the message and as
+  /// the reason in `data`, beside the session id and the method.
+  ///
+  /// - Parameters:
+  ///   - text: The text for the person.
+  ///   - id: The source session of the fork.
+  /// - Returns: The typed invalid-params error.
+  private static func forkRefusal(text: String, id: SessionId) -> RequestError {
     RequestError(
-      code: .internalError,
-      message: RequestError.internalError().message,
+      code: .invalidParams,
+      message: text,
       data: .object([
         "sessionId": .string(id.rawValue),
-        "reason": .string("this build does not make a fork yet"),
+        "reason": .string(text),
+        "method": .string(ACPMethod.sessionFork),
       ]))
   }
 }

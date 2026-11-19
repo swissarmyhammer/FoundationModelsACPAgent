@@ -132,7 +132,7 @@ extension RoutedACPAgent {
     try await ConfigOptions.handle(for: slot, of: residentProfile)
       .restoreSessionWithHostChecks(
         id: entry.session.id,
-        recordingRoot: entry.transcriptDirectory.deletingLastPathComponent(),
+        recordingRoot: entry.transcriptRoot,
         instructions: entry.instructions,
         tools: entry.surface.tools,
         userPresence: entry.userPresence,

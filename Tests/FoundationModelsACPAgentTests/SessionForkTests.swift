@@ -261,19 +261,4 @@ import Testing
 
     #expect(refusal?.code == .invalidParams)
   }
-
-  /// A cut on a message of the source passes the map. The Router fork is not on this build, so
-  /// the request then gets the internal error.
-  @Test func aKnownCutPassesTheMapAndGetsTheNotServedError() async throws {
-    let fixture = try await ScriptedPromptFixture.make(
-      script: [.textDelta("Hello."), .endPass], label: "SessionForkTests-known-cut")
-    let response = try await ScriptedPromptFixture.runPrompt(on: fixture, text: "Say hello")
-      .response
-    let meta = try Self.meta(cutting: response.messageId, on: .before)
-
-    let refusal = await Self.forkRefusal(of: fixture, meta: meta)
-    await fixture.close()
-
-    #expect(refusal?.code == .internalError)
-  }
 }

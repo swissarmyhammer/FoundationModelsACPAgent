@@ -57,6 +57,14 @@ enum SessionHistoryFile {
     try data.write(to: url(in: directory), options: .atomic)
   }
 
+  /// Whether `directory` holds the file.
+  ///
+  /// - Parameter directory: The transcript directory of the session.
+  /// - Returns: `true` when the file is there.
+  static func exists(in directory: URL) -> Bool {
+    FileManager.default.fileExists(atPath: url(in: directory).path)
+  }
+
   /// Reads the history in the file in `directory`.
   ///
   /// - Parameter directory: The transcript directory of the session.

@@ -138,13 +138,10 @@ extension RoutedACPAgent {
   }
 
   /// Whether `initialize` announces `session/fork` (D205). It is the one
-  /// switch of the announcement.
-  ///
-  /// It stays `false` until the `session/fork` handler makes the fork
-  /// through the Router. Until then the handler reads and maps the cut, and
-  /// then refuses the request (``forkSession(_:)``). A client must not see
-  /// `fork` before a fork works.
-  public static let forkIsServed = false
+  /// switch of the announcement. The `session/fork` handler makes the fork
+  /// through the session directory of the Router (``forkSession(_:)``), so
+  /// the agent announces it.
+  public static let forkIsServed = true
 
   /// The `fork` member of `capabilities.session`: `session/fork` with the
   /// cut flag `_meta.sah.forkCut = true` (``SAH/ForkCut/advertise(into:)``),

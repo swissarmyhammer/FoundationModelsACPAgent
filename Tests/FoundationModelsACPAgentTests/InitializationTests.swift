@@ -137,12 +137,13 @@ import Testing
 
   /// The response carries `capabilities.session` with the four markers as
   /// objects, `mcp` with both transports, `prompt` with the honest
-  /// `embeddedContext` marker, and nothing else: no auth and no
+  /// `embeddedContext` marker, `fork` with the cut flag
+  /// `_meta.sah.forkCut = true` (D205), and nothing else: no auth and no
   /// permission capability. The agent has no authentication, and it asks
   /// for no permission before a command, so it never sends
   /// `session/request_permission`.
   @Test
-  func advertisedCapabilitiesCarryTheFourSessionMarkersAsObjects() async throws {
+  func advertisedCapabilitiesCarryTheSessionMarkersAsObjects() async throws {
     let harness = try await AgentClientHarness.make()
     let response = try await harness.connection.initialize(
       AgentClientHarness.makeInitializeRequest())
@@ -156,9 +157,11 @@ import Testing
       jsonObject(of: root["session"]),
       "expected capabilities.session to be an object, got \(tree)")
     #expect(Set(root.keys) == ["session"])
-    #expect(Set(session.keys) == ["additionalDirectories", "delete", "mcp", "prompt"])
+    #expect(Set(session.keys) == ["additionalDirectories", "delete", "fork", "mcp", "prompt"])
     #expect(session["additionalDirectories"] == .object([:]))
     #expect(session["delete"] == .object([:]))
+    #expect(
+      session["fork"] == .object(["_meta": .object(["sah": .object(["forkCut": .bool(true)])])]))
     #expect(session["prompt"] == .object(["embeddedContext": .object([:])]))
     #expect(session["mcp"] == .object(["stdio": .object([:]), "http": .object([:])]))
     #expect(response.capabilities.auth == nil)

@@ -60,6 +60,26 @@ Tests prove this in process. The suites (for example `SubagentCancelTests`,
 a child process only when the subject is a process: a signal, an exit code, the stdio framing of
 the shipped binary, the arguments of the command line, or the shell tool.
 
+## Forks
+
+A fork (D205) is a root ACP session with a copy of the history of its source up to a cut. The
+Router makes it, and the agent serves it as each other root session. All of it is in
+`Sources/FoundationModelsACPAgent/Agent/`.
+
+- **The handler.** `SessionFork` serves `session/fork`: the checks, the map of the cut in
+  `_meta.sah.forkCut` to a turn (`SessionForkPoint`), the call of
+  `RouterSessionDirectory.fork(_:)`, and the refusals.
+- **The turns.** `SessionHistory` counts the turns of the retained ACP history with the rule of
+  the Router: each user message and each incoming `session_message`. `SessionForkHistory` cuts
+  the retained history at the same turn, and finds the cut of a fork that the `fork session`
+  operation of the `sessions` tool made.
+- **The restore.** `SessionForkRestore` holds the steps of the cold restore for a fork: it stops
+  the live fork of the directory, which runs the tools of the source, gives the fork the agent of
+  its source, and gives a fork with no history file the history that it copied.
+
+The dependency direction does not change: the agent calls the session directory of the Router,
+and the Router does not call the agent for a fork.
+
 ## Settings
 
 The agent settings live in memory in one `SettingsStore` (in

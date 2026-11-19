@@ -755,10 +755,25 @@ code gives the local detail.
   the package name.
 - **One ACP session is one root Router session.** The ACP `sessionId` is the
   ULID of the root Router session. There is no mapping table, because a table
-  can drift and a resume then restores the wrong conversation. A fork is
-  never an ACP session. A sub-agent is an ACP child session of its parent
-  (see [Sub-agent sessions](#sub-agent-sessions)): `session/list` does not
-  show it, and it does not accept `session/prompt`.
+  can drift and a resume then restores the wrong conversation. A fork is a
+  root ACP session of its own (see the next item). A sub-agent is an ACP
+  child session of its parent (see [Sub-agent sessions](#sub-agent-sessions)):
+  `session/list` does not show it, and it does not accept `session/prompt`.
+- **`session/fork` makes a fork through the Router (D205).** `initialize`
+  announces `fork` with `_meta.sah.forkCut = true`. A cut in
+  `_meta.sah.forkCut` names an ACP message and a side. The agent maps it to a
+  turn: each user message and each incoming `session_message` starts a turn,
+  also a turn that a compaction folded. `after` a message keeps its whole
+  turn, and `before` a message keeps the turns before it. With no cut, the
+  fork has the completed turns, and a turn that runs goes on in the source.
+  The fork works in the folder of its source, with the agent of its source,
+  the MCP servers and the additional directories of the request (else those
+  of the source), and the history of the source up to the cut. The response
+  gives its `sessionId`, `configOptions` and `availableCommands`, and
+  `session/resume` of the fork replays the copied turns. A cut in the turns
+  that a compaction folded, a turn that does not exist and the turn that runs
+  give `-32602` with a text for the person. The `fork session` operation of
+  the `sessions` tool forks the calling session at its tool call.
 - **An agent run is announced with `subagent_update`.** The agent sends one
   `subagent_update` on the parent session before any message that uses the id
   of the child. The id of the child is the id of its run. The update has the
