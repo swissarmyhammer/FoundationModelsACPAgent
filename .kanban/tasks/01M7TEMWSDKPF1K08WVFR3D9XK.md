@@ -41,8 +41,15 @@ comments:
     - evidence: `review sha HEAD~1..HEAD` (2b0a468): 1 finding (1 confirmed, 1 refuted, 7 attempted, 0 failed). Tests/FoundationModelsACPAgentTestSupport/IndexPoll.swift:10 `code-hygiene/magic-numbers-swift`.
     - next: Replace the magic numbers in IndexPoll.swift with named constants. Remove this cause from the full file. Then check the item and run the review again.
   timestamp: 2026-11-19T19:18:53.194496+00:00
-position_column: review
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m7tm85aycjq7kg52wg62gv5e
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (e6ce9e3). 0 findings, 0 confirmed, 0 refuted. 7 engine tasks attempted, 0 failed. 1 file reviewed (Tests/FoundationModelsACPAgentTestSupport/IndexPoll.swift). 2 .kanban files not reviewed (ignore rule). All prior findings are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-11-19T19:24:02.270758+00:00
+position_column: done
+position_ordinal: ffffffa780
 title: 'AgentTranscriptSearcherTests is flaky: the background search updates of the fixture agent change the index between two reads'
 ---
 Found during ^w0dheny (2026-11-19). The flake is there on HEAD 7ba6a38 with no change of the search code.
