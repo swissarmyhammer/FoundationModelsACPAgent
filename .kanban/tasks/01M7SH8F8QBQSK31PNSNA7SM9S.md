@@ -62,8 +62,15 @@ comments:
     - evidence: `swift build --build-tests` printed "Build complete!" with 0 compiler warnings (the only warning line is the build-system "missing creator for mutated node" note for the mlx bundle, which was there before the edit); `timeout 1800 swift test --skip-build`: 2477 tests in 258 suites passed, 1 known issue (the existing withKnownIssue in HarnessSmokeTests), 0 failures
     - next: /review
   timestamp: 2026-11-19T12:18:42.575816+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m7sw0vkhqhwd0hhk18fdkcgw
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (a7f0a92). 3 files reviewed. findings 0, confirmed 0, refuted 0, attempted 7, failed 0. All 4 items of "Review Findings (2026-11-19 06:09)" are checked.
+    - next: The task is in done. Push to origin/main and send the sha to the TestudoApp session (testudoapp-9a).
+  timestamp: 2026-11-19T12:20:37.105969+00:00
+position_column: done
+position_ordinal: ffffff9880
 title: 'D206: the sessions.recap setting (user and folder level), given to the Router as its recap policy'
 ---
 Decision D206 (j) in `TestudoApp/features/decisions.md` (commit da60a90). Brief: `/Users/wballard/github/swissarmyhammer/.briefs/recap/acpa-brief.md`. Overview: `overview.md` in the same folder. The recap runs on the `flash` slot of the profile (D206 Q3 (b)).
