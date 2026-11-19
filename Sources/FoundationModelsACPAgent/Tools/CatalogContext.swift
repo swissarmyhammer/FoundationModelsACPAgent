@@ -139,6 +139,12 @@ public struct CatalogContext: Sendable {
   /// `export` field of the `sessions` endpoint. With no exporter, both give `MISSING_EXPORTER`.
   public let transcriptExporter: (any SessionTranscriptExporter)?
 
+  /// The searcher of the transcripts of the sessions of the agent (D207), or `nil` for a catalog
+  /// that has no agent. The `sessions` tool gives it to the `search sessions` operation and to the
+  /// `searchSessions` field of the `sessions` endpoint. With no searcher, both give
+  /// `MISSING_SEARCHER`.
+  public let transcriptSearcher: (any SessionTranscriptSearcher)?
+
   /// The `models` endpoint of the agent (``RoutedACPAgent/modelsEndpoint``),
   /// or `nil` for a catalog that has no agent. With an endpoint, the session
   /// gets a top-level `models` tool over it.
@@ -190,6 +196,8 @@ public struct CatalogContext: Sendable {
   ///     (the default) for no `sessions` tool (``sessionDirectory``).
   ///   - transcriptExporter: The exporter of the transcripts of the
   ///     sessions, or `nil` (the default) for none (``transcriptExporter``).
+  ///   - transcriptSearcher: The searcher of the transcripts of the
+  ///     sessions, or `nil` (the default) for none (``transcriptSearcher``).
   ///   - modelsEndpoint: The `models` endpoint of the agent, or `nil` (the
   ///     default) for no `models` tool (``modelsEndpoint``).
   ///   - mcpServerRegistry: The MCP server registry of the agent, or `nil`
@@ -214,6 +222,7 @@ public struct CatalogContext: Sendable {
     sessionOperationTools: [SessionOperationMount] = [],
     sessionDirectory: (any SessionDirectory)? = nil,
     transcriptExporter: (any SessionTranscriptExporter)? = nil,
+    transcriptSearcher: (any SessionTranscriptSearcher)? = nil,
     modelsEndpoint: ModelsGraph? = nil,
     mcpServerRegistry: MCPServerRegistry? = nil,
     marketplaceMount: MarketplaceMount? = nil
@@ -224,6 +233,7 @@ public struct CatalogContext: Sendable {
     self.sessionOperationTools = sessionOperationTools
     self.sessionDirectory = sessionDirectory
     self.transcriptExporter = transcriptExporter
+    self.transcriptSearcher = transcriptSearcher
     self.agentRunHost = agentRunHost
     self.snapshotStore = snapshotStore
     self.settingsEndpoint = settingsEndpoint

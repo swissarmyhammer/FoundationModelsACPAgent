@@ -276,7 +276,7 @@ public actor TranscriptSearchIndex {
   }
 
   /// The items of the catalog: the items of each session, in the order of the session ids.
-  private var catalog: [TranscriptSearchItem] {
+  var catalog: [TranscriptSearchItem] {
     sortedSessionIDs.flatMap { sessions[$0]?.items ?? [] }
   }
 
