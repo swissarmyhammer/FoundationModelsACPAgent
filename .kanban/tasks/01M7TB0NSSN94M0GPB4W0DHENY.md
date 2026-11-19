@@ -64,8 +64,15 @@ comments:
     - implement: changed — Sources/FoundationModelsACPAgent/Search/TranscriptSearchDateIndex.swift: the divisor of the binary search is the named constant `halvingDivisor`. The file has no other magic number. The finding is checked.
     - test: green — swift build --build-tests "Build complete!", 0 compiler warnings; swift test --skip-build: 2615 tests in 275 suites passed, 1 known issue (intended).
   timestamp: 2026-11-19T18:09:36.764086+00:00
-position_column: review
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m7tg3bycnnzgxt1kehmw7w9e
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (5ff629c). 1 file reviewed (Sources/FoundationModelsACPAgent/Search/TranscriptSearchDateIndex.swift). Counts: 0 findings, 0 confirmed, 0 refuted; 7 review tasks attempted, 0 failed. All prior findings are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-11-19T18:11:30.892663+00:00
+position_column: done
+position_ordinal: ffffffa380
 title: 'D207: the transcript search meets the 300 ms gate (date index, cheap filters first, snippets only for the returned hits)'
 ---
 Request from the TestudoApp session (2026-11-19), after the measurement of ^y7nx1g3. Decision D207; the brief gives a 300 ms gate for a search.
