@@ -1,0 +1,1 @@
+{"id":"01M7T457G1NA1EEH8AKSVKC1ZS","timestamp":"2026-11-19T14:42:48.961523Z","op":"create","item_id":"01M7T457G19AVT7FXJSQKEDFRK","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: '008672'\n+tag_name: scripted\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: '008672'\n-tag_name: scripted\n","transaction_id":null}

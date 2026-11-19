@@ -4,9 +4,13 @@ import FoundationModelsMetadataRegistry
 import FoundationModelsMultitool
 import FoundationModelsRouter
 
-/// The filters of the transcript search on the items that the registry matched (D207 (e)), in
-/// their order: the sessions, the archive, the kinds, the dates, then the phrases and the
-/// exclusions.
+/// The filters of the transcript search on the items that the registry matched (D207 (e)): the
+/// sessions, the archive, the kinds, the dates, then the phrases and the exclusions.
+///
+/// The filters come in two costs (^w0dheny). The session filters, the kinds and the dates are
+/// cheap. The phrases and the exclusions tokenize the block of the item: the search applies
+/// them only to an item that passed the cheap filters, and only when the item can change the
+/// page (``TranscriptSearchSessionCollector``).
 ///
 /// The phrases and the exclusions compare the tokens of `Tokenizer.tokenize(text:)` of the
 /// ranker: a phrase passes when its tokens are in the tokens of the block one after the other. A
@@ -52,55 +56,52 @@ struct TranscriptSearchFilter: Sendable {
     }
   }
 
-  /// Tells whether an item passes each filter.
+  /// The session filters on one visible session: of the directory tokens and of the one
+  /// session, and archived only with `is:archived`.
   ///
-  /// - Parameter item: The item.
-  /// - Returns: `true` when the item passes.
-  func admits(_ item: TranscriptSearchItem) -> Bool {
-    admitsSession(of: item) && admitsKind(of: item) && admitsDate(of: item)
-      && admitsText(of: item)
-  }
-
-  /// The session filters: a visible session of the directory tokens and of the one session, and
-  /// an archived session only with `is:archived`.
-  ///
-  /// - Parameter item: The item.
-  /// - Returns: `true` when the session of the item passes.
-  private func admitsSession(of item: TranscriptSearchItem) -> Bool {
-    guard let visible = visibleSessions[item.sessionId],
-      let id = ULID(ulidString: item.sessionId.rawValue)
-    else {
-      return false
-    }
-    let inSessions = sessions?.contains(id) ?? true
-    let isTheSession = session.map { $0 == id } ?? true
+  /// - Parameters:
+  ///   - ulid: The ULID of the session.
+  ///   - visible: The facts of the session in the directory.
+  /// - Returns: `true` when the session passes.
+  func admits(_ ulid: ULID, visible: TranscriptSearchVisibleSession) -> Bool {
+    let inSessions = sessions?.contains(ulid) ?? true
+    let isTheSession = session.map { $0 == ulid } ?? true
     return inSessions && isTheSession && (includeArchived || !visible.isArchived)
   }
 
-  /// The kind filter: the kinds of the `from:` tokens. A session item passes only with no
-  /// `from:` token: its kind `session` is then one of the kinds of the query.
+  /// The cheap filters of the facts of an item: its kind and its date.
   ///
   /// - Parameter item: The item.
-  /// - Returns: `true` when the kind of the item passes.
-  private func admitsKind(of item: TranscriptSearchItem) -> Bool {
+  /// - Returns: `true` when the kind and the date of the item pass.
+  func admitsFacts(of item: TranscriptSearchItem) -> Bool {
     switch item.content {
     case .chunk(let chunk):
-      query.kinds.contains(TranscriptSearchCandidate.kind(of: chunk.kind))
+      admits(kind: TranscriptSearchCandidate.kind(of: chunk.kind), date: chunk.date)
     case .session:
-      query.kinds.contains(.session)
+      admits(kind: .session, date: nil)
     }
   }
 
-  /// The date filters: the date of a chunk is on or after the `after:` day and before the
-  /// `before:` day. A chunk with no date, and a session item, pass only with no date token.
+  /// The kind filter and the date filters.
   ///
-  /// - Parameter item: The item.
-  /// - Returns: `true` when the date of the item passes.
-  private func admitsDate(of item: TranscriptSearchItem) -> Bool {
+  /// The kind filter keeps the kinds of the `from:` tokens. A session item passes only with no
+  /// `from:` token: its kind `session` is then one of the kinds of the query.
+  ///
+  /// The date filters keep a date on or after the `after:` day and before the `before:` day. A
+  /// chunk with no date, and a session item, pass only with no date token.
+  ///
+  /// - Parameters:
+  ///   - kind: The kind of the hit of the item.
+  ///   - date: The date of a chunk, or `nil` for a chunk with no date and for a session item.
+  /// - Returns: `true` when the kind and the date pass.
+  func admits(kind: SessionSearchHit.Kind, date: Date?) -> Bool {
+    guard query.kinds.contains(kind) else {
+      return false
+    }
     guard query.after != nil || query.before != nil else {
       return true
     }
-    guard case .chunk(let chunk) = item.content, let date = chunk.date else {
+    guard let date else {
       return false
     }
     let isAfter = query.after.map { date >= $0 } ?? true
@@ -112,7 +113,7 @@ struct TranscriptSearchFilter: Sendable {
   ///
   /// - Parameter item: The item.
   /// - Returns: `true` when the block of the item passes.
-  private func admitsText(of item: TranscriptSearchItem) -> Bool {
+  func admitsText(of item: TranscriptSearchItem) -> Bool {
     guard !phraseTokens.isEmpty || !excludedTokens.isEmpty else {
       return true
     }

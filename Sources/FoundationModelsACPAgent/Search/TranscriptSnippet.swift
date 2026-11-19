@@ -21,6 +21,9 @@ struct TranscriptSnippet: Equatable, Sendable {
   /// The most characters of a snippet.
   static let maximumLength = 200
 
+  /// The first byte value that is not ASCII.
+  private static let asciiLimit: UInt8 = 0x80
+
   /// The divisor of the free characters of a window: the snippet puts this part of the
   /// characters that its matched words do not use before the first matched word.
   private static let leadingSlackDivisor = 2
@@ -111,14 +114,36 @@ struct TranscriptSnippet: Equatable, Sendable {
   private static func word(of characters: [Character], span: Range<Int>, queryTerms: Set<String>)
     -> Word
   {
-    let tokens = Tokenizer.tokenize(text: String(characters[span]))
-    guard !queryTerms.isDisjoint(with: tokens) else {
+    let text = String(characters[span])
+    guard mayHold(queryTerms, text), !queryTerms.isDisjoint(with: Tokenizer.tokenize(text: text))
+    else {
       return Word(span: span, match: nil)
     }
     let isWordCharacter: (Character) -> Bool = { $0.isLetter || $0.isNumber }
     let lower = span.first { isWordCharacter(characters[$0]) } ?? span.lowerBound
     let upper = (span.last { isWordCharacter(characters[$0]) }).map { $0 + 1 } ?? span.upperBound
     return Word(span: span, match: lower..<upper)
+  }
+
+  /// Tells whether a word can give a token that is a query term, with no tokenize
+  /// (^w0dheny). Each token of `Tokenizer.tokenize(text:)` is a part of the word in lowercase.
+  /// For an ASCII word, the lowercase of a part is a part of the lowercase of the word, so a
+  /// word whose lowercase holds no query term gives no query term. A word with another
+  /// character can change in length or form in lowercase, so it always gets the tokenize.
+  ///
+  /// - Parameters:
+  ///   - queryTerms: The query terms.
+  ///   - word: The text of the word.
+  /// - Returns: `false` only when no token of the word can be a query term.
+  private static func mayHold(_ queryTerms: Set<String>, _ word: String) -> Bool {
+    guard !queryTerms.isEmpty else {
+      return false
+    }
+    guard word.utf8.allSatisfy({ $0 < asciiLimit }) else {
+      return true
+    }
+    let lowercased = word.lowercased()
+    return queryTerms.contains { lowercased.contains($0) }
   }
 
   /// The words of the best window: the first and the last matched word of the window of

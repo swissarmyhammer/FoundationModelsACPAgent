@@ -67,6 +67,20 @@ import Testing
     #expect(Self.markedTexts(of: snippet) == ["getUser"])
   }
 
+  /// A word with a letter that is not ASCII matches with the tokens of the ranker.
+  @Test func aWordWithALetterThatIsNotASCIIMatches() {
+    let snippet = TranscriptSnippet.around(["straße"], in: "Die Straße ist lang.")
+
+    #expect(Self.markedTexts(of: snippet) == ["Straße"])
+  }
+
+  /// A word that holds a query word only as a part of a longer token does not match.
+  @Test func aLongerTokenThatHoldsTheQueryWordDoesNotMatch() {
+    let snippet = TranscriptSnippet.around([Self.queryWord], in: "Two quokkas live here.")
+
+    #expect(snippet.ranges.isEmpty)
+  }
+
   /// The leading snippet of a text from an offset gives the text from that offset and no range.
   @Test func theLeadingSnippetStartsAtTheOffsetWithNoRange() {
     let snippet = TranscriptSnippet.leading("Title\nThe quokka lives.", from: 6)

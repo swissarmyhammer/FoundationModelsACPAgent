@@ -156,7 +156,11 @@ public actor TranscriptSearchIndex {
   private var loadState = LoadState.notLoaded
 
   /// The items of each indexed session, by session id.
-  private var sessions: [SessionId: IndexedSession] = [:]
+  private(set) var sessions: [SessionId: IndexedSession] = [:]
+
+  /// The chunk items of ``sessions``, newest first, for a query with only tokens. Each change of
+  /// the chunk items of ``sessions`` changes it in the same step.
+  private(set) var dateIndex = TranscriptSearchDateIndex()
 
   /// The last write of a change to the searcher. Each write waits for the write before it, so
   /// the changes reach the searcher in the order of the changes of ``sessions``.
@@ -254,6 +258,9 @@ public actor TranscriptSearchIndex {
       indexed.filter { session, new in sessions[session]?.chunkItems != new.chunkItems }.keys)
     let change = Self.catalogChange(
       from: sessions, indexing: indexed, removing: removedHeld)
+    dateIndex.replace(
+      Self.dateEntries(of: changedTurns.union(removedHeld), in: sessions),
+      with: Self.dateEntries(of: changedTurns, in: indexed))
     sessions.merge(indexed) { _, new in new }
     for session in removedHeld {
       sessions.removeValue(forKey: session)
@@ -350,7 +357,7 @@ public actor TranscriptSearchIndex {
   /// - Throws: An error of the searcher. The `.retrieval` mode gives none.
   public func matches(for query: String) async throws -> [Match<TranscriptSearchItem>] {
     let searcher = await loadedSearcher()
-    return try await searcher.search(intent: query, limit: heldCatalog.count)
+    return try await searcher.search(intent: query, limit: heldItemCount)
   }
 
   /// The items of the catalog: the items of each session, in the order of the session ids. The
@@ -368,9 +375,31 @@ public actor TranscriptSearchIndex {
     sortedSessionIDs.flatMap { sessions[$0]?.items ?? [] }
   }
 
+  /// The number of items that the index holds now: the session item and the chunk items of each
+  /// session. It is the count of ``heldCatalog``, with no build of the catalog.
+  private var heldItemCount: Int {
+    sessions.values.reduce(0) { $0 + $1.chunkItems.count + 1 }
+  }
+
   /// The ids of the indexed sessions, in their order.
   private var sortedSessionIDs: [SessionId] {
     Self.sorted(sessions.keys)
+  }
+
+  /// The entries of the date index for the chunk items of sessions.
+  ///
+  /// - Parameters:
+  ///   - ids: The sessions. A session that `sessions` does not hold gives no entry.
+  ///   - sessions: The items of each session, by session id.
+  /// - Returns: The entries.
+  private static func dateEntries(
+    of ids: Set<SessionId>, in sessions: [SessionId: IndexedSession]
+  ) -> [TranscriptSearchDateIndex.Entry] {
+    ids.flatMap { id in
+      sessions[id].map { held in
+        TranscriptSearchDateIndex.entries(of: id, chunkItems: held.chunkItems)
+      } ?? []
+    }
   }
 
   /// Session ids in their order.
@@ -428,6 +457,7 @@ public actor TranscriptSearchIndex {
       })
     let restored = Self.restoredSessions(from: await searcher.items())
     sessions = restored.sessions
+    dateIndex = TranscriptSearchDateIndex(sessions: restored.sessions)
     await write(to: searcher, upserting: [], removing: restored.strayIDs)
     return searcher
   }
