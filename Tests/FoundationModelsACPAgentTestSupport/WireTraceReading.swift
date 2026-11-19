@@ -46,36 +46,46 @@ extension SessionEventSubscription {
   ///
   /// - Parameters:
   ///   - first: The events that came before the subscription, for example the resume request.
+  ///   - knownSessions: The sessions that the client knew before the resume and that are not in
+  ///     the resumed tree, for example the session that the agent opened with `session/new`
+  ///     before the resume. Their announcement is not in the trace, and they can send a live
+  ///     update at any time. So their events are not part of the trace.
   ///   - settledBy: Tells the last event to read after the response. The read ends after the
   ///     first event, from the response on, that it accepts. With `nil` the read ends at the
   ///     response.
   /// - Returns: The trace. The read also ends when the stream finishes or the task is cancelled.
   public func readResumeTrace(
     startingWith first: [WireTraceEvent] = [],
+    leavingOut knownSessions: Set<SessionId> = [],
     settledBy: (@Sendable (WireTraceEvent) -> Bool)? = nil
   ) async -> [WireTraceEvent] {
-    await readSequencedResumeTrace(startingWith: first, settledBy: settledBy).map(\.event)
+    await readSequencedResumeTrace(
+      startingWith: first, leavingOut: knownSessions, settledBy: settledBy
+    ).map(\.event)
   }
 
-  /// Reads the wire of a `session/resume` like ``readResumeTrace(startingWith:settledBy:)``, and
-  /// keeps the wire sequence number of each event. Each event of `first` gets
-  /// ``SequencedTraceEvent/beforeEachFrame``.
+  /// Reads the wire of a `session/resume` like
+  /// ``readResumeTrace(startingWith:leavingOut:settledBy:)``, and keeps the wire sequence number
+  /// of each event. Each event of `first` gets ``SequencedTraceEvent/beforeEachFrame``.
   ///
   /// - Parameters:
   ///   - first: The events that came before the subscription, for example the resume request.
+  ///   - knownSessions: The sessions whose events are not part of the trace, as in
+  ///     ``readResumeTrace(startingWith:leavingOut:settledBy:)``.
   ///   - settledBy: Tells the last event to read after the response, as in
-  ///     ``readResumeTrace(startingWith:settledBy:)``.
+  ///     ``readResumeTrace(startingWith:leavingOut:settledBy:)``.
   /// - Returns: The trace, with the sequence numbers. The read also ends when the stream
   ///   finishes or the task is cancelled.
   public func readSequencedResumeTrace(
     startingWith first: [WireTraceEvent] = [],
+    leavingOut knownSessions: Set<SessionId> = [],
     settledBy: (@Sendable (WireTraceEvent) -> Bool)? = nil
   ) async -> [SequencedTraceEvent] {
     var seen = first.map {
       SequencedTraceEvent(sequence: SequencedTraceEvent.beforeEachFrame, event: $0)
     }
     var responded = false
-    for await sequenced in events {
+    for await sequenced in events where !knownSessions.contains(sequenced.sessionId) {
       guard let event = WireTraceEvent(sequenced) else {
         continue
       }
@@ -92,13 +102,14 @@ extension SessionEventSubscription {
 }
 
 extension SessionEventSubscription {
-  /// Reads the wire of a `session/resume` like ``readResumeTrace(startingWith:settledBy:)`` while
-  /// `request` runs, and ends the read at `timeout` when the events never settle it.
+  /// Reads the wire of a `session/resume` like
+  /// ``readResumeTrace(startingWith:leavingOut:settledBy:)`` while `request` runs, and ends the
+  /// read at `timeout` when the events never settle it.
   ///
   /// - Parameters:
   ///   - first: The events that came before the subscription, for example the resume request.
   ///   - settledBy: Tells the last event to read after the response, as in
-  ///     ``readResumeTrace(startingWith:settledBy:)``.
+  ///     ``readResumeTrace(startingWith:leavingOut:settledBy:)``.
   ///   - timeout: The longest time that the read waits.
   ///   - request: The request that makes the wire, for example the resume call.
   /// - Returns: The trace. The read also ends when the stream finishes.
@@ -115,14 +126,14 @@ extension SessionEventSubscription {
   }
 
   /// Reads the wire of a `session/resume` like
-  /// ``readSequencedResumeTrace(startingWith:settledBy:)`` while `request` runs, and ends the
-  /// read at `timeout` when the events never settle it. The one place that bounds the read of a
-  /// resume trace with a clock.
+  /// ``readSequencedResumeTrace(startingWith:leavingOut:settledBy:)`` while `request` runs, and
+  /// ends the read at `timeout` when the events never settle it. The one place that bounds the
+  /// read of a resume trace with a clock.
   ///
   /// - Parameters:
   ///   - first: The events that came before the subscription, for example the resume request.
   ///   - settledBy: Tells the last event to read after the response, as in
-  ///     ``readResumeTrace(startingWith:settledBy:)``.
+  ///     ``readResumeTrace(startingWith:leavingOut:settledBy:)``.
   ///   - timeout: The longest time that the read waits.
   ///   - request: The request that makes the wire, for example the resume call.
   /// - Returns: The trace, with the sequence numbers. The read also ends when the stream
