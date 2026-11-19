@@ -245,6 +245,14 @@ extension RoutedACPAgent {
   /// It does not take the session for a connection, it replays nothing, and
   /// it holds no restored work: the caller does these steps.
   ///
+  /// A fork (D205) restores the same way, with three more steps: a live
+  /// session of the session directory with the same id that the table does
+  /// not hold stops first (``releaseDirectorySession(_:sessionId:)``), the
+  /// fork gets the agent of its source when it has no agent record
+  /// (``inheritForkAgent(of:sessionId:in:)``), and a fork with no history
+  /// file gets the history that it copied from its source
+  /// (``unrecordedForkHistory(of:)``).
+  ///
   /// - Parameters:
   ///   - rootId: The recorded root session's id.
   ///   - sessionId: The wire session id.
@@ -270,6 +278,8 @@ extension RoutedACPAgent {
     // resumed session.
     let keptHistory = sessions[sessionId]?.history
     await releaseReplacedSession(sessionId)
+    await releaseDirectorySession(rootId, sessionId: sessionId)
+    await inheritForkAgent(of: rootId, sessionId: sessionId, in: context.transcriptRoot)
 
     let composition = try await composeResumedSession(
       from: context, workingDirectory: workingDirectory, additionalRoots: additionalRoots,
@@ -283,9 +293,10 @@ extension RoutedACPAgent {
       rootId, sessionId: sessionId, composition: composition, userPresence: userPresence,
       hookLineage: hookLineage, claimingRuns: claims)
     SnapshotSessionKeys.shared.record(hookLineage.sessionKey, for: sessionId)
+    let unrecordedFork = await unrecordedForkHistory(of: restored.session)
     let history = resumedHistory(
-      kept: keptHistory, directory: restored.session.recordingDirectory, rootId: rootId,
-      sessionId: sessionId)
+      kept: keptHistory ?? unrecordedFork, directory: restored.session.recordingDirectory,
+      rootId: rootId, sessionId: sessionId)
 
     // The mount gives Router the new root set, unless the session is
     // replay-only: a replay-only session runs no prompt, so its
@@ -297,7 +308,7 @@ extension RoutedACPAgent {
       composition: composition,
       placement: SessionPlacement(
         workingDirectory: workingDirectory, additionalRoots: additionalRoots,
-        userPresence: userPresence),
+        userPresence: userPresence, clientMCPServers: clientMCPServers),
       history: history)
 
     // The root is in the table with its project hook key. So each recorded nested session

@@ -57,6 +57,14 @@ enum SessionHistoryFile {
     try data.write(to: url(in: directory), options: .atomic)
   }
 
+  /// Whether `directory` holds the file.
+  ///
+  /// - Parameter directory: The transcript directory of the session.
+  /// - Returns: `true` when the file is there.
+  static func exists(in directory: URL) -> Bool {
+    FileManager.default.fileExists(atPath: url(in: directory).path)
+  }
+
   /// Reads the history in the file in `directory`.
   ///
   /// - Parameter directory: The transcript directory of the session.
@@ -197,6 +205,86 @@ extension SessionMergeEngine {
   /// renders the same updates (``RoutedACPAgent/transcriptMarkdown(of:includeThoughts:)``).
   var replayedTranscriptUpdates: [SessionUpdate] {
     transcriptUpdates.filter { !$0.isMailDeliveryPause }
+  }
+}
+
+extension SessionMergeEngine {
+  /// The position in ``entries`` of the first message entry with an id (``SessionEntry/ID/messageId``).
+  /// An entry keeps the place where it first appeared, so a message that came in chunks has one
+  /// position.
+  ///
+  /// - Parameter messageId: The ACP message id.
+  /// - Returns: The position, or `nil` when no message of the history has the id.
+  func messagePosition(of messageId: MessageId) -> Int? {
+    entries.firstIndex { $0.id.messageId == messageId }
+  }
+
+  /// The position in ``entries`` of the entry that starts each turn, in order (D205).
+  ///
+  /// A turn is the rule of the session directory (`SessionForkCut`): one delivered user message,
+  /// or one delivered message from another session, and all the entries after it up to the next
+  /// turn. Thus each user message starts a turn, and so does each incoming `session_message`
+  /// (from the directory, from the `agents` tool, or from the mail route of the host). An
+  /// outgoing `session_message` is the view of a message that this session sent: it was not
+  /// delivered to this session, so it starts no turn. A continuation of a tool loop, the result
+  /// of a run and the answer to an elicitation have no entry of these kinds, so they start no
+  /// turn either.
+  ///
+  /// The count covers the whole retained history. A compaction changes only the model context,
+  /// never this history, so a turn that a compaction folded still counts.
+  ///
+  /// - Parameter recipients: The ids that an incoming message names as its recipient: the id of
+  ///   this session, and the id of each session that this session is a fork of.
+  /// - Returns: The positions, in order. The turn index is the index in this list.
+  func turnStarts(receivedBy recipients: Set<SessionId>) -> [Int] {
+    entries.indices.filter { entries[$0].startsTurn(receivedBy: recipients) }
+  }
+
+  /// The index of the turn that holds the entry at a position: the last turn that starts at or
+  /// before the position (``turnStarts(receivedBy:)``).
+  ///
+  /// - Parameters:
+  ///   - position: The position of an entry in ``entries``.
+  ///   - recipients: The ids that an incoming message names as its recipient.
+  /// - Returns: The 0-based turn index, or `nil` when the entry comes before the first turn.
+  func turn(holding position: Int, receivedBy recipients: Set<SessionId>) -> Int? {
+    let started = turnStarts(receivedBy: recipients).prefix { $0 <= position }.count
+    return started == 0 ? nil : started - 1
+  }
+}
+
+extension SessionEntry {
+  /// Whether this entry starts a turn (``SessionMergeEngine/turnStarts(receivedBy:)``): a user
+  /// message, or a `session_message` whose recipient is one of `recipients`.
+  ///
+  /// - Parameter recipients: The ids that an incoming message names as its recipient.
+  /// - Returns: `true` when the entry starts a turn.
+  func startsTurn(receivedBy recipients: Set<SessionId>) -> Bool {
+    switch kind {
+    case .userMessage:
+      return true
+    case .sessionMessage(let message):
+      guard case .value(let recipient) = message.recipientSessionId else {
+        return false
+      }
+      return recipients.contains(recipient)
+    case .agentMessage, .agentThought, .toolCall, .terminal, .plan, .compaction, .unknown:
+      return false
+    }
+  }
+}
+
+extension SessionEntry.ID {
+  /// The ACP message id of a message entry: a user message, an agent message, an agent thought or
+  /// a message between sessions. It is `nil` for an entry that is not a message.
+  var messageId: MessageId? {
+    switch self {
+    case .userMessage(let id), .agentMessage(let id), .agentThought(let id),
+      .sessionMessage(let id):
+      return id
+    case .toolCall, .terminal, .plan, .compaction, .unidentified:
+      return nil
+    }
   }
 }
 

@@ -27,7 +27,7 @@ extension RoutedACPAgent {
   ///
   /// No suspension comes between the start of the request and the take of the session. The
   /// checks are synchronous, and they read no configuration: the cwd check reads the recording
-  /// root of the live session, the parent of its transcript directory. An update that the tree
+  /// root of the live session (``ActiveSession/transcriptRoot``). An update that the tree
   /// records before the take has the route of the owner then, and no hold. Its send can run after
   /// the take. When the connection of the request owns the tree already, the send reads the route
   /// again, finds the hold of the take with the same owner, and drops the update
@@ -56,7 +56,7 @@ extension RoutedACPAgent {
   ) async throws -> ResumeSessionResponse {
     try requireRecordedWorkingDirectory(
       of: rootId, sessionId: params.sessionId, toMatch: workingDirectory,
-      transcriptRoot: entry.transcriptDirectory.deletingLastPathComponent())
+      transcriptRoot: entry.transcriptRoot)
     _ = try requestedAdditionalRoots(of: params)
     return try await resumeLiveSession(
       params, entry: entry, replayCursor: replayCursor, from: caller)

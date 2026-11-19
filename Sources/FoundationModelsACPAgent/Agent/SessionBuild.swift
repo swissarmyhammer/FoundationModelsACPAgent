@@ -23,6 +23,12 @@ struct SessionBuild {
   /// The additional confinement roots, in wire order.
   let additionalRoots: [URL]
 
+  /// The MCP servers of the client of the session, in wire order.
+  let clientMCPServers: [FoundationModelsACP.MCPServer]
+
+  /// The recording root of the session.
+  let transcriptRoot: URL
+
   /// The mounted tool surface.
   let surface: SessionSurface
 
@@ -76,6 +82,8 @@ struct SessionBuild {
     instructions = composition.instructions
     workingDirectory = placement.workingDirectory
     additionalRoots = placement.additionalRoots
+    clientMCPServers = placement.clientMCPServers
+    transcriptRoot = composition.transcriptRoot
     surface = composition.surface
     self.commands = commands
     self.selectedSlot = selectedSlot
@@ -109,6 +117,8 @@ struct SessionBuild {
     instructions = parent.instructions
     workingDirectory = parent.workingDirectory
     additionalRoots = parent.additionalRoots
+    clientMCPServers = parent.clientMCPServers
+    transcriptRoot = parent.transcriptRoot
     surface = parent.surface
     commands = parent.commands
     selectedSlot = parent.selectedSlot
@@ -247,7 +257,9 @@ extension RoutedACPAgent {
       instructions: build.instructions,
       workingDirectory: build.workingDirectory,
       additionalRoots: build.additionalRoots,
+      clientMCPServers: build.clientMCPServers,
       transcriptDirectory: session.recordingDirectory,
+      transcriptRoot: build.transcriptRoot,
       surface: build.surface,
       commands: build.commands,
       selectedSlot: build.selectedSlot,

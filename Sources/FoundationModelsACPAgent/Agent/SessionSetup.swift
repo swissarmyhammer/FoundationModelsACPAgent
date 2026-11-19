@@ -36,8 +36,8 @@ enum SessionAvailability: Equatable, Sendable {
 /// A root session has no parent. A nested session has a parent and
 /// **borrows** from it the parts that belong to the mounted surface:
 /// ``configuration``, ``instructions``, ``workingDirectory``,
-/// ``additionalRoots``, ``surface``, ``commands``, ``agentOption``,
-/// ``userPresence`` and ``isReplayOnly``. It **owns** the parts that belong to the events of its
+/// ``additionalRoots``, ``clientMCPServers``, ``transcriptRoot``, ``surface``, ``commands``,
+/// ``agentOption``, ``userPresence`` and ``isReplayOnly``. It **owns** the parts that belong to the events of its
 /// own Router session: ``session``, ``transcriptDirectory``, ``stateLedger``,
 /// ``projector`` (with its relay and its join table), ``retainedHistory``,
 /// ``announcement`` and ``openPrompts``.
@@ -70,9 +70,21 @@ struct ActiveSession: Sendable {
   /// ``workingDirectory``.
   let additionalRoots: [URL]
 
+  /// The MCP servers of the client of the session, in wire order: the
+  /// servers of the `session/new` or `session/resume` request. A fork of
+  /// the session gets them when its request names none (D205).
+  let clientMCPServers: [FoundationModelsACP.MCPServer]
+
   /// The session's own transcript directory,
-  /// `<recording root>/<sessionId>/`.
+  /// `<recording root>/<sessionId>/`. A fork records in the folder of its
+  /// source, `<recording root>/<sourceId>/<sessionId>/` (D205).
   let transcriptDirectory: URL
+
+  /// The recording root of the session: the folder that holds the folder
+  /// of each root session. A read of the recorded tree and a restore take
+  /// it, never the parent of ``transcriptDirectory``: the parent of the
+  /// folder of a fork is the folder of its source.
+  let transcriptRoot: URL
 
   /// The mounted tool surface. The session-close task calls
   /// `surface.serverPool.shutdownAll()` after the session sweep, never
@@ -663,6 +675,10 @@ struct SessionPlacement {
   /// The user presence of the session (``RoutedACPAgent/userPresence(of:)``
   /// of the connection of the request).
   let userPresence: UserPresence
+
+  /// The MCP servers of the client of the session, in wire order. A fork
+  /// of the session gets them when its request names none.
+  let clientMCPServers: [FoundationModelsACP.MCPServer]
 }
 
 extension RoutedACPAgent {
@@ -799,7 +815,7 @@ extension RoutedACPAgent {
       composition: composition,
       placement: SessionPlacement(
         workingDirectory: workingDirectory, additionalRoots: additionalRoots,
-        userPresence: userPresence),
+        userPresence: userPresence, clientMCPServers: params.mcpServers ?? []),
       history: SessionMergeEngine())
 
     let response = NewSessionResponse(
@@ -812,8 +828,9 @@ extension RoutedACPAgent {
   }
 
   /// Sends the name of a new root session in one `session_info_update`
-  /// after the response of the current `session/new` request, so the client
-  /// shows the name at once (D199 (b)). Router gives the name when it
+  /// after the response of the current `session/new` or `session/fork`
+  /// request, so the client shows the name at once (D199 (b)). A fork has
+  /// the name of its source with `-fork` (D205). Router gives the name when it
   /// registers the session: the default name from the agent of the session
   /// (`SessionName.default`). After this, only a rename changes the name.
   ///
@@ -830,7 +847,7 @@ extension RoutedACPAgent {
   /// - Parameters:
   ///   - session: The new root Router session.
   ///   - sessionId: The session the update belongs to.
-  private func announceName(of session: any RoutedSession, sessionId: SessionId) {
+  func announceName(of session: any RoutedSession, sessionId: SessionId) {
     guard let name = session.facts.title, !name.isEmpty,
       let connection = connections.path(forSession: sessionId)?.connection
     else {
