@@ -1,8 +1,16 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: 9c80
+comments:
+- actor: claude-code
+  id: 01m7v2r52zw8jymb2wke2qwpjy
+  text: |-
+    ### review — clean
+    - evidence: `review sha 7c6fed5~1..7c6fed5`; 1 file reviewed, 0 not reviewed; findings 0, confirmed 0, refuted 0; 7 validators attempted, 0 failed, 0 skipped.
+    - next: none. The card is in done. The CI run of main must be green after the push.
+  timestamp: 2026-11-19T23:37:26.367320+00:00
+position_column: done
+position_ordinal: ffffffae80
 title: 'CI: TranscriptSearchHostReadTests time out waiting for the turns of a prompt in the change stream'
 ---
 CI failure on main 2606f6e (2026-11-19), run 44606074514 (`gh run view 44606074514 --log-failed`). Not caused by the Multitool break.
