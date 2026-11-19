@@ -762,10 +762,14 @@ code gives the local detail.
 - **`session/fork` makes a fork through the Router (D205).** `initialize`
   announces `fork` with `_meta.sah.forkCut = true`. A cut in
   `_meta.sah.forkCut` names an ACP message and a side. The agent maps it to a
-  turn: each user message and each incoming `session_message` starts a turn,
-  also a turn that a compaction folded. `after` a message keeps its whole
-  turn, and `before` a message keeps the turns before it. With no cut, the
-  fork has the completed turns, and a turn that runs goes on in the source.
+  turn with the rule of the Router: each delivered mail of a user message or
+  of a message of another session is a turn, in the order of delivery, also a
+  turn that a compaction folded. An action command such as `/help` delivers
+  no mail, so it is no turn. `after` a message keeps its whole turn, and
+  `before` a message keeps the turns before it. A cut inside a batch (two
+  messages that one answer took) rounds to the edge of the batch. With no
+  cut, the fork has the completed turns, also while the answer to the result
+  of a background run runs, and a turn that runs goes on in the source.
   The fork works in the folder of its source, with the agent of its source,
   the MCP servers and the additional directories of the request only, and the
   history of the source up to the cut. As ACP states, an omitted or empty

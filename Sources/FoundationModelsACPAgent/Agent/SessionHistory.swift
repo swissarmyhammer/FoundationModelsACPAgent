@@ -40,6 +40,10 @@ enum SessionHistoryFile {
     /// The updates that rebuild the history, in order: the transcript,
     /// then the session state.
     let updates: [SessionUpdate]
+
+    /// Whether the history holds the records of the mail delivery (``MailDeliveryRecord``).
+    /// This build writes `true`. A file of an earlier build has no member.
+    let recordsMailDelivery: Bool?
   }
 
   /// Writes `history` to the file in `directory`, and replaces the file that is there.
@@ -51,7 +55,8 @@ enum SessionHistoryFile {
   ///   - directory: The transcript directory of the session.
   /// - Throws: Whatever the encode, the directory or the write throws.
   static func write(_ history: SessionMergeEngine, in directory: URL) throws {
-    let contents = Contents(updates: history.transcriptUpdates + history.stateUpdates)
+    let contents = Contents(
+      updates: history.transcriptUpdates + history.stateUpdates, recordsMailDelivery: true)
     let data = try JSONEncoder().encode(contents)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     try data.write(to: url(in: directory), options: .atomic)
@@ -67,6 +72,10 @@ enum SessionHistoryFile {
 
   /// Reads the history in the file in `directory`.
   ///
+  /// A file of an earlier build holds no record of the mail delivery. The read gives its history
+  /// the records that that build counted (``SessionMergeEngine/withEarlierBuildDeliveryRecords()``),
+  /// so the fork map reads each history in the same way.
+  ///
   /// - Parameter directory: The transcript directory of the session.
   /// - Returns: The retained history, or `nil` when the directory holds no
   ///   file. A session that an earlier build recorded has no file.
@@ -77,7 +86,11 @@ enum SessionHistoryFile {
       return nil
     }
     let contents = try JSONDecoder().decode(Contents.self, from: Data(contentsOf: file))
-    return SessionMergeEngine(replaying: contents.updates)
+    let history = SessionMergeEngine(replaying: contents.updates)
+    guard contents.recordsMailDelivery == true else {
+      return history.withEarlierBuildDeliveryRecords()
+    }
+    return history
   }
 
   /// The URL of the file in `directory`.
@@ -201,10 +214,11 @@ extension SessionMergeEngine {
   }
 
   /// The transcript part of a replay from the start: each transcript entry as one whole update
-  /// with its id, without a recorded `_mail_delivery_paused`. The export of a session as Markdown
+  /// with its id, without a recorded `_mail_delivery_paused` and without a record of the mail
+  /// delivery (``MailDeliveryRecord``), which no client gets. The export of a session as Markdown
   /// renders the same updates (``RoutedACPAgent/transcriptMarkdown(of:includeThoughts:)``).
   var replayedTranscriptUpdates: [SessionUpdate] {
-    transcriptUpdates.filter { !$0.isMailDeliveryPause }
+    transcriptUpdates.filter { !$0.isMailDeliveryPause && !$0.isMailDeliveryRecord }
   }
 }
 
@@ -217,60 +231,6 @@ extension SessionMergeEngine {
   /// - Returns: The position, or `nil` when no message of the history has the id.
   func messagePosition(of messageId: MessageId) -> Int? {
     entries.firstIndex { $0.id.messageId == messageId }
-  }
-
-  /// The position in ``entries`` of the entry that starts each turn, in order (D205).
-  ///
-  /// A turn is the rule of the session directory (`SessionForkCut`): one delivered user message,
-  /// or one delivered message from another session, and all the entries after it up to the next
-  /// turn. Thus each user message starts a turn, and so does each incoming `session_message`
-  /// (from the directory, from the `agents` tool, or from the mail route of the host). An
-  /// outgoing `session_message` is the view of a message that this session sent: it was not
-  /// delivered to this session, so it starts no turn. A continuation of a tool loop, the result
-  /// of a run and the answer to an elicitation have no entry of these kinds, so they start no
-  /// turn either.
-  ///
-  /// The count covers the whole retained history. A compaction changes only the model context,
-  /// never this history, so a turn that a compaction folded still counts.
-  ///
-  /// - Parameter recipients: The ids that an incoming message names as its recipient: the id of
-  ///   this session, and the id of each session that this session is a fork of.
-  /// - Returns: The positions, in order. The turn index is the index in this list.
-  func turnStarts(receivedBy recipients: Set<SessionId>) -> [Int] {
-    entries.indices.filter { entries[$0].startsTurn(receivedBy: recipients) }
-  }
-
-  /// The index of the turn that holds the entry at a position: the last turn that starts at or
-  /// before the position (``turnStarts(receivedBy:)``).
-  ///
-  /// - Parameters:
-  ///   - position: The position of an entry in ``entries``.
-  ///   - recipients: The ids that an incoming message names as its recipient.
-  /// - Returns: The 0-based turn index, or `nil` when the entry comes before the first turn.
-  func turn(holding position: Int, receivedBy recipients: Set<SessionId>) -> Int? {
-    let started = turnStarts(receivedBy: recipients).prefix { $0 <= position }.count
-    return started == 0 ? nil : started - 1
-  }
-}
-
-extension SessionEntry {
-  /// Whether this entry starts a turn (``SessionMergeEngine/turnStarts(receivedBy:)``): a user
-  /// message, or a `session_message` whose recipient is one of `recipients`.
-  ///
-  /// - Parameter recipients: The ids that an incoming message names as its recipient.
-  /// - Returns: `true` when the entry starts a turn.
-  func startsTurn(receivedBy recipients: Set<SessionId>) -> Bool {
-    switch kind {
-    case .userMessage:
-      return true
-    case .sessionMessage(let message):
-      guard case .value(let recipient) = message.recipientSessionId else {
-        return false
-      }
-      return recipients.contains(recipient)
-    case .agentMessage, .agentThought, .toolCall, .terminal, .plan, .compaction, .unknown:
-      return false
-    }
   }
 }
 

@@ -71,10 +71,15 @@ Router makes it, and the agent serves it as each other root session. All of it i
   `RouterSessionDirectory.fork(_:)`, and the refusals. The fork gets the MCP servers and the
   additional directories of the request only; an omitted list gives none, as ACP states. The
   handler writes the history file of each fork, also an empty one.
-- **The turns.** `SessionHistory` counts the turns of the retained ACP history with the rule of
-  the Router: each user message and each incoming `session_message`. `SessionForkHistory` cuts
-  the retained history at the same turn, and finds the cut of a fork that the `fork session`
-  operation of the `sessions` tool made.
+- **The turns.** The projector of each session records each delivered mail and the end of each
+  answer in the retained history (`MailDeliveryRecord`, history only: no client gets them, and
+  a replay leaves them out). `SessionForkHistory` counts the turns from these records with the
+  rule of the Router: one turn for each delivered mail of a user message or of a message of
+  another session, in the order of delivery. It rounds a cut to the edge of a batch, never cuts
+  past the start of the answer that runs, and cuts the retained history at the same turn: a user
+  message moves to its delivery in the copy. It also finds the cut of a fork that the
+  `fork session` operation of the `sessions` tool made. A history file of an earlier build gets
+  the records that that build counted when it is read.
 - **The restore.** `SessionForkRestore` holds the steps of the cold restore for a fork: it stops
   the live fork of the directory, which runs the tools of the source, gives the fork the agent of
   its source, and gives a fork with no history file the history that it copied. Only a fork of

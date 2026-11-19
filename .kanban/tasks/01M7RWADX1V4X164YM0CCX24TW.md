@@ -1,10 +1,32 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m7rzxjvsqtjhy6782n9wjf8v
+  text: |-
+    Research and design (2026-11-18):
+    - The ACP id of the user message of a model prompt is the text of its MailID. The incoming view of a message from another session has the id `in-<mail id>`. An action command echo has a UUID id and sends no mail.
+    - The Router sends `mailDelivered` for each mail of a batch one after the other, before any other event of the answer (also for mail that joins a running answer). `answered`/`answerFailed` ends the answer. The public `SessionEvent` stream gives all of this; `MailRecord` and `ForkCutHistory` of the Router stay internal, so the agent does not read the journal.
+    - Design: the projector records history-only updates `_mail_delivered {mail, batch, answer}` and `_answer_ended {answer}` (`MailDeliveryRecord`, `MailDeliveryTrack`) through a new `recordDelivery` closure (no client gets them; the replay filters them). `ForkSourceHistory` counts one turn for each delivered record whose mail matches a user message or an incoming view, in record order; the turn start is the first record of its batch; the running answer start is the first record of the last answer with no end record (only when the state runs). The ACP copy moves a delivered user message to its record, and keeps an undelivered user message (action echo, cancelled queued prompt) at its place.
+    - A history file now has `recordsMailDelivery: true`. A file of an earlier build gets synthetic records at read (each ULID user message and each incoming view is one batch and one answer).
+    - Discovery: the Router sends a streamed prompt alone ("A stream goes alone"), so two queued ACP prompts never batch. Directory messages do batch, so the batch tests send two directory messages while turn 3 holds.
+    - Discovery: the Router keeps back the text of an answer that only run mail started, so the run-result tests wait for an inline signal tool, not for the text.
+    - The directory message view is sent during the translation of `mailDelivered`, so the delivered record goes BEFORE the translation, and the end record after it.
+  timestamp: 2026-11-19T04:09:29.721120+00:00
+- actor: claude-code
+  id: 01m7s003wxc8t7vsb2ee417d9e
+  text: |-
+    ### implement — changed
+    - evidence: new Sources/FoundationModelsACPAgent/Agent/MailDeliveryRecord.swift; changed SessionForkHistory.swift, SessionFork.swift, SessionHistory.swift, SessionProjector.swift, SessionBuild.swift, DirectoryMessage.swift and SubagentMessageProjector.swift (they use `MessageId.incomingView(of:)`), README.md, ARCHITECTURE.md; tests SessionForkTests.swift (sample histories carry delivery records; new: anActionCommandIsNoTurn, aQueuedPromptTakesTheIndexOfItsDelivery, aCutOnTheSecondMessageOfABatchCopiesNoMessageOfTheBatch, noCutWhileARunResultRunsKeepsTheLastCompletedTurn, aHistoryFileOfAnEarlierBuildCountsEachUserMessage) and SessionForkHandlerTests.swift (real Router directory: anActionCommandBetweenTwoPromptsIsNoTurnOfTheFork, aCutOnTheSecondMessageOfABatchCopiesTheRouterFork, aCutOnTheSecondMessageOfABatchKeepsNoMessageOfTheBatch, noCutWhileARunResultRunsForksTheLastCompletedTurn, noCutWhileARunResultRunsCopiesTheRouterFork; the last two of the four compare the ACP copy with the Router journal of the fork). Each new test failed first, except the earlier-build file test, which guards the old count through the change.
+    - test: `swift build --build-tests` Build complete!, 0 compiler warnings; `timeout 1800 swift test --skip-build`: 2435 tests in 255 suites pass, 1 known issue (the pre-existing `withKnownIssue` in HarnessSmokeTests).
+    - No Router change was needed. Not committed.
+    - next: review.
+  timestamp: 2026-11-19T04:10:52.701921+00:00
 depends_on:
 - 01M7QV7TASP791JZFKKEMD9F4N
-position_column: todo
-position_ordinal: '9080'
+position_column: doing
+position_ordinal: '8180'
 title: 'D205: the fork turn count of the agent agrees with the Router (action commands, queued prompts, batches, a running answer)'
 ---
 Found during ^emd9f4n (2026-11-18). Decision D205. The agreed rule (see the comments of ^emd9f4n): one turn for each DELIVERED mail whose body is `.userMessage` or `.agentMessage`, from any route, in delivery order, from the source's own journal. The agent copies the retained ACP history of the source up to the cut, and the Router copies its journal up to the same cut. When the two counts disagree, the client of the fork shows a history that is not the history that the fork model has.

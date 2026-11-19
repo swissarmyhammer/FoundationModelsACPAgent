@@ -1,14 +1,31 @@
 import FoundationModels
 import FoundationModelsACP
+import FoundationModelsExtras
 
 /// The retained history of the source of a fork at the time of the fork (D205), and the part of
 /// it that the fork copies.
 ///
-/// The session directory cuts the history of the Router journal of the source. The agent cuts
-/// its own retained ACP history at the same turn, so the client of the fork shows the turns that
-/// the model of the fork knows. Both count the turns with the same rule
-/// (``SessionMergeEngine/turnStarts(receivedBy:)``).
+/// The session directory cuts the Router journal of the source. The agent cuts its own retained
+/// ACP history at the same turn, so the client of the fork shows the turns that the model of the
+/// fork knows. Both count the turns with the rule of the session directory: one turn for each
+/// delivered mail whose body is a user message or a message of another session, in the order of
+/// delivery. The agent reads the delivery from the records of its history
+/// (``MailDeliveryRecord``): a mail is a turn when the history holds its user message (the id of
+/// the user message of a model prompt is the id of its mail) or the incoming view of its message
+/// from another session. Thus an action command, which delivers no mail, is no turn; a prompt
+/// that waited in the queue takes the place of its delivery, not of its echo; and the result of a
+/// background run, which has no such message, is no turn.
 struct ForkSourceHistory: Sendable {
+  /// One turn of the history.
+  private struct Turn {
+    /// The position of the first record of the batch that delivered the mail of the turn. A cut
+    /// before the turn, or after the turn before it, is at this position.
+    let start: Int
+
+    /// The position of the message of the turn.
+    let message: Int
+  }
+
   /// The retained history of the source, as the agent read it for the fork.
   let history: SessionMergeEngine
 
@@ -45,38 +62,102 @@ struct ForkSourceHistory: Sendable {
     }
   }
 
-  /// The position in the history of the entry that starts each turn.
-  private var turnStarts: [Int] {
-    history.turnStarts(receivedBy: recipients)
+  /// The turns of the history, in the order of delivery.
+  private var turns: [Turn] {
+    let records = history.deliveryRecords
+    let messages = turnMessagePositions
+    var batchStarts: [MailID: Int] = [:]
+    return records.compactMap { position, record in
+      guard case .delivered(let mail, let batch, _) = record else { return nil }
+      let start = batchStarts[batch] ?? position
+      batchStarts[batch] = start
+      guard let message = messages[mail.description] else { return nil }
+      return Turn(start: start, message: message)
+    }
   }
 
-  /// The index of the turn that holds the entry at a position, with the turn count of the
-  /// recipients of the source (``SessionMergeEngine/turn(holding:receivedBy:)``).
+  /// The position of each message that can be the message of a turn, by the text of the id of
+  /// its mail: each user message, and each incoming view of a message to a recipient of the
+  /// source.
+  private var turnMessagePositions: [String: Int] {
+    var positions: [String: Int] = [:]
+    for (position, entry) in history.entries.enumerated() {
+      guard let key = turnMessageKey(of: entry) else { continue }
+      positions[key] = positions[key] ?? position
+    }
+    return positions
+  }
+
+  /// The text of the id of the mail of the message of an entry, when the entry can be the
+  /// message of a turn.
+  ///
+  /// - Parameter entry: An entry of the history.
+  /// - Returns: The text of the id of the mail, or `nil` for an entry that is no such message.
+  private func turnMessageKey(of entry: SessionEntry) -> String? {
+    switch entry.kind {
+    case .userMessage(let message):
+      return message.messageId.rawValue
+    case .sessionMessage(let message):
+      guard case .value(let recipient) = message.recipientSessionId,
+        recipients.contains(recipient)
+      else {
+        return nil
+      }
+      return MessageId.mailKey(ofIncomingView: message.messageId)
+    default:
+      return nil
+    }
+  }
+
+  /// The position of the first record of the answer that runs now, or `nil` when no answer runs.
+  /// The last completed turn never goes past it.
+  private var runningAnswerStart: Int? {
+    guard runsTurn else { return nil }
+    let records = history.deliveryRecords
+    guard
+      let answer = records.last?.record.answer,
+      !records.contains(where: { $0.record == .answerEnded(answer: answer) })
+    else {
+      return nil
+    }
+    return records.first { $0.record.answer == answer }?.position
+  }
+
+  /// The index of the turn that holds the entry at a position. The message of a turn is in its
+  /// own turn. Each other entry is in the last turn that starts at or before it.
   ///
   /// - Parameter position: The position of an entry in the history.
   /// - Returns: The 0-based turn index, or `nil` when the entry comes before the first turn.
   func turn(holding position: Int) -> Int? {
-    history.turn(holding: position, receivedBy: recipients)
+    let turns = self.turns
+    if let own = turns.firstIndex(where: { $0.message == position }) {
+      return own
+    }
+    let started = turns.prefix { $0.start <= position }.count
+    return started == 0 ? nil : started - 1
   }
 
-  /// The number of entries of the history that a fork at a point keeps.
+  /// The number of entries of the history that a fork at a point keeps, as the session directory
+  /// cuts its journal.
   ///
-  /// - ``SessionForkPoint/lastCompletedTurn``: each entry, or the entries before the last turn
-  ///   when the source runs a turn.
-  /// - ``SessionForkPoint/afterTurn(_:)``: the entries before the next turn.
-  /// - ``SessionForkPoint/beforeTurn(_:)``: the entries before the turn.
+  /// - ``SessionForkPoint/lastCompletedTurn``: the entries before the answer that runs now, or
+  ///   each entry when no answer runs.
+  /// - ``SessionForkPoint/afterTurn(_:)``: the entries before the next turn of a later batch, and
+  ///   never past the start of the answer that runs now.
+  /// - ``SessionForkPoint/beforeTurn(_:)``: the entries before the batch of the turn.
   ///
   /// - Parameter point: The point of the fork.
   /// - Returns: The number of entries, or `nil` when the history has no turn with the index of
   ///   the point.
   func end(of point: SessionForkPoint) -> Int? {
-    let starts = turnStarts
+    let starts = turns.map(\.start)
+    let historyEnd = runningAnswerStart ?? history.entries.count
     switch point {
     case .lastCompletedTurn:
-      return runsTurn ? (starts.last ?? history.entries.count) : history.entries.count
+      return historyEnd
     case .afterTurn(let turn):
       guard starts.indices.contains(turn) else { return nil }
-      return starts.indices.contains(turn + 1) ? starts[turn + 1] : history.entries.count
+      return min(starts.first { $0 > starts[turn] } ?? historyEnd, historyEnd)
     case .beforeTurn(let turn):
       guard starts.indices.contains(turn) else { return nil }
       return starts[turn]
@@ -96,21 +177,25 @@ struct ForkSourceHistory: Sendable {
     return end <= compaction
   }
 
-  /// Whether a point names the turn that runs now: ``SessionForkPoint/afterTurn(_:)`` of the
-  /// last turn while the source runs a turn.
+  /// Whether a point names a turn of the answer that runs now:
+  /// ``SessionForkPoint/afterTurn(_:)`` of a turn whose batch starts at or after the start of
+  /// that answer.
   ///
   /// - Parameter point: The point of the fork.
-  /// - Returns: `true` when the point is after the running turn.
+  /// - Returns: `true` when the point is after a running turn.
   func isAfterRunningTurn(_ point: SessionForkPoint) -> Bool {
-    guard runsTurn, case .afterTurn(let turn) = point else {
+    let turns = self.turns
+    guard case .afterTurn(let turn) = point, turns.indices.contains(turn),
+      let running = runningAnswerStart
+    else {
       return false
     }
-    return turn == turnStarts.count - 1
+    return turns[turn].start >= running
   }
 
-  /// The history that a fork at a point copies: the first entries of the history, each with its
-  /// id and its merged state. The state of the source (its commands, its options, its usage and
-  /// its children) is not copied: the fork has its own.
+  /// The history that a fork at a point copies (``SessionMergeEngine/copiedHistory(endingAt:)``).
+  /// The state of the source (its commands, its options, its usage and its children) is not
+  /// copied: the fork has its own.
   ///
   /// - Parameter end: The number of entries that the fork keeps (``end(of:)``).
   /// - Returns: The copied history.
@@ -120,13 +205,47 @@ struct ForkSourceHistory: Sendable {
 }
 
 extension SessionMergeEngine {
+  /// Each record of the mail delivery of this history, with its position, in order.
+  var deliveryRecords: [(position: Int, record: MailDeliveryRecord)] {
+    entries.enumerated().compactMap { position, entry in
+      MailDeliveryRecord(entry.kind).map { (position, $0) }
+    }
+  }
+
   /// The history of the first entries of this history, each with its id and its merged state,
-  /// with no session state.
+  /// with no session state, in the order that the model of a fork knows them.
+  ///
+  /// The agent echoes a user message when it accepts the prompt, and the session takes the mail
+  /// later. So a user message that a record of the history delivers moves to its record: the copy
+  /// keeps it when the record is in the copy, and else not. A user message with no record (the
+  /// echo of an action command, or a prompt that left the queue before the session took it) stays
+  /// where it is: the client of the source showed it there, and the model never saw it.
   ///
   /// - Parameter end: The number of entries to keep.
   /// - Returns: The copied history.
   func copiedHistory(endingAt end: Int) -> SessionMergeEngine {
-    SessionMergeEngine(replaying: transcriptUpdates.prefix(end))
+    let replay = transcriptUpdates
+    var userMessages: [String: SessionUpdate] = [:]
+    for (entry, update) in zip(entries, replay) {
+      guard case .userMessage(let message) = entry.kind else { continue }
+      userMessages[message.messageId.rawValue] = update
+    }
+    let delivered = Set(
+      deliveryRecords.compactMap { item -> String? in
+        guard case .delivered(let mail, _, _) = item.record else { return nil }
+        return mail.description
+      })
+    let updates = zip(entries.prefix(end), replay).flatMap { entry, update -> [SessionUpdate] in
+      switch (entry.kind, MailDeliveryRecord(entry.kind)) {
+      case (.userMessage(let message), _) where delivered.contains(message.messageId.rawValue):
+        return []
+      case (_, .delivered(let mail, _, _)?):
+        return [userMessages[mail.description], update].compactMap { $0 }
+      default:
+        return [update]
+      }
+    }
+    return SessionMergeEngine(replaying: updates)
   }
 
   /// The position of the last completed compaction entry, or `nil` when the history has none.

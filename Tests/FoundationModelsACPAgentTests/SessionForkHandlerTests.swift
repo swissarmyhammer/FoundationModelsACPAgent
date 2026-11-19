@@ -23,6 +23,40 @@ import Testing
   /// The prompt of turn 3, which holds until the test releases it.
   private static let thirdPrompt = "Turn three"
 
+  /// The text of the first message of the session directory, which comes while turn 3 runs.
+  private static let firstNote = "Note one"
+
+  /// The text of the second message of the session directory, which comes while turn 3 runs.
+  private static let secondNote = "Note two"
+
+  /// The text of the answer to the batch of the two messages of the session directory.
+  private static let notesReply = "Notes read"
+
+  /// The client id of the user who sends the messages of the session directory.
+  private static let noteClientID = "SessionForkHandlerTests-client"
+
+  /// The action command that runs between two prompts.
+  private static let helpCommand = "/help"
+
+  /// The text of the agent message of turn 2.
+  private static let secondText = "Second"
+
+  /// The prompt whose answer starts the gated background run.
+  private static let runPrompt = "Start a run"
+
+  /// The text of the answer that starts the gated background run.
+  private static let runStartedText = "Run started"
+
+  /// The text of the answer to the result of the gated run. Router keeps back the text of an
+  /// answer that only mail started, so the test waits for ``AnswerSignalTool`` and not for this
+  /// text.
+  private static let runAnswerPartialText = "Run answer partial"
+
+  /// The prompts of the suite, in the order of a session that runs each one.
+  private static let knownPrompts = [
+    firstPrompt, secondPrompt, thirdPrompt, firstNote, secondNote, runPrompt,
+  ]
+
   /// The prompt that runs a tool.
   private static let toolPrompt = "Run a tool"
 
@@ -85,7 +119,7 @@ import Testing
   {
     [
       .onPrompt(containing: firstPrompt, play: [.textDelta("First"), .endPass]),
-      .onPrompt(containing: secondPrompt, play: [.textDelta("Second"), .endPass]),
+      .onPrompt(containing: secondPrompt, play: [.textDelta(secondText), .endPass]),
       .onPrompt(
         containing: thirdPrompt,
         play: [
@@ -98,6 +132,20 @@ import Testing
       .onPrompt(
         containing: forkPrompt,
         play: [.toolCall(name: sessionsToolName, argumentsJSON: forkSessionArguments), .endPass]),
+      .onPrompt(containing: firstNote, play: [.textDelta(notesReply), .endPass]),
+      .onPrompt(
+        containing: runPrompt,
+        play: [
+          .toolCall(name: GatedRunTool.toolName, argumentsJSON: "{}"), .textDelta(runStartedText),
+          .endPass,
+        ]),
+      .onPrompt(
+        containing: GatedRunTool.toolName,
+        play: [
+          .textDelta(runAnswerPartialText),
+          .toolCall(name: AnswerSignalTool.toolName, argumentsJSON: "{}"),
+          .holdUntilReleased(hold), .endPass,
+        ]),
       .endPass,
     ]
   }
@@ -123,6 +171,193 @@ import Testing
   private static func runTwoTurns(on fixture: ScriptedPromptFixture) async throws {
     try await ScriptedPromptFixture.runPrompt(on: fixture, text: firstPrompt)
     try await ScriptedPromptFixture.runPrompt(on: fixture, text: secondPrompt, count: twoTurns)
+  }
+
+  /// Runs turns 1 to 3, and sends two messages through the session directory while turn 3 runs.
+  /// The session gets the two messages in one batch when turn 3 ends.
+  ///
+  /// - Parameters:
+  ///   - fixture: The fixture.
+  ///   - hold: The hold of the answer of turn 3.
+  /// - Throws: Whatever a prompt, a send or a wait throws.
+  private static func runBatch(on fixture: ScriptedPromptFixture, holding hold: ScriptedHold)
+    async throws
+  {
+    try await runTwoTurns(on: fixture)
+    _ = try await fixture.harness.connection.prompt(
+      AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: thirdPrompt))
+    _ = try await ScriptedPromptFixture.waitForUpdates(
+      of: fixture.collector, toReach: "the partial answer of turn 3"
+    ) { ScriptedPromptFixture.agentChunkTexts(in: $0).contains(thirdPartialText) }
+    let target = try #require(ULID(ulidString: fixture.sessionId.rawValue))
+    for note in [firstNote, secondNote] {
+      _ = try await fixture.harness.agent.sessionDirectory.send(
+        OutgoingSessionMessage(
+          from: .user(clientID: noteClientID), to: .session(target), text: note))
+    }
+    hold.release()
+    _ = try await ScriptedPromptFixture.waitForUpdates(
+      of: fixture.collector, toReach: "the answer of the batch and the view of each message"
+    ) { updates in
+      ScriptedPromptFixture.agentChunkTexts(in: updates).contains(notesReply)
+        && sessionMessageTexts(of: updates.map(\.update)).contains(secondNote)
+    }
+  }
+
+  /// The text of each message between sessions of a sequence of updates, in order.
+  ///
+  /// - Parameter updates: The updates.
+  /// - Returns: The texts.
+  private static func sessionMessageTexts(of updates: [SessionUpdate]) -> [String] {
+    sessionMessageTexts(of: SessionMergeEngine(replaying: updates))
+  }
+
+  /// The text of each message between sessions of a history, in order.
+  ///
+  /// - Parameter history: The history.
+  /// - Returns: The texts.
+  private static func sessionMessageTexts(of history: SessionMergeEngine) -> [String] {
+    history.entries.compactMap { entry in
+      guard case .sessionMessage(let message) = entry.kind else { return nil }
+      return text(of: message.content)
+    }
+  }
+
+  /// The id of the incoming view of the message of the session directory with a text.
+  ///
+  /// - Parameters:
+  ///   - text: The text of the message.
+  ///   - history: The history.
+  /// - Returns: The id.
+  /// - Throws: A failed requirement when the history has no such message.
+  private static func sessionMessageId(_ text: String, in history: SessionMergeEngine) throws
+    -> MessageId
+  {
+    try #require(
+      history.entries.lazy.compactMap { entry -> MessageId? in
+        guard case .sessionMessage(let message) = entry.kind, Self.text(of: message.content) == text
+        else { return nil }
+        return message.messageId
+      }.first)
+  }
+
+  /// Runs the prompt that starts the gated background run, opens the gate of the run, and waits
+  /// until the answer to the result of the run holds.
+  ///
+  /// - Parameters:
+  ///   - name: The name of the test, for the directories.
+  ///   - hold: The hold of the answer to the result of the run.
+  /// - Returns: The fixture.
+  /// - Throws: Whatever the construction, the prompt or a wait throws.
+  private static func runResultAnswerRuns(_ name: String, holding hold: ScriptedHold)
+    async throws -> ScriptedPromptFixture
+  {
+    let run = GatedRunTool()
+    let signal = AnswerSignalTool()
+    let fixture = try await ScriptedPromptFixture.make(
+      script: try script(holding: hold), label: "\(label)-\(name)", hostTools: [run, signal],
+      inlineSettleGrace: 0)
+    _ = try await fixture.harness.connection.prompt(
+      AgentClientHarness.makePromptRequest(sessionId: fixture.sessionId, text: runPrompt))
+    _ = try await ScriptedPromptFixture.waitForUpdates(
+      of: fixture.collector, toReach: "the answer that started the run"
+    ) { ScriptedPromptFixture.agentChunkTexts(in: $0).contains(runStartedText) }
+    await ScriptedPromptFixture.waitForPromptsFinished(fixture.harness.agent, fixture.sessionId)
+    run.gate.update { $0 = true }
+    _ = try await signal.reached.wait(for: "the answer to the run result") { $0 }
+    return fixture
+  }
+
+  /// The user messages and the agent text of a fork.
+  private struct ForkMessages: Equatable {
+    /// The prompts of the suite that the fork holds, in order.
+    let prompts: [String]
+
+    /// The text of the agent, joined in order.
+    let agentText: String
+  }
+
+  /// The messages of the ACP history that the agent copied for a fork: each user message and each
+  /// message between sessions that is a prompt of the suite, and the agent messages.
+  ///
+  /// - Parameters:
+  ///   - forkId: The fork.
+  ///   - fixture: The fixture.
+  /// - Returns: The messages.
+  /// - Throws: A failed requirement when the table does not hold the fork.
+  private static func copiedMessages(of forkId: SessionId, in fixture: ScriptedPromptFixture)
+    async throws -> ForkMessages
+  {
+    let history = try await history(of: forkId, in: fixture)
+    let agentText = history.entries.compactMap { entry -> String? in
+      guard case .agentMessage(let message) = entry.kind else { return nil }
+      return text(of: message.content)
+    }.joined()
+    let prompts = history.entries.compactMap { entry -> String? in
+      switch entry.kind {
+      case .userMessage(let message):
+        return text(of: message.content)
+      case .sessionMessage(let message):
+        return text(of: message.content)
+      default:
+        return nil
+      }
+    }
+    return ForkMessages(prompts: prompts.filter(knownPrompts.contains), agentText: agentText)
+  }
+
+  /// The messages of the Router journal of a fork: the prompts of the suite that each `.prompt`
+  /// entry delivers, and the text of the `.response` entries.
+  ///
+  /// - Parameters:
+  ///   - forkId: The fork.
+  ///   - fixture: The fixture.
+  /// - Returns: The messages.
+  /// - Throws: A failed requirement when the table does not hold the fork.
+  private static func routerMessages(of forkId: SessionId, in fixture: ScriptedPromptFixture)
+    async throws -> ForkMessages
+  {
+    let session = try #require(await fixture.harness.agent.sessions[forkId]?.session)
+    let transcript = Array(await session.transcript)
+    let prompts = transcript.flatMap { entry -> [String] in
+      guard case .prompt(let prompt) = entry else { return [] }
+      let delivered = segmentText(of: prompt.segments)
+      return knownPrompts.filter(delivered.contains)
+    }
+    let agentText = transcript.compactMap { entry -> String? in
+      guard case .response(let response) = entry else { return nil }
+      return segmentText(of: response.segments)
+    }.joined()
+    return ForkMessages(prompts: prompts, agentText: agentText)
+  }
+
+  /// The text segments of a transcript entry, joined.
+  ///
+  /// - Parameter segments: The segments.
+  /// - Returns: The text.
+  private static func segmentText(of segments: [Transcript.Segment]) -> String {
+    segments.compactMap { segment in
+      guard case .text(let text) = segment else { return nil }
+      return text.content
+    }.joined()
+  }
+
+  /// The id of the agent message with a text.
+  ///
+  /// - Parameters:
+  ///   - text: The text of the message.
+  ///   - history: The history.
+  /// - Returns: The id.
+  /// - Throws: A failed requirement when the history has no such message.
+  private static func agentMessageId(_ text: String, in history: SessionMergeEngine) throws
+    -> MessageId
+  {
+    try #require(
+      history.entries.lazy.compactMap { entry -> MessageId? in
+        guard case .agentMessage(let message) = entry.kind, Self.text(of: message.content) == text
+        else { return nil }
+        return message.messageId
+      }.first)
   }
 
   /// Sends `session/fork` for the session of `fixture`.
@@ -280,26 +515,34 @@ import Testing
       .filter { $0.sessionId == sessionId }.map(\.update)
   }
 
-  /// A history of three turns with a completed compaction after turn 2.
+  /// The mails of the three turns of the sample history with a compaction.
+  private static let compactedTurnMails = [MailID(), MailID(), MailID()]
+
+  /// A history of three turns with a completed compaction after turn 2. The answer of turn 3 has
+  /// no end, so it runs when the state of the source says so.
   private static var compactedHistory: SessionMergeEngine {
-    let messages: [SessionUpdate] = [
-      .userMessage(
+    let mails = compactedTurnMails
+    func turn(_ index: Int, answer: String?) -> [SessionUpdate] {
+      let mail = mails[index]
+      let prompt = SessionUpdate.userMessage(
         UserMessage(
-          messageId: MessageId(rawValue: "u1"), content: .value([.text(TextContent(text: "1"))]))),
-      .agentMessageChunk(
-        ContentChunk(content: .text(TextContent(text: "a")), messageId: MessageId(rawValue: "a1"))),
-      .userMessage(
-        UserMessage(
-          messageId: MessageId(rawValue: "u2"), content: .value([.text(TextContent(text: "2"))]))),
-      .agentMessageChunk(
-        ContentChunk(content: .text(TextContent(text: "b")), messageId: MessageId(rawValue: "a2"))),
-      .compactionUpdate(
-        CompactionUpdate(compactionId: CompactionId(rawValue: "c1"), status: .completed)),
-      .userMessage(
-        UserMessage(
-          messageId: MessageId(rawValue: "u3"), content: .value([.text(TextContent(text: "3"))]))),
-    ]
-    return SessionMergeEngine(replaying: messages)
+          messageId: MessageId(rawValue: mail.description),
+          content: .value([.text(TextContent(text: "\(index)"))])))
+      let delivered = MailDeliveryRecord.delivered(mail: mail, batch: mail, answer: mail).update
+      guard let answer else { return [prompt, delivered] }
+      return [
+        prompt, delivered,
+        .agentMessageChunk(
+          ContentChunk(
+            content: .text(TextContent(text: answer)), messageId: MessageId(rawValue: answer))),
+        MailDeliveryRecord.answerEnded(answer: mail).update,
+      ]
+    }
+    let compaction = SessionUpdate.compactionUpdate(
+      CompactionUpdate(compactionId: CompactionId(rawValue: "c1"), status: .completed))
+    return SessionMergeEngine(
+      replaying: turn(0, answer: "a") + turn(1, answer: "b") + [compaction]
+        + turn(2, answer: nil))
   }
 
   /// The refusal of a cut that the session directory found out of range, in the sample history
@@ -439,6 +682,98 @@ import Testing
     #expect(
       Self.outOfRangeText(of: .afterTurn(Self.thirdTurn), runsTurn: true)
         == RequestError.runningForkTurnText)
+  }
+
+  // MARK: - The turn count of the session directory
+
+  /// An action command between two prompts is no turn: a cut after the answer to the second
+  /// prompt forks both prompts and the action command, as the session directory counts two turns.
+  @Test(.timeLimit(.minutes(1))) func anActionCommandBetweenTwoPromptsIsNoTurnOfTheFork()
+    async throws
+  {
+    let fixture = try await Self.makeFixture("action")
+    try await ScriptedPromptFixture.runPrompt(on: fixture, text: Self.firstPrompt)
+    try await ScriptedPromptFixture.runPrompt(on: fixture, text: Self.helpCommand, count: 2)
+    try await ScriptedPromptFixture.runPrompt(
+      on: fixture, text: Self.secondPrompt, count: Self.threeTurns)
+    let source = try await Self.history(of: fixture.sessionId, in: fixture)
+
+    let fork = try await Self.fork(
+      fixture, cutting: (try Self.agentMessageId(Self.secondText, in: source), .after))
+
+    #expect(
+      Self.userTexts(of: try await Self.history(of: fork.sessionId, in: fixture))
+        == [Self.firstPrompt, Self.helpCommand, Self.secondPrompt])
+  }
+
+  /// A cut before the second message of a batch of the session directory forks the same
+  /// messages in the ACP copy and in the Router journal of the fork: the turns before the batch.
+  @Test(.timeLimit(.minutes(1))) func aCutOnTheSecondMessageOfABatchCopiesTheRouterFork()
+    async throws
+  {
+    let hold = ScriptedHold()
+    let fixture = try await Self.makeFixture("batch", holding: hold)
+    defer { hold.release() }
+    try await Self.runBatch(on: fixture, holding: hold)
+    let source = try await Self.history(of: fixture.sessionId, in: fixture)
+
+    let fork = try await Self.fork(
+      fixture, cutting: (try Self.sessionMessageId(Self.secondNote, in: source), .before))
+
+    let copied = try await Self.copiedMessages(of: fork.sessionId, in: fixture)
+    let forked = try await Self.routerMessages(of: fork.sessionId, in: fixture)
+
+    #expect(copied == forked)
+  }
+
+  /// A cut before the second message of a batch of the session directory keeps no message of the
+  /// batch.
+  @Test(.timeLimit(.minutes(1))) func aCutOnTheSecondMessageOfABatchKeepsNoMessageOfTheBatch()
+    async throws
+  {
+    let hold = ScriptedHold()
+    let fixture = try await Self.makeFixture("batch-turns", holding: hold)
+    defer { hold.release() }
+    try await Self.runBatch(on: fixture, holding: hold)
+    let source = try await Self.history(of: fixture.sessionId, in: fixture)
+
+    let fork = try await Self.fork(
+      fixture, cutting: (try Self.sessionMessageId(Self.secondNote, in: source), .before))
+
+    let copied = try await Self.copiedMessages(of: fork.sessionId, in: fixture)
+
+    #expect(copied.prompts == [Self.firstPrompt, Self.secondPrompt, Self.thirdPrompt])
+  }
+
+  /// With no cut, a fork while the answer to the result of a background run runs has the last
+  /// completed turn, in the ACP copy and in the Router journal of the fork.
+  @Test(.timeLimit(.minutes(1))) func noCutWhileARunResultRunsForksTheLastCompletedTurn()
+    async throws
+  {
+    let hold = ScriptedHold()
+    defer { hold.release() }
+    let fixture = try await Self.runResultAnswerRuns("run-result", holding: hold)
+
+    let fork = try await Self.fork(fixture)
+    let copied = try await Self.copiedMessages(of: fork.sessionId, in: fixture)
+
+    #expect(copied == ForkMessages(prompts: [Self.runPrompt], agentText: Self.runStartedText))
+  }
+
+  /// With no cut, a fork while the answer to the result of a background run runs has the same
+  /// messages in the ACP copy and in the Router journal of the fork.
+  @Test(.timeLimit(.minutes(1))) func noCutWhileARunResultRunsCopiesTheRouterFork()
+    async throws
+  {
+    let hold = ScriptedHold()
+    defer { hold.release() }
+    let fixture = try await Self.runResultAnswerRuns("run-result-router", holding: hold)
+
+    let fork = try await Self.fork(fixture)
+    let copied = try await Self.copiedMessages(of: fork.sessionId, in: fixture)
+    let forked = try await Self.routerMessages(of: fork.sessionId, in: fixture)
+
+    #expect(copied == forked)
   }
 
   // MARK: - The fork
@@ -614,5 +949,58 @@ import Testing
     let replayed = try await Self.resume(SessionId(rawValue: summary.id.description), in: fixture)
 
     #expect(Self.userTexts(of: replayed) == [Self.firstPrompt, Self.forkPrompt])
+  }
+}
+
+/// A background tool whose run ends when the test opens its gate. Its result is mail to the
+/// session, and that mail starts an answer of its own, which is no turn.
+private struct GatedRunTool: FoundationModels.Tool, BackgroundTool {
+  /// The wire arguments; the tool reads nothing from them.
+  @Generable
+  struct Arguments {}
+
+  /// The name of the tool.
+  static let toolName = "gated_run"
+
+  /// The result of the run.
+  static let resultText = "GATED-RUN-RESULT"
+
+  let name = Self.toolName
+
+  let description = "a scripted run that ends when the test opens its gate"
+
+  var mount: ToolMount? { ToolMount(mode: .background) }
+
+  var inlineSettleGrace: TimeInterval { 0 }
+
+  /// The gate of the run. The test opens it.
+  let gate = WatchedValue(false)
+
+  func call(arguments: Arguments) async throws -> String {
+    _ = try await gate.wait(for: "the gate of the gated run") { $0 }
+    return Self.resultText
+  }
+}
+
+/// An inline tool that the answer to the result of the gated run calls before it holds, so the
+/// test knows that the answer runs.
+private struct AnswerSignalTool: FoundationModels.Tool {
+  /// The wire arguments; the tool reads nothing from them.
+  @Generable
+  struct Arguments {}
+
+  /// The name of the tool.
+  static let toolName = "answer_signal"
+
+  let name = Self.toolName
+
+  let description = "a scripted tool that tells the test that an answer runs"
+
+  /// Whether an answer called the tool.
+  let reached = WatchedValue(false)
+
+  func call(arguments: Arguments) async throws -> String {
+    reached.update { $0 = true }
+    return Self.toolName
   }
 }

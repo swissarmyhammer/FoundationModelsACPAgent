@@ -34,7 +34,7 @@ struct DirectoryMessage: Sendable {
   let meta: FoundationModelsACP.JSONValue?
 
   /// The id of the view in the transcript of the recipient.
-  var incomingId: MessageId { MessageId(rawValue: "in-\(key)") }
+  var incomingId: MessageId { .incomingView(of: key) }
 
   /// The view of the message in the transcript of the recipient.
   var incomingView: SessionUpdate {

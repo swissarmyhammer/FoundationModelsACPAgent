@@ -155,6 +155,10 @@ actor SessionProjector {
   ///     update of the turn went into the history and before the `idle` of the turn. The agent
   ///     writes the retained history there (``RoutedACPAgent/writeHistory(of:)``). Nothing by
   ///     default.
+  ///   - recordDelivery: Keeps one record of the mail delivery (``MailDeliveryRecord``) in the
+  ///     retained history of the session, and sends it to no client. The projector calls it at
+  ///     each `mailDelivered` event and at the end of each answer, after the translation of the
+  ///     event (``MailDeliveryTrack``). Nothing by default.
   init(
     sessionId: SessionId,
     parentSessionId: SessionId? = nil,
@@ -165,7 +169,8 @@ actor SessionProjector {
     runCallJoins: RunCallJoinTable,
     stateLedger: SessionStateLedger? = nil,
     liftMailDeliveryPause: @escaping @Sendable () async -> Void = {},
-    mailTurnEnded: @escaping @Sendable () async -> Void = {}
+    mailTurnEnded: @escaping @Sendable () async -> Void = {},
+    recordDelivery: @escaping @Sendable (SessionUpdate) async -> Void = { _ in }
   ) {
     self.relay = relay
     self.runCallJoins = runCallJoins
@@ -200,7 +205,8 @@ actor SessionProjector {
         background: background,
         settlements: settlements,
         liftMailDeliveryPause: liftMailDeliveryPause,
-        mailTurnEnded: mailTurnEnded)
+        mailTurnEnded: mailTurnEnded,
+        recordDelivery: recordDelivery)
       if let relay {
         let endElicitation: ElicitationEndHandler = { end in await relay.end(end) }
         state.translator.endElicitation = endElicitation
@@ -463,6 +469,12 @@ private struct ProjectionState {
   /// The end work of a turn that a mail started and that no prompt owns.
   let mailTurnEnded: @Sendable () async -> Void
 
+  /// Keeps one record of the mail delivery in the retained history of the session.
+  let recordDelivery: @Sendable (SessionUpdate) async -> Void
+
+  /// The track of the mail delivery of each source, by the id of the source.
+  var deliveryTracks: [ULID: MailDeliveryTrack] = [:]
+
   /// The open prompts, in the order that they opened. A stream message
   /// goes alone in its submission, so an event holds the `MailID` of at
   /// most one prompt.
@@ -558,8 +570,18 @@ private struct ProjectionState {
     let recorders = index.map { [open[$0].toolCalls] } ?? open.map(\.toolCalls)
     translator.send = recorders.reduce(send) { sink, toolCalls in toolCalls.recording(into: sink) }
     translator.relayElicitation = relayHandler(for: source.session)
+    // The record of a delivered mail comes before the translation, so it comes before the view of
+    // the mail. The record of the end of an answer comes after the translation, so it comes after
+    // the reply of the answer.
+    let delivery = deliveryTracks[source.id, default: MailDeliveryTrack()].record(of: event)
+    if let delivery, case .delivered = delivery {
+      await recordDelivery(delivery.update)
+    }
     background.willTranslate(event)
     await translator.project(event)
+    if let delivery, case .answerEnded = delivery {
+      await recordDelivery(delivery.update)
+    }
     for change in background.didTranslate(event, joins: translator.runCallJoins) {
       await stateLedger?.background(change)
     }

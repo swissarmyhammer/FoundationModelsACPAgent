@@ -10,8 +10,9 @@ enum SessionForkPoint: Equatable, Sendable {
   /// with no cut in `_meta.sah.forkCut` forks here.
   case lastCompletedTurn
 
-  /// The end of the turn with this 0-based index (``SessionMergeEngine/turnStarts(receivedBy:)``).
-  /// The fork keeps the turn. A cut after a message of the turn forks here.
+  /// The end of the turn with this 0-based index (``ForkSourceHistory``): the index counts the
+  /// delivered turns in the order of delivery. The fork keeps the turn. A cut after a message of
+  /// the turn forks here.
   case afterTurn(Int)
 
   /// The start of the turn with this 0-based index. The fork does not keep the turn. A cut before
@@ -274,9 +275,10 @@ extension RoutedACPAgent {
   ///
   /// - No `_meta.sah.forkCut` member, or JSON `null`: ``SessionForkPoint/lastCompletedTurn``.
   /// - A cut: the turn that holds the message of the cut in the retained history
-  ///   (``ForkSourceHistory/turn(holding:)``). The turn count uses the recipients of the source,
-  ///   thus an incoming message to a session of the fork chain of the source is a turn. The
-  ///   session directory cuts only at
+  ///   (``ForkSourceHistory/turn(holding:)``). The turn count reads the records of the mail
+  ///   delivery (``MailDeliveryRecord``), with the recipients of the source, thus an incoming
+  ///   message to a session of the fork chain of the source is a turn, and an action command is
+  ///   none. The session directory cuts only at
   ///   the edge of a turn, so a cut in a turn rounds to an edge of that turn:
   ///   ``ForkCutSide/after`` gives ``SessionForkPoint/afterTurn(_:)``, and the fork keeps the
   ///   message. ``ForkCutSide/before`` gives ``SessionForkPoint/beforeTurn(_:)``, and the fork

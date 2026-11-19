@@ -401,7 +401,7 @@ extension SubagentMessageProjector {
     var outgoingId: MessageId { MessageId(rawValue: "out-\(key)") }
 
     /// The id of the incoming view, in the transcript of the recipient.
-    var incomingId: MessageId { MessageId(rawValue: "in-\(key)") }
+    var incomingId: MessageId { .incomingView(of: key) }
 
     /// The outgoing view: the message with its text, for the transcript of the sender.
     var outgoingView: SessionUpdate {
