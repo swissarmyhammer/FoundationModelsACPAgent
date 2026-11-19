@@ -105,10 +105,17 @@ comments:
     ### test — green
     - evidence: `swift build --build-tests` printed "Build complete!" with 0 compiler warnings (the only other line is the SwiftPM build-system note "missing creator for mutated node" for the mlx-swift_Cmlx bundle, which is not from the compiler). `timeout 1800 swift test --skip-build`: 2445 tests in 256 suites passed, 1 known issue that was already there (HarnessSmokeTests withKnownIssue), 0 "warning:" lines in the log.
   timestamp: 2026-11-19T05:08:44.905655+00:00
+- actor: claude-code
+  id: 01m7s3fzcsd3v3jt081yn375jn
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (acd95d0). Counts: findings 0, confirmed 0, refuted 1, attempted 7, failed 0, skipped 0. All items of the prior Review Findings sections are checked.
+    - next: The task is in done. No work remains.
+  timestamp: 2026-11-19T05:11:58.105750+00:00
 depends_on:
 - 01M7QV7TASP791JZFKKEMD9F4N
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: ffffff9580
 title: 'D205: build a fork through the Router launcher operation, and adopt the root-only restore'
 ---
 Follow-up of ^emd9f4n (2026-11-18). Answers of the Router session to two questions about the fork.
