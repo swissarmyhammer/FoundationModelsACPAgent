@@ -536,6 +536,54 @@ extension SubagentAnnouncerTests {
       #expect(Self.announcements(of: child, in: await fixture.collector.updates).count == 2)
     }
 
+    /// The first delivery of a run whose child the client knows already leaves out the state
+    /// `running`. The sync of a cold resume announced the child with the state of its ledger, and
+    /// the child sends each later state on its own stream. A `running` of the run can come after
+    /// an `idle` on that stream, so it would put back a state that is not true now.
+    @Test
+    func theFirstDeliveryToAKnownChildLeavesOutTheRunningState() async throws {
+      let delivered = try await Self.firstDeliveryToAKnownChild(
+        state: .running(RunningStateUpdate()))
+
+      #expect(delivered.state == .unchanged)
+    }
+
+    /// The first delivery of a run that ended keeps its final state, also when the client knows
+    /// the child already: the end of the run goes out on the parent.
+    @Test
+    func theFirstDeliveryToAKnownChildKeepsTheFinalState() async throws {
+      let delivered = try await Self.firstDeliveryToAKnownChild(
+        state: SubagentAnnouncerTests.endedState)
+
+      #expect(delivered.state == .value(SubagentAnnouncerTests.endedState))
+    }
+
+    /// Delivers the first report of a run whose child the client knows already: the child is a
+    /// session nested in the root, and its gate is open. Then it reads the update that went out.
+    ///
+    /// - Parameter state: The state of the report.
+    /// - Returns: The `subagent_update` of the child on the wire.
+    /// - Throws: A failed requirement, or a wait that timed out.
+    private static func firstDeliveryToAKnownChild(state: StateUpdate) async throws
+      -> SubagentUpdate
+    {
+      let fixture = try await Self.makeIdleFixture()
+      let agent = fixture.harness.agent
+      let child = try await SessionSetupNestedTests.openNestedSession(
+        in: fixture, below: fixture.sessionId)
+      await agent.sessions[child]?.announcement.open()
+      let report = SubagentAnnouncerTests.makeReport(
+        runID: try #require(ULID(ulidString: child.rawValue)), state: state)
+
+      _ = await agent.deliverSubagentReport(
+        report, replacing: nil, link: nil, root: fixture.sessionId)
+      let updates = try await fixture.collector.wait(for: "the announcement") {
+        !Self.announcements(of: child, in: $0).isEmpty
+      }
+      await fixture.close()
+      return try #require(Self.announcements(of: child, in: updates).first).update
+    }
+
     // MARK: The chain
 
     /// One chain of three sessions: the root, a child and a grandchild.

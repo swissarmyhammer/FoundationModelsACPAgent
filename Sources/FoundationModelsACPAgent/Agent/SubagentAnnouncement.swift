@@ -110,10 +110,11 @@ extension RoutedACPAgent {
   /// announcement went out.
   ///
   /// The update carries all fields when the client does not know the child (`previous` is `nil`).
-  /// After that, it carries only the changed fields. The parent is the session that started the
-  /// run. For a run that no session started, the parent is the root session. The call sends
-  /// nothing and records nothing in four cases. The parent is not in the table, is closed, has no
-  /// connection, or is not known to the client yet.
+  /// After that, it carries only the changed fields. A first delivery to a child that the client
+  /// knows already has no state of a run in operation (``firstState(_:ofKnownChild:)``). The parent
+  /// is the session that started the run. For a run that no session started, the parent is the
+  /// root session. The call sends nothing and records nothing in four cases. The parent is not in
+  /// the table, is closed, has no connection, or is not known to the client yet.
   ///
   /// - Parameters:
   ///   - report: The report of the run.
@@ -135,11 +136,13 @@ extension RoutedACPAgent {
       return .blocked
     }
     let target = makeSnapshot(of: report, replacing: previous, link: link)
-    guard let patch = target.patch(replacing: previous) else {
+    guard var patch = target.patch(replacing: previous) else {
       return .unchanged
     }
     let child = SessionId(rawValue: report.runID.description)
     if previous == nil {
+      patch.state = Self.firstState(
+        patch.state, ofKnownChild: sessions[child]?.announcement.isOpen == true)
       await registerChild(child, source: source, under: parentId)
       bindMessages(of: report, child: child, callerId: parentId, caller: parent)
     }
@@ -152,6 +155,28 @@ extension RoutedACPAgent {
       await parent.stateLedger.subagentAnnounced(child)
     }
     return .sent(target)
+  }
+
+  /// The state of the first delivery of a run. The client can know the child before that
+  /// delivery: the sync of a cold resume announces each restored child with the state of its
+  /// ledger, and opens its gate (``syncChildren(of:)``). The child then sends each change of its
+  /// state on its own stream. The state of a run in operation is `running`, and it can be older
+  /// than an `idle` that the child sent meanwhile. A `running` after that `idle` would tell the
+  /// client that the child works again, and the parent could then drop the child from its
+  /// `background` list with no `idle` after it. So the first delivery to a known child leaves out
+  /// the state of a run in operation. The final state of a run that ended still goes out.
+  ///
+  /// - Parameters:
+  ///   - state: The state field of the full update.
+  ///   - isKnown: Whether the client knows the child already: its gate is open.
+  /// - Returns: The state field to send.
+  private static func firstState(
+    _ state: PatchField<StateUpdate>, ofKnownChild isKnown: Bool
+  ) -> PatchField<StateUpdate> {
+    guard isKnown, case .value(.running) = state else {
+      return state
+    }
+    return .unchanged
   }
 
   /// Binds the run to its two sessions in the projector of messages. A message that the run
