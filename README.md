@@ -706,6 +706,26 @@ compiled-in `builtin.config.yaml`. `acp-agent config path` shows the layers of
 these folders, and `acp-agent doctor` shows the two roots of the home and
 whether each one can be written.
 
+### The changes of the transcript search
+
+The agent keeps a transcript search index of the sessions of its server in
+`<local>/session-search/server/`. A host, for example the Mac app for
+Spotlight, reads the changes of that index through
+`ComposedAgent.transcriptSearchChanges` (or
+`RoutedACPAgent.transcriptSearchChanges`). The value has three reads only:
+
+- `changes()` gives a new `AsyncStream` of `TranscriptSearchChange` for each
+  call: `.indexed(session:turns:)` with each turn of a session whose
+  transcript changed (after a prompt, a fork or the reconcile at launch), and
+  `.removed(session:)` for a deleted session.
+- `turns(of:)` gives the turns of one session.
+- `allTurns()` gives the turns of each session, for a new Spotlight index, or
+  after a slow subscriber lost changes.
+
+The host cannot write to the index of the server. Each turn
+(`TranscriptSearchTurn`) gives the kind of each chunk, so the host selects the
+kinds that it shows.
+
 ## Instructions
 
 The base system prompt of a session is the `default` agent: an `AGENT.md`

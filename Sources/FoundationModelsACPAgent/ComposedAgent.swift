@@ -289,6 +289,14 @@ public struct ComposedAgent: Sendable {
     agent.bind(connection: connection)
   }
 
+  /// The reads of a host on the changes of the transcript search index of the server
+  /// (``RoutedACPAgent/transcriptSearchChanges`` of ``agent``): the change stream, the turns of
+  /// one session, and all turns. The Mac app reads it for the Spotlight items of the sessions of
+  /// the server.
+  public var transcriptSearchChanges: TranscriptSearchChanges {
+    agent.transcriptSearchChanges
+  }
+
   /// Binds ``agent`` to the agent side of `transport`, so a client
   /// on the other end drives it over ACP.
   ///
