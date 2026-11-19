@@ -149,20 +149,29 @@ import Testing
   /// - Parameters:
   ///   - recording: The chain that the first agent recorded.
   ///   - replays: Whether the request asks for a replay.
+  ///   - beforeRequest: Runs after the read starts and before the request goes out. It gets the
+  ///     second agent.
   ///   - settledBy: Tells the last event of the sync: the read ends after it.
   /// - Returns: The wire of the resume.
-  /// - Throws: Whatever the fixture or the request throws.
+  /// - Throws: Whatever the fixture, `beforeRequest` or the request throws.
   private static func resume(
     _ recording: ResumeNestedSessionsTests.Recording, replays: Bool,
+    beforeRequest: (ScriptedPromptFixture) async throws -> Void = { _ in },
     settledBy: @escaping @Sendable (WireTraceEvent) -> Bool
   ) async throws -> Wire {
     let fixture = try await secondAgent(for: recording)
     let connection = fixture.harness.connection
     let subscription = connection.subscribeToAllSessions()
     let first = WireTraceEvent.resumeRequest(id: requestId, sessionId: recording.root)
+    // The second agent opened its own session with `session/new`. That session sends its name
+    // after the response, and the update can come after the read starts. The client knew the
+    // session before the resume, and it is not in the resumed tree, so its events stay out.
+    let ownSession: Set = [fixture.sessionId]
     let reader = Task {
-      await subscription.readResumeTrace(startingWith: [first], settledBy: settledBy)
+      await subscription.readResumeTrace(
+        startingWith: [first], leavingOut: ownSession, settledBy: settledBy)
     }
+    try await beforeRequest(fixture)
     let call = request(recording, replayFrom: cursor(replays: replays))
     let resumeCall = Task { try await connection.resumeSession(call) }
     let timeout = Task {
@@ -684,7 +693,33 @@ import Testing
 
     let violations = SubagentWireTraceValidator().validate(wire.trace)
 
-    #expect(violations == [])
+    #expect(violations == [], Comment(rawValue: wire.traceDescription))
+    await wire.fixture.close()
+  }
+
+  /// The title of the live update that the second agent sends for its own session before the
+  /// resume request.
+  private static let liveTitleOfTheOwnSession = "LIVE-TITLE-OF-THE-OWN-SESSION"
+
+  /// The second agent opened its own session with `session/new` before the resume. That session
+  /// can send a live update at any time, for example the deferred update of its name after the
+  /// `session/new` response. Here the update comes in a fixed order: after the read starts and
+  /// before the resume request. The client knew that session before the resume, and it is not in
+  /// the resumed tree. So its update is not part of the wire of the resume, and the wire of the
+  /// resume still follows the rules of the validator.
+  @Test
+  func aLiveUpdateOfTheOwnSessionOfTheSecondAgentLeavesTheWireOfTheResumeValid() async throws {
+    let recording = try await ResumeNestedSessionsTests.recordInterruptedChain()
+    let leaf = recording.leaf
+    let wire = try await Self.resume(recording, replays: false) { fixture in
+      let title = SessionInfoUpdate(title: .value(Self.liveTitleOfTheOwnSession))
+      await fixture.harness.agent.historySink(for: fixture.sessionId)(.sessionInfoUpdate(title))
+    } settledBy: { $0.isOwnState(of: leaf) }
+    try #require(wire.snapshot(of: leaf) != nil)
+
+    let violations = SubagentWireTraceValidator().validate(wire.trace)
+
+    #expect(violations == [], Comment(rawValue: wire.traceDescription))
     await wire.fixture.close()
   }
 
