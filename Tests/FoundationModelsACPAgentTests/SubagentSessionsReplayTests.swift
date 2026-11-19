@@ -19,6 +19,9 @@ import Testing
   /// The id of the request in the trace of the validator.
   private static let requestId = RequestId.number(1)
 
+  /// The seconds that a read of the wire waits for the response of the resume.
+  private static let readWaitSeconds = 30
+
   /// The wire of one resume of the chain.
   private struct ResumedWire {
     /// The second agent.
@@ -102,12 +105,13 @@ import Testing
       script: [.endPass], label: "\(label)-second", workingDirectory: recording.cwd)
     let connection = fixture.harness.connection
     let subscription = fixture.subscribeToTheResumeWire()
-    let reader = Task { await subscription.readResumeTrace() }
-    _ = try await connection.resumeSession(
-      ResumeSessionRequest(
-        cwd: AbsolutePath(rawValue: recording.cwd.path), sessionId: recording.root,
-        replayFrom: replayFrom))
-    let updates = await reader.value.compactMap { event -> UpdateSessionNotification? in
+    let request = ResumeSessionRequest(
+      cwd: AbsolutePath(rawValue: recording.cwd.path), sessionId: recording.root,
+      replayFrom: replayFrom)
+    let trace = try await subscription.readResumeTrace(timeout: .seconds(readWaitSeconds)) {
+      _ = try await connection.resumeSession(request)
+    }
+    let updates = trace.compactMap { event -> UpdateSessionNotification? in
       if case .update(let sessionId, let update) = event {
         return UpdateSessionNotification(sessionId: sessionId, update: update)
       }

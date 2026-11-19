@@ -40,6 +40,35 @@ comments:
   id: 01m7rg6hfnx6z8t9kgg0vy8rg2
   text: 'Dependency available (2026-11-18): `fork session` / `forkSession` is on FoundationModelsMultitool origin/main, commit bdbebea3 (head 568fa2a5). With no `id`, the tool forks the CALLER at `SessionForkCut.callingToolCall`. Thus, when the Router fork lands (^3hxcxee), make sure that a `fork session` call from a session of this agent reaches `RouterSessionDirectory.fork(_:)` with `.callingToolCall`, and that the Router can find the running tool call of the caller (the cut is the history up to the call, not the call). With no directory fork support, the tool gives FORK_UNSUPPORTED. Add a test: an agent of this server calls `fork session` with no `id`, and the fork has the history up to that call.'
   timestamp: 2026-11-18T23:34:46.005288+00:00
+- actor: claude-code
+  id: 01m7rqxgbeha4kh505szps7s04
+  text: |-
+    Router turn rule, detail (2026-11-18, in Router ^3hxcxee):
+    - The Router counts one turn for each DELIVERED user message and each delivered DIRECTORY message (`session_message` of the session directory), in delivery order. It does not count one turn per model prompt. Tool-loop continuations and background-run mail do not add turns.
+    - So the agent count must be: user messages + `session_message` entries of DIRECTORY messages (the ^qa7btpc/^ksepr6x path, id prefix `in-`). Do NOT count the `session_message` entries of the `agents` tool or of the host mail route (background-run mail). Check the entry kind before you count it, and add a test with an `agents` tool message between two user messages.
+    - Batch: one Router prompt can deliver two or more waiting messages together (for example two user messages sent while the session was busy). Each message still has its own index. For a cut inside a batch the Router rounds: `.beforeTurn(n)` cuts before the whole batch that holds message n; `.afterTurn(n)` cuts at the end of the answer to that batch. The agent sends the index of the message as usual; add a test that a cut on the second message of a batch gives the same fork as a cut on the first.
+    - Folded turns still count, and a cut in the folded range is still refused.
+  timestamp: 2026-11-19T01:49:38.542985+00:00
+- actor: claude-code
+  id: 01m7rqya2dnz16cpfxc956btzn
+  text: |-
+    CORRECTION of the turn count (2026-11-18, final from the Router; this replaces the "do NOT count the agents tool" line of the comment before):
+    - The Router counts one turn for each delivered mail whose body is `.userMessage` or `.agentMessage`, from ANY route (a user prompt, the directory, the `agents` tool, the host mail route), in delivery order. The Router journal cannot tell the routes apart (FoundationModelsAgents AgentRun.swift:794-800 builds the same mail as the directory).
+    - A tool-loop continuation, a background-run result, an elicitation answer and other mail kinds add no turn.
+    - Thus the agent counts each user message and EACH INCOMING `session_message` entry (directory, `agents` tool and host mail route), in delivery order.
+    - Count only an incoming entry: `recipientSessionId` is this session. The projector also puts an OUTGOING view of a message that this session sent (for example a `send agent` from the root to a child) in this session's transcript; that entry was not delivered to this session, so it must not count.
+    - Tests: an `agents` tool message from a child to its caller between two user messages counts as one turn; an outgoing `send agent` entry does not count; a batch cut rounds as before.
+  timestamp: 2026-11-19T01:50:04.877386+00:00
+- actor: claude-code
+  id: 01m7rt026cbbf0xnavwz913rcb
+  text: |-
+    Dependency available (2026-11-18): Router ^3hxcxee is on FoundationModelsRouter origin/main 9e8de42f (with Extras 87d1da9). `RouterSessionDirectory.fork(_:)` implements all five cuts (`.lastCompletedTurn`, `.callingToolCall`, `.historyPosition`, `.afterTurn`, `.beforeTurn`).
+    - Turn rule as agreed (see the comments before). `.lastCompletedTurn` never goes past the start of the running answer.
+    - Errors: a cut in the folded range, a missing index, or `.afterTurn(n)` of a running turn gives `forkCutOutOfRange`. An unknown or archived source is refused. A source that does not record to disk gives `forkUnsupported`. A recorded source is restored first.
+    - The fork: kind `fork`, `parentID` = source, the same profile, instructions and forked tools, name `<slug>-fork` / `-fork-2`, a first prompt (if any) as a user message after registration, no tags from the source.
+    - A recorded fork is listed (kind fork) and found by id after a restart; `restoreSession(id:)` of a fork restores only the fork.
+    This task starts now, in a worktree, together with the rework of ^ndqkw9s (the map changes from a history position to the turn index).
+  timestamp: 2026-11-19T02:25:59.500366+00:00
 depends_on:
 - 01M7QV7B0PDJZY8YAYZNDQKW9S
 position_column: todo

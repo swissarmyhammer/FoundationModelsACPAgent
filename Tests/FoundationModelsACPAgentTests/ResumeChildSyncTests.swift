@@ -20,8 +20,9 @@ import Testing
   /// The id of the resume request in the trace of the validator.
   private static let requestId = RequestId.number(1)
 
-  /// The seconds that a test waits for the sync after the response. A sync that does not come
-  /// in this time fails the test, and the test does not wait for the time limit of the suite.
+  /// The seconds that a test waits from the start of the read of the wire to the end of the sync
+  /// after the response. A sync that does not come in this time fails the test, and the test
+  /// does not wait for the time limit of the suite.
   private static let syncWaitSeconds = 20
 
   /// The most polls of a ledger in a test.
@@ -163,19 +164,13 @@ import Testing
     let connection = fixture.harness.connection
     let subscription = fixture.subscribeToTheResumeWire()
     let first = WireTraceEvent.resumeRequest(id: requestId, sessionId: recording.root)
-    let reader = Task {
-      await subscription.readResumeTrace(startingWith: [first], settledBy: settledBy)
-    }
-    try await beforeRequest(fixture)
     let call = request(recording, replayFrom: cursor(replays: replays))
-    let resumeCall = Task { try await connection.resumeSession(call) }
-    let timeout = Task {
-      try? await Task.sleep(for: .seconds(syncWaitSeconds))
-      reader.cancel()
+    let trace = try await subscription.readResumeTrace(
+      startingWith: [first], settledBy: settledBy, timeout: .seconds(syncWaitSeconds)
+    ) {
+      try await beforeRequest(fixture)
+      _ = try await connection.resumeSession(call)
     }
-    let trace = await reader.value
-    timeout.cancel()
-    _ = try await resumeCall.value
     return Wire(fixture: fixture, recording: recording, trace: trace)
   }
 
@@ -261,13 +256,19 @@ import Testing
   /// - Parameter child: The entry of the restored child.
   /// - Returns: The task of the call. The test awaits it after the sync, and cancels it when the
   ///   test ends early.
-  /// - Throws: An issue when the ledger does not note the work in time.
+  /// - Throws: An issue when the ledger does not note the work in time. The task of the call
+  ///   gets a cancel then.
   private static func startWork(of child: ActiveSession) async throws -> Task<Void, Never> {
     let work = Task { await child.stateLedger.workStarted(on: ULID()) }
-    try await pollUntil(limit: workPollLimit, interval: workPollInterval) {
-      await !child.stateLedger.isIdle
+    do {
+      try await pollUntil(limit: workPollLimit, interval: workPollInterval) {
+        await !child.stateLedger.isIdle
+      }
+      try #require(await !child.stateLedger.isIdle)
+    } catch {
+      work.cancel()
+      throw error
     }
-    try #require(await !child.stateLedger.isIdle)
     return work
   }
 

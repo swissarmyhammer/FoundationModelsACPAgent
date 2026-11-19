@@ -152,27 +152,11 @@ extension SessionEventSubscription {
     timeout: Duration,
     whileRunning request: () async throws -> Void
   ) async throws -> [SequencedTraceEvent] {
-    let reader = Task {
-      await readSequencedResumeTrace(
-        startingWith: first, leavingOut: knownSessions, settledBy: settledBy)
-    }
-    let limit = Task {
-      do {
-        try await Task.sleep(for: timeout)
-        reader.cancel()
-      } catch {
-        // The sleep throws only when the caller cancelled it: the read ended in time.
-        return
-      }
-    }
-    defer { limit.cancel() }
-    do {
-      try await request()
-    } catch {
-      reader.cancel()
-      throw error
-    }
-    return await reader.value
+    try await TimedRead.value(
+      of: {
+        await readSequencedResumeTrace(
+          startingWith: first, leavingOut: knownSessions, settledBy: settledBy)
+      }, timeout: timeout, whileRunning: request)
   }
 }
 
