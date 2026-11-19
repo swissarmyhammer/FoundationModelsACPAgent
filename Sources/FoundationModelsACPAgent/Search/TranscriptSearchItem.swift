@@ -14,8 +14,17 @@ import FoundationModelsMetadataRegistry
 ///   as its first line. The chunk keeps the turn, the kind, the author, the date and the wire ids
 ///   of its entries with their ranges in the text.
 /// - A **session item** holds the facts of one session (``TranscriptSessionMetadata``). Its id is
-///   the session id. Its block is the name, the slug, the tags, the folder, the agent name, the
+///   `<session id>/`. Its block is the name, the slug, the tags, the folder, the agent name, the
 ///   recap and the last summary, one on each line.
+///
+/// The ids are unique for each session id string, also for a session id that holds a "/"
+/// (^8qsp7hb). A chunk item id ends with a digit of its ordinal, and a session item id ends with
+/// "/", so a chunk item never has the id of a session item. The ordinal holds no "/", so the text
+/// after the last "/" of a chunk item id is its ordinal, and the text before it is its session
+/// id: two chunk items with the same id have the same session and the same ordinal. A session
+/// item id without its last "/" is its session id. The id of the old form, in which the id of a
+/// session item was the session id, gave the session item of `a/1` the id of the chunk item 1 of
+/// `a`.
 public struct TranscriptSearchItem: SearchableMetadata, Codable, Hashable {
   /// What an item holds.
   public enum Content: Hashable, Sendable {
@@ -26,14 +35,15 @@ public struct TranscriptSearchItem: SearchableMetadata, Codable, Hashable {
     case session(TranscriptSessionMetadata)
   }
 
-  /// The text between the session id and the ordinal of the chunk in the id of a chunk item.
-  private static let chunkIDSeparator = "/"
+  /// The text after the session id in the id of an item: before the ordinal of the chunk in the
+  /// id of a chunk item, and at the end of the id of a session item.
+  private static let sessionIDTerminator = "/"
 
   /// The text between two lines of a block.
   private static let lineSeparator = "\n"
 
-  /// The id of the item: `<session id>/<ordinal>` for a chunk item, and the session id for a
-  /// session item. The ids are unique in one catalog.
+  /// The id of the item: `<session id>/<ordinal>` for a chunk item, and `<session id>/` for a
+  /// session item. The ids are unique in one catalog, for each session id string.
   public let id: String
 
   /// The session of the item.
@@ -48,7 +58,7 @@ public struct TranscriptSearchItem: SearchableMetadata, Codable, Hashable {
   ///   - chunk: The chunk, from `SessionSearchChunker.chunks(of:dates:)`.
   ///   - session: The session of the transcript.
   public init(chunk: SessionSearchChunk, session: SessionId) {
-    id = "\(session.rawValue)\(Self.chunkIDSeparator)\(chunk.ordinal)"
+    id = "\(session.rawValue)\(Self.sessionIDTerminator)\(chunk.ordinal)"
     sessionId = session
     content = .chunk(chunk)
   }
@@ -59,7 +69,7 @@ public struct TranscriptSearchItem: SearchableMetadata, Codable, Hashable {
   ///   - session: The session.
   ///   - metadata: The facts of the session.
   public init(session: SessionId, metadata: TranscriptSessionMetadata) {
-    id = session.rawValue
+    id = session.rawValue + Self.sessionIDTerminator
     sessionId = session
     content = .session(metadata)
   }

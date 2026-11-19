@@ -57,7 +57,25 @@ import ULID
     recap: "Found the zebra notes in the archive.",
     lastSummary: "The notes are in the archive.")
 
+  /// Session ids that hold a "/". Under the rule `<session id>/<ordinal>` for a chunk item and
+  /// the session id for a session item, a session item of one of them has the id of a chunk item
+  /// of another one.
+  private static let slashSessionIDs = ["a", "a/1", "a/1/0"].map(SessionId.init(rawValue:))
+
+  /// The number of chunk items of each session of ``slashSessionIDs``.
+  private static let slashChunkCount = 2
+
   // MARK: - Fixtures
+
+  /// A chunk with no text, at a place in its session.
+  ///
+  /// - Parameter ordinal: The place of the chunk in the session.
+  /// - Returns: The chunk.
+  private static func emptyChunk(ordinal: Int) -> SessionSearchChunk {
+    SessionSearchChunk(
+      turn: 0, ordinal: ordinal, kind: .agent, author: nil, date: nil, title: "", text: "",
+      entries: [])
+  }
 
   /// The updates of the sample history: a user message, an agent message and a tool call with
   /// its title and text content.
@@ -204,11 +222,25 @@ import ULID
 
   // MARK: - The session item
 
-  /// The id of a session item is the session id.
-  @Test func theIdOfASessionItemIsTheSessionId() {
+  /// The id of a session item is the session id with a "/" at the end.
+  @Test func theIdOfASessionItemIsTheSessionIdAndASlash() {
     let item = TranscriptSearchItem(session: Self.sessionId, metadata: Self.metadata)
 
-    #expect(item.id == Self.sessionId.rawValue)
+    #expect(item.id == "\(Self.sessionId.rawValue)/")
+  }
+
+  /// The items of sessions whose ids hold a "/" have different ids: the session item of `a/1`
+  /// and the chunk item 1 of `a`, and the session item of `a/1/0` and the chunk item 0 of `a/1`
+  /// (^8qsp7hb).
+  @Test func theItemsOfSessionIdsWithASlashHaveDifferentIds() {
+    let items = Self.slashSessionIDs.flatMap { session in
+      [TranscriptSearchItem(session: session, metadata: Self.metadata)]
+        + (0..<Self.slashChunkCount).map { ordinal in
+          TranscriptSearchItem(chunk: Self.emptyChunk(ordinal: ordinal), session: session)
+        }
+    }
+
+    #expect(Set(items.map(\.id)).count == items.count)
   }
 
   /// The block of a session item is the name, the slug, the tags, the folder, the agent name,

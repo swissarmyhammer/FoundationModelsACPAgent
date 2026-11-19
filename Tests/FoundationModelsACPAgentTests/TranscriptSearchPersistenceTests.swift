@@ -129,6 +129,23 @@ import Testing
       + chunks.map { TranscriptSearchItem(chunk: $0, session: sessionId) }
   }
 
+  /// A new folder that holds a stored catalog of the old form of the item ids (before
+  /// ^8qsp7hb): the items of ``sessionId``, with the session id as the id of the session item,
+  /// under the key of the embedding model alone.
+  ///
+  /// - Parameter label: The label of the folder.
+  /// - Returns: The folder.
+  private static func makeOldFormFolder(label: String) async -> URL {
+    let folder = makeResolvedDirectory(label: "\(Self.label)-\(label)")
+    let searcher = await MetadataSearcher<OldFormTranscriptSearchItem>(
+      persistence: CatalogPersistence(folder: folder, embeddingModelID: modelID),
+      mode: .retrieval, embedder: CountingEmbedding())
+    await searcher.update(
+      upserting: storedItems.map(OldFormTranscriptSearchItem.init), removing: [])
+    await searcher.waitForSaves()
+    return folder
+  }
+
   /// A new folder that holds the stored catalog of an index with the two sessions in it.
   ///
   /// - Parameter label: The label of the folder.
@@ -308,6 +325,31 @@ import Testing
       [firstID, String(embedder.embeddedTextCount)] == ["\(Self.sessionId.rawValue)/1", "1"])
   }
 
+  // MARK: - The form of the item ids
+
+  /// A stored catalog of the old form of the item ids is dropped at the load: the new index
+  /// holds no item of it (^8qsp7hb).
+  @Test(.timeLimit(.minutes(3))) func anOldFormCatalogIsDropped() async throws {
+    let folder = await Self.makeOldFormFolder(label: "old-form-drop")
+
+    let index = await Self.makeIndex(in: folder)
+
+    #expect(await index.items(of: Self.sessionId).isEmpty)
+  }
+
+  /// After the drop of a stored catalog of the old form, the next index of a session builds the
+  /// stored catalog again in the new form: a later index holds the items of the new form.
+  @Test(.timeLimit(.minutes(3))) func theNextIndexBuildsAnOldFormCatalogAgain() async throws {
+    let folder = await Self.makeOldFormFolder(label: "old-form-rebuild")
+    let rebuilt = await Self.makeIndex(in: folder)
+    await rebuilt.index(session: Self.sessionId, chunks: Self.chunks, metadata: Self.metadata)
+    await rebuilt.waitForSaves()
+
+    let index = await Self.makeIndex(in: folder)
+
+    #expect(await index.items(of: Self.sessionId) == Self.storedItems)
+  }
+
   // MARK: - The update of some items
 
   /// A new index of one session keeps the stored items of the other session.
@@ -338,7 +380,7 @@ import Testing
 
     #expect(
       await restored.catalog.map(\.id)
-        == [Self.otherSessionId.rawValue]
+        == [TranscriptSearchItem(session: Self.otherSessionId, metadata: Self.otherMetadata).id]
         + Self.otherChunks.indices.map { "\(Self.otherSessionId.rawValue)/\($0)" })
   }
 
@@ -409,5 +451,51 @@ final class DiagnosticRecorder: Sendable {
   /// - Parameter diagnostic: The diagnostic.
   func record(_ diagnostic: MetadataDiagnostic) {
     diagnostics.withLock { $0.append(diagnostic) }
+  }
+}
+
+/// An item of the transcript search with the old form of the ids (before ^8qsp7hb): the session
+/// id is the id of the session item. The coded form is the coded form of the item.
+private struct OldFormTranscriptSearchItem: SearchableMetadata, Codable {
+  /// The item.
+  let item: TranscriptSearchItem
+
+  /// The id of the old form: the session id for a session item, and the id of the item for a
+  /// chunk item.
+  var id: String {
+    guard case .session = item.content else {
+      return item.id
+    }
+    return item.sessionId.rawValue
+  }
+
+  /// Makes the old form of an item.
+  ///
+  /// - Parameter item: The item.
+  init(_ item: TranscriptSearchItem) {
+    self.item = item
+  }
+
+  /// Decodes the item.
+  ///
+  /// - Parameter decoder: The decoder.
+  /// - Throws: The error of the decode of the item.
+  init(from decoder: any Decoder) throws {
+    item = try TranscriptSearchItem(from: decoder)
+  }
+
+  /// Encodes the item.
+  ///
+  /// - Parameter encoder: The encoder.
+  /// - Throws: The error of the encode of the item.
+  func encode(to encoder: any Encoder) throws {
+    try item.encode(to: encoder)
+  }
+
+  /// The block of the item.
+  ///
+  /// - Returns: The block.
+  func renderBlock() -> String {
+    item.renderBlock()
   }
 }

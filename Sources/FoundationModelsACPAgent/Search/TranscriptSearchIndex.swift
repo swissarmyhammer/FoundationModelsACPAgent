@@ -23,8 +23,8 @@ import FoundationModelsMetadataRegistry
 /// sessions from the stored items, so a new process searches at once. `RoutedACPAgent` loads
 /// the index of the agent. The Mac app loads the index of its client folder. Each other method
 /// waits for the load, and starts it when no call started it, so a call before ``load()`` is
-/// safe. A stored catalog of an old format, of another embedding model or that is damaged is
-/// dropped by the registry: the index then starts empty, and the next change of each session
+/// safe. A stored catalog of an old format, of an old form of the item ids, of another embedding
+/// model or that is damaged is dropped by the registry: the index then starts empty, and the next change of each session
 /// builds it again. Only one index may use a folder at a time.
 ///
 /// The host gives the chunks of each session (`SessionSearchChunker.chunks(of:dates:)` of
@@ -119,6 +119,12 @@ public actor TranscriptSearchIndex {
   /// The id of the embedding model of the stored catalog of an index with no embedder. Such a
   /// catalog has no vector, and an index with an embedder drops it.
   public static let keywordOnlyModelID = "keyword-only"
+
+  /// The form of the item ids of the stored catalog, at the end of its key: the session item id
+  /// with a "/" at the end (^8qsp7hb). A stored catalog of another form has another key, so the
+  /// registry drops it at the load (`.storedCatalogDropped(reason: .embeddingModel)`), and the
+  /// next changes build it again. Change the form here when the form of the ids changes.
+  static let itemIDForm = "+item-ids-2"
 
   /// The id of the embedding model of the embedder, or `nil` with no embedder. A change of the
   /// model makes the stored vectors of a catalog of no use, so the registry drops the stored
@@ -449,7 +455,7 @@ public actor TranscriptSearchIndex {
     let onDiagnostic = onDiagnostic
     let searcher = await Searcher(
       persistence: CatalogPersistence(
-        folder: folder, embeddingModelID: modelID ?? Self.keywordOnlyModelID),
+        folder: folder, embeddingModelID: (modelID ?? Self.keywordOnlyModelID) + Self.itemIDForm),
       mode: .retrieval, embedder: embedder,
       onDiagnostic: { diagnostic in
         TranscriptSearchDiagnostics.log(diagnostic)

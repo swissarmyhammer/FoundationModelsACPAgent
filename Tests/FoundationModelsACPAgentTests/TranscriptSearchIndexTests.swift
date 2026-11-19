@@ -27,6 +27,18 @@ import Testing
   /// A word that only the agent message of ``otherSessionId`` holds.
   private static let otherWord = "tiles"
 
+  /// The id of the session item of ``sessionId``.
+  private static let sessionItemID = TranscriptSearchItem(
+    session: sessionId, metadata: metadata
+  ).id
+
+  /// A session whose id is the start of the id of ``slashChildSessionId``.
+  private static let slashParentSessionId = SessionId(rawValue: "a")
+
+  /// A session whose id is the id of ``slashParentSessionId``, a "/" and the ordinal of a chunk
+  /// of that session.
+  private static let slashChildSessionId = SessionId(rawValue: "a/1")
+
   /// The metadata of ``sessionId``.
   private static let metadata = TranscriptSessionMetadata(
     name: "\(nameWord) research", slug: "\(nameWord)-research", tags: [],
@@ -123,7 +135,7 @@ import Testing
   @Test func aKeywordSearchFindsAWordOfASessionName() async throws {
     let index = await Self.makeFilledIndex(label: "keyword-name", embedder: nil)
 
-    #expect(try await Self.firstMatchID(of: Self.nameWord, in: index) == Self.sessionId.rawValue)
+    #expect(try await Self.firstMatchID(of: Self.nameWord, in: index) == Self.sessionItemID)
   }
 
   // MARK: - The embedder
@@ -140,7 +152,7 @@ import Testing
   @Test func anEmbeddedSearchFindsAWordOfASessionName() async throws {
     let index = await Self.makeFilledIndex(label: "embedded-name", embedder: WordBucketEmbedding())
 
-    #expect(try await Self.firstMatchID(of: Self.nameWord, in: index) == Self.sessionId.rawValue)
+    #expect(try await Self.firstMatchID(of: Self.nameWord, in: index) == Self.sessionItemID)
   }
 
   // MARK: - The catalog
@@ -170,9 +182,34 @@ import Testing
     let matches = try await index.matches(for: "\(Self.chunkWord) hello hi there")
     #expect(
       Set(
-        matches.filter { $0.item.sessionId == Self.sessionId && $0.id != Self.sessionId.rawValue }
+        matches.filter { $0.item.sessionId == Self.sessionId && $0.id != Self.sessionItemID }
           .map(\.block))
         == ["Hello there?", "Hi there."])
+  }
+
+  /// Two sessions `a` and `a/1`, each with chunks, keep each item: a search with a word of the
+  /// chunk 1 of `a`, of the name of `a/1` and of a chunk of `a/1` finds the three items
+  /// (^8qsp7hb).
+  @Test func sessionIdsWithASlashKeepEachItem() async throws {
+    let index = await Self.makeIndex(label: "slash-ids", embedder: nil)
+    let parentChunks = Self.chunks(
+      question: "Where do they live?", answer: "The \(Self.chunkWord) lives on an island.")
+    let childChunks = Self.chunks(
+      question: "Which colour?", answer: "The blue \(Self.otherWord) fit the wall.")
+    await index.index(
+      session: Self.slashParentSessionId, chunks: parentChunks, metadata: Self.otherMetadata)
+    await index.index(
+      session: Self.slashChildSessionId, chunks: childChunks, metadata: Self.metadata)
+
+    let matches = try await index.matches(
+      for: "\(Self.chunkWord) \(Self.nameWord) \(Self.otherWord)")
+
+    #expect(
+      Set(matches.map(\.item)).isSuperset(of: [
+        TranscriptSearchItem(chunk: parentChunks[1], session: Self.slashParentSessionId),
+        TranscriptSearchItem(session: Self.slashChildSessionId, metadata: Self.metadata),
+        TranscriptSearchItem(chunk: childChunks[1], session: Self.slashChildSessionId),
+      ]))
   }
 
   /// New facts of a session that the index does not hold add no item: a session gets its items
