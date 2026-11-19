@@ -60,8 +60,15 @@ comments:
     - evidence: `timeout 1800 swift build --build-tests` printed "Build complete!" with 0 compiler warnings (only the SwiftPM note "missing creator for mutated node" of the mlx bundle). `timeout 1800 swift test --skip-build`: 2632 tests in 277 suites passed, 1 known issue (the existing withKnownIssue), 0 failures.
     - next: review
   timestamp: 2026-11-19T18:39:57.034448+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m7thwkxn1vtwv7rwnvzkcq8h
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (49693ad). 7 review tasks ran, 0 failed. 0 findings, 0 confirmed, 0 refuted. The prior item at TranscriptIndexSearchRequest.swift:65 is checked.
+    - next: none. The task is in done.
+  timestamp: 2026-11-19T18:42:46.837243+00:00
+position_column: done
+position_ordinal: ffffffa580
 title: 'D207: the client transcript search index accepts any session id, not only a ULID'
 ---
 Gap from the TestudoApp search work (2026-11-19).
