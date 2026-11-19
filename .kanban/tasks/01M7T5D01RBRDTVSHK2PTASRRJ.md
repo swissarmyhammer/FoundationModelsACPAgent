@@ -16,8 +16,15 @@ comments:
     - implement: changed — Tests/FoundationModelsACPAgentTestSupport/LabelArguments.swift (new, one public `@Generable` struct); the two copies are removed from ScriptedCompactionStopTests.swift and ScriptedPassCancellationTests.swift. Both review findings are checked.
     - test: green — swift build --build-tests "Build complete!", 0 compiler warnings; swift test --skip-build: 2597 tests in 271 suites passed, 1 known issue (intended).
   timestamp: 2026-11-19T16:19:27.498875+00:00
-position_column: review
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m7t9s3vj7wjmchd8dfynnpts
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (commit 1e95878). 0 findings, 0 confirmed, 0 refuted. 7 review tasks attempted, 0 failed, 0 skipped. 3 files reviewed. 2 files in `.kanban/` were not reviewed because of `.reviewignore`. All items of "Review Findings (2026-11-19 10:14)" are checked.
+    - next: none. The task is in `done`.
+  timestamp: 2026-11-19T16:21:03.474238+00:00
+position_column: done
+position_ordinal: ffffffa080
 title: A cancelled scripted pass stops before its next step
 ---
 Found during ^dxtwmw0.
