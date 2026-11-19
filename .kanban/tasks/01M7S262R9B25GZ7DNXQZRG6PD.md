@@ -47,10 +47,39 @@ comments:
     - evidence: `timeout 1800 swift build --build-tests` printed "Build complete!" with 0 compiler warnings (only the SwiftPM note "missing creator for mutated node" for the mlx bundle). `timeout 1800 swift test --skip-build`: 2453 tests in 256 suites passed, 0 failures, 1 known issue (HarnessSmokeTests, by design), 0 skipped.
     - next: review
   timestamp: 2026-11-19T05:54:22.173953+00:00
+- actor: claude-code
+  id: 01m7s66dmg6h6dq27hxc1q75pc
+  text: |-
+    ### review — findings
+    - evidence: review sha 26fe29c~1..26fe29c — 1 finding (confirmed 1, refuted 1, attempted 7, failed 0): Sources/FoundationModelsACPAgent/Agent/SessionFork.swift:182 completeness/public-output-contract.
+    - next: implement the finding. A throw after `directory.fork(forkRequest)` in `openFork` must not leave a live fork with no cleanup. Then review again.
+  timestamp: 2026-11-19T05:59:10.736117+00:00
+- actor: claude-code
+  id: 01m7s6nr05x0ee03ty1f99p78r
+  text: |-
+    Finding SessionFork.swift:182 (completeness/public-output-contract) is done (2026-11-19, not committed).
+    - Choice: move the project save before the fork, and close the fork on the one throw that stays after the fork. Reasons: the project save needs only the folder, and the fork works in the folder of its source, which the mount of the source registered already. So a save before the fork makes no fork on failure and needs no cleanup, and a later refusal adds no new project. Log-and-continue was not chosen: `session/new` and `session/resume` fail on the same save error, so the fork keeps that contract.
+    - `forkSession(_:from:)` calls `registerProject(of:)` before `RouterSessionDirectory.fork(_:)`. `openFork` no longer takes the placement.
+    - The `internalError` path of `openFork` (no activation, or no table entry) now calls the new `discardUnopenedFork(_:)` before the throw: a fork in the table gets `tearDownSession` (closes the Router session, stops the projector, releases the surface), its entry and its snapshot key go, and `recordActiveSessions()` runs, as `session/delete` does. Then the agent closes `sessionDirectory.session(id:)` if it is still live (a fork that the table does not hold). The close unregisters the fork from the directory and releases its `heldForks` hold. The record stays on disk, as for each closed session.
+    - Tests (SessionForkHandlerTests, "A fork that the agent cannot open"): project save fails (a file at `home.projectsDirectory`): error / no fork in the table / no live fork in the directory. The `internalError` path is reached with a test launcher (`UnopenedForkLauncher`) set through `sessionDirectory.use(launcher:)`: `.agentWithNoRequest` calls `launchFork(request, for: nil)` (the table holds the fork, no activation), `.sourceTools` calls `request.makeFork()` (the table does not hold it): internal error / no fork in the table / no live fork in the directory (both modes).
+    - RED: 5 of 7 failed for the expected reason (a fork stayed in the table or live in the directory). The 2 error tests passed before the fix, because the request already threw; they guard the error contract. GREEN: 7 passed.
+    - ARCHITECTURE.md (fork handler) now tells that the project save comes before the fork call and that a fork the handler cannot open is closed before the error.
+  timestamp: 2026-11-19T06:07:32.869858+00:00
+- actor: claude-code
+  id: 01m7s6nsyccx7zkcvbgyr3nk8j
+  text: |-
+    ### implement — changed
+    - evidence: Sources/FoundationModelsACPAgent/Agent/SessionFork.swift, Tests/FoundationModelsACPAgentTests/SessionForkHandlerTests.swift, ARCHITECTURE.md
+    - next: review
+
+    ### test — green
+    - evidence: `timeout 1800 swift build --build-tests` printed "Build complete!" with 0 compiler warnings. `timeout 1800 swift test --skip-build`: 2460 tests in 256 suites passed, 0 failures, 1 known issue (HarnessSmokeTests, by design), 0 skipped.
+    - next: review
+  timestamp: 2026-11-19T06:07:34.860530+00:00
 depends_on:
 - 01M7RWC0Q3R664RM3W2AGKNBVR
 position_column: doing
-position_ordinal: '8280'
+position_ordinal: '8180'
 title: 'D205: the record of a tool fork has the directories of its source, and the launcher knows which session/fork request it builds'
 ---
 Found during ^agknbvr (2026-11-18). Both items need a Router API change; the Router session (foundationmodelsrouter-f1) is asked. Do not start until the Router sends the sha.
@@ -70,3 +99,16 @@ Found during ^agknbvr (2026-11-18). Both items need a Router API change; the Rou
 - A tool fork: its `index.md` record has the directories of the source.
 - A `session/fork` fork: its record has the directories of the request (none when omitted).
 - Two forks of the same source with the same client id at the same time, one through `session/fork` and one through the `sessions` endpoint: each gets its own surface. #d205 #fork
+
+## Review Findings (2026-11-18 23:56)
+
+> Scope: `review sha 26fe29c~1..26fe29c` — reviewed the diffs only — lines this change added or modified. 4 file(s) reviewed, 4 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+> 2 file(s) not reviewed — no validator matched:
+> - `ARCHITECTURE.md` — no validator matches this file
+> - `README.md` — no validator matches this file
+
+- [x] `Sources/FoundationModelsACPAgent/Agent/SessionFork.swift:182` `completeness/public-output-contract` — The new call `try registerProject(of: placement)` runs after `directory.fork(forkRequest)` has already created the fork and mounted it in the session table. If the project file save throws, `openFork` throws. The client gets an error, but the fork stays live with no response and no cleanup. Before this change, this path completed. The `launchFork` catch block releases the surface on failure, but that catch does not cover this later throw point. The same gap also applies to the existing `internalError` throw at line 179, so the new throw adds to a pattern that already exists. Move `registerProject(of:)` before the fork is created, or make the failure path close the fork and release its surface, as `launchFork` does. If the project save error should not fail the request, log it and continue, and say so in the doc comment at lines 172-173.

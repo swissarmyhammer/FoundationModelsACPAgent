@@ -82,7 +82,7 @@ extension RoutedACPAgent {
   /// (``whileForkRequestWaits(_:_:)``): the MCP servers and the additional directories of the
   /// request only. As ACP states, an omitted or empty list gives none: the fork does not get the
   /// MCP servers or the directories of the source. So the agent holds the fork as its own session from its
-  /// start, and then it opens the fork for the connection (``openFork(_:activation:placement:)``).
+  /// start, and then it opens the fork for the connection (``openFork(_:activation:)``).
   /// The fork works in the folder of its source, so the `cwd` of the request must be that folder.
   ///
   /// The agent asks for no permission before a tool runs, so a fork needs no permission grant:
@@ -94,9 +94,9 @@ extension RoutedACPAgent {
   ///   session of the table holds, the refusal of a method that the session does not permit, the
   ///   invalid-params refusal of a cut, of a `cwd` that is not the folder of the source and of a
   ///   directory that does not exist, the refusal of the session directory
-  ///   (``RequestError/forkRefusal(_:point:in:id:)``), an internal error when the fork closed
-  ///   before the agent opened it, or whatever the build of the fork or the record of its
-  ///   directories throws.
+  ///   (``RequestError/forkRefusal(_:point:in:id:)``), the error of the project file save (before
+  ///   the fork is made), an internal error when the agent cannot open the fork (the fork is
+  ///   closed first), or whatever the build of the fork throws.
   public func forkSession(_ params: ForkSessionRequest) async throws -> ForkSessionResponse {
     try await forkSession(params, from: .direct)
   }
@@ -136,6 +136,9 @@ extension RoutedACPAgent {
     guard let end = source.end(of: point) else {
       throw RequestError.forkCutOutOfRange(point, in: source, id: params.sessionId)
     }
+    // The project file goes before the fork: a failed save then makes no fork. The fork works in
+    // the folder of its source, so a later refusal of the fork adds no new project.
+    try registerProject(of: placement)
     let directory = sessionDirectory
     let forkRequest = SessionForkRequest(
       sourceID: sourceId, cut: point.directoryCut, firstPrompt: nil,
@@ -149,7 +152,7 @@ extension RoutedACPAgent {
     } catch let refusal as SessionDirectoryError {
       throw RequestError.forkRefusal(refusal, point: point, in: source, id: params.sessionId)
     }
-    return try await openFork(fork.result, activation: fork.activation, placement: placement)
+    return try await openFork(fork.result, activation: fork.activation)
   }
 
   /// Opens a fork that the launcher built for a `session/fork` request (``launchFork(_:for:)``) for
@@ -157,29 +160,31 @@ extension RoutedACPAgent {
   /// and the connection owns it.
   ///
   /// The record of the fork holds the additional directories of the request from its build
-  /// (``launchFork(_:for:)``). The agent records the folder of the fork in the project store
-  /// (``registerProject(of:)``). Then the retained history keeps the commands and the options of
-  /// the response, and the name of the fork goes out after the response. A later
-  /// `session/resume` of the fork takes the live fork, and a resume in a new process replays the
-  /// copied turns from the history file of the fork.
+  /// (``launchFork(_:for:)``), and ``forkSession(_:from:)`` recorded the folder of the fork in the
+  /// project store before the fork was made (``registerProject(of:)``). The retained history
+  /// keeps the commands and the options of the response, and the name of the fork goes out after
+  /// the response. A later `session/resume` of the fork takes the live fork, and a resume in a
+  /// new process replays the copied turns from the history file of the fork.
+  ///
+  /// The session directory made the fork before this call, so each failure here closes the fork
+  /// first (``discardUnopenedFork(_:)``): the client gets the error, and no live fork stays.
   ///
   /// - Parameters:
   ///   - summary: The summary of the fork.
   ///   - activation: The activation of the fork that the launcher mounted, or `nil` when the
   ///     launcher mounted no fork for the request.
-  ///   - placement: Where the fork works, its user presence, and the MCP servers of its client.
   /// - Returns: The response of the fork.
-  /// - Throws: An internal error when the table holds no fork with the id of the summary, or
-  ///   the error of the project file save.
-  private func openFork(
-    _ summary: SessionSummary, activation: SessionActivation?, placement: SessionPlacement
-  ) async throws -> ForkSessionResponse {
+  /// - Throws: An internal error when the launcher mounted no fork for the request, or the table
+  ///   holds no fork with the id of the summary. The fork is closed before the throw.
+  private func openFork(_ summary: SessionSummary, activation: SessionActivation?) async throws
+    -> ForkSessionResponse
+  {
     let forkId = SessionId(rawValue: summary.id.description)
     guard let activation, let fork = sessions[forkId]?.session else {
+      await discardUnopenedFork(summary.id)
       throw RequestError.internalError(
         detail: "the fork \(forkId.rawValue) closed before the agent opened it")
     }
-    try registerProject(of: placement)
     let response = ForkSessionResponse(
       sessionId: forkId, availableCommands: activation.availableCommands,
       configOptions: activation.configOptions)
@@ -193,6 +198,28 @@ extension RoutedACPAgent {
     ACPAgentTelemetry.logger(.session).info(
       "A session forked.", metadata: ACPAgentTelemetry.sessionMetadata(forkId))
     return response
+  }
+
+  /// Closes a fork that the session directory made for a `session/fork` request when the agent
+  /// cannot open it, so no live fork stays with no response.
+  ///
+  /// A fork in the session table closes as a `session/delete` closes a session: the teardown
+  /// closes the Router session, stops its projector and releases its surface
+  /// (``tearDownSession(_:entry:isShutdown:)``), and its entry and its snapshot key go. The
+  /// directory then holds no live session with the id. A fork that the table does not hold (a
+  /// launcher that built the fork with no surface of the agent) closes through the directory.
+  /// The record of the fork stays on disk, as for each closed session.
+  ///
+  /// - Parameter forkId: The id of the fork.
+  private func discardUnopenedFork(_ forkId: ULID) async {
+    let sessionId = SessionId(rawValue: forkId.description)
+    if let entry = sessions[sessionId] {
+      await tearDownSession(sessionId, entry: entry)
+      sessions.removeValue(forKey: sessionId)
+      recordActiveSessions()
+    }
+    SnapshotSessionKeys.shared.forget(sessionId)
+    await sessionDirectory.session(id: forkId)?.close()
   }
 
   /// Checks that the `cwd` of a fork request is the folder of the source: a fork works in the

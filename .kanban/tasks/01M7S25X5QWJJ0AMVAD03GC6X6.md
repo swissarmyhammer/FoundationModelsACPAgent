@@ -49,10 +49,17 @@ comments:
     - test: `timeout 1800 swift build --build-tests` printed "Build complete!" with 0 compiler warnings; `swift test --skip-build --filter SessionForkHandlerTests`: 33 tests passed.
     - next: commit, then review.
   timestamp: 2026-11-19T05:47:09.227246+00:00
+- actor: claude-code
+  id: 01m7s6198x58vrsnkn2rpcj4pn
+  text: |-
+    ### review — clean
+    - evidence: review sha 5927c59~1..5927c59 — 0 findings (attempted 7, failed 0). 1 file reviewed. All prior findings are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-11-19T05:56:22.429411+00:00
 depends_on:
 - 01M7RWC0Q3R664RM3W2AGKNBVR
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: ffffff9680
 title: 'D205: a tool fork copies the history up to its tool call also when the record of that call is late'
 ---
 Found during ^agknbvr (2026-11-18).

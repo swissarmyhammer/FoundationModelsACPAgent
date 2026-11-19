@@ -74,8 +74,9 @@ other root session. All of it is in `Sources/FoundationModelsACPAgent/Agent/`.
   of the request (`ForkLaunchID`). It sets that id as a task local around the fork call. The
   Router calls the launcher in the task of that caller, so the launcher reads the id of the
   request that it builds. A fork of the `sessions` tool or of the `sessions` endpoint runs in
-  another task and has no id. After the fork call the handler records the folder of the fork in
-  the project store.
+  another task and has no id. Before the fork call the handler records the folder of the fork in
+  the project store, so a failed save makes no fork. When the handler cannot open the fork that
+  the directory made, it closes the fork before it gives the error, so no live fork stays.
 - **The launcher.** The directory calls `AgentSessionLauncher.forkSession(_:)` after it mapped
   the cut, and before it registers the fork and mails its first prompt. `SessionForkLaunch`
   builds the fork there: it records the agent of the source for the fork, composes the surface
