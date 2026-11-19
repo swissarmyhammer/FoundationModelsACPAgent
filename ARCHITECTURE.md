@@ -74,18 +74,19 @@ other root session. All of it is in `Sources/FoundationModelsACPAgent/Agent/`.
   of the request (`ForkLaunchID`). It sets that id as a task local around the fork call. The
   Router calls the launcher in the task of that caller, so the launcher reads the id of the
   request that it builds. A fork of the `sessions` tool or of the `sessions` endpoint runs in
-  another task and has no id. After the fork call the handler records the additional directories
-  of the fork in the directory.
+  another task and has no id. After the fork call the handler records the folder of the fork in
+  the project store.
 - **The launcher.** The directory calls `AgentSessionLauncher.forkSession(_:)` after it mapped
   the cut, and before it registers the fork and mails its first prompt. `SessionForkLaunch`
   builds the fork there: it records the agent of the source for the fork, composes the surface
   (the surface of the `session/fork` request, else the MCP servers, the directories and the user
-  presence of the source for a fork of the `fork session` operation of the `sessions` tool),
-  calls `SessionLaunchForkRequest.makeFork(tools:)` one time, writes the history file of the
-  fork (also an empty one), and puts the fork in the session table. So the first prompt runs on
-  the surface of the agent, and a `session/resume` of the fork takes the live fork: nothing stops
-  and restores it. A tool fork records no additional directories in its `index.md`, because the
-  Router gives no way to change the record of a fork before it registers it.
+  presence of the source for a fork of the `fork session` operation of the `sessions` tool or of
+  the `sessions` endpoint), calls `SessionLaunchForkRequest.makeFork(tools:additionalDirectories:)`
+  one time with the tools and the additional directories of that surface, writes the history
+  file of the fork (also an empty one), and puts the fork in the session table. The Router
+  writes the directories to the `index.md` record of the fork, so the record holds them from the
+  build and after a restart. So the first prompt runs on the surface of the agent, and a
+  `session/resume` of the fork takes the live fork: nothing stops and restores it.
 - **The turns.** The projector of each session records each delivered mail and the end of each
   answer in the retained history (`MailDeliveryRecord`, history only: no client gets them, and
   a replay leaves them out). `SessionForkHistory` counts the turns from these records with the

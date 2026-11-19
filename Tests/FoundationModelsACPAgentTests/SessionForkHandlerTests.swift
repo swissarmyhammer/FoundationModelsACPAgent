@@ -596,6 +596,58 @@ import Testing
     return try #require(try await forks(in: fixture).first)
   }
 
+  /// A fixture over the script of the suite whose source session has one additional directory.
+  ///
+  /// - Parameters:
+  ///   - directory: The additional directory of the source.
+  ///   - name: The name of the test, for the directories.
+  /// - Returns: The fixture.
+  /// - Throws: Whatever the construction throws.
+  private static func makeFixtureWithDirectory(_ directory: URL, name: String) async throws
+    -> ScriptedPromptFixture
+  {
+    try await ScriptedPromptFixture.make(
+      script: try script(), label: "\(label)-\(name)",
+      additionalDirectories: [AbsolutePath(rawValue: directory.path)])
+  }
+
+  /// Runs turn 1, then the prompt whose answer calls `fork session`, and gives the id of the
+  /// fork that the call made.
+  ///
+  /// - Parameter fixture: The fixture.
+  /// - Returns: The id of the fork.
+  /// - Throws: Whatever a prompt or the query throws.
+  private static func toolForkAfterTurnOne(on fixture: ScriptedPromptFixture) async throws -> ULID
+  {
+    try await ScriptedPromptFixture.runPrompt(on: fixture, text: firstPrompt)
+    return try await forkFromTheTool(on: fixture).id
+  }
+
+  /// The recording folder of the source session of `fixture`, which holds the folder of each of
+  /// its forks.
+  ///
+  /// - Parameter fixture: The fixture.
+  /// - Returns: The folder.
+  /// - Throws: A failed requirement when the table does not hold the source.
+  private static func recordingFolder(of fixture: ScriptedPromptFixture) async throws -> URL {
+    try #require(await fixture.harness.agent.sessions[fixture.sessionId]?.transcriptDirectory)
+  }
+
+  /// The paths of the additional directories that the `index.md` record of a fork holds, as the
+  /// file on disk holds them now.
+  ///
+  /// - Parameters:
+  ///   - fork: The id of the fork.
+  ///   - folder: The recording folder of the source of the fork.
+  /// - Returns: The paths, in order.
+  /// - Throws: The read error of a record, or a failed requirement when the folder holds no
+  ///   record of the fork.
+  private static func recordedDirectories(of fork: ULID, in folder: URL) throws -> [String] {
+    let records = try RouterSessionDirectory.recordedSessions(in: folder)
+    let record = try #require(records.first { $0.sessionId == fork })
+    return record.additionalDirectories.map(\.path)
+  }
+
   /// A source session whose agent end of the wire keeps the frame of ``heldText``.
   private struct HeldRecordSource {
     /// The fixture of the source, after turn 1.
@@ -1267,6 +1319,92 @@ import Testing
     let live = try #require(fixture.harness.agent.sessionDirectory.session(id: summary.id))
 
     #expect((held as AnyObject) === (live as AnyObject))
+  }
+
+  // MARK: - The additional directories of the record of a fork
+
+  /// The `index.md` record of a fork that `fork session` made holds the additional directories
+  /// of its source.
+  @Test(.timeLimit(.minutes(1))) func theRecordOfAToolForkHasTheDirectoriesOfTheSource()
+    async throws
+  {
+    let directory = makeResolvedDirectory(label: "\(Self.label)-tool-record-root")
+    let fixture = try await Self.makeFixtureWithDirectory(directory, name: "tool-record")
+    let fork = try await Self.toolForkAfterTurnOne(on: fixture)
+
+    let recorded = try await Self.recordedDirectories(
+      of: fork, in: Self.recordingFolder(of: fixture))
+
+    #expect(recorded == [directory.path])
+  }
+
+  /// The `index.md` record of a fork that a client asks for through the `sessions` endpoint
+  /// holds the additional directories of its source.
+  @Test(.timeLimit(.minutes(1))) func theRecordOfAnEndpointForkHasTheDirectoriesOfTheSource()
+    async throws
+  {
+    let directory = makeResolvedDirectory(label: "\(Self.label)-endpoint-record-root")
+    let fixture = try await Self.makeFixtureWithDirectory(directory, name: "endpoint-record")
+    let fork = try await Self.directoryForkEntry(of: fixture, client: .direct)
+
+    let recorded = try await Self.recordedDirectories(
+      of: fork.session.id, in: Self.recordingFolder(of: fixture))
+
+    #expect(recorded == [directory.path])
+  }
+
+  /// The `index.md` record of a `session/fork` fork holds the additional directories of the
+  /// request, not those of the source.
+  @Test(.timeLimit(.minutes(1))) func theRecordOfASessionForkHasTheDirectoriesOfTheRequest()
+    async throws
+  {
+    let sourceDirectory = makeResolvedDirectory(label: "\(Self.label)-record-source-root")
+    let requestDirectory = makeResolvedDirectory(label: "\(Self.label)-record-request-root")
+    let fixture = try await Self.makeFixtureWithDirectory(sourceDirectory, name: "request-record")
+    let fork = try await Self.forkEntry(
+      of: fixture, additionalDirectories: [AbsolutePath(rawValue: requestDirectory.path)])
+
+    let recorded = try await Self.recordedDirectories(
+      of: fork.session.id, in: Self.recordingFolder(of: fixture))
+
+    #expect(recorded == [requestDirectory.path])
+  }
+
+  /// The `index.md` record of a `session/fork` fork whose request omits the additional
+  /// directories holds none, also when the source has some (ACP: omitted gives none).
+  @Test(.timeLimit(.minutes(1))) func theRecordOfASessionForkWithNoDirectoriesHasNone()
+    async throws
+  {
+    let directory = makeResolvedDirectory(label: "\(Self.label)-omitted-record-root")
+    let fixture = try await Self.makeFixtureWithDirectory(directory, name: "omitted-record")
+    let fork = try await Self.forkEntry(of: fixture)
+
+    let recorded = try await Self.recordedDirectories(
+      of: fork.session.id, in: Self.recordingFolder(of: fixture))
+
+    #expect(recorded.isEmpty)
+  }
+
+  /// The `index.md` record of a fork that `fork session` made keeps the additional directories
+  /// of its source after a restart: the first agent closes, and a second agent over the same
+  /// folder resumes the source cold.
+  @Test(.timeLimit(.minutes(1))) func theRecordOfAToolForkKeepsTheDirectoriesAfterARestart()
+    async throws
+  {
+    let directory = makeResolvedDirectory(label: "\(Self.label)-restart-record-root")
+    let fixture = try await Self.makeFixtureWithDirectory(directory, name: "restart-record")
+    let fork = try await Self.toolForkAfterTurnOne(on: fixture)
+    let folder = try await Self.recordingFolder(of: fixture)
+
+    let recorded = try await fixture.closeAndResume { cwd in
+      try await ScriptedPromptFixture.make(
+        script: try Self.script(), label: "\(Self.label)-restart-record-second",
+        workingDirectory: cwd, additionalDirectories: [AbsolutePath(rawValue: directory.path)])
+    } read: { _, _ in
+      try Self.recordedDirectories(of: fork, in: folder)
+    }
+
+    #expect(recorded == [directory.path])
   }
 
   // MARK: - The late record of the calling tool call

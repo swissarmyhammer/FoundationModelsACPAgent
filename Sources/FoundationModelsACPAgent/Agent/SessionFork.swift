@@ -156,11 +156,12 @@ extension RoutedACPAgent {
   /// the connection of the request. The table holds the fork already, with the copied history,
   /// and the connection owns it.
   ///
-  /// The session directory holds the fork now, so the agent records the additional directories
-  /// of the request for it (``recordPlacement(of:placement:)``). Then the retained history keeps
-  /// the commands and the options of the response, and the name of the fork goes out after the
-  /// response. A later `session/resume` of the fork takes the live fork, and a resume in a new
-  /// process replays the copied turns from the history file of the fork.
+  /// The record of the fork holds the additional directories of the request from its build
+  /// (``launchFork(_:for:)``). The agent records the folder of the fork in the project store
+  /// (``registerProject(of:)``). Then the retained history keeps the commands and the options of
+  /// the response, and the name of the fork goes out after the response. A later
+  /// `session/resume` of the fork takes the live fork, and a resume in a new process replays the
+  /// copied turns from the history file of the fork.
   ///
   /// - Parameters:
   ///   - summary: The summary of the fork.
@@ -169,7 +170,7 @@ extension RoutedACPAgent {
   ///   - placement: Where the fork works, its user presence, and the MCP servers of its client.
   /// - Returns: The response of the fork.
   /// - Throws: An internal error when the table holds no fork with the id of the summary, or
-  ///   whatever the record of the directories throws.
+  ///   the error of the project file save.
   private func openFork(
     _ summary: SessionSummary, activation: SessionActivation?, placement: SessionPlacement
   ) async throws -> ForkSessionResponse {
@@ -178,7 +179,7 @@ extension RoutedACPAgent {
       throw RequestError.internalError(
         detail: "the fork \(forkId.rawValue) closed before the agent opened it")
     }
-    try await recordPlacement(of: fork, placement: placement)
+    try registerProject(of: placement)
     let response = ForkSessionResponse(
       sessionId: forkId, availableCommands: activation.availableCommands,
       configOptions: activation.configOptions)

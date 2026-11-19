@@ -887,8 +887,9 @@ extension RoutedACPAgent {
   }
 
   /// Mounts one root Router session into the agent, with no record of its placement.
-  /// The launcher of a fork mounts the fork before the session directory registers it, so it
-  /// records the placement later (D205).
+  /// The launcher of a fork mounts the fork before the session directory registers it. The build
+  /// of the fork records its additional directories, and a `session/fork` registers its project
+  /// later (D205).
   /// The mount makes the command registry with its bound builtin context.
   /// It makes the table entry with its retained history (the one build of a session,
   /// ``registerSession(_:sessionId:parent:build:events:)``).
@@ -1004,10 +1005,19 @@ extension RoutedACPAgent {
   func recordPlacement(of session: any RoutedSession, placement: SessionPlacement)
     async throws
   {
-    try ProjectStore(directory: home.projectsDirectory).register(
-      workingDirectory: placement.workingDirectory)
+    try registerProject(of: placement)
     try await sessionDirectory.setAdditionalDirectories(
       to: placement.additionalRoots, for: session.id)
+  }
+
+  /// Records the cwd of one mounted session in the project store of the home
+  /// (``AgentHome/projectsDirectory``), so a cross-project browser finds the project.
+  ///
+  /// - Parameter placement: Where the session works.
+  /// - Throws: The error of the project file save.
+  func registerProject(of placement: SessionPlacement) throws {
+    try ProjectStore(directory: home.projectsDirectory).register(
+      workingDirectory: placement.workingDirectory)
   }
 
   /// Starts the session's terminal projection.

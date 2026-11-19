@@ -120,15 +120,15 @@ extension RoutedACPAgent {
   ///   directories and the user presence of the source (``sourceForkPlacement(of:)``).
   ///
   /// The fork has the agent of its source (``recordForkAgent(of:for:in:)``). The agent builds the
-  /// fork through `request` one time (`SessionLaunchForkRequest.makeFork(tools:)`). The session
-  /// directory made the cut, so the agent does not map it again. A fork with no request copies
-  /// the history of its source up to the call that forked, after the history recorded that call
-  /// (``toolForkHistory(of:source:)``). Then the agent mounts the fork
+  /// fork through `request` one time, with the tools and the additional directories of its
+  /// surface (`SessionLaunchForkRequest.makeFork(tools:additionalDirectories:)`). The Router
+  /// writes the directories to the `index.md` record of the fork, so the record holds them also
+  /// after a restart. The session directory made the cut, so the agent does not map it again. A
+  /// fork with no request copies the history of its source up to the call that forked, after the
+  /// history recorded that call (``toolForkHistory(of:source:)``). Then the agent mounts the fork
   /// (``mountFork(_:composition:placement:history:owner:)``).
   ///
-  /// The session directory registers the fork and mails its first prompt after this call. The
-  /// record of the additional directories of a `session/fork` comes after the registration
-  /// (``forkSession(_:from:)``).
+  /// The session directory registers the fork and mails its first prompt after this call.
   ///
   /// - Parameters:
   ///   - request: The fork request of the session directory.
@@ -153,7 +153,8 @@ extension RoutedACPAgent {
       additionalRoots: placement.additionalRoots, clientMCPServers: placement.clientMCPServers,
       userPresence: placement.userPresence, resuming: forkId)
     do {
-      let fork = try await request.makeFork(tools: composition.surface.tools)
+      let fork = try await request.makeFork(
+        tools: composition.surface.tools, additionalDirectories: placement.additionalRoots)
       let history: SessionMergeEngine
       if let requested {
         history = requested.copiedHistory

@@ -781,7 +781,8 @@ code gives the local detail.
   that a compaction folded, a turn that does not exist and the turn that runs
   give `-32602` with a text for the person. The `fork session` operation of
   the `sessions` tool forks the calling session at its tool call, with the
-  MCP servers and the additional directories of the source.
+  MCP servers and the additional directories of the source. The `index.md`
+  record of each fork holds the additional directories that the fork got.
   The Router asks the launcher of the agent to build each fork before it
   registers the fork and sends its first prompt. So the first prompt runs on
   the tools of the agent, and the agent holds the fork from its start: a
