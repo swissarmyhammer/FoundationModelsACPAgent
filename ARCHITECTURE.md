@@ -153,7 +153,9 @@ The transcript search (D207) finds the sessions and the turns that hold a text. 
   folder, the record (`index.md`) and the `session-history.json` of each session folder, and gives
   the items of each session in one change. It removes the items of each session of the folder
   that has no history file. It reads no summary of the session directory, because that read
-  reads the recording root of each project. There is no rebuild command and no setting (D187).
+  reads the recording root of each project. The facts of the session item come from the Router
+  function that turns a record into a summary (`SessionSummary.init(record:)`), so the name and
+  the slug follow the one rule of the Router. There is no rebuild command and no setting (D187).
 - **The changes for Spotlight (D207 (i)).** `TranscriptSearchIndex.changes()` gives each
   subscriber its own `AsyncStream` of `TranscriptSearchChange`, after the index applied the
   change: `.indexed` with each turn (`TranscriptSearchTurn`: the session, the turn index, the

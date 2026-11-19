@@ -1,6 +1,5 @@
 import Foundation
 import FoundationModelsExtras
-import FoundationModelsRouter
 
 /// The facts of one session that its session item of the transcript search holds (D207 (b)
 /// (1)): the name, the slug, the tags, the folder, the name of the agent, the recap (D206) and
@@ -63,39 +62,6 @@ public struct TranscriptSessionMetadata: Codable, Hashable, Sendable {
       name: summary.title ?? "", slug: summary.slug, tags: Array(summary.tags),
       folder: summary.workingDirectory, agentName: summary.agentName, recap: summary.recap,
       lastSummary: summary.lastSummary)
-  }
-
-  /// Makes the facts of a recorded session from its record (`index.md`), with no read of the
-  /// session directory. The reconcile at launch reads the record of each session of a folder
-  /// that the process can read: a summary of the directory for a session that is not live reads
-  /// the recording root of each project, also of a folder that the process cannot read.
-  ///
-  /// The name and the slug follow `SessionSummary` of FoundationModelsExtras: the name is the
-  /// title, and the slug is the slug of the title, or the short id when the title gives no slug.
-  ///
-  /// - Parameter record: The record of the session.
-  init(record: SessionRecord) {
-    let facts = record.facts
-    let name = facts.title ?? ""
-    let titleSlug = SessionSlug.make(from: name)
-    self.init(
-      name: name,
-      slug: titleSlug.isEmpty ? Self.shortID(of: record.sessionId) : titleSlug,
-      tags: Array(facts.tags), folder: record.workingDirectory, agentName: facts.agentName,
-      recap: facts.recap, lastSummary: facts.lastSummary)
-  }
-
-  /// The number of characters of the short id of a session, as `SessionSummary.shortID` of
-  /// FoundationModelsExtras counts them.
-  private static let shortIDLength = 7
-
-  /// The short id of a session, as `SessionSummary.shortID` of FoundationModelsExtras makes it:
-  /// the last characters of the text of the id, in lower case.
-  ///
-  /// - Parameter id: The session id.
-  /// - Returns: The short id.
-  private static func shortID(of id: ULID) -> String {
-    String(id.ulidString.suffix(shortIDLength)).lowercased()
   }
 
   /// The lines of the block of the session item: the name, the slug, the tags, the folder, the

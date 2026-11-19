@@ -29,6 +29,9 @@ import ULID
   /// A working folder that the process cannot read.
   private static let closedFolder = URL(fileURLWithPath: "/projects/closed", isDirectory: true)
 
+  /// A working folder whose recording root holds a record that does not read.
+  private static let badRecordFolder = URL(fileURLWithPath: "/projects/bad", isDirectory: true)
+
   /// The date of each summary.
   private static let summaryDate = Date(timeIntervalSince1970: 1_800_000_000)
 
@@ -240,6 +243,40 @@ import ULID
     let asked = try await Self.reconcileClosedAndOpenFolders(with: updates)
 
     #expect(asked == [Self.folder])
+  }
+
+  /// The reconcile keeps the items of a session whose record (`index.md`) does not read
+  /// (D207, ^pqweam5).
+  @Test(.timeLimit(.minutes(3))) func theReconcileKeepsTheItemsOfAnUnreadableRecord() async throws {
+    let index = Self.makeIndex(label: "reconcile-bad-record")
+    let updates = TranscriptSearchUpdates(index: index) { _ in nil }
+    let badRoot = try Self.rootWithUnreadableRecord(of: Self.otherSessionId)
+    let emptyRoot = makeResolvedDirectory(label: "\(Self.label)-reconcile-bad-record-empty")
+    await Self.indexStale(Self.otherSessionId, folder: Self.badRecordFolder, in: index)
+    await Self.indexStale(Self.sessionId, folder: Self.folder, in: index)
+    let stale = await index.items(of: Self.otherSessionId)
+
+    await updates.reconcile(folders: [Self.badRecordFolder, Self.folder]) { folder in
+      folder == Self.badRecordFolder ? badRoot : emptyRoot
+    }
+    try await Self.waitUntil { await index.items(of: Self.sessionId).isEmpty }
+
+    #expect(await index.items(of: Self.otherSessionId) == stale)
+  }
+
+  /// A recording root with one session folder whose record (`index.md`) holds no frontmatter.
+  ///
+  /// - Parameter session: The session of the folder.
+  /// - Returns: The recording root.
+  /// - Throws: The error of the write.
+  private static func rootWithUnreadableRecord(of session: SessionId) throws -> URL {
+    let root = makeResolvedDirectory(label: "\(label)-reconcile-bad-record-root")
+    let sessionFolder = root.appendingPathComponent(session.rawValue, isDirectory: true)
+    try FileManager.default.createDirectory(at: sessionFolder, withIntermediateDirectories: true)
+    try "This record holds no frontmatter.".write(
+      to: sessionFolder.appendingPathComponent(RecordedSessionIndexFile.fileName),
+      atomically: true, encoding: .utf8)
+    return root
   }
 
   /// Indexes a session with stale content: one chunk that no history file holds.

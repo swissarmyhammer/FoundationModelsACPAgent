@@ -2,6 +2,7 @@ import Foundation
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsExtras
+import FoundationModelsRouter
 import Testing
 
 @testable import FoundationModelsACPAgent
@@ -158,5 +159,87 @@ import Testing
     #expect(
       await index.items(of: fixture.sessionId).dropFirst().elementsEqual(
         written.searchChunks.map { TranscriptSearchItem(chunk: $0, session: fixture.sessionId) }))
+  }
+
+  /// The session item that the reconcile gives for a recorded session has the same facts as
+  /// the summary of the session directory for the live session (D207, ^pqweam5).
+  @Test(.timeLimit(.minutes(3))) func theReconcileGivesTheFactsOfTheLiveSummary() async throws {
+    let fixture = try await Self.fixtureAfterOnePrompt(label: "reconcile-facts")
+    let entry = try #require(await fixture.harness.agent.sessions[fixture.sessionId])
+    let live = try #require(
+      try await fixture.harness.agent.sessionDirectory.summary(of: try fixture.sessionId.ulid()))
+    await fixture.close()
+
+    let item = try await Self.reconciledSessionItem(
+      of: fixture, recordingRoot: entry.transcriptRoot, label: "reconcile-facts")
+
+    #expect(
+      item
+        == TranscriptSearchItem(
+          session: fixture.sessionId, metadata: TranscriptSessionMetadata(summary: live)))
+  }
+
+  /// A recorded session with no title gets the slug that the Router gives from its record: the
+  /// short id (D207, ^pqweam5).
+  @Test(.timeLimit(.minutes(3))) func aRecordWithNoTitleGetsTheSlugOfTheRouter() async throws {
+    let fixture = try await Self.fixtureAfterOnePrompt(label: "reconcile-no-title")
+    let entry = try #require(await fixture.harness.agent.sessions[fixture.sessionId])
+    await fixture.close()
+    try Self.removeTitle(fromRecordIn: entry.transcriptDirectory)
+    let recorded = try #require(
+      try RouterSessionDirectory.recordedSummary(inSessionFolder: entry.transcriptDirectory))
+    try #require(recorded.title == nil)
+
+    let item = try await Self.reconciledSessionItem(
+      of: fixture, recordingRoot: entry.transcriptRoot, label: "reconcile-no-title")
+
+    #expect(item?.sessionMetadata?.slug == recorded.shortID)
+  }
+
+  /// Reconciles the folder of a closed fixture into a new empty index, and gives the session
+  /// item of the session of the fixture.
+  ///
+  /// - Parameters:
+  ///   - fixture: The closed fixture.
+  ///   - recordingRoot: The recording root of the session of the fixture.
+  ///   - label: The label of the folder of the index.
+  /// - Returns: The session item, or `nil` when the index holds no item of the session.
+  /// - Throws: The cancel of the wait.
+  private static func reconciledSessionItem(
+    of fixture: ScriptedPromptFixture, recordingRoot: URL, label: String
+  ) async throws -> TranscriptSearchItem? {
+    let index = TranscriptSearchIndex(
+      folder: makeResolvedDirectory(label: "\(Self.label)-\(label)-index"), embedder: nil,
+      modelID: nil, readableFolder: { _ in true })
+    let updates = TranscriptSearchUpdates(index: index) { _ in nil }
+
+    await updates.reconcile(folders: [fixture.cwd], recordingRoot: { _ in recordingRoot })
+    try await waitUntil { await holdsTheAnswer(fixture.sessionId, in: index) }
+    return await index.items(of: fixture.sessionId).first
+  }
+
+  /// Removes the title line from the record (`index.md`) of a closed session.
+  ///
+  /// - Parameter sessionFolder: The folder of the session.
+  /// - Throws: The read or the write error, or a failed requirement when the record holds no
+  ///   title line.
+  private static func removeTitle(fromRecordIn sessionFolder: URL) throws {
+    let file = sessionFolder.appendingPathComponent(
+      RecordedSessionIndexFile.fileName, isDirectory: false)
+    let lines = try String(contentsOf: file, encoding: .utf8)
+      .split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    let kept = lines.filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("title:") }
+    try #require(kept.count < lines.count, "the index.md holds no title line")
+    try kept.joined(separator: "\n").write(to: file, atomically: true, encoding: .utf8)
+  }
+}
+
+extension TranscriptSearchItem {
+  /// The facts of a session item, or `nil` for a chunk item.
+  fileprivate var sessionMetadata: TranscriptSessionMetadata? {
+    guard case .session(let metadata) = content else {
+      return nil
+    }
+    return metadata
   }
 }
