@@ -570,12 +570,15 @@ public enum ToolCatalog {
   /// The tool gets the transcript exporter of the agent
   /// (``CatalogContext/transcriptExporter``) for its `export session`
   /// operation, and gives it to that endpoint for the `export` field
-  /// (`SessionsGraph.endpoint(of:exporter:searcher:sharer:)`, D202). In the
-  /// same way, it gets the transcript searcher of the agent
+  /// (`SessionsGraph.endpoint(of:exporter:searcher:sharer:importer:)`, D202).
+  /// In the same way, it gets the transcript searcher of the agent
   /// (``CatalogContext/transcriptSearcher``) for its `search sessions`
-  /// operation and the `searchSessions` field (D207), and the sharer of the
+  /// operation and the `searchSessions` field (D207), the sharer of the
   /// host (``CatalogContext/sessionSharer``) for its `share session`,
-  /// `update share` and `stop sharing` operations (D208).
+  /// `update share` and `stop sharing` operations (D208), and the importer
+  /// of the agent (``CatalogContext/sessionImporter``) for its
+  /// `list imports` and `import session` operations and the import fields
+  /// (D209).
   ///
   /// - Parameter context: The catalog context of the session.
   /// - Returns: The tool, or `nil` when the context has no directory.
@@ -584,7 +587,8 @@ public enum ToolCatalog {
     try context.sessionDirectory.map {
       try SessionsTool(
         directory: $0, exporter: context.transcriptExporter,
-        searcher: context.transcriptSearcher, sharer: context.sessionSharer)
+        searcher: context.transcriptSearcher, sharer: context.sessionSharer,
+        importer: context.sessionImporter)
     }
   }
 

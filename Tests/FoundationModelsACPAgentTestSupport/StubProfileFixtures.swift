@@ -1,3 +1,4 @@
+import ACPImport
 import Foundation
 import FoundationModelsACPAgent
 import FoundationModelsExtras
@@ -73,6 +74,9 @@ import Tracing
 ///   - sessionShareHost: The share calls of the host that the `sessions`
 ///     tool of each session uses, or `nil` (the default) for an agent with
 ///     no sharer. A suite of the share of a session gives fake calls here.
+///   - importRoots: The folder of each source agent whose sessions the
+///     importer of the `sessions` tool lists. None by default. A suite of the
+///     import gives fixture roots in a temporary folder here.
 ///   - prepareRouter: The work on the router before the agent resolves its
 ///     profile. A suite that drives the timers of its runs gives the router
 ///     a `ManualRunClock` here. It does nothing by default.
@@ -95,6 +99,7 @@ public func makeStubAgent(
   mode: ToolMode = .open,
   sandboxProbe: SandboxProbe = .live,
   sessionShareHost: SessionShareHost? = nil,
+  importRoots: [ImportSourceAgent: URL] = [:],
   prepareRouter: @Sendable (Router) async -> Void = { _ in }
 ) async throws -> RoutedACPAgent {
   // A custom home over throwaway folders, so no test reads or writes the
@@ -122,12 +127,13 @@ public func makeStubAgent(
     secretStore: secretStore,
     userDeviceTokens: userDeviceTokens,
     modelStorage: offlineModelStorage(of: home),
-    sessionShareHost: sessionShareHost)
+    sessionShareHost: sessionShareHost,
+    importRoots: importRoots)
 }
 
 // MARK: - The defaults layer of a stub agent
 
-/// The defaults layer that ``makeStubAgent(name:cacheDirectory:recordingsDirectory:userDirectory:loader:configuration:tracer:inlineSettleGrace:environment:secretStore:userDeviceTokens:mode:sandboxProbe:sessionShareHost:prepareRouter:)``
+/// The defaults layer that ``makeStubAgent(name:cacheDirectory:recordingsDirectory:userDirectory:loader:configuration:tracer:inlineSettleGrace:environment:secretStore:userDeviceTokens:mode:sandboxProbe:sessionShareHost:importRoots:prepareRouter:)``
 /// gives each agent: the lowest layer of the configuration stack, below the
 /// user layer and the project layer.
 ///

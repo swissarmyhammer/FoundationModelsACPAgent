@@ -1,3 +1,4 @@
+import ACPImport
 import Foundation
 import FoundationModels
 import FoundationModelsACP
@@ -165,6 +166,9 @@ struct ScriptedPromptFixture {
   ///   - sessionShareHost: The share calls of the host, or `nil` (the
   ///     default) for an agent with no sharer. A test of the share of a
   ///     session gives fake calls here.
+  ///   - importRoots: The folder of each source agent whose sessions the
+  ///     importer lists. None by default. A test of the import gives fixture
+  ///     roots here.
   ///   - wire: The transport pair of the connection. The in-process pair
   ///     by default. A test that must stop a frame of the agent gives a
   ///     pair whose agent end keeps it back.
@@ -189,6 +193,7 @@ struct ScriptedPromptFixture {
     hostTools: [any FoundationModels.Tool] = [],
     inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
     sessionShareHost: SessionShareHost? = nil,
+    importRoots: [ImportSourceAgent: URL] = [:],
     wire: HarnessWire = .makeInMemory()
   ) async throws -> ScriptedPromptFixture {
     try await make(
@@ -209,6 +214,7 @@ struct ScriptedPromptFixture {
       hostTools: hostTools,
       inlineSettleGrace: inlineSettleGrace,
       sessionShareHost: sessionShareHost,
+      importRoots: importRoots,
       wire: wire)
   }
 
@@ -266,6 +272,9 @@ struct ScriptedPromptFixture {
   ///   - sessionShareHost: The share calls of the host, or `nil` (the
   ///     default) for an agent with no sharer. A test of the share of a
   ///     session gives fake calls here.
+  ///   - importRoots: The folder of each source agent whose sessions the
+  ///     importer lists. None by default. A test of the import gives fixture
+  ///     roots here.
   ///   - wire: The transport pair of the connection. The in-process pair
   ///     by default. A test that must stop a frame of the agent gives a
   ///     pair whose agent end keeps it back.
@@ -291,6 +300,7 @@ struct ScriptedPromptFixture {
     hostTools: [any FoundationModels.Tool] = [],
     inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
     sessionShareHost: SessionShareHost? = nil,
+    importRoots: [ImportSourceAgent: URL] = [:],
     wire: HarnessWire = .makeInMemory()
   ) async throws -> ScriptedPromptFixture {
     let userDirectory = makeResolvedDirectory(label: "\(label)-user")
@@ -308,7 +318,8 @@ struct ScriptedPromptFixture {
       tracer: tracer,
       inlineSettleGrace: inlineSettleGrace,
       secretStore: secretStore,
-      sessionShareHost: sessionShareHost
+      sessionShareHost: sessionShareHost,
+      importRoots: importRoots
     ) { router in
       if let runClock {
         await router.useRunClock(runClock)

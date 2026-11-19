@@ -768,6 +768,25 @@ whose Keep Updated is on reads `ComposedAgent.turnEnds()` (or
 the end of each prompt and of each turn that a message from another session
 started, and updates the share.
 
+### The import of a session of another agent
+
+The `sessions` tool has the operations `list imports` and `import session`
+(D209). The agent lists the Claude Code and Codex sessions that the host can
+read with an `AgentSessionImporter`. A host gives the folder of each source
+agent as `importRoots` to `ComposedAgent.compose(importRoots:)` (or to the
+initializer of `RoutedACPAgent`): `~/.claude` and `~/.codex`, or the folders
+that an app in the App Sandbox holds a bookmark for. A source with no folder
+shows in the list as a source with no access. The `acp-agent` CLI gives the
+folders of the real home folder, and the folder of `CLAUDE_CONFIG_DIR` when it
+is set.
+
+The importer reads the folders only in a call. It runs no child process,
+watches nothing, and changes no file of a folder. It keeps the metadata of each
+session file in memory by path, size and modification date, so a second list
+reads only the changed files. Each row shows the earlier imports of its source
+(the sessions whose `importedFrom` names that source). This is information
+only: each import makes a new session.
+
 ## Instructions
 
 The base system prompt of a session is the `default` agent: an `AGENT.md`

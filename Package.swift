@@ -61,6 +61,14 @@ private let wireDependencyName = "FoundationModelsACP"
 private let markdownProduct = Target.Dependency.product(
     name: "ACPMarkdown", package: wireDependencyName)
 
+/// The readers of the session files of other agents (Claude Code and Codex), a
+/// third product of `wireDependencyName` (D209). The library target lists
+/// and imports their sessions with it (`AgentSessionImporter`), the CLI names
+/// its import roots by `ImportSourceAgent`, and the test targets give
+/// fixture roots by the same type.
+private let importProduct = Target.Dependency.product(
+    name: "ACPImport", package: wireDependencyName)
+
 /// The runtime: self-folding, token-metered, event-streaming, recorded
 /// sessions. This package owns what the runtime does not: file I/O, the
 /// dotfolders, the command registry, the tool roster and the ACP `Agent`
@@ -467,7 +475,7 @@ let package = Package(
     targets: [
         .target(
             name: packageName,
-            dependencies: familyProducts + [mcpSDKProduct, huggingFaceProduct, markdownProduct]
+            dependencies: familyProducts + [mcpSDKProduct, huggingFaceProduct, markdownProduct, importProduct]
                 + telemetryAPIProducts + graphQLProducts,
             // The builtin configuration and the bundled profiles — see
             // `builtinConfigurationResource` and `bundledProfilesResource`.
@@ -499,6 +507,7 @@ let package = Package(
                 makeFamilyProduct(name: extrasDependencyName),
                 makeFamilyProduct(name: clientDependencyName),
                 makeFamilyProduct(name: kanbanDependencyName),
+                importProduct,
                 argumentParserProduct,
                 nooraProduct,
             ] + telemetryAPIProducts,
@@ -544,6 +553,7 @@ let package = Package(
                 .target(name: packageName),
                 makeFamilyProduct(name: clientDependencyName),
                 tracingProduct,
+                importProduct,
             ] + familyProducts,
             path: "Tests/\(testSupportTargetName)"
         ),
@@ -588,7 +598,7 @@ let package = Package(
                 metricsTestKitProduct,
                 huggingFaceProduct,
             ]
-                + familyProducts + multitoolTestProducts + [mcpSDKProduct, markdownProduct]
+                + familyProducts + multitoolTestProducts + [mcpSDKProduct, markdownProduct, importProduct]
                 + graphQLProducts
         ),
     ]

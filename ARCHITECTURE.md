@@ -216,6 +216,35 @@ the host saves it and gives the link. This package does not know where the host 
   agent does not. The stream and the transcript search changes use one feed type
   (`SubscriberFeed`).
 
+## The import of a session of another agent
+
+An import (D209) copies a session of Claude Code or Codex into a new session of this agent. The
+scan is in `Sources/FoundationModelsACPAgent/Import/`. The readers of the session files are in
+the `ACPImport` target of FoundationModelsACP, and the protocol is the `SessionImporter` of
+Multitool.
+
+- **The roots.** The host gives the folder of each source agent that it can read as
+  `importRoots: [ImportSourceAgent: URL]` to the initializer of `RoutedACPAgent` (or to
+  `ComposedAgent.compose`). The `acp-agent` CLI gives `~/.claude` (or `CLAUDE_CONFIG_DIR`) and
+  `~/.codex`. A source with no root is in the `unreadableSources` of each page.
+- **The scan.** `AgentSessionImporter` (an actor) lists the session files of each root
+  (`ImportSourceLayout`: `projects/*/*.jsonl` for Claude Code, `sessions/**/rollout-*.jsonl` and
+  `archived_sessions/` for Codex) and reads their metadata with the `ACPImport` readers. It
+  keeps the scan of each file by path, size and modification date (`ImportFileStamp`), so a
+  second call reads only the changed files. The rows are the newest first, with the rows of the
+  preferred folder first. The importer reads the roots only in a call: no child process, no
+  watch, no write to a root.
+- **The earlier imports.** `previousImports` of a row comes from the `importedFrom` of the
+  sessions of the session directory, by agent and source id. It is information only (Q85).
+- **The wiring.** The agent keeps one importer (`RoutedACPAgent.sessionImporter`) and gives it
+  to the `sessions` tool of each session through `CatalogContext.sessionImporter`. The tool
+  gives it to the `sessions` endpoint of the directory, beside the exporter, the searcher and
+  the sharer.
+- **The import.** `importSession` checks the agent (`SessionImportError.sourceUnreadable`) and
+  the folder of the new session (`SessionImportError.folderUnavailable`). The write of the new
+  session is the next step of D209: until it is in, the importer throws
+  `SessionDirectoryError.importUnsupported` after the checks.
+
 ## Settings
 
 The agent settings live in memory in one `SettingsStore` (in

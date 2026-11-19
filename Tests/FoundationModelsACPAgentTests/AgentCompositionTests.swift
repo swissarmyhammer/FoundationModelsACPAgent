@@ -1,3 +1,4 @@
+import ACPImport
 import Foundation
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsRouter
@@ -210,6 +211,31 @@ import Testing
     #expect(
       FileManager.default.fileExists(atPath: file.path),
       "the composed router recorded nothing at \(file.path)")
+  }
+
+  // MARK: - The import roots
+
+  /// The home folder of the import root tests.
+  private static let importHome = URL(fileURLWithPath: "/Users/someone", isDirectory: true)
+
+  /// With no `CLAUDE_CONFIG_DIR`, the CLI gives `~/.claude` and `~/.codex` of the real home
+  /// folder as the import roots (D209).
+  @Test func theImportRootsAreTheFoldersOfTheHome() {
+    let roots = AgentComposition.importRoots(environment: [:], homeDirectory: Self.importHome)
+
+    #expect(
+      roots == [
+        .claudeCode: Self.importHome.appendingPathComponent(".claude", isDirectory: true),
+        .codex: Self.importHome.appendingPathComponent(".codex", isDirectory: true),
+      ])
+  }
+
+  /// `CLAUDE_CONFIG_DIR` names the Claude Code import root.
+  @Test func claudeConfigDirNamesTheClaudeCodeRoot() {
+    let roots = AgentComposition.importRoots(
+      environment: ["CLAUDE_CONFIG_DIR": "/elsewhere/claude"], homeDirectory: Self.importHome)
+
+    #expect(roots[.claudeCode] == URL(fileURLWithPath: "/elsewhere/claude", isDirectory: true))
   }
 
   /// The recording root of `workspace` under the CLI's own dotfolder

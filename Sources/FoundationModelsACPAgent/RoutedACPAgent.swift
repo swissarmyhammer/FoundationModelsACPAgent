@@ -1,3 +1,4 @@
+import ACPImport
 import Foundation
 import FoundationModels
 import FoundationModelsACP
@@ -69,6 +70,11 @@ public actor RoutedACPAgent: Agent {
   /// `sessions` tool of each session gets a ``HostSessionSharer`` over them
   /// (``CatalogContext/sessionSharer``).
   nonisolated let sessionShareHost: SessionShareHost?
+
+  /// The importer of the sessions of other agents (D209), over the import roots of the host.
+  /// The `sessions` tool of each session gets it (``CatalogContext/sessionImporter``). A source
+  /// agent with no root is in the `unreadableSources` of each page of the importer.
+  nonisolated let sessionImporter: AgentSessionImporter
 
   /// The subscribers of the turn ends of the sessions of this server (``turnEnds()``).
   nonisolated let turnEndFeed = SubscriberFeed<SessionId> {
@@ -553,6 +559,11 @@ public actor RoutedACPAgent: Agent {
   ///     host with no share: the share operations of the `sessions` tool then give
   ///     `SHARING_UNAVAILABLE`. With calls, the tool shares a session through a
   ///     ``HostSessionSharer`` over them, with the snapshot of ``snapshot(of:options:)``.
+  ///   - importRoots: The folder of each source agent whose sessions the host can read (D209):
+  ///     `~/.claude` for Claude Code and `~/.codex` for Codex, or the folders that an app in
+  ///     the App Sandbox holds a bookmark for. None by default: each source is then in the
+  ///     `unreadableSources` of `list imports`. The importer only reads these folders
+  ///     (``sessionImporter``).
   ///   - fallbackProfileName: The profile of each session load where no
   ///     layer sets `profile`, or where the name is unknown
   ///     (``SettingsStore/fallbackProfileName``), or `nil` (the default)
@@ -586,6 +597,7 @@ public actor RoutedACPAgent: Agent {
     userDeviceTokens: Set<String> = [],
     modelStorage: (any ModelStorageSource)? = nil,
     sessionShareHost: SessionShareHost? = nil,
+    importRoots: [ImportSourceAgent: URL] = [:],
     fallbackProfileName: String? = nil,
     readableFolder: @escaping @Sendable (URL) -> Bool = RoutedACPAgent.everyFolderIsReadable
   ) async throws {
@@ -606,6 +618,8 @@ public actor RoutedACPAgent: Agent {
     self.hooks = hooks
     self.userDeviceTokens = userDeviceTokens
     self.sessionShareHost = sessionShareHost
+    self.sessionImporter = AgentSessionImporter(
+      roots: importRoots, directory: router.sessionDirectory)
     self.settingsFolders = SettingsFolders(name: name, home: home, environment: environment)
     self.environment = environment
     self.inlineSettleGrace = inlineSettleGrace

@@ -1,3 +1,4 @@
+import ACPImport
 import Foundation
 import FoundationModelsACP
 import FoundationModelsExtras
@@ -207,6 +208,11 @@ public struct ComposedAgent: Sendable {
   ///     host with no share. The composition gives them to the initializer of
   ///     ``RoutedACPAgent``: the `sessions` tool of each session then shares a session through a
   ///     ``HostSessionSharer`` over them.
+  ///   - importRoots: The folder of each source agent whose sessions the host can read (D209):
+  ///     `~/.claude` and `~/.codex` of the real home folder in OpenTestudo, the bookmarked
+  ///     folders in Testudo. None by default. The composition gives them to the initializer of
+  ///     ``RoutedACPAgent``: the `list imports` operation of the `sessions` tool then lists the
+  ///     sessions of these folders, and names each source with no folder.
   /// - Returns: The composed agent, the model path it was built over, and
   ///   the configuration the load resolved.
   /// - Throws: `ToolModeError.openModeInSandbox` when `mode` is `.open` in
@@ -235,7 +241,8 @@ public struct ComposedAgent: Sendable {
     reporting progress: ResolutionProgress? = nil,
     profileFitSource: (any ProfileFitEstimating)? = nil,
     readableFolder: @escaping @Sendable (URL) -> Bool = RoutedACPAgent.everyFolderIsReadable,
-    sessionShareHost: SessionShareHost? = nil
+    sessionShareHost: SessionShareHost? = nil,
+    importRoots: [ImportSourceAgent: URL] = [:]
   ) async throws -> ComposedAgent {
     // The check comes first, so a wrong mode fails before the router
     // builds and before any tool registers.
@@ -274,6 +281,7 @@ public struct ComposedAgent: Sendable {
         ?? ModelStorage(
           cacheDirectory: home.modelCacheDirectory, tokenProvider: huggingFaceTokenProvider),
       sessionShareHost: sessionShareHost,
+      importRoots: importRoots,
       fallbackProfileName: fallbackProfileName,
       readableFolder: readableFolder)
     await agent.registerSessionToolFactories(sessionToolFactories)

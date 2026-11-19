@@ -1157,6 +1157,7 @@ extension RoutedACPAgent {
       transcriptExporter: AgentTranscriptExporter(agent: self),
       transcriptSearcher: AgentTranscriptSearcher(agent: self),
       sessionSharer: sessionSharer(),
+      sessionImporter: sessionImporter,
       modelsEndpoint: modelsEndpoint,
       mcpServerRegistry: mcpServerRegistry,
       marketplaceMount: marketplaceMount(workingDirectory: workingDirectory))

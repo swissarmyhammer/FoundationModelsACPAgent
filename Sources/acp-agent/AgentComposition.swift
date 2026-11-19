@@ -1,3 +1,4 @@
+import ACPImport
 import Foundation
 import FoundationModelsACPAgent
 import FoundationModelsKanban
@@ -44,6 +45,18 @@ enum AgentComposition {
 
   /// The folder of the local root in the folder of ``homeVariable``.
   static let localFolderName = "local"
+
+  /// The environment variable that names the folder of the configuration
+  /// of Claude Code, in place of `~/.claude`. The CLI gives that folder as
+  /// the Claude Code import root (``importRoots(environment:homeDirectory:)``).
+  static let claudeConfigVariable = "CLAUDE_CONFIG_DIR"
+
+  /// The folder of each source agent in the home folder, when no variable
+  /// names it (D209).
+  static let importRootFolderNames: [ImportSourceAgent: String] = [
+    .claudeCode: ".claude",
+    .codex: ".codex",
+  ]
 
   /// The version the CLI reports. One binary and one version: `--version`
   /// prints this, and `initialize` reports the same value as the build
@@ -130,6 +143,26 @@ enum AgentComposition {
       projects: synced.appendingPathComponent(AgentHome.projectsFolderName, isDirectory: true))
   }
 
+  /// The import roots of the CLI (D209): the folder of each source agent
+  /// in the real home folder, `~/.claude` and `~/.codex`. When
+  /// ``claudeConfigVariable`` names an absolute folder, that folder is the
+  /// Claude Code root. The CLI runs outside the App Sandbox, so it can read
+  /// each root.
+  ///
+  /// - Parameters:
+  ///   - environment: The environment to read.
+  ///   - homeDirectory: The home folder of the user.
+  /// - Returns: The root of each source agent.
+  static func importRoots(environment: [String: String], homeDirectory: URL) -> [ImportSourceAgent: URL] {
+    var roots = importRootFolderNames.mapValues {
+      homeDirectory.appendingPathComponent($0, isDirectory: true)
+    }
+    if let folder = environment[claudeConfigVariable], folder.hasPrefix("/") {
+      roots[.claudeCode] = URL(fileURLWithPath: folder, isDirectory: true)
+    }
+    return roots
+  }
+
   /// Composes the agent of the CLI through the public library helper
   /// `ComposedAgent.compose(name:workingDirectory:home:mode:sandboxProbe:environment:modelSource:stubChunkGate:stubScript:secretStore:userDeviceTokens:huggingFaceTokenProvider:sessionToolFactories:reporting:)`.
   ///
@@ -146,6 +179,10 @@ enum AgentComposition {
   /// the library, `.environment`, reads `HF_TOKEN`, then
   /// `~/.cache/huggingface/token`, and that is the token of the CLI
   /// (task ^4avf24e).
+  ///
+  /// The CLI gives the import roots of ``importRoots(environment:homeDirectory:)``
+  /// over the real home folder, so `list imports` lists the Claude Code and
+  /// Codex sessions of the user (D209).
   ///
   /// The CLI always composes in the `open` tool mode (ACPA-19b): it runs
   /// outside the App Sandbox, so each session gets every tool that the
@@ -187,7 +224,10 @@ enum AgentComposition {
       stubChunkGate: stubChunkGate(),
       stubScript: stubScript(),
       sessionToolFactories: [kanbanToolFactory],
-      reporting: progress)
+      reporting: progress,
+      importRoots: importRoots(
+        environment: environment,
+        homeDirectory: FileManager.default.homeDirectoryForCurrentUser))
   }
 
   /// The factory of the `kanban` tool of each session. It asks the shared
