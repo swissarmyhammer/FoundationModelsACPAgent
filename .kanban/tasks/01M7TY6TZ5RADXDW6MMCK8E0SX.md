@@ -1,6 +1,17 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m7tyjap2m1vvh5cdb2rpgye7
+  text: |-
+    Dependency available (2026-11-19): FoundationModelsACP `ACPImport` (D209) is on main at b4b7abf. Still waiting for Extras, Multitool and Router.
+    - Product `ACPImport` (depends only on FoundationModelsACP). It has no file access: the importer reads the file, and the reader takes `Data`.
+    - `ClaudeCodeSessionReader(sourceID: <file name with no .jsonl>)` and `CodexSessionReader(sourceID: nil)` (the Codex id comes from `session_meta`).
+    - `read(_:) throws -> ImportedSession` (`metadata`, `updates: [SessionUpdate]`, `skippedRecordCount`, `skippedKinds`); `metadata(_:) throws -> ImportedSessionMetadata` (`agent`, `sourceID`, `cwd`, `title`, `firstDate`, `lastDate`, `turnCount`), a fast scan (50 MB in well under 1 s). Use `metadata(_:)` for the list.
+    - Errors: `ImportReadError.noReadableRecord`, `.notThisFormat`.
+    - For ^fvz5m50: the updates fold in `SessionMergeEngine` with no unknown entry; a compaction is a `compaction_update` (status completed). For the model transcript: a tool call is a `tool_call_update` (pending, with title and kind), then content chunks, then a final status update; thoughts are `agent_thought_chunk`.
+  timestamp: 2026-11-19T22:24:21.186196+00:00
 position_column: todo
 position_ordinal: 9a80
 title: 'D209: AgentSessionImporter lists the importable sessions of the host roots (Claude Code, Codex)'

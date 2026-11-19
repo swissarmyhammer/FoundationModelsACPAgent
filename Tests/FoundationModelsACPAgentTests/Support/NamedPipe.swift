@@ -24,12 +24,15 @@ enum NamedPipe {
 
   /// Writes `text` into the pipe at `pipe` after a reader opened it, and
   /// then closes the write end. The reader thus reads `text` and then the
-  /// end of the stream. The open is ``BlockingFIFO/openWriteEnd(at:)``.
+  /// end of the stream. The open is
+  /// ``BlockingFIFO/openWriteEnd(at:waitingAtMost:)``, with its default time
+  /// limit.
   ///
   /// - Parameters:
   ///   - text: The text to write.
   ///   - pipe: The named pipe.
-  /// - Throws: When the open or the write fails.
+  /// - Throws: When the open or the write fails, or when no reader opened the
+  ///   pipe in the time limit.
   static func write(_ text: String, toPipeAt pipe: URL) async throws {
     let handle = try await BlockingFIFO.openWriteEnd(at: pipe)
     try handle.write(contentsOf: Data(text.utf8))

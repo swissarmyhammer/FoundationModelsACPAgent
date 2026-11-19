@@ -20,13 +20,15 @@ final class StubChunkGateWriter: Sendable {
     try BlockingFIFO.makePipe(at: path)
   }
 
-  /// Opens the write end of the pipe at `path`. The open blocks in the
-  /// kernel until the stub opens the read end, that is, until the stub
-  /// waits before its first chunk (see ``BlockingFIFO/openWriteEnd(at:)``).
+  /// Opens the write end of the pipe at `path`. The open waits until the
+  /// stub opens the read end, that is, until the stub waits before its first
+  /// chunk (see ``BlockingFIFO/openWriteEnd(at:waitingAtMost:)``). The wait
+  /// has the default time limit of that open.
   ///
   /// - Parameter path: The path of the pipe.
   /// - Returns: The writer.
-  /// - Throws: The open error.
+  /// - Throws: The open error, or the error that no reader came in the time
+  ///   limit.
   static func open(at path: URL) async throws -> StubChunkGateWriter {
     StubChunkGateWriter(handle: try await BlockingFIFO.openWriteEnd(at: path))
   }
