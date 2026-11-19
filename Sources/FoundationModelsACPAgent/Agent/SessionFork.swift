@@ -71,7 +71,7 @@ extension RoutedACPAgent {
   /// The handler runs the checks of each session method in their order: the order rule, the
   /// session in the table, and the capabilities of the session. Then it reads the cut in
   /// `_meta.sah.forkCut` and maps it to a turn of the source history
-  /// (``forkPoint(of:in:sessionId:recipients:)``).
+  /// (``forkPoint(of:in:sessionId:)``).
   ///
   /// The session directory of the Router makes the fork (`RouterSessionDirectory.fork(_:)`), with
   /// the source, the cut, no first prompt, and the connection of the request as the client that
@@ -122,10 +122,9 @@ extension RoutedACPAgent {
     try SessionSetup.requireExistingDirectories(
       workingDirectory: placement.workingDirectory, additionalRoots: placement.additionalRoots)
 
-    let recipients = await forkRecipients(of: entry.session.parentId, sessionId: params.sessionId)
-    let source = ForkSourceHistory.snapshot(of: entry.history, recipients: recipients)
-    let point = try Self.forkPoint(
-      of: params.meta, in: source.history, sessionId: params.sessionId, recipients: recipients)
+    let source = await forkSourceHistory(
+      of: entry.history, forkSource: entry.session.parentId, sessionId: params.sessionId)
+    let point = try Self.forkPoint(of: params.meta, in: source, sessionId: params.sessionId)
     guard let end = source.end(of: point) else {
       throw RequestError.forkCutOutOfRange(point, in: source, id: params.sessionId)
     }
@@ -225,6 +224,23 @@ extension RoutedACPAgent {
     return try SessionSetup.additionalRoots(fromPaths: requested.map(\.rawValue))
   }
 
+  /// The history of the source of a fork as the agent reads it for the fork: with the ids that
+  /// an incoming message of the history names as its recipient (``forkRecipients(of:sessionId:)``).
+  /// Each count of the turns of the source reads these ids, so each count uses the full fork
+  /// chain of the source.
+  ///
+  /// - Parameters:
+  ///   - history: The retained history of the source.
+  ///   - forkSource: The session that the source is a fork of, or `nil`.
+  ///   - sessionId: The source.
+  /// - Returns: The source history.
+  func forkSourceHistory(
+    of history: SessionMergeEngine, forkSource: ULID?, sessionId: SessionId
+  ) async -> ForkSourceHistory {
+    ForkSourceHistory.snapshot(
+      of: history, recipients: await forkRecipients(of: forkSource, sessionId: sessionId))
+  }
+
   /// The ids that an incoming message of the history of a session names as its recipient: the
   /// session, and each session that it is a fork of. A fork copies the history of its source, so
   /// an incoming message of the copy names the source.
@@ -265,7 +281,9 @@ extension RoutedACPAgent {
   ///
   /// - No `_meta.sah.forkCut` member, or JSON `null`: ``SessionForkPoint/lastCompletedTurn``.
   /// - A cut: the turn that holds the message of the cut in the retained history
-  ///   (``SessionMergeEngine/turn(holding:receivedBy:)``). The session directory cuts only at
+  ///   (``ForkSourceHistory/turn(holding:)``). The turn count uses the recipients of the source,
+  ///   thus an incoming message to a session of the fork chain of the source is a turn. The
+  ///   session directory cuts only at
   ///   the edge of a turn, so a cut in a turn rounds to an edge of that turn:
   ///   ``ForkCutSide/after`` gives ``SessionForkPoint/afterTurn(_:)``, and the fork keeps the
   ///   message. ``ForkCutSide/before`` gives ``SessionForkPoint/beforeTurn(_:)``, and the fork
@@ -280,17 +298,15 @@ extension RoutedACPAgent {
   ///
   /// - Parameters:
   ///   - meta: The `_meta` of the request, or `nil`.
-  ///   - history: The retained history of the source session.
+  ///   - source: The retained history of the source session, with its recipients
+  ///     (``forkSourceHistory(of:forkSource:sessionId:)``).
   ///   - sessionId: The source session, for the refusal.
-  ///   - recipients: The ids that an incoming message of the history names as its recipient
-  ///     (``forkRecipients(of:sessionId:)``), or `nil` for the source alone.
   /// - Returns: The fork point.
   /// - Throws: An invalid-params refusal for a `_meta.sah.forkCut` member that is not a cut, for
   ///   a side that the agent does not know, and for a message id that no message of the history
   ///   has.
   static func forkPoint(
-    of meta: FoundationModelsACP.JSONValue?, in history: SessionMergeEngine, sessionId: SessionId,
-    recipients: Set<SessionId>? = nil
+    of meta: FoundationModelsACP.JSONValue?, in source: ForkSourceHistory, sessionId: SessionId
   ) throws -> SessionForkPoint {
     guard let cut = SAH.ForkCut.extract(from: meta) else {
       guard !hasForkCutMember(meta) else {
@@ -301,10 +317,10 @@ extension RoutedACPAgent {
     guard let side = ForkCutSide(cut.side) else {
       throw RequestError.unknownForkCutSide(cut.side, id: sessionId)
     }
-    guard let position = history.messagePosition(of: cut.messageId) else {
+    guard let position = source.history.messagePosition(of: cut.messageId) else {
       throw RequestError.unknownForkCutMessage(cut.messageId, id: sessionId)
     }
-    guard let turn = history.turn(holding: position, receivedBy: recipients ?? [sessionId]) else {
+    guard let turn = source.turn(holding: position) else {
       return .beforeTurn(SessionForkPoint.firstTurn)
     }
     switch side {

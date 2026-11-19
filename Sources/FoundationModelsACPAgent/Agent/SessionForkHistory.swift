@@ -50,6 +50,15 @@ struct ForkSourceHistory: Sendable {
     history.turnStarts(receivedBy: recipients)
   }
 
+  /// The index of the turn that holds the entry at a position, with the turn count of the
+  /// recipients of the source (``SessionMergeEngine/turn(holding:receivedBy:)``).
+  ///
+  /// - Parameter position: The position of an entry in the history.
+  /// - Returns: The 0-based turn index, or `nil` when the entry comes before the first turn.
+  func turn(holding position: Int) -> Int? {
+    history.turn(holding: position, receivedBy: recipients)
+  }
+
   /// The number of entries of the history that a fork at a point keeps.
   ///
   /// - ``SessionForkPoint/lastCompletedTurn``: each entry, or the entries before the last turn

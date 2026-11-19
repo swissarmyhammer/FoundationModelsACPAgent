@@ -115,7 +115,50 @@ import Testing
     in history: SessionMergeEngine = twoTurnHistory
   ) throws -> SessionForkPoint {
     try RoutedACPAgent.forkPoint(
-      of: try meta(cutting: messageId, on: side), in: history, sessionId: sampleSessionId)
+      of: try meta(cutting: messageId, on: side), in: sampleSource(history),
+      sessionId: sampleSessionId)
+  }
+
+  /// A history of the sample session as the source of a fork. The sample session is no fork, so
+  /// it alone is the recipient of an incoming message.
+  ///
+  /// - Parameter history: The history.
+  /// - Returns: The source history.
+  private static func sampleSource(_ history: SessionMergeEngine) -> ForkSourceHistory {
+    ForkSourceHistory.snapshot(of: history, recipients: [sampleSessionId])
+  }
+
+  /// Sends `session/fork` with no cut for a session of the agent of `fixture`.
+  ///
+  /// - Parameters:
+  ///   - source: The session to fork.
+  ///   - fixture: The fixture.
+  /// - Returns: The id of the fork.
+  /// - Throws: The error of the request.
+  private static func fork(_ source: SessionId, in fixture: ScriptedPromptFixture) async throws
+    -> SessionId
+  {
+    try await fixture.harness.connection.forkSession(
+      ForkSessionRequest(cwd: AbsolutePath(rawValue: fixture.cwd.path), sessionId: source)
+    ).sessionId
+  }
+
+  /// A history as the agent reads it for a fork of a session of the agent of `fixture`: with
+  /// the recipients of the fork chain of that session.
+  ///
+  /// - Parameters:
+  ///   - history: The history.
+  ///   - sessionId: The source session of the fork.
+  ///   - fixture: The fixture.
+  /// - Returns: The source history.
+  /// - Throws: A failed requirement when the table does not hold the session.
+  private static func forkSource(
+    _ history: SessionMergeEngine, of sessionId: SessionId, in fixture: ScriptedPromptFixture
+  ) async throws -> ForkSourceHistory {
+    let agent = fixture.harness.agent
+    let entry = try #require(await agent.sessions[sessionId])
+    return await agent.forkSourceHistory(
+      of: history, forkSource: entry.session.parentId, sessionId: sessionId)
   }
 
   /// Sends `session/fork` for the session of `fixture` with `meta`, and gives the refusal.
@@ -216,7 +259,27 @@ import Testing
   @Test func noCutIsTheLastCompletedTurn() throws {
     #expect(
       try RoutedACPAgent.forkPoint(
-        of: nil, in: Self.twoTurnHistory, sessionId: Self.sampleSessionId) == .lastCompletedTurn)
+        of: nil, in: Self.sampleSource(Self.twoTurnHistory), sessionId: Self.sampleSessionId)
+        == .lastCompletedTurn)
+  }
+
+  /// In a fork of a fork, a message to the first session of the fork chain is a turn: the fork
+  /// has a copy of the message, and the message names that first session.
+  @Test(.timeLimit(.minutes(1))) func aMessageToTheFirstSourceIsATurnOfAForkOfAFork()
+    async throws
+  {
+    let fixture = try await ScriptedPromptFixture.make(
+      script: [], label: "SessionForkTests-fork-chain")
+    let fork = try await Self.fork(fixture.sessionId, in: fixture)
+    let forkOfFork = try await Self.fork(fork, in: fixture)
+    let source = try await Self.forkSource(
+      Self.historyWithSessionMessage(to: fixture.sessionId), of: forkOfFork, in: fixture)
+    await fixture.close()
+
+    #expect(
+      try RoutedACPAgent.forkPoint(
+        of: try Self.meta(cutting: Self.secondUserMessageId, on: .before), in: source,
+        sessionId: forkOfFork) == .beforeTurn(Self.turnAfterIncomingMessage))
   }
 
   // MARK: - The handler
