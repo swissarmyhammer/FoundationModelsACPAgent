@@ -50,8 +50,22 @@ comments:
     - evidence: 11 files — Sources/FoundationModelsACPAgent/Search/TranscriptSearchDateIndex.swift (new), TranscriptSearchSessionCollector.swift (new), TranscriptSearchFilter.swift, TranscriptSearchIndex.swift, TranscriptSearchIndex+Search.swift, TranscriptSnippet.swift; Tests/FoundationModelsACPAgentTests/TranscriptSearchGoldenTests.swift (new), TranscriptSearchDateOrderTests.swift (new), TranscriptSearchDateIndexTests.swift (new), TranscriptSnippetTests.swift; Tests/Fixtures/transcript-search-golden.json (new). swift test --skip-build: 2613 tests in 275 suites passed (1 known issue, the planned withKnownIssue in HarnessSmokeTests). Benchmarks: token-only 213 -> 7.5 ms; ranked medians 344-367 -> 170-196 (quiet run) / 172-220 (loaded run); max under 300 ms in each run.
     - next: /review. The median gate under 200 ms depends on the registry time (150-191 ms alone); this package adds about 20 ms.
   timestamp: 2026-11-19T18:00:41.690653+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m7tfvwrdzychkd9r7e68ypgp
+  text: |-
+    ### review — findings
+    - evidence: review sha 01ce2b7~1..01ce2b7; 1 finding (1 confirmed, 1 refuted; 7 tasks attempted, 0 failed); Sources/FoundationModelsACPAgent/Search/TranscriptSearchDateIndex.swift:128 code-hygiene/magic-numbers-swift
+    - next: Replace the magic number with a named constant. Remove the same cause from all of TranscriptSearchDateIndex.swift. Then commit and review again.
+  timestamp: 2026-11-19T18:07:25.965401+00:00
+- actor: claude-code
+  id: 01m7tfzwfwexct7tt8zdnvz147
+  text: |-
+    ### finish iteration 2 — implement and test
+    - implement: changed — Sources/FoundationModelsACPAgent/Search/TranscriptSearchDateIndex.swift: the divisor of the binary search is the named constant `halvingDivisor`. The file has no other magic number. The finding is checked.
+    - test: green — swift build --build-tests "Build complete!", 0 compiler warnings; swift test --skip-build: 2615 tests in 275 suites passed, 1 known issue (intended).
+  timestamp: 2026-11-19T18:09:36.764086+00:00
+position_column: review
+position_ordinal: '80'
 title: 'D207: the transcript search meets the 300 ms gate (date index, cheap filters first, snippets only for the returned hits)'
 ---
 Request from the TestudoApp session (2026-11-19), after the measurement of ^y7nx1g3. Decision D207; the brief gives a 300 ms gate for a search.
@@ -77,3 +91,15 @@ In the Benchmarks package: a search median under 200 ms and max under 300 ms; a 
 - The results are the same as before for words, a phrase, `-word`, `from:`, `from:thought`, `after:`/`before:`, `session:`, a token-only query, and the cursor.
 - The date index stays correct after an upsert, a remove, a reconcile and a load from the store.
 - The Benchmarks package meets the target (run it; it is not in CI). #d207 #search #performance
+
+## Review Findings (2026-11-19 12:01)
+
+> Scope: `review sha 01ce2b7~1..01ce2b7` — reviewed the diffs only — lines this change added or modified. 10 file(s) reviewed, 21 not reviewed.
+
+> 20 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 20 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `Tests/Fixtures/transcript-search-golden.json` — no validator matches this file
+
+- [x] `Sources/FoundationModelsACPAgent/Search/TranscriptSearchDateIndex.swift:128` `code-hygiene/magic-numbers-swift` — Magic numbers should be replaced by named constants.

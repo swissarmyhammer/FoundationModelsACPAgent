@@ -10,6 +10,9 @@ import FoundationModelsMultitool
 /// The order: the later date first, a chunk with no date last, then the later session id, then
 /// the later chunk ordinal.
 struct TranscriptSearchDateIndex: Sendable {
+  /// The divisor that finds the middle of a range in the binary search of ``insertionPlace(of:)``.
+  private static let halvingDivisor = 2
+
   /// One chunk item of the index: the facts that the cheap filters read, and the place of the
   /// item in its session.
   struct Entry: Hashable, Sendable {
@@ -125,7 +128,7 @@ struct TranscriptSearchDateIndex: Sendable {
     var lower = 0
     var upper = entries.count
     while lower < upper {
-      let middle = lower + (upper - lower) / 2
+      let middle = lower + (upper - lower) / Self.halvingDivisor
       if entries[middle].isNewer(than: entry) {
         lower = middle + 1
       } else {
