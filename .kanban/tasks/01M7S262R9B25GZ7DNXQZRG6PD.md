@@ -76,6 +76,34 @@ comments:
     - evidence: `timeout 1800 swift build --build-tests` printed "Build complete!" with 0 compiler warnings. `timeout 1800 swift test --skip-build`: 2460 tests in 256 suites passed, 0 failures, 1 known issue (HarnessSmokeTests, by design), 0 skipped.
     - next: review
   timestamp: 2026-11-19T06:07:34.860530+00:00
+- actor: claude-code
+  id: 01m7s6xeqs718z3a365jj7h5we
+  text: |-
+    ### review — findings
+    - evidence: review sha HEAD~1..HEAD (06e0274); 6 findings (6 confirmed, 3 refuted, 0 failed) — Tests/FoundationModelsACPAgentTests/SessionForkHandlerTests.swift:1463, :1475, :1512, :1538, :1587, :1594
+    - next: correct the 6 open items in the section "Review Findings (2026-11-19 00:08)", then commit and review again.
+  timestamp: 2026-11-19T06:11:45.529826+00:00
+- actor: claude-code
+  id: 01m7s784s3kwc10k52bmhpnpvs
+  text: |-
+    Findings of "Review Findings (2026-11-19 00:08)" are done (2026-11-19, not committed). All 6 items are `- [x]`.
+    - :1463, :1475: the project save tests call `expectProjectSaveError(on:)`. The test makes the same save in the blocked project store first (`#expect(throws: CocoaError.self)`, Code 516), then expects `RequestError` from the fork and compares it with `RequestError.internalError(detail: String(describing: saveError as NSError))`. Discovery: an exact compare cannot pass. The description of the save error holds the pointer address of its `NSUnderlyingError`, and each error instance has a different address. Also `String(describing:)` of a `CocoaError` value adds a `CocoaError(_nsError: ...)` wrapper, but the agent describes the bridged `NSError`. Thus the check compares the two full descriptions after it replaces each `0x...` address with `0x` (`withoutAddresses(_:)`). Code, message, domain, code 516, path and underlying error all stay in the compare. The test is renamed `aForkWhoseProjectSaveFailsGetsTheSaveError`.
+    - :1512, :1538: the unmounted and no-surface tests call `expectUnopenedForkError(on:)`: `#expect(throws: RequestError.self)`, then the error must equal `RequestError.unopenedFork(<id of the recorded fork>)`. New production constructor `RequestError.unopenedFork(_:)` in Agent/SessionFork.swift, which `openFork` now throws (same code, message and detail text as before). The test is renamed `anUnmountedForkGetsTheUnopenedForkError`.
+    - :1587: `forks(in:includesRecorded:)` has a parameter (default `true`); `liveForks(in:)` is deleted.
+    - :1594: `UnopenedForkLauncher` is plainly `Sendable`; `agent` is a `weak let` (the pattern of `AgentTranscriptExporter`).
+    - Same cause in the whole file: the `try?` in `holdsForkNode(_:)` hid a listing error. It now gives `false` only for a folder that does not exist, and throws other listing errors (`pollUntil` takes a throwing condition). No other `try?` or `(any Error).self` stays in the file.
+  timestamp: 2026-11-19T06:17:35.779216+00:00
+- actor: wballard
+  id: 01m7s798yhegrq2kgb7bcan7e1
+  text: |-
+    ### implement — changed
+    - evidence: Sources/FoundationModelsACPAgent/Agent/SessionFork.swift, Tests/FoundationModelsACPAgentTests/SessionForkHandlerTests.swift
+    - next: review
+
+    ### test — green
+    - evidence: `timeout 1800 swift build --build-tests` printed "Build complete!" with 0 compiler warnings (only the SwiftPM note "missing creator for mutated node" for the mlx bundle). `timeout 1800 swift test --skip-build`: 2460 tests in 256 suites passed, 0 failures, 1 known issue (HarnessSmokeTests, by design), 0 skipped.
+    - next: review
+  timestamp: 2026-11-19T06:18:12.817376+00:00
 depends_on:
 - 01M7RWC0Q3R664RM3W2AGKNBVR
 position_column: doing
@@ -112,3 +140,20 @@ Found during ^agknbvr (2026-11-18). Both items need a Router API change; the Rou
 > - `README.md` — no validator matches this file
 
 - [x] `Sources/FoundationModelsACPAgent/Agent/SessionFork.swift:182` `completeness/public-output-contract` — The new call `try registerProject(of: placement)` runs after `directory.fork(forkRequest)` has already created the fork and mounted it in the session table. If the project file save throws, `openFork` throws. The client gets an error, but the fork stays live with no response and no cleanup. Before this change, this path completed. The `launchFork` catch block releases the surface on failure, but that catch does not cover this later throw point. The same gap also applies to the existing `internalError` throw at line 179, so the new throw adds to a pattern that already exists. Move `registerProject(of:)` before the fork is created, or make the failure path close the fork and release its surface, as `launchFork` does. If the project save error should not fail the request, log it and continue, and say so in the doc comment at lines 172-173.
+
+## Review Findings (2026-11-19 00:08)
+
+> Scope: `review sha HEAD~1..HEAD` — reviewed the diffs only — lines this change added or modified. 2 file(s) reviewed, 5 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `ARCHITECTURE.md` — no validator matches this file
+
+- [x] `Tests/FoundationModelsACPAgentTests/SessionForkHandlerTests.swift:1463` `test-integrity/no-test-cheating` — The test named aForkWhoseProjectSaveFailsGetsAnError asserts only that some error is thrown (`(any Error).self`). It does not check that the error is the project save failure. The test would pass if the fork failed for an unrelated reason, so it does not prove the save-failure path. This is a weakened assertion. Assert the specific error the project store save raises, or at least the specific error type the agent maps the save failure to, and check it the same way line 1499 checks its error code.
+- [x] `Tests/FoundationModelsACPAgentTests/SessionForkHandlerTests.swift:1475` `test-integrity/no-test-cheating` — `_ = try? await Self.fork(fixture)` discards the fork error. The following assertion (the session table holds only the source) also passes if the fork never ran, for example because of a broken fixture or an unrelated early failure. The test does not prove that the project save failure caused the missing fork. This is a swallowed failure. Assert that the fork throws the expected save error first, for example with `await #expect(throws:)`, and then check the table. The table check then proves the cleanup after that specific failure.
+- [x] `Tests/FoundationModelsACPAgentTests/SessionForkHandlerTests.swift:1512` `test-integrity/no-test-cheating` — `_ = try? await Self.fork(fixture)` discards the fork error. The following assertion (the session table holds only the source) also passes if the fork never ran, so it does not prove that the unmounted-fork path caused the clean table. This is the same swallowed failure as the save-failure tests. Assert that the fork throws the internal error first, for example with `await #expect(throws:)` on `RequestError.self` with `.internalError`, and then check the table.
+- [x] `Tests/FoundationModelsACPAgentTests/SessionForkHandlerTests.swift:1538` `test-integrity/no-test-cheating` — `_ = try? await Self.fork(fixture)` discards the fork error. The assertion that no live fork remains in the directory passes if the fork fails for any reason, so it does not prove that the no-agent-surface path closed the fork. Assert the specific error the no-surface build produces before checking the directory, so the empty live-fork list is tied to that failure.
+- [x] `Tests/FoundationModelsACPAgentTests/SessionForkHandlerTests.swift:1587` `reuse/reuse` — The new helper liveForks(in:) repeats the query of the existing helper forks(in:) at line 580. The only difference is the flag includesRecorded, which the new helper leaves out. A near-match should be extended with a parameter, not copied. Two copies of one sessions(matching:) call can drift apart. Give forks(in:) a parameter, for example `forks(in fixture:, includesRecorded: Bool = true)`, and build liveForks on it with includesRecorded: false. Or delete liveForks and call the extended helper in the new tests.
+- [x] `Tests/FoundationModelsACPAgentTests/SessionForkHandlerTests.swift:1594` `code-hygiene/disallowed-constructs-swift` — no_unchecked_sendable: Instead of @unchecked Sendable, write a plain Sendable conformance or a @preconcurrency import. If the type really must be @unchecked Sendable, write // swiftlint:disable:next no_unchecked_sendable above it with the synchronization invariant that makes the type thread-safe.

@@ -182,8 +182,7 @@ extension RoutedACPAgent {
     let forkId = SessionId(rawValue: summary.id.description)
     guard let activation, let fork = sessions[forkId]?.session else {
       await discardUnopenedFork(summary.id)
-      throw RequestError.internalError(
-        detail: "the fork \(forkId.rawValue) closed before the agent opened it")
+      throw RequestError.unopenedFork(forkId)
     }
     let response = ForkSessionResponse(
       sessionId: forkId, availableCommands: activation.availableCommands,
@@ -368,6 +367,16 @@ extension RoutedACPAgent {
 }
 
 extension RequestError {
+  /// The failure of a `session/fork` request whose fork the agent cannot open: the launcher
+  /// mounted no fork for the request, or the table holds no fork with the id. An internal error,
+  /// with the fork id in the detail of `data`.
+  ///
+  /// - Parameter forkId: The fork that the session directory made.
+  /// - Returns: The typed internal error.
+  static func unopenedFork(_ forkId: SessionId) -> RequestError {
+    internalError(detail: "the fork \(forkId.rawValue) closed before the agent opened it")
+  }
+
   /// The refusal of a `_meta.sah.forkCut` member that does not decode as a cut. Invalid params,
   /// with the session id and the reason in `data`.
   ///

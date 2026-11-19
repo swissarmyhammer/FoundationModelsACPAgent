@@ -574,12 +574,17 @@ import Testing
 
   /// The forks that the session directory of the agent of `fixture` holds.
   ///
-  /// - Parameter fixture: The fixture.
+  /// - Parameters:
+  ///   - fixture: The fixture.
+  ///   - includesRecorded: `true` (the default) for the live and the recorded forks, `false` for
+  ///     the live forks only.
   /// - Returns: The summaries of the forks.
   /// - Throws: The error of the query.
-  private static func forks(in fixture: ScriptedPromptFixture) async throws -> [SessionSummary] {
+  private static func forks(
+    in fixture: ScriptedPromptFixture, includesRecorded: Bool = true
+  ) async throws -> [SessionSummary] {
     try await fixture.harness.agent.sessionDirectory.sessions(
-      matching: SessionQuery(kind: .fork, includesRecorded: true))
+      matching: SessionQuery(kind: .fork, includesRecorded: includesRecorded))
   }
 
   /// Runs a prompt whose answer calls `fork session`, and gives the fork that the call made.
@@ -720,11 +725,14 @@ import Testing
   /// Whether a recording folder holds a fork node: a folder with a record file.
   ///
   /// - Parameter folder: The recording folder of the source.
-  /// - Returns: `true` when a fork node is there.
-  private static func holdsForkNode(_ folder: URL) -> Bool {
-    let children =
-      (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil))
-      ?? []
+  /// - Returns: `true` when a fork node is there. A folder that does not exist holds no node.
+  /// - Throws: The error of the listing of a folder that exists.
+  private static func holdsForkNode(_ folder: URL) throws -> Bool {
+    guard FileManager.default.fileExists(atPath: folder.path) else {
+      return false
+    }
+    let children = try FileManager.default.contentsOfDirectory(
+      at: folder, includingPropertiesForKeys: nil)
     return children.contains { child in
       FileManager.default.fileExists(atPath: child.appendingPathComponent(indexFileName).path)
     }
@@ -736,10 +744,10 @@ import Testing
   /// - Parameters:
   ///   - folder: The recording folder of the source.
   ///   - present: `true` to wait for a fork node, `false` to wait until none is there.
-  /// - Throws: The cancel of the wait.
+  /// - Throws: The cancel of the wait, or the error of a listing of the folder.
   private static func waitForForkNode(in folder: URL, present: Bool) async throws {
     try await pollUntil(limit: forkNodeLookLimit, interval: forkNodeLookInterval) {
-      holdsForkNode(folder) == present
+      try holdsForkNode(folder) == present
     }
   }
 
@@ -1455,14 +1463,13 @@ import Testing
 
   // MARK: - A fork that the agent cannot open
 
-  /// A `session/fork` request whose project file save fails gets an error.
-  @Test(.timeLimit(.minutes(1))) func aForkWhoseProjectSaveFailsGetsAnError() async throws {
+  /// A `session/fork` request whose project file save fails gets the internal error of the
+  /// failed save.
+  @Test(.timeLimit(.minutes(1))) func aForkWhoseProjectSaveFailsGetsTheSaveError() async throws {
     let fixture = try await Self.makeFixture("project-save-error")
     try Self.blockProjectStore(of: fixture)
 
-    await #expect(throws: (any Error).self) {
-      _ = try await Self.fork(fixture)
-    }
+    try await Self.expectProjectSaveError(on: fixture)
   }
 
   /// A `session/fork` request whose project file save fails leaves no fork in the session table.
@@ -1472,7 +1479,7 @@ import Testing
     let fixture = try await Self.makeFixture("project-save-table")
     try Self.blockProjectStore(of: fixture)
 
-    _ = try? await Self.fork(fixture)
+    try await Self.expectProjectSaveError(on: fixture)
 
     #expect(await Self.tableSessionIds(of: fixture) == [fixture.sessionId])
   }
@@ -1485,22 +1492,18 @@ import Testing
     let fixture = try await Self.makeFixture("project-save-directory")
     try Self.blockProjectStore(of: fixture)
 
-    _ = try? await Self.fork(fixture)
+    try await Self.expectProjectSaveError(on: fixture)
 
-    #expect(try await Self.liveForks(in: fixture).isEmpty)
+    #expect(try await Self.forks(in: fixture, includesRecorded: false).isEmpty)
   }
 
-  /// A `session/fork` request whose fork the launcher did not mount for the request gets an
-  /// internal error.
-  @Test(.timeLimit(.minutes(1))) func anUnmountedForkGetsAnInternalError() async throws {
+  /// A `session/fork` request whose fork the launcher did not mount for the request gets the
+  /// internal error of a fork that the agent cannot open, with the id of the fork.
+  @Test(.timeLimit(.minutes(1))) func anUnmountedForkGetsTheUnopenedForkError() async throws {
     let fixture = try await Self.makeFixture("unmounted-error")
     await Self.useUnopenedForkLauncher(.agentWithNoRequest, in: fixture)
 
-    let error = await #expect(throws: RequestError.self) {
-      _ = try await Self.fork(fixture)
-    }
-
-    #expect(error?.code == .internalError)
+    try await Self.expectUnopenedForkError(on: fixture)
   }
 
   /// A `session/fork` request whose fork the launcher did not mount for the request leaves no
@@ -1509,7 +1512,7 @@ import Testing
     let fixture = try await Self.makeFixture("unmounted-table")
     await Self.useUnopenedForkLauncher(.agentWithNoRequest, in: fixture)
 
-    _ = try? await Self.fork(fixture)
+    try await Self.expectUnopenedForkError(on: fixture)
 
     #expect(await Self.tableSessionIds(of: fixture) == [fixture.sessionId])
   }
@@ -1522,9 +1525,9 @@ import Testing
     let fixture = try await Self.makeFixture("unmounted-directory")
     await Self.useUnopenedForkLauncher(.agentWithNoRequest, in: fixture)
 
-    _ = try? await Self.fork(fixture)
+    try await Self.expectUnopenedForkError(on: fixture)
 
-    #expect(try await Self.liveForks(in: fixture).isEmpty)
+    #expect(try await Self.forks(in: fixture, includesRecorded: false).isEmpty)
   }
 
   /// A `session/fork` request whose fork a launcher built with no surface of the agent leaves no
@@ -1535,9 +1538,9 @@ import Testing
     let fixture = try await Self.makeFixture("no-surface-directory")
     await Self.useUnopenedForkLauncher(.sourceTools, in: fixture)
 
-    _ = try? await Self.fork(fixture)
+    try await Self.expectUnopenedForkError(on: fixture)
 
-    #expect(try await Self.liveForks(in: fixture).isEmpty)
+    #expect(try await Self.forks(in: fixture, includesRecorded: false).isEmpty)
   }
 
   // MARK: - Fixtures of a fork that the agent cannot open
@@ -1576,22 +1579,64 @@ import Testing
     Set(await fixture.harness.agent.sessions.keys)
   }
 
-  /// The live forks that the session directory of the agent of `fixture` holds.
+  /// Sends `session/fork` for the session of `fixture`, and checks that the request gets the
+  /// internal error of the failed project file save (after ``blockProjectStore(of:)``).
   ///
-  /// - Parameter fixture: The fixture.
-  /// - Returns: The summaries of the live forks.
-  /// - Throws: The error of the query.
-  private static func liveForks(in fixture: ScriptedPromptFixture) async throws
-    -> [SessionSummary]
-  {
-    try await fixture.harness.agent.sessionDirectory.sessions(
-      matching: SessionQuery(kind: .fork))
+  /// The test makes the same save in the project store of the agent before the request, and the
+  /// agent gives the description of that save error in `data`. The description of a save error
+  /// holds the address of its underlying error, which is different for each error. Thus the check
+  /// compares the two descriptions with no address (``withoutAddresses(_:)``).
+  ///
+  /// - Parameter fixture: The fixture, with a blocked project store.
+  /// - Throws: A failed requirement when the save of the test does not fail, the request does
+  ///   not fail, or the table holds no source.
+  private static func expectProjectSaveError(on fixture: ScriptedPromptFixture) async throws {
+    let source = try #require(await fixture.harness.agent.sessions[fixture.sessionId])
+    let saveError = try #require(
+      #expect(throws: CocoaError.self) {
+        try ProjectStore(directory: fixture.harness.agent.home.projectsDirectory).register(
+          workingDirectory: source.workingDirectory)
+      })
+    let expected = RequestError.internalError(detail: String(describing: saveError as NSError))
+
+    let error = try #require(
+      await #expect(throws: RequestError.self) {
+        _ = try await Self.fork(fixture)
+      })
+
+    #expect(
+      withoutAddresses(String(describing: error))
+        == withoutAddresses(String(describing: expected)))
+  }
+
+  /// A description with each hexadecimal pointer address (`0x` and its digits) replaced by `0x`.
+  ///
+  /// - Parameter description: The description.
+  /// - Returns: The description with no address.
+  private static func withoutAddresses(_ description: String) -> String {
+    description.replacing(/0x[0-9a-fA-F]+/, with: "0x")
+  }
+
+  /// Sends `session/fork` for the session of `fixture`, and checks that the request gets the
+  /// internal error of a fork that the agent cannot open
+  /// (``RequestError/unopenedFork(_:)``), with the id of the fork that the directory recorded.
+  ///
+  /// - Parameter fixture: The fixture, with an ``UnopenedForkLauncher``.
+  /// - Throws: A failed requirement when the directory recorded no fork, or the error of the
+  ///   query.
+  private static func expectUnopenedForkError(on fixture: ScriptedPromptFixture) async throws {
+    let error = await #expect(throws: RequestError.self) {
+      _ = try await Self.fork(fixture)
+    }
+    let fork = try #require(try await forks(in: fixture).first)
+
+    #expect(error == RequestError.unopenedFork(SessionId(rawValue: fork.id.description)))
   }
 }
 
 /// A launcher whose fork a `session/fork` request of the agent cannot open: the agent did not
 /// mount the fork for the request.
-private final class UnopenedForkLauncher: SessionLauncher, @unchecked Sendable {
+private final class UnopenedForkLauncher: SessionLauncher, Sendable {
   /// How the launcher builds a fork.
   enum Build: Sendable {
     /// The agent builds and mounts the fork as a fork that no request of the agent asked for.
@@ -1607,8 +1652,9 @@ private final class UnopenedForkLauncher: SessionLauncher, @unchecked Sendable {
   private let build: Build
 
   /// The agent of the session directory. Weak, to break the cycle agent → directory →
-  /// launcher → agent. It is set one time, in the initializer.
-  private weak var agent: RoutedACPAgent?
+  /// launcher → agent. A `weak let` is set one time, in the initializer, and the agent is an
+  /// actor. Thus the class is `Sendable` with no unchecked conformance.
+  private weak let agent: RoutedACPAgent?
 
   /// Makes the launcher.
   ///
