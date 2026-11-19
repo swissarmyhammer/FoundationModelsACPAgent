@@ -47,13 +47,54 @@ import Testing
   private static func afterOnePrompt<Value: Sendable>(
     label: String, _ read: (ComposedAgent, SessionId) async throws -> Value
   ) async throws -> Value {
+    try await afterOnePrompt(label: label, before: { _ in }) { composed, sessionId, _ in
+      try await read(composed, sessionId)
+    }
+  }
+
+  /// Composes a stub agent in a new workspace, gives the composition to `before`, runs one
+  /// prompt in a new session, and gives the session to `read` while the wire is open.
+  ///
+  /// `before` runs before the prompt. A change stream gives only the changes after its
+  /// subscribe, and the index can publish the change of the prompt before the response of the
+  /// prompt comes back (^m34dssm). Thus a test subscribes in `before`, not in `read`.
+  ///
+  /// - Parameters:
+  ///   - label: The label of the folders of the test.
+  ///   - before: The step of the host before the prompt. It gets the composition.
+  ///   - read: The read of the host after the prompt. It gets the composition, the session and
+  ///     the value that `before` gave.
+  /// - Returns: The value that `read` gives.
+  /// - Throws: Whatever the composition, the handshake, the prompt or `read` throws.
+  private static func afterOnePrompt<Prepared: Sendable, Value: Sendable>(
+    label: String, before: (ComposedAgent) -> Prepared,
+    _ read: (ComposedAgent, SessionId, Prepared) async throws -> Value
+  ) async throws -> Value {
     let workspace = makeResolvedDirectory(label: "\(Self.label)-\(label)-repo")
     let composed = try await composeStubAgent(
       name: dotfolderName, label: "\(Self.label)-\(label)", workspace: workspace)
     return try await ComposedClientWire.withSession(of: composed, in: workspace) {
       connection, sessionId in
+      let prepared = before(composed)
       _ = try await PromptUpdateRead.onePrompt(over: connection, in: sessionId, text: promptText)
-      return try await read(composed, sessionId)
+      return try await read(composed, sessionId, prepared)
+    }
+  }
+
+  /// Subscribes to a change stream before one prompt, and gives the turns of the first change
+  /// of the stream that indexed the session of the prompt with ``promptWord``.
+  ///
+  /// - Parameters:
+  ///   - label: The label of the folders of the test.
+  ///   - changes: The reads of the host on the index of the composition.
+  /// - Returns: The session of the prompt and the turns of the change.
+  /// - Throws: Whatever the composition, the handshake or the prompt throws.
+  private static func streamedTurns(
+    label: String, from changes: (ComposedAgent) -> TranscriptSearchChanges
+  ) async throws -> (SessionId, [TranscriptSearchTurn]) {
+    try await afterOnePrompt(label: label, before: { changes($0).changes() }) {
+      _, sessionId, stream in
+      (sessionId, await indexedTurns(of: sessionId, in: stream))
     }
   }
 
@@ -109,28 +150,24 @@ import Testing
   // MARK: - The change stream
 
   /// The change stream of the server index of `RoutedACPAgent` gives the turns of a session
-  /// after a prompt.
+  /// after a prompt. The host subscribes before the prompt.
   @Test(.timeLimit(.minutes(3))) func theAgentGivesTheTurnsOfAPromptInTheChangeStream()
     async throws
   {
-    let (session, turns) = try await Self.afterOnePrompt(label: "agent-stream") {
-      composed, sessionId in
-      let stream = composed.agent.transcriptSearchChanges.changes()
-      return (sessionId, await Self.indexedTurns(of: sessionId, in: stream))
+    let (session, turns) = try await Self.streamedTurns(label: "agent-stream") {
+      $0.agent.transcriptSearchChanges
     }
 
     #expect(Self.holdThePrompt(turns, of: session))
   }
 
   /// The change stream of the server index of `ComposedAgent` gives the turns of a session
-  /// after a prompt.
+  /// after a prompt. The host subscribes before the prompt.
   @Test(.timeLimit(.minutes(3))) func theComposedAgentGivesTheTurnsOfAPromptInTheChangeStream()
     async throws
   {
-    let (session, turns) = try await Self.afterOnePrompt(label: "composed-stream") {
-      composed, sessionId in
-      let stream = composed.transcriptSearchChanges.changes()
-      return (sessionId, await Self.indexedTurns(of: sessionId, in: stream))
+    let (session, turns) = try await Self.streamedTurns(label: "composed-stream") {
+      $0.transcriptSearchChanges
     }
 
     #expect(Self.holdThePrompt(turns, of: session))
