@@ -177,6 +177,12 @@ The transcript search (D207) finds the sessions and the turns that hold a text. 
   Each stream keeps the newest 1,024 changes that its subscriber did not read
   (`TranscriptSearchChangeFeed`), so a slow subscriber never stops the index. This package does
   not import Core Spotlight: the app writes the items and selects the kinds (Q71).
+- **The host reads the server changes (^twh8ceh).** The index of the agent stays internal.
+  `RoutedACPAgent.transcriptSearchChanges` and `ComposedAgent.transcriptSearchChanges` give a
+  `TranscriptSearchChanges`: a public struct over that index with `changes()`, `turns(of:)` and
+  `allTurns()` only. The struct holds the index privately, so the host cannot cast it back to the
+  index, and cannot call `index`, `update`, `remove` or `load`. The Mac app reads this value for
+  the Spotlight items of the sessions of the server, and reads its own client index directly.
 
 The dependency direction is one way: the agent gives changes to the updates, the updates change
 the index, and the index calls the registry. The index does not depend on the agent, so the Mac
