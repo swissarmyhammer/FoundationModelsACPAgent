@@ -37,10 +37,23 @@ comments:
     - review: findings — Sources/FoundationModelsACPAgent/Agent/SessionTranscriptExport.swift:37 (no_unchecked_sendable)
     - next: the repair waits for a free build line.
   timestamp: 2026-11-19T00:16:14.113283+00:00
+- actor: claude-code
+  id: 01m7rm08hr2vw7qqbaqrpsbja0
+  text: |-
+    Finding no_unchecked_sendable: fixed with a plain conformance. `AgentTranscriptExporter` is now `final class ...: SessionTranscriptExporter, Sendable`, and it holds the agent as `private weak let agent: RoutedACPAgent?` (SE-0481, Swift 6.2; tools-version is 6.2). `RoutedACPAgent` is an actor, thus a weak immutable reference to it is Sendable. The weak reference stays, so the cycle agent -> directory -> endpoint -> exporter -> agent stays broken. No other `@unchecked Sendable` is in the file. No behavior change, no signature change: the callers (`SessionSetup.swift`, `SessionTranscriptExportTests.swift`) are not changed.
+
+    ### implement — changed
+    - evidence: Sources/FoundationModelsACPAgent/Agent/SessionTranscriptExport.swift
+    - next: test
+
+    ### test — green
+    - evidence: `swift build --build-tests` -> Build complete!, 0 compiler warnings (1 llbuild line "missing creator for mutated node" on the mlx-swift_Cmlx bundle, not a compiler diagnostic); `timeout 1800 swift test --skip-build` -> 2379 tests in 250 suites passed, 1 known issue (the expected `withKnownIssue` in HarnessSmokeTests).
+    - next: review
+  timestamp: 2026-11-19T00:41:14.552849+00:00
 depends_on:
 - 01M7NQMWNNTAYWET485V2Y341X
-position_column: review
-position_ordinal: '80'
+position_column: doing
+position_ordinal: '8280'
 title: 'D202: export a session as Markdown from its retained history (SessionTranscriptExporter)'
 ---
 Decision D202 in `TestudoApp/features/decisions.md` (commit 40450ab). Brief: `/Users/wballard/github/swissarmyhammer/.briefs/export-markdown/acpa-brief.md`. Overview: `overview.md` in the same folder.
@@ -87,4 +100,4 @@ When this lands, push to origin/main and send the sha to the TestudoApp session 
 > 1 file(s) not reviewed — no validator matched:
 > - `ARCHITECTURE.md` — no validator matches this file
 
-- [ ] `Sources/FoundationModelsACPAgent/Agent/SessionTranscriptExport.swift:37` `code-hygiene/disallowed-constructs-swift` — no_unchecked_sendable: Instead of @unchecked Sendable, write a plain Sendable conformance or a @preconcurrency import. If the type really must be @unchecked Sendable, write // swiftlint:disable:next no_unchecked_sendable above it with the synchronization invariant that makes the type thread-safe.
+- [x] `Sources/FoundationModelsACPAgent/Agent/SessionTranscriptExport.swift:37` `code-hygiene/disallowed-constructs-swift` — no_unchecked_sendable: Instead of @unchecked Sendable, write a plain Sendable conformance or a @preconcurrency import. If the type really must be @unchecked Sendable, write // swiftlint:disable:next no_unchecked_sendable above it with the synchronization invariant that makes the type thread-safe.

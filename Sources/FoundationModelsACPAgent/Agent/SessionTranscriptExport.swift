@@ -34,10 +34,11 @@ enum SessionTranscriptExportError: Error, CustomStringConvertible {
 /// The exporter holds the agent weakly. The endpoint of the directory holds the exporter, and the
 /// agent holds the directory. When the agent is gone, each export throws
 /// ``SessionTranscriptExportError/noHistory``.
-final class AgentTranscriptExporter: SessionTranscriptExporter, @unchecked Sendable {
+final class AgentTranscriptExporter: SessionTranscriptExporter, Sendable {
   /// The agent whose sessions the exporter renders. Weak, to break the cycle agent → directory →
-  /// endpoint → exporter → agent. It is set one time, in the initializer, and never changes.
-  private weak var agent: RoutedACPAgent?
+  /// endpoint → exporter → agent. A `weak let` is set one time, in the initializer, and the agent
+  /// is an actor. Thus the class is `Sendable` with no unchecked conformance.
+  private weak let agent: RoutedACPAgent?
 
   /// Makes the exporter of `agent`.
   ///
