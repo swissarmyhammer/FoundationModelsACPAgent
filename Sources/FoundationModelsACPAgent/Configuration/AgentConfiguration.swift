@@ -60,9 +60,13 @@ public struct AgentConfiguration: Codable, Equatable, Sendable {
   /// The agent does not read it.
   public var statusline = StatusLineConfiguration()
 
+  /// The settings of the sessions (``SessionsConfiguration``): the session
+  /// recap of D206.
+  public var sessions = SessionsConfiguration()
+
   /// The YAML spelling of each top-level section.
   public enum CodingKeys: String, CodingKey, CaseIterable {
-    case profile, tools, compaction, repetition, theme, keymap, fonts, statusline
+    case profile, tools, compaction, repetition, theme, keymap, fonts, statusline, sessions
   }
 
   /// The top-level sections that the configuration had before D187:
@@ -94,6 +98,8 @@ public struct AgentConfiguration: Codable, Equatable, Sendable {
     statusline =
       try container.decodeIfPresent(StatusLineConfiguration.self, forKey: .statusline)
       ?? statusline
+    sessions =
+      try container.decodeIfPresent(SessionsConfiguration.self, forKey: .sessions) ?? sessions
   }
 }
 
@@ -131,6 +137,7 @@ extension AgentConfiguration {
     CodingKeys.keymap.stringValue: .scalar,
     CodingKeys.fonts.stringValue: .checked(FontsConfiguration.knownKeys),
     CodingKeys.statusline.stringValue: .checked(StatusLineConfiguration.topKeys),
+    CodingKeys.sessions.stringValue: .checked(SessionsConfiguration.knownKeys),
   ]
 }
 

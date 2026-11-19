@@ -131,6 +131,8 @@ public enum ConfigurationYAML {
       "The font family and size of each role of a host: ui, display and code.",
     AgentConfiguration.CodingKeys.statusline.stringValue:
       "The status line of the chat header of a host: a preset, and changes to its modules.",
+    AgentConfiguration.CodingKeys.sessions.stringValue:
+      "The sessions: recap turns the one-sentence recap of each session on or off.",
   ]
 
   /// The YAML spelling of the `profile` section.

@@ -71,7 +71,8 @@ public struct SettingsTool: GraphQLEndpointTool, OperationDescribing {
     session, do not give `cwd`: the session folder applies. A secret key takes only a keychain:<name> \
     reference. Select a model profile with the key path ["profile"] and the name of a profile, \
     such as "large" or "small"; the models tool lists the profiles, and a change applies at the next \
-    launch. \(StatusLineConfiguration.help)
+    launch. The key path ["sessions", "recap"] takes true or false: \(SessionsConfiguration.recapDescription) \
+    \(StatusLineConfiguration.help)
     """
 
   /// The name of the tool: `settings`.

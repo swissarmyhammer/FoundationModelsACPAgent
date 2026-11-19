@@ -55,6 +55,14 @@ fonts: {}
 statusline:
   preset: default
 
+# The settings of the sessions.
+sessions:
+  # When true, the agent writes a one-sentence recap of each session with
+  # the flash model of the profile (D206). To turn the recap off, set it to
+  # false at the user level, or at the session level of a folder for the
+  # sessions of that folder only.
+  recap: true
+
 tools:
   # The files tools: read, write, search and edit the files of the session.
   files:

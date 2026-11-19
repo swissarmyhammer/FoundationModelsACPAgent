@@ -625,6 +625,26 @@ path `["theme"]`.
 theme: dark
 ```
 
+### The session recap
+
+The `sessions.recap` key of `config.yaml` turns the session recap on and off
+(D206). When it is `true` (the default), the agent writes a one-sentence recap
+of each session with the `flash` model of the profile. Set it at the user level
+to turn the recap off for each session. Set it at the session level of a folder
+to change it for the sessions of that folder only. The session level wins over
+the user level.
+
+```yaml
+sessions:
+  recap: false
+```
+
+A host reads and sets the key through the `settings` endpoint, and the model
+through the `settings` tool, with the key path `["sessions", "recap"]`, at the
+`USER` level or the `SESSION` level. `SettingsStore.isSessionRecapOn(for:)`
+gives the merged value for a folder. It reads the store at each call, thus a
+change applies with no restart.
+
 ### The home
 
 The home holds each folder outside the project that the agent reads or
