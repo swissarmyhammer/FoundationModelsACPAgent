@@ -620,6 +620,12 @@ public actor RoutedACPAgent: Agent {
     // not in the recording of each session (D118 (e)).
     await router.sessionDirectory.use(
       usageStore: JSONFileSessionUsageStore(fileURL: home.sessionUsageFile))
+    // The `sessions.recap` setting of the folder of each session turns its recap on or off
+    // (D206). The directory asks at each turn end, so a change applies with no restart.
+    let recapSettings = settingsStore
+    await router.sessionDirectory.useRecapPolicy { workingDirectory in
+      recapSettings.isSessionRecapOnNow(for: workingDirectory)
+    }
   }
 
   // MARK: - The order rule

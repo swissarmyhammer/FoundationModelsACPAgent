@@ -206,6 +206,14 @@ public actor SettingsStore {
   /// the path of its `config.yaml`.
   private var levels: [String: LevelState] = [:]
 
+  /// A copy of the rendered tree of each level in ``levels``, keyed by the
+  /// path of its `config.yaml`. The store changes it each time that it
+  /// changes ``levels``: at the first read of a level, at a `set` or a
+  /// `clear`, at a reload after an outside write, and at
+  /// ``stopWatching()``. A lock holds it, because a synchronous caller on
+  /// any thread reads it with no hop to the store (``mergedRootNow(for:)``).
+  private nonisolated let levelRoots = Mutex<[String: YAMLValue]>([:])
+
   /// The continuation of each open ``changes()`` stream, keyed by a token.
   /// A lock holds them, because the end of a stream removes its
   /// continuation from a synchronous handler.
@@ -485,6 +493,7 @@ public actor SettingsStore {
       forgottenRoots[state.file.path] = state.root
     }
     levels.removeAll()
+    levelRoots.withLock { $0.removeAll() }
     let continuations = subscribers.withLock { subscribers in
       let continuations = Array(subscribers.values)
       subscribers.removeAll()
@@ -604,7 +613,7 @@ public actor SettingsStore {
     state.root = root
     state.text = text
     state.loadError = nil
-    levels[state.file.path] = state
+    keep(state)
     await record(
       SettingsLoggedChange(change: SettingsChange(level: level, keyPath: keyPath), ids: ids))
     if clearsLoadError {
@@ -685,9 +694,12 @@ public actor SettingsStore {
   /// The tree of the defaults layer, read from the disk now, or no tree
   /// when the environment names no defaults layer.
   ///
+  /// It reads no state of the store, thus a synchronous caller reads it too
+  /// (``mergedRootNow(for:)``).
+  ///
   /// - Returns: No tree, or one tree with the source `.defaults`.
   /// - Throws: What a read of the file throws.
-  private func defaultsTrees() throws -> [MergedSettings.LevelTree] {
+  private nonisolated func defaultsTrees() throws -> [MergedSettings.LevelTree] {
     guard let layer = layer(of: .defaults, workingDirectory: Self.placeholderDirectory) else {
       return []
     }
@@ -703,10 +715,7 @@ public actor SettingsStore {
   /// - Throws: ``SettingsStoreError/noLayer(_:)`` when the settings folders
   ///   give no folder for the level; what a read of the file throws.
   private func levelState(of level: SettingsLevel) throws -> LevelState {
-    let workingDirectory = level.workingDirectory ?? Self.placeholderDirectory
-    guard let layer = layer(of: level.source, workingDirectory: workingDirectory) else {
-      throw SettingsStoreError.noLayer(level)
-    }
+    let layer = try layer(of: level)
     let file = Self.configFile(of: layer)
     if let state = levels[file.path] {
       return state
@@ -717,9 +726,32 @@ public actor SettingsStore {
       self?.fileDidChange(at: file)
     }
     let state = LevelState(level: level, layer: layer, root: root, text: text, watcher: watcher)
-    levels[file.path] = state
+    keep(state)
     watcher.start()
     return state
+  }
+
+  /// Keeps `state` as the state of its level in ``levels``, and its tree in
+  /// ``levelRoots``.
+  ///
+  /// - Parameter state: The new state of the level.
+  private func keep(_ state: LevelState) {
+    levels[state.file.path] = state
+    levelRoots.withLock { $0[state.file.path] = state.root }
+  }
+
+  /// The dotfolder layer of `level`.
+  ///
+  /// - Parameter level: The level.
+  /// - Returns: The layer.
+  /// - Throws: ``SettingsStoreError/noLayer(_:)`` when the settings folders
+  ///   give no folder for the level.
+  private nonisolated func layer(of level: SettingsLevel) throws -> DotfolderStack.Layer {
+    let workingDirectory = level.workingDirectory ?? Self.placeholderDirectory
+    guard let layer = layer(of: level.source, workingDirectory: workingDirectory) else {
+      throw SettingsStoreError.noLayer(level)
+    }
+    return layer
   }
 
   /// The layer of `source` in the configuration stack of
@@ -729,11 +761,51 @@ public actor SettingsStore {
   ///   - source: The source of the layer.
   ///   - workingDirectory: The working directory of the stack.
   /// - Returns: The layer, or `nil` when the stack has no such layer.
-  private func layer(of source: DotfolderStack.Source, workingDirectory: URL) -> DotfolderStack
-    .Layer?
+  private nonisolated func layer(of source: DotfolderStack.Source, workingDirectory: URL)
+    -> DotfolderStack.Layer?
   {
     settingsFolders.stack(for: .configuration, workingDirectory: workingDirectory)
       .layers.first { $0.source == source }
+  }
+
+  // MARK: - Synchronous reads
+
+  /// The merged tree of the defaults layer, the user level and the session
+  /// level of `cwd`, with no hop to the store. A synchronous caller on any
+  /// thread calls it, for example the recap policy of the Router session
+  /// directory (``isSessionRecapOnNow(for:)``).
+  ///
+  /// A level that the store holds gives its tree from ``levelRoots``, thus a
+  /// `set`, a `clear` and a reload after an outside write apply at the next
+  /// call. A level that the store does not hold yet gives the tree of its
+  /// file, read from the disk now. The call does not start a watch. The
+  /// builtin layer is not in the tree.
+  ///
+  /// - Parameter cwd: The working directory of the session, or `nil` for
+  ///   the user level only.
+  /// - Returns: The merged tree, or `.null` when no level sets a key.
+  /// - Throws: ``SettingsStoreError/noLayer(_:)`` when the settings folders
+  ///   give no folder for a level; what a read of a file throws.
+  nonisolated func mergedRootNow(for cwd: URL?) throws -> YAMLValue {
+    let trees = try SettingsLevel.watched(cwd: cwd).map { try levelTreeNow(of: $0) }
+    return MergedSettings(levels: try defaultsTrees() + trees).root
+  }
+
+  /// The tree of `level` for ``mergedRootNow(for:)``: the tree in
+  /// ``levelRoots``, else the tree of the file of the level.
+  ///
+  /// - Parameter level: The level.
+  /// - Returns: The tree of the level with its source.
+  /// - Throws: What ``mergedRootNow(for:)`` throws.
+  private nonisolated func levelTreeNow(of level: SettingsLevel) throws
+    -> MergedSettings.LevelTree
+  {
+    let layer = try layer(of: level)
+    let file = Self.configFile(of: layer)
+    if let root = levelRoots.withLock({ $0[file.path] }) {
+      return (source: layer.source, root: root)
+    }
+    return (source: layer.source, root: try Self.renderedTree(of: Self.text(of: file), layer: layer))
   }
 
   // MARK: - Outside changes
@@ -772,7 +844,7 @@ public actor SettingsStore {
     guard after.text != before.text || after.loadError != before.loadError else {
       return
     }
-    levels[file.path] = after
+    keep(after)
     await record(
       SettingsLoggedChange(
         change: SettingsChange(level: after.level, keyPath: nil),

@@ -19,6 +19,12 @@ import Testing
   /// A folder level that turns the recap off.
   private static let recapOffYAML = "sessions:\n  recap: false\n"
 
+  /// A folder level that turns the recap on.
+  private static let recapOnYAML = "sessions:\n  recap: true\n"
+
+  /// A folder level whose `recap` is not a Boolean, so the decode fails.
+  private static let badYAML = "sessions:\n  recap: [1, 2]\n"
+
   /// The arguments of an `updateSetting` call of `sessions.recap` at the
   /// session level of a folder.
   ///
@@ -87,6 +93,71 @@ import Testing
 
     #expect(reply.codes.isEmpty, "\(reply.text)")
     #expect(try await fixture.store.isSessionRecapOn(for: fixture.firstDirectory) == false)
+  }
+
+  // MARK: - The synchronous policy read
+
+  /// A folder level with `recap: false` turns the synchronous read off for
+  /// a session in that folder.
+  @Test func theNowReadIsOffForAFolderThatTurnsItOff() throws {
+    let fixture = try SettingsGraphFixture(label: "recap-now-folder-off")
+    try ConfigFileFixture.write(
+      Self.recapOffYAML, in: try fixture.sessionRoot(of: fixture.firstDirectory))
+
+    #expect(fixture.store.isSessionRecapOnNow(for: fixture.firstDirectory) == false)
+  }
+
+  /// A folder level with `recap: false` keeps the synchronous read on for
+  /// a session in a different folder.
+  @Test func theNowReadStaysOnForADifferentFolder() throws {
+    let fixture = try SettingsGraphFixture(label: "recap-now-other-folder")
+    try ConfigFileFixture.write(
+      Self.recapOffYAML, in: try fixture.sessionRoot(of: fixture.firstDirectory))
+
+    #expect(fixture.store.isSessionRecapOnNow(for: fixture.secondDirectory) == true)
+  }
+
+  /// The `settings` tool turns the recap off for a folder whose level the
+  /// store holds, and the synchronous read gives the new value with no
+  /// restart.
+  @Test func theNowReadGivesTheValueOfTheSettingsTool() async throws {
+    let fixture = try SettingsGraphFixture(label: "recap-now-tool")
+    let tool = SettingsTool(endpoint: fixture.graph, sessionDirectory: fixture.firstDirectory)
+    try await fixture.store.startWatching(cwd: fixture.firstDirectory)
+
+    let reply = try GraphQLReply(
+      await tool.call(arguments: Self.setRecapArguments(false, cwd: fixture.firstDirectory)))
+
+    #expect(reply.codes.isEmpty, "\(reply.text)")
+    #expect(fixture.store.isSessionRecapOnNow(for: fixture.firstDirectory) == false)
+  }
+
+  /// An outside write of the folder level file reaches the synchronous
+  /// read after the watcher of the store reads the file again.
+  @Test(.timeLimit(.minutes(1))) func theNowReadGivesTheValueOfAnOutsideWrite() async throws {
+    let fixture = try SettingsGraphFixture(label: "recap-now-outside")
+    let workingDirectory = fixture.firstDirectory
+
+    _ = try await OutsideSettingsWrite.write(
+      Self.recapOffYAML, over: Self.recapOnYAML, in: try fixture.sessionRoot(of: workingDirectory),
+      expecting: SettingsChange(level: .session(workingDirectory), keyPath: nil)
+    ) {
+      try await fixture.store.startWatching(cwd: workingDirectory)
+      return await fixture.store.changes().makeAsyncIterator()
+    } nextChange: { changes in
+      await changes.next()
+    }
+
+    #expect(fixture.store.isSessionRecapOnNow(for: workingDirectory) == false)
+  }
+
+  /// A folder level that does not parse gives the default: the recap is on.
+  @Test func theNowReadGivesTheDefaultForALevelThatDoesNotRead() throws {
+    let fixture = try SettingsGraphFixture(label: "recap-now-bad")
+    try ConfigFileFixture.write(
+      Self.badYAML, in: try fixture.sessionRoot(of: fixture.firstDirectory))
+
+    #expect(fixture.store.isSessionRecapOnNow(for: fixture.firstDirectory) == true)
   }
 
   // MARK: - The settings endpoint

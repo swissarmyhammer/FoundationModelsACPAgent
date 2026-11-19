@@ -137,8 +137,17 @@ The endpoint does not read the files. The store does.
   of the parser with no line of the parsed text, and a render error or a read error gives a fixed
   message.
 
+- **The recap policy (D206).** `RoutedACPAgent` gives the Router session directory a recap policy
+  (`RouterSessionDirectory.useRecapPolicy(_:)`): a synchronous closure that calls
+  `SettingsStore.isSessionRecapOnNow(for:)` for the working folder of a session. The store keeps a
+  copy of the tree of each level that it holds under a lock, and changes it with each `set`,
+  `clear`, reload and stop, so the closure reads the merged `sessions.recap` value from any thread
+  with no hop to the store. A level that the store does not hold yet is read from its file. When
+  the read fails, the closure logs a warning and gives `true`.
+
 The dependency direction is one way: the endpoint depends on the engine, and the engine depends on
-the store. The store does not depend on the endpoint.
+the store. The store does not depend on the endpoint. The Router does not depend on the store: it
+calls the closure that the agent gave it.
 
 ## Profiles
 

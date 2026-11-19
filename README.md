@@ -628,8 +628,14 @@ theme: dark
 ### The session recap
 
 The `sessions.recap` key of `config.yaml` turns the session recap on and off
-(D206). When it is `true` (the default), the agent writes a one-sentence recap
-of each session with the `flash` model of the profile. Set it at the user level
+(D206). When it is `true` (the default), the Router session directory writes a
+recap of each root session and each fork: one sentence of at most 200
+characters. It writes the recap 20 seconds after a turn that is not trivial
+ends, with the `flash` slot of the profile of the session. A turn is trivial
+when it ended with a cancel or an error, or when it has no tool call and a reply
+of fewer than 280 characters. A new turn cancels the wait. A subagent gets no
+recap. In each bundled profile, `flash` is the same model as `standard`, so the
+recap call waits until no turn runs on that model. Set it at the user level
 to turn the recap off for each session. Set it at the session level of a folder
 to change it for the sessions of that folder only. The session level wins over
 the user level.
@@ -641,9 +647,13 @@ sessions:
 
 A host reads and sets the key through the `settings` endpoint, and the model
 through the `settings` tool, with the key path `["sessions", "recap"]`, at the
-`USER` level or the `SESSION` level. `SettingsStore.isSessionRecapOn(for:)`
-gives the merged value for a folder. It reads the store at each call, thus a
-change applies with no restart.
+`USER` level or the `SESSION` level. The agent gives the setting to the Router
+session directory as its recap policy (`useRecapPolicy(_:)`). The directory asks
+the policy for the folder of the session at the end of each turn and again
+before the recap call, so a change through the store applies at the next turn
+end, with no restart. An outside edit of a `config.yaml` applies after the
+watcher of the store reads the file again. When the setting cannot be read, the
+agent logs a warning and the recap stays on.
 
 ### The home
 

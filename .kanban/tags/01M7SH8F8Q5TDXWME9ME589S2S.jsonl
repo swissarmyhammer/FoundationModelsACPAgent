@@ -1,0 +1,1 @@
+{"id":"01M7SH8F8RR0Z8HNJY0MNS8SDC","timestamp":"2026-11-19T09:12:32.280136Z","op":"create","item_id":"01M7SH8F8Q5TDXWME9ME589S2S","forward_patch":"--- original\n+++ modified\n@@ -0,0 +1,2 @@\n+color: bfd4f2\n+tag_name: d206\n","reverse_patch":"--- original\n+++ modified\n@@ -1,2 +0,0 @@\n-color: bfd4f2\n-tag_name: d206\n","transaction_id":null}
