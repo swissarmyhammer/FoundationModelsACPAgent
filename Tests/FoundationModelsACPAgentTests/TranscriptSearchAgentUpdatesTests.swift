@@ -181,19 +181,42 @@ import Testing
 
   /// A recorded session with no title gets the slug that the Router gives from its record: the
   /// short id (D207, ^pqweam5).
+  ///
+  /// The test removes the title from a copy of the session folder, in a recording root that no
+  /// session directory reads. The session directory of the fixture gives a default name to a
+  /// closed root session with no title when it reads its record, and writes that name to the
+  /// record (D199). The index updates of the fixture read the summary of the closed session from
+  /// that directory, and under load they can run after the close. Thus a title removed from the
+  /// original record can come back before the reconcile reads it.
   @Test(.timeLimit(.minutes(3))) func aRecordWithNoTitleGetsTheSlugOfTheRouter() async throws {
-    let fixture = try await Self.fixtureAfterOnePrompt(label: "reconcile-no-title")
+    let label = "reconcile-no-title"
+    let fixture = try await Self.fixtureAfterOnePrompt(label: label)
     let entry = try #require(await fixture.harness.agent.sessions[fixture.sessionId])
     await fixture.close()
-    try Self.removeTitle(fromRecordIn: entry.transcriptDirectory)
+    let root = makeResolvedDirectory(label: "\(Self.label)-\(label)-root")
+    let sessionFolder = try Self.copy(sessionFolder: entry.transcriptDirectory, into: root)
+    try Self.removeTitle(fromRecordIn: sessionFolder)
     let recorded = try #require(
-      try RouterSessionDirectory.recordedSummary(inSessionFolder: entry.transcriptDirectory))
+      try RouterSessionDirectory.recordedSummary(inSessionFolder: sessionFolder))
     try #require(recorded.title == nil)
 
     let item = try await Self.reconciledSessionItem(
-      of: fixture, recordingRoot: entry.transcriptRoot, label: "reconcile-no-title")
+      of: fixture, recordingRoot: root, label: label)
 
     #expect(item?.sessionMetadata?.slug == recorded.shortID)
+  }
+
+  /// Copies the folder of a closed session into a recording root, with the same folder name.
+  ///
+  /// - Parameters:
+  ///   - sessionFolder: The folder of the session.
+  ///   - root: The recording root that gets the copy.
+  /// - Returns: The folder of the copy.
+  /// - Throws: The error of the copy.
+  private static func copy(sessionFolder: URL, into root: URL) throws -> URL {
+    let copy = root.appendingPathComponent(sessionFolder.lastPathComponent, isDirectory: true)
+    try FileManager.default.copyItem(at: sessionFolder, to: copy)
+    return copy
   }
 
   /// Reconciles the folder of a closed fixture into a new empty index, and gives the session
