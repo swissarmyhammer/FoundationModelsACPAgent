@@ -76,8 +76,15 @@ comments:
     - evidence: `timeout 1800 swift build --build-tests` printed "Build complete!" with 0 compiler warnings (one llbuild line "missing creator for mutated node" for the mlx-swift_Cmlx bundle, not a compiler warning). `timeout 1800 swift test --skip-build`: 2386 tests in 252 suites passed, 0 failures, 1 known issue (the intentional withKnownIssue in HarnessSmokeTests.orderedSubsequenceAssertionChecksOrderWithGaps).
     - next: review
   timestamp: 2026-11-19T02:28:05.986674+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m7rt7x2dncvjnhcd8n65qt8q
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (7dfbf14). Counts: 0 findings, 0 confirmed, 1 refuted, 7 attempted, 0 failed. The engine reviewed 5 files. An ignore rule excluded 6 files in `.kanban/`. All prior review findings are checked.
+    - next: none. The task is in `done`.
+  timestamp: 2026-11-19T02:30:16.397952+00:00
+position_column: done
+position_ordinal: ffffff8e80
 title: 'Race: ResumeChildSyncTests.theWireOfTheResumeFollowsTheRulesOfTheValidator fails under the load of the full suite'
 ---
 ## Problem
