@@ -45,6 +45,16 @@ import ULID
   /// folder in the queue after a wait that does not wait for the reconcile.
   private static let slowRootRead = Duration.milliseconds(200)
 
+  /// The priority of the task that waits for the applied changes. It is higher than the
+  /// priority of the task that applies them.
+  private static let waiterPriority = TaskPriority.high
+
+  /// The most polls of the priority of the applier.
+  private static let priorityPollLimit = 200
+
+  /// The time between two polls of the priority of the applier.
+  private static let priorityPollInterval = Duration.milliseconds(10)
+
   // MARK: - Fixtures
 
   /// A history of one user message and one agent message.
@@ -241,6 +251,28 @@ import ULID
     await updates.waitUntilApplied()
 
     #expect(await index.items(of: Self.sessionId).isEmpty)
+  }
+
+  /// The wait for the applied changes raises the task that applies them to the priority of the
+  /// waiter (^6yqbvx6). The task has a low priority, and a loaded process keeps it back. Without
+  /// the raise, the shutdown of the agent waits many seconds behind it.
+  @Test(.timeLimit(.minutes(3))) func theWaitRaisesTheApplierToThePriorityOfTheWaiter()
+    async throws
+  {
+    let index = await Self.makeIndex(label: "priority")
+    let seen = Mutex<TaskPriority?>(nil)
+    let updates = TranscriptSearchUpdates(index: index) { _ in
+      try await pollUntil(limit: Self.priorityPollLimit, interval: Self.priorityPollInterval) {
+        Task.currentPriority >= Self.waiterPriority
+      }
+      seen.withLock { $0 = Task.currentPriority }
+      return nil
+    }
+    updates.indexHistory(Self.history(answer: "Quokkas live on an island."), of: Self.sessionId)
+
+    await Task(priority: Self.waiterPriority) { await updates.waitUntilApplied() }.value
+
+    #expect(try #require(seen.withLock { $0 }) >= Self.waiterPriority)
   }
 
   /// The reconcile keeps the items of a session of a folder that the process cannot read.

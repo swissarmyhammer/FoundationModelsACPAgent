@@ -71,6 +71,10 @@ final class TranscriptSearchUpdates: Sendable {
   /// The input of the queue of changes.
   private let changes: AsyncStream<Change>.Continuation
 
+  /// The task that applies the changes. It has a low priority, so that it does not take time
+  /// from a turn. ``waitUntilApplied()`` raises it to the priority of the waiter.
+  private let worker: Task<Void, Never>
+
   /// The task that applies the changes, the task that reads the events of the session
   /// directory, and the task of the reconcile at launch.
   private let tasks = Mutex<[Task<Void, Never>]>([])
@@ -96,6 +100,7 @@ final class TranscriptSearchUpdates: Sendable {
         await applier.apply(change)
       }
     }
+    self.worker = worker
     tasks.withLock { $0.append(worker) }
   }
 
@@ -127,7 +132,13 @@ final class TranscriptSearchUpdates: Sendable {
   /// reconcile at launch is such a change from the time that it starts: the call first waits
   /// until its task put each folder in the queue. The shutdown of the agent waits here, and then
   /// for the saves of the index, so a quit keeps the last change.
+  ///
+  /// The call first raises the task that applies the changes to the priority of the caller
+  /// (^6yqbvx6). That task has a low priority, and a loaded process keeps it back for many
+  /// seconds. The wait on the mark does not raise it, so without the raise a caller of a higher
+  /// priority waits for work of a lower priority. The raise stays after the call.
   func waitUntilApplied() async {
+    worker.escalatePriority(to: Task.currentPriority)
     await launchReconcile.withLock { $0 }?.value
     await withCheckedContinuation { mark in
       changes.yield(.mark(mark))
