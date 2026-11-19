@@ -37,8 +37,15 @@ comments:
     - evidence: `swift build --build-tests` Build complete!, 0 compiler warnings; `timeout 1800 swift test --skip-build`: 2502 tests in 261 suites passed, 1 known issue (intended). The first full run had 1 failure in RedriveInterruptedRunsTests.theReplayOpensTheOriginalCallWhenNoHistoryWasWritten (backgroundList order); the suite passed 3/3 alone and the next full run passed. Recorded as a flake on ^jstmpxs (I cannot prove it is not related; the test removes the history files, so it has no dated records at the start).
     - next: /review
   timestamp: 2026-11-19T13:20:40.886250+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m7szqvv2q229bfwbpmkqxem8
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (49a764f). 14 files reviewed. Counts: 0 findings, 0 confirmed, 3 refuted, 7 attempted, 0 failed, 0 skipped. 16 .kanban files are excluded by .reviewignore.
+    - next: none. The task is in done.
+  timestamp: 2026-11-19T13:25:36.738572+00:00
+position_column: done
+position_ordinal: ffffff9980
 title: 'D207: the transcript search items and one MetadataSearcher, as a reusable TranscriptSearchIndex'
 ---
 Decision D207 in `TestudoApp/features/decisions.md` (commit ba585e0). The user: use the existing metadata registry and ranker as they are. Brief: `/Users/wballard/github/swissarmyhammer/.briefs/search/acpa-brief.md`, the rule and change steps 1, 2, 3 and 8. Overview: `overview.md` in the same folder.
