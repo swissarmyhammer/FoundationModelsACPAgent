@@ -17,9 +17,6 @@ import Testing
     SessionsConfiguration.CodingKeys.spotlight.stringValue,
   ]
 
-  /// The key path of the `sessions` section.
-  private static let sessionsKeyPath = [AgentConfiguration.CodingKeys.sessions.stringValue]
-
   /// The code of a change that names a key of the user level only at the
   /// session level.
   private static let userLevelOnlyCode = "USER_LEVEL_ONLY"
@@ -115,7 +112,7 @@ import Testing
     let fixture = try SettingsGraphFixture(label: "spotlight-endpoint-section")
 
     let set = try await fixture.set(
-      .dictionary(["spotlight": .bool(false)]), at: Self.sessionsKeyPath,
+      .dictionary([SessionsConfiguration.CodingKeys.spotlight.stringValue: .bool(false)]), at: [SessionsConfiguration.sectionKey],
       level: SettingsGraphFixture.sessionLevel, cwd: fixture.firstDirectory)
 
     #expect(set.codes == [Self.userLevelOnlyCode], "\(set.text)")
@@ -141,7 +138,7 @@ import Testing
     let fixture = try SettingsGraphFixture(label: "spotlight-endpoint-recap")
 
     let set = try await fixture.set(
-      .dictionary(["recap": .bool(false)]), at: Self.sessionsKeyPath,
+      .dictionary([SessionsConfiguration.CodingKeys.recap.stringValue: .bool(false)]), at: [SessionsConfiguration.sectionKey],
       level: SettingsGraphFixture.sessionLevel, cwd: fixture.firstDirectory)
 
     #expect(set.codes.isEmpty, "\(set.text)")
