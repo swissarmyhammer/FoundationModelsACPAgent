@@ -767,8 +767,11 @@ code gives the local detail.
   turn, and `before` a message keeps the turns before it. With no cut, the
   fork has the completed turns, and a turn that runs goes on in the source.
   The fork works in the folder of its source, with the agent of its source,
-  the MCP servers and the additional directories of the request (else those
-  of the source), and the history of the source up to the cut. The response
+  the MCP servers and the additional directories of the request only, and the
+  history of the source up to the cut. As ACP states, an omitted or empty
+  `mcpServers` or `additionalDirectories` gives none: the fork does not get
+  those of the source. The agent writes the history file of each fork, also
+  of a fork that copied no turn. The response
   gives its `sessionId`, `configOptions` and `availableCommands`, and
   `session/resume` of the fork replays the copied turns. A cut in the turns
   that a compaction folded, a turn that does not exist and the turn that runs

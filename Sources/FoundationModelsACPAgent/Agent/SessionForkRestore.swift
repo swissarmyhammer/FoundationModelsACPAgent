@@ -56,18 +56,21 @@ extension RoutedACPAgent {
   }
 
   /// The history of a fork that has no history file: the part of the retained history of its
-  /// source that the fork copied. `session/fork` writes the file of the fork when it makes the
-  /// fork. A fork that the `fork session` operation made has no file, so its first restore
-  /// copies the part from the source here, and the client shows the copied turns.
+  /// source that the fork copied. `session/fork` writes the file of each fork that it makes,
+  /// also an empty one. A fork that the `fork session` operation made has no file, so its first
+  /// restore copies the part from the source here, and the client shows the copied turns.
   ///
   /// The agent knows no cut of such a fork. The tool calls of the transcript of the fork name
   /// the tool calls that it keeps, so the part ends before the call that forked
-  /// (``SessionMergeEngine/forkEnd(keepingToolCalls:)``). The source history is the one in the
-  /// table, else the one in the file of the source: a fork records in the folder of its source.
+  /// (``SessionMergeEngine/forkEnd(keepingToolCalls:)``). When the source left out no tool call,
+  /// the fork did not fork at a call, and the agent does not know its cut: the fork then copies
+  /// no entry, and never shows the whole source. The source history is the one in the table,
+  /// else the one in the file of the source: a fork records in the folder of its source.
   ///
   /// - Parameter session: The restored session.
-  /// - Returns: The copied history, or `nil` for a session that is no fork, a fork with a history
-  ///   file, and a fork whose source has no history.
+  /// - Returns: The copied history (empty when the agent does not know the cut), or `nil` for a
+  ///   session that is no fork, a fork with a history file, and a fork whose source has no
+  ///   history.
   func unrecordedForkHistory(of session: any RoutedSession) async -> SessionMergeEngine? {
     guard let sourceId = session.parentId,
       !SessionHistoryFile.exists(in: session.recordingDirectory)
@@ -84,6 +87,9 @@ extension RoutedACPAgent {
       return nil
     }
     let kept = await session.transcript.toolCallIds
-    return sourceHistory.copiedHistory(endingAt: sourceHistory.forkEnd(keepingToolCalls: kept))
+    guard let end = sourceHistory.forkEnd(keepingToolCalls: kept) else {
+      return SessionMergeEngine()
+    }
+    return sourceHistory.copiedHistory(endingAt: end)
   }
 }

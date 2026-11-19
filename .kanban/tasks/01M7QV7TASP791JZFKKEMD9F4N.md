@@ -69,10 +69,30 @@ comments:
     - A recorded fork is listed (kind fork) and found by id after a restart; `restoreSession(id:)` of a fork restores only the fork.
     This task starts now, in a worktree, together with the rework of ^ndqkw9s (the map changes from a history position to the turn index).
   timestamp: 2026-11-19T02:25:59.500366+00:00
+- actor: claude-code
+  id: 01m7rwb4bk16qtybakzvx280bd
+  text: 'DECISION from the TestudoApp session (2026-11-18): follow the ACP spec. When a session/fork request OMITS `additionalDirectories`, the fork has NO additional roots (not those of the source). The app client (ACPClient `forkSession(_:cut:)`) already sends the cwd, the additional directories and the MCP servers of the source in the request. Change commit 8447ce3 in the code, the tests, README.md and ARCHITECTURE.md: an omitted `additionalDirectories` gives no roots. Check the MCP server rule against the spec the same way (an omitted list vs. an empty list) and say what the spec says. This change goes in the next round of this task, with the review findings if there are any.'
+  timestamp: 2026-11-19T03:06:59.315258+00:00
+- actor: claude-code
+  id: 01m7rwzg3hw02mec9tkntqx7gk
+  text: |-
+    ### review — findings
+    - evidence: `review sha 8447ce3~1..8447ce3`: 1 finding (1 confirmed, 5 refuted, 0 failed) — Sources/FoundationModelsACPAgent/Agent/SessionFork.swift:167. No validator matched ARCHITECTURE.md and README.md.
+    - next: Correct the finding in Sources/FoundationModelsACPAgent/Agent/SessionFork.swift. Then review the task again.
+  timestamp: 2026-11-19T03:18:06.705093+00:00
+- actor: claude-code
+  id: 01m7rxnxd5nfvza7nszq3rxf2t
+  text: |-
+    Round 2 (finding at SessionFork.swift `openFork` + the ACP decision):
+    - Finding: `openFork` now writes the history file of each fork, also an empty copy. When the directory holds no live fork for the summary id (the fork closed before the agent opened it), the handler throws an internal error and writes nothing, instead of a silent skip. `SessionMergeEngine.forkEnd(keepingToolCalls:)` now returns `nil` when no tool call is left out, and `unrecordedForkHistory` then gives an EMPTY history: a fork with no history file never shows the whole source. Discovery: the bug also hit the first open, not only a later resume: `openFork` calls `restoreColdRoot`, and with no file it took `unrecordedForkHistory`, so the fork at `beforeTurn(0)` showed both source turns at once.
+    - ACP spec (FoundationModelsACP generated `ForkSessionRequest` and Schema/acp-v2.unstable.json): `additionalDirectories` — "When omitted or empty, no additional roots are activated. When non-empty, this is the complete resulting additional-root list for the forked session." `mcpServers` — "List of MCP servers to connect to for this session." with `x-deserialize-default-on-null: true` (the default is the empty list); the sibling `ResumeSessionRequest.mcpServers` says "Omitted and `[]` mean none. Agents SHOULD NOT restore servers from earlier requests." So an omitted `mcpServers` also gives no client MCP servers. The handler now uses `params.additionalDirectories ?? []` and `params.mcpServers ?? []`, as `session/new` and `session/resume` do. `forkAdditionalRoots(of:source:)` is removed.
+    - Tests: `aResumeOfAForkBeforeTheFirstTurnReplaysNoTurn`, `aForkThatLeftOutNoToolCallHasNoKnownEnd`, `aForkWithNoMCPServersGetsNoServers`, `aForkWithNoDirectoriesGetsNoDirectories` (each failed first); `aForkWithMCPServersGetsTheServersOfTheRequest` now forks a source with no servers and requests one.
+    - README.md and ARCHITECTURE.md state the new rules.
+  timestamp: 2026-11-19T03:30:21.221686+00:00
 depends_on:
 - 01M7QV7B0PDJZY8YAYZNDQKW9S
-position_column: todo
-position_ordinal: 8f80
+position_column: doing
+position_ordinal: '8280'
 title: 'D205: session/fork makes the fork through the Router, with the grants, MCP servers and directories of the source'
 ---
 Decision D205 in `TestudoApp/features/decisions.md` (commit 483664d). Brief: `/Users/wballard/github/swissarmyhammer/.briefs/fork/acpa-brief.md`, changes 3 and 4. Overview: `overview.md` in the same folder.
@@ -102,3 +122,17 @@ Decision D205 in `TestudoApp/features/decisions.md` (commit 483664d). Brief: `/U
 - A tool that the source allowed for the session runs in the fork with no new permission request.
 - `session/resume` of the fork replays the copied turns.
 - The `sessions` tool `fork session` makes a fork through the Router directory. #d205 #fork
+
+## Review Findings (2026-11-18 21:12)
+
+> Scope: `review sha 8447ce3~1..8447ce3` — reviewed the diffs only — lines this change added or modified. 13 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — no validator matched:
+> - `ARCHITECTURE.md` — no validator matches this file
+> - `README.md` — no validator matches this file
+
+- [x] `Sources/FoundationModelsACPAgent/Agent/SessionFork.swift:167` `completeness/invariant-propagation` — `openFork` skips writing the history file when the copied history is empty (`!copied.entries.isEmpty`). A fork whose cut is `beforeTurn(0)` (a cut before the first user message) copies no entries, so no file is written. On the later restore, `unrecordedForkHistory` (SessionForkRestore.swift:71-88) treats the fork as one with no history file. It ignores the cut and rebuilds the copy from the tool-call heuristic `forkEnd(keepingToolCalls:)`. When the fork transcript has no tool calls and the source has none either, `forkEnd` returns `entries.count`, so the resumed fork shows the whole source history instead of nothing. The empty-copy case gets no equivalent treatment at the restore site that consumes the same copied history. Write the history file for every fork that has a live session, including an empty copy, so the restore never reaches the heuristic fallback for a fork that `session/fork` made. Alternatively, have `unrecordedForkHistory` return an empty history when the fork has no file and the fork was made by `session/fork`. Add a test that forks at `beforeTurn(0)` from a source with no tool calls, then resumes the fork and asserts that no source message is replayed.
+
+## Decision (2026-11-18, TestudoApp session; see the card comment)
+
+- [x] Follow the ACP spec: a session/fork request that OMITS `additionalDirectories` gives the fork NO additional roots (not those of the source). Change 3 above is replaced by this rule. Check `mcpServers` against the spec the same way. Change the code, the tests, README.md and ARCHITECTURE.md.

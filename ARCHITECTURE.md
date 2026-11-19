@@ -68,14 +68,18 @@ Router makes it, and the agent serves it as each other root session. All of it i
 
 - **The handler.** `SessionFork` serves `session/fork`: the checks, the map of the cut in
   `_meta.sah.forkCut` to a turn (`SessionForkPoint`), the call of
-  `RouterSessionDirectory.fork(_:)`, and the refusals.
+  `RouterSessionDirectory.fork(_:)`, and the refusals. The fork gets the MCP servers and the
+  additional directories of the request only; an omitted list gives none, as ACP states. The
+  handler writes the history file of each fork, also an empty one.
 - **The turns.** `SessionHistory` counts the turns of the retained ACP history with the rule of
   the Router: each user message and each incoming `session_message`. `SessionForkHistory` cuts
   the retained history at the same turn, and finds the cut of a fork that the `fork session`
   operation of the `sessions` tool made.
 - **The restore.** `SessionForkRestore` holds the steps of the cold restore for a fork: it stops
   the live fork of the directory, which runs the tools of the source, gives the fork the agent of
-  its source, and gives a fork with no history file the history that it copied.
+  its source, and gives a fork with no history file the history that it copied. Only a fork of
+  the `fork session` operation has no history file. When the tool calls do not tell its cut, the
+  fork copies no entry, never the whole source.
 
 The dependency direction does not change: the agent calls the session directory of the Router,
 and the Router does not call the agent for a fork.

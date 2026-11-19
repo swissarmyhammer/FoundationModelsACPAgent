@@ -472,6 +472,28 @@ import Testing
     #expect(Self.userTexts(of: replayed) == [Self.firstPrompt])
   }
 
+  /// A `session/resume` of a fork with a cut before the first user message replays no
+  /// message of the source: the fork copied no turn.
+  @Test(.timeLimit(.minutes(1))) func aResumeOfAForkBeforeTheFirstTurnReplaysNoTurn()
+    async throws
+  {
+    let fixture = try await Self.makeFixture("resume-empty")
+    try await Self.runTwoTurns(on: fixture)
+    let source = try await Self.history(of: fixture.sessionId, in: fixture)
+    let fork = try await Self.fork(
+      fixture, cutting: (try Self.userMessageId(Self.firstPrompt, in: source), .before))
+
+    let replayed = try await Self.resume(fork.sessionId, in: fixture)
+
+    #expect(Self.userTexts(of: replayed).isEmpty)
+  }
+
+  /// With no history file, the agent cannot find the cut of a fork whose source left out no
+  /// tool call, so it copies no entry of the source: the fork never shows the whole source.
+  @Test func aForkThatLeftOutNoToolCallHasNoKnownEnd() {
+    #expect(Self.compactedHistory.forkEnd(keepingToolCalls: []) == nil)
+  }
+
   /// A model slot switch of a fork restores the fork from the recording root, and the fork
   /// works on the new slot.
   @Test(.timeLimit(.minutes(1))) func aModelSlotSwitchOfTheForkSelectsTheNewSlot() async throws {
@@ -487,17 +509,16 @@ import Testing
     #expect(await fixture.harness.agent.sessions[fork.sessionId]?.selectedSlot == .flash)
   }
 
-  /// A fork request with no MCP servers gives the fork the MCP servers of the source.
-  @Test(.timeLimit(.minutes(1))) func aForkWithNoMCPServersGetsTheServersOfTheSource()
-    async throws
-  {
+  /// A fork request with no MCP servers gives the fork no MCP servers of a client, also when
+  /// the source has some (ACP: omitted and `[]` mean none).
+  @Test(.timeLimit(.minutes(1))) func aForkWithNoMCPServersGetsNoServers() async throws {
     let fixture = try await ScriptedPromptFixture.make(
       script: try Self.script(), label: "\(Self.label)-source-servers",
       mcpServers: [Self.sourceServer])
 
     let fork = try await Self.forkEntry(of: fixture)
 
-    #expect(fork.clientMCPServers == [Self.sourceServer])
+    #expect(fork.clientMCPServers.isEmpty)
   }
 
   /// A fork request with MCP servers gives the fork the MCP servers of the request.
@@ -505,19 +526,16 @@ import Testing
     async throws
   {
     let fixture = try await ScriptedPromptFixture.make(
-      script: try Self.script(), label: "\(Self.label)-request-servers",
-      mcpServers: [Self.sourceServer])
+      script: try Self.script(), label: "\(Self.label)-request-servers")
 
-    let fork = try await Self.forkEntry(of: fixture, mcpServers: [])
+    let fork = try await Self.forkEntry(of: fixture, mcpServers: [Self.sourceServer])
 
-    #expect(fork.clientMCPServers.isEmpty)
+    #expect(fork.clientMCPServers == [Self.sourceServer])
   }
 
-  /// A fork request with no additional directories gives the fork the directories of the
-  /// source.
-  @Test(.timeLimit(.minutes(1))) func aForkWithNoDirectoriesGetsTheDirectoriesOfTheSource()
-    async throws
-  {
+  /// A fork request with no additional directories gives the fork no additional directories,
+  /// also when the source has some (ACP: omitted or empty activates no additional roots).
+  @Test(.timeLimit(.minutes(1))) func aForkWithNoDirectoriesGetsNoDirectories() async throws {
     let directory = makeResolvedDirectory(label: "\(Self.label)-source-root")
     let fixture = try await ScriptedPromptFixture.make(
       script: try Self.script(), label: "\(Self.label)-source-roots",
@@ -525,7 +543,7 @@ import Testing
 
     let fork = try await Self.forkEntry(of: fixture)
 
-    #expect(fork.additionalRoots.map(\.path) == [directory.path])
+    #expect(fork.additionalRoots.isEmpty)
   }
 
   /// A fork request with additional directories gives the fork the directories of the request.

@@ -147,11 +147,12 @@ extension SessionMergeEngine {
   /// keeps, and that the fork does not keep: the call that forked, which the session directory
   /// cuts before. When the fork keeps no tool call of this history, the search starts after the
   /// last completed compaction, because the compaction removed the earlier calls from the fork
-  /// transcript. When no tool call is left out, the fork keeps each entry.
+  /// transcript.
   ///
   /// - Parameter kept: The ids of the tool calls of the fork transcript.
-  /// - Returns: The number of entries.
-  func forkEnd(keepingToolCalls kept: Set<String>) -> Int {
+  /// - Returns: The number of entries, or `nil` when no tool call is left out. Such a fork did not
+  ///   fork at a tool call of this history, so the tool calls do not tell its cut.
+  func forkEnd(keepingToolCalls kept: Set<String>) -> Int? {
     let calls = entries.indices.compactMap { position -> (position: Int, id: String)? in
       guard case .toolCall(let id) = entries[position].id else { return nil }
       return (position, id.rawValue)
@@ -159,7 +160,7 @@ extension SessionMergeEngine {
     let lastKept = calls.last { kept.contains($0.id) }?.position
     let searchStart = (lastKept ?? lastCompactionPosition).map { $0 + 1 } ?? 0
     let firstLeftOut = calls.first { $0.position >= searchStart && !kept.contains($0.id) }
-    return firstLeftOut?.position ?? entries.count
+    return firstLeftOut?.position
   }
 }
 

@@ -77,9 +77,10 @@ extension RoutedACPAgent {
   /// the source, the cut, no first prompt, and the connection of the request as the client that
   /// asked for it. The fork has the agent, the model profile and the history of the source up to
   /// the cut. The agent then opens the fork as its own session
-  /// (``openFork(_:copying:placement:from:)``): with the MCP servers of the request, else of the
-  /// source, and with the additional directories of the request, else of the source. The fork
-  /// works in the folder of its source, so the `cwd` of the request must be that folder.
+  /// (``openFork(_:copying:placement:from:)``): with the MCP servers and the additional
+  /// directories of the request only. As ACP states, an omitted or empty list gives none: the
+  /// fork does not get the MCP servers or the directories of the source. The fork works in the
+  /// folder of its source, so the `cwd` of the request must be that folder.
   ///
   /// The agent asks for no permission before a tool runs, so a fork needs no permission grant:
   /// each tool that runs in the source runs in the fork too.
@@ -90,7 +91,8 @@ extension RoutedACPAgent {
   ///   session of the table holds, the refusal of a method that the session does not permit, the
   ///   invalid-params refusal of a cut, of a `cwd` that is not the folder of the source and of a
   ///   directory that does not exist, the refusal of the session directory
-  ///   (``RequestError/forkRefusal(_:point:in:id:)``), or whatever the restore of the fork throws.
+  ///   (``RequestError/forkRefusal(_:point:in:id:)``), an internal error when the fork closed
+  ///   before the agent opened it, or whatever the restore of the fork throws.
   public func forkSession(_ params: ForkSessionRequest) async throws -> ForkSessionResponse {
     try await forkSession(params, from: .direct)
   }
@@ -116,9 +118,10 @@ extension RoutedACPAgent {
     try Self.requireSourceFolder(params.cwd, of: entry, sessionId: params.sessionId)
     let placement = SessionPlacement(
       workingDirectory: entry.workingDirectory,
-      additionalRoots: try Self.forkAdditionalRoots(of: params, source: entry),
+      additionalRoots: try SessionSetup.additionalRoots(
+        fromPaths: (params.additionalDirectories ?? []).map(\.rawValue)),
       userPresence: userPresence(of: caller),
-      clientMCPServers: params.mcpServers ?? entry.clientMCPServers)
+      clientMCPServers: params.mcpServers ?? [])
     try SessionSetup.requireExistingDirectories(
       workingDirectory: placement.workingDirectory, additionalRoots: placement.additionalRoots)
 
@@ -145,7 +148,9 @@ extension RoutedACPAgent {
   /// connection of the request.
   ///
   /// The agent writes the copied history to the history file of the fork first
-  /// (``SessionHistoryFile``). Then the restore of the fork (``restoreColdRoot(_:sessionId:context:workingDirectory:additionalRoots:clientMCPServers:userPresence:)``)
+  /// (``SessionHistoryFile``), also when the copy is empty (a cut before the first turn). Thus
+  /// the restore always reads the cut of the request, and never finds the end of the copy from
+  /// the tool calls of the fork (``unrecordedForkHistory(of:)``). Then the restore of the fork (``restoreColdRoot(_:sessionId:context:workingDirectory:additionalRoots:clientMCPServers:userPresence:)``)
   /// stops the live fork of the directory, which runs the tools of the source, and restores the
   /// fork onto a surface of its own, with the agent of the source and with the history of the
   /// file. Thus a later `session/resume` of the fork replays the copied turns, also in a new
@@ -157,15 +162,19 @@ extension RoutedACPAgent {
   ///   - placement: Where the fork works, its user presence, and the MCP servers of its client.
   ///   - caller: The connection of the request, which owns the fork.
   /// - Returns: The response of the fork.
-  /// - Throws: Whatever the load of the configuration or the restore throws.
+  /// - Throws: An internal error when the session directory holds no live fork with the id of
+  ///   the summary, whatever the write of the history file throws, or whatever the load of the
+  ///   configuration or the restore throws.
   private func openFork(
     _ summary: SessionSummary, copying copied: SessionMergeEngine, placement: SessionPlacement,
     from caller: ConnectionId
   ) async throws -> ForkSessionResponse {
     let forkId = SessionId(rawValue: summary.id.description)
-    if let live = sessionDirectory.session(id: summary.id), !copied.entries.isEmpty {
-      try SessionHistoryFile.write(copied, in: live.recordingDirectory)
+    guard let live = sessionDirectory.session(id: summary.id) else {
+      throw RequestError.internalError(
+        detail: "the fork \(forkId.rawValue) closed before the agent opened it")
     }
+    try SessionHistoryFile.write(copied, in: live.recordingDirectory)
     let context = try await loadSessionContext(workingDirectory: placement.workingDirectory)
     connections.recordStart(of: forkId, by: caller)
     let cold = try await restoreColdRoot(
@@ -206,22 +215,6 @@ extension RoutedACPAgent {
       throw RequestError.mismatchedWorkingDirectory(
         id: sessionId, requested: requested, recorded: folder)
     }
-  }
-
-  /// The additional directories of a fork: those of the request, else those of the source.
-  ///
-  /// - Parameters:
-  ///   - params: The fork request.
-  ///   - source: The entry of the source.
-  /// - Returns: The directories, in order.
-  /// - Throws: The refusal of a path that is not valid.
-  private static func forkAdditionalRoots(of params: ForkSessionRequest, source: ActiveSession)
-    throws -> [URL]
-  {
-    guard let requested = params.additionalDirectories else {
-      return source.additionalRoots
-    }
-    return try SessionSetup.additionalRoots(fromPaths: requested.map(\.rawValue))
   }
 
   /// The history of the source of a fork as the agent reads it for the fork: with the ids that

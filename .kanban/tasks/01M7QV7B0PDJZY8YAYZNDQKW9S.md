@@ -28,6 +28,13 @@ comments:
     - New test `SessionForkTests.aMessageToTheFirstSourceIsATurnOfAForkOfAFork`: session S, fork F1, fork F2 of F1 (all real, through session/fork). A history with a session message to S, read as the source of F2, gives `beforeTurn(2)` for a cut before the next user message.
     - RED: the test did not compile before the API (missing `forkSourceHistory`). Then a mutation that gives only `[sessionId]` as recipients (the behavior of c912570) made the test fail at runtime. GREEN after the restore: SessionForkTests + SessionForkHandlerTests, 33 tests pass.
   timestamp: 2026-11-19T03:24:16.566445+00:00
+- actor: claude-code
+  id: 01m7rxb693ytjb94j672k6za1m
+  text: |-
+    ### implement — changed
+    - evidence: c668feb — Sources/FoundationModelsACPAgent/Agent/SessionFork.swift, Sources/FoundationModelsACPAgent/Agent/SessionForkHistory.swift, Tests/FoundationModelsACPAgentTests/SessionForkTests.swift. `swift build --build-tests`: Build complete!, 0 compiler warnings. SessionForkTests + SessionForkHandlerTests: 33 pass.
+    - next: review the task again.
+  timestamp: 2026-11-19T03:24:29.859047+00:00
 position_column: doing
 position_ordinal: '8180'
 title: 'D205: announce session/fork with the forkCut flag; map an ACP message id to a history position'
