@@ -223,12 +223,15 @@ struct SettingsEngine: Sendable {
   /// - Throws: ``SettingsGraphError`` for a call that the engine or the
   ///   store refuses, for example
   ///   ``SettingsGraphError/missingWorkingDirectory`` for the session level
-  ///   with no `cwd`; what the store throws for a file error.
+  ///   with no `cwd`, or ``SettingsGraphError/userLevelOnly(keyPath:)``
+  ///   for a key of the user level only at the session level; what the
+  ///   store throws for a file error.
   func set(_ value: YAMLValue, at keyPath: [String], level: SettingsGraphLevel, cwd: String?)
     async throws
   {
     let storeLevel = try Self.checkedLevel(level, cwd: cwd, keyPath: keyPath)
     try refuseChildRunProfileChange(at: keyPath)
+    try Self.refuseUserLevelOnlyKeys(in: value, at: keyPath, level: level)
     try SettingsSecretKeys.requireReferences(in: value, at: keyPath)
     try await SettingsGraphError.withCodedErrors {
       try await store.set(value, at: keyPath, level: storeLevel)
@@ -264,6 +267,56 @@ struct SettingsEngine: Sendable {
     if keyPath.first == AgentConfiguration.CodingKeys.profile.stringValue, isChildRun() {
       throw SettingsGraphError.childRunProfile
     }
+  }
+
+  /// The key paths that only the user level can hold. Each one applies to
+  /// the whole app, not to one folder.
+  static let userLevelOnlyKeyPaths = [SessionsConfiguration.spotlightKeyPath]
+
+  /// Refuses a session level change that gives a value to a key of
+  /// ``userLevelOnlyKeyPaths``: a change of that key, of a key inside it,
+  /// or of a mapping on its way that holds it.
+  ///
+  /// A `clearSetting` call is not refused: it can only remove a value that
+  /// a person wrote by hand in the file of the folder.
+  ///
+  /// - Parameters:
+  ///   - value: The new value.
+  ///   - keyPath: The key path of the change.
+  ///   - level: The level of the change.
+  /// - Throws: ``SettingsGraphError/userLevelOnly(keyPath:)`` for the first
+  ///   key of the user level only that the change gives a value to.
+  private static func refuseUserLevelOnlyKeys(
+    in value: YAMLValue, at keyPath: [String], level: SettingsGraphLevel
+  ) throws {
+    guard level == .session else {
+      return
+    }
+    if let userKeyPath = userLevelOnlyKeyPaths.first(where: {
+      change(at: keyPath, with: value, reaches: $0)
+    }) {
+      throw SettingsGraphError.userLevelOnly(keyPath: userKeyPath.joined(separator: "."))
+    }
+  }
+
+  /// Tells if a change gives a value to a key.
+  ///
+  /// - Parameters:
+  ///   - keyPath: The key path of the change.
+  ///   - value: The new value.
+  ///   - target: The key path of the key.
+  /// - Returns: True when the change is at `target` or inside it, or when
+  ///   it is at a mapping on the way to `target` and `value` holds `target`.
+  private static func change(at keyPath: [String], with value: YAMLValue, reaches target: [String])
+    -> Bool
+  {
+    if keyPath.starts(with: target) {
+      return true
+    }
+    guard target.starts(with: keyPath) else {
+      return false
+    }
+    return value.value(at: Array(target.dropFirst(keyPath.count))) != nil
   }
 
   // MARK: - Changes

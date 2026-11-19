@@ -62,6 +62,11 @@ sessions:
   # false at the user level, or at the session level of a folder for the
   # sessions of that folder only.
   recap: true
+  # When true, the app writes the turns of the sessions to Core Spotlight
+  # (D207). When false, the app removes all its items from Spotlight. The
+  # agent does not act on this key. Set it at the user level only: the
+  # settings tool and the settings endpoint refuse it at the session level.
+  spotlight: true
 
 tools:
   # The files tools: read, write, search and edit the files of the session.

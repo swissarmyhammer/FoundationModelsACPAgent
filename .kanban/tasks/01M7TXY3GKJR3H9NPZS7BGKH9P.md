@@ -10,6 +10,16 @@ comments:
     - `.markdown`, `.turnCount`, `.updates`; `try snapshot.encoded()` gives `updates.json` (formatVersion 1).
     Still waiting for the Multitool `SessionSharer` sha.
   timestamp: 2026-11-19T22:17:50.115720+00:00
+- actor: claude-code
+  id: 01m7tzjghphddt8k9z2fre36hj
+  text: |-
+    Dependency available (2026-11-19): the Multitool `SessionSharer` protocol is on origin/main, commit 7c2f6355 (head 87ed8df6; tested against Extras 4f3afb5). All deps are now on main; this task can start.
+    API (Sendable, Equatable, Codable, public memberwise inits):
+    - `protocol SessionSharer: Sendable`: `share(_ session: ULID, options: SessionShareOptions) async throws -> SessionShare`; `update(_ session: ULID, options: SessionShareOptions) async throws -> SessionShare` (NOTE: update takes the options, so `keepUpdated` reaches the sharer; Multitool sends the existing options with `keepUpdated` changed); `stop(_ session: ULID) async throws`; `share(of: ULID) async throws -> SessionShare?`; `shareChanges() -> AsyncStream<ULID>` (the session id of each share change outside a Multitool call; default: a stream that finishes at once).
+    - `SessionShareOptions`: `includeThoughts`, `includeToolOutput`, `anyoneWithLink`, `keepUpdated`; `.defaults` = true, true, true, false. `SessionShare`: `url`, `anyoneWithLink`, the options, `updatedAt`.
+    - Host API: `SessionsTool(directory:exporter:searcher:sharer:)`, `SessionsGraph.endpoint(of:exporter:searcher:sharer:)` (nil default). No sharer: SHARING_UNAVAILABLE; a sharer that throws: SHARE_FAILED; update/stop with no share: NOT_SHARED. No risk mark: normal permission rules.
+    So the adapter of this task must give the host closures for share, update (with options), stop, the current share, and the change stream (the host passes its CloudShareStore stream through).
+  timestamp: 2026-11-19T22:41:55.766054+00:00
 position_column: todo
 position_ordinal: '9880'
 title: 'D208: the server session snapshot and the host sharer for the sessions tool'

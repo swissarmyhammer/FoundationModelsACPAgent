@@ -75,6 +75,7 @@ import Testing
     .noLevel(detail: ""),
     .unreadableSecret(reference: referenceName),
     .nullValue(keyPath: ""),
+    .userLevelOnly(keyPath: ""),
   ]
 
   /// Each error code and warning code that the endpoint can give: the code

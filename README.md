@@ -657,6 +657,28 @@ end, with no restart. An outside edit of a `config.yaml` applies after the
 watcher of the store reads the file again. When the setting cannot be read, the
 agent logs a warning and the recap stays on.
 
+### The Spotlight setting
+
+The `sessions.spotlight` key of `config.yaml` turns the Core Spotlight items of
+the sessions on and off (D207). When it is `true` (the default), the app writes
+the turns of the sessions to Core Spotlight. When it is `false`, the app removes
+all its items from Spotlight and stops the writes. The app owns the Spotlight
+writes. The agent does not act on the key.
+
+The key applies to the whole app, not to one folder, thus only the user level
+can hold it. A host reads and sets the key through the `settings` endpoint, and
+the model through the `settings` tool, with the key path
+`["sessions", "spotlight"]` at the `USER` level. An `updateSetting` call at the
+`SESSION` level that gives a value to the key, or to a `sessions` mapping that
+holds it, gets the error `USER_LEVEL_ONLY`, and the call writes nothing. A
+`clearSetting` call at the `SESSION` level is not refused, because it can only
+remove a value that a person wrote by hand.
+
+```yaml
+sessions:
+  spotlight: false
+```
+
 ### The home
 
 The home holds each folder outside the project that the agent reads or

@@ -62,7 +62,7 @@ public struct AgentConfiguration: Codable, Equatable, Sendable {
   public var statusline = StatusLineConfiguration()
 
   /// The settings of the sessions (``SessionsConfiguration``): the session
-  /// recap of D206.
+  /// recap of D206 and the Spotlight setting of D207.
   public var sessions = SessionsConfiguration()
 
   /// The YAML spelling of each top-level section.

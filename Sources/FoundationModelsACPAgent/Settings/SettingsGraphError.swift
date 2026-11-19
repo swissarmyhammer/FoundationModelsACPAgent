@@ -63,6 +63,12 @@ public enum SettingsGraphError: CodedError, Equatable {
   /// is the dotted key path of the change.
   case nullValue(keyPath: String)
 
+  /// `USER_LEVEL_ONLY`: an `updateSetting` call at the session level gives
+  /// a value to a key that only the user level can hold, for example
+  /// `sessions.spotlight` (D207 (i)). The value is the dotted key path of
+  /// that key.
+  case userLevelOnly(keyPath: String)
+
   /// The code of the error, for example `UNKNOWN_SECTION`.
   public var code: String {
     switch self {
@@ -77,6 +83,7 @@ public enum SettingsGraphError: CodedError, Equatable {
     case .noLevel: "NO_LEVEL"
     case .unreadableSecret: "SECRET_UNREADABLE"
     case .nullValue: "NULL_VALUE"
+    case .userLevelOnly: "USER_LEVEL_ONLY"
     case .childRunProfile: ChildAgentRun.refusalCode
     }
   }
@@ -114,6 +121,9 @@ public enum SettingsGraphError: CodedError, Equatable {
     case .nullValue(let keyPath):
       "The value of \(keyPath) is null, and updateSetting does not take null. To remove the key from the "
         + "level, call clearSetting with the same keyPath and level."
+    case .userLevelOnly(let keyPath):
+      "\(keyPath) applies to the whole app, not to one folder, thus only the USER level can hold it. "
+        + "Change it at the USER level."
     }
   }
 
