@@ -26,8 +26,15 @@ comments:
     - evidence: `timeout 1800 swift build --build-tests` printed "Build complete!" with 0 compiler warnings; `timeout 1800 swift test --skip-build` ran 2386 tests in 252 suites, all passed (1 known issue: the intended `withKnownIssue` of HarnessSmokeTests.orderedSubsequenceAssertionChecksOrderWithGaps); 0 warnings.
     - next: review
   timestamp: 2026-11-19T02:34:28.140687+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m7rtm3an3gegw5cpzecxv2m4
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (826a115). 0 findings, 0 confirmed, 0 refuted. 7 review tasks attempted, 0 failed, 0 skipped. 1 source file reviewed: HotResumeTests.swift. 4 .kanban files not reviewed (.reviewignore).
+    - next: none. The task is in done.
+  timestamp: 2026-11-19T02:36:56.021338+00:00
+position_column: done
+position_ordinal: ffffff8f80
 title: HotResumeTests.resumeTrace does not cancel its reader task when the resume request throws
 ---
 ## Problem
