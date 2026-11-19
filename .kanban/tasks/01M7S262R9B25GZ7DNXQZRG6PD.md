@@ -16,6 +16,15 @@ comments:
     Part 2 (correlation) is done under ^agknbvr (2026-11-18, not committed). The (source id, client id) key is removed. The `session/fork` handler sets a `@TaskLocal` id (`ForkLaunchID.current`) around `RouterSessionDirectory.fork(_:)` (`RoutedACPAgent.whileForkRequestWaits(_:_:)`), and `AgentSessionLauncher.forkSession(_:)` reads it. A `sessions` endpoint fork or a tool fork has no id and builds with the surface of its source. The test `aSessionForkAndAnEndpointForkOfOneClientGetTheirOwnSurfaces` (SessionForkHandlerTests) covers the third test of this card. No new task crosses the token on this side, so the Router needs no other change for part 2.
     Still open: part 1 (the additional directories in the `index.md` record through `makeFork(tools:additionalDirectories:)`) and its two tests. They wait for the Router sha.
   timestamp: 2026-11-19T05:08:47.899702+00:00
+- actor: claude-code
+  id: 01m7s3r53c7p0qs38kb3qx3xc0
+  text: |-
+    Dependency available (2026-11-18): Router ^et5r7pv is on origin/main at 5eeb6a50. Run `swift package update FoundationModelsRouter` when this task starts.
+    - `public func makeFork(tools: [any Tool], additionalDirectories: [URL]) async throws -> any RoutedSession` on `SessionLaunchForkRequest`. The directories go to `SessionRecord.additionalDirectories` of the fork (the same field as a new session), so they are in index.md and stay after a restart. `makeFork(tools:)` gives none; `makeFork()` gives the directories of the source record. The closed-state rules (`forkAlreadyMade`, `requestClosed`) apply to the new call too.
+    - The same-task guarantee is now in the docs of `SessionLauncher.forkSession(_:)`, `RouterSessionDirectory.fork(_:)` and `launchFork(_:)`, with a Router test. Part 2 of this task (the task-local `ForkLaunchID`) is already done in acd95d0.
+    - Also on Router main since 694d51ea: a fork asks for a copy of the source's prompt cache before its first prompt (`SessionPromptCacheCopying`). It has no effect until `MLXLanguageModel` conforms (a later Router step after an mlx-swift-lm release). No work for this task.
+    This task starts after ^d03gc6x, because both change Agent/SessionForkLaunch.swift.
+  timestamp: 2026-11-19T05:16:26.092941+00:00
 depends_on:
 - 01M7RWC0Q3R664RM3W2AGKNBVR
 position_column: todo

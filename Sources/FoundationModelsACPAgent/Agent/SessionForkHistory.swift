@@ -251,14 +251,27 @@ extension SessionMergeEngine {
   /// - Returns: The number of entries, or `nil` when no tool call is left out. Such a fork did not
   ///   fork at a tool call of this history, so the tool calls do not tell its cut.
   func forkEnd(keepingToolCalls kept: Set<String>) -> Int? {
-    let calls = entries.indices.compactMap { position -> (position: Int, id: String)? in
-      guard case .toolCall(let id) = entries[position].id else { return nil }
-      return (position, id.rawValue)
-    }
+    let calls = toolCallEntries
     let lastKept = calls.last { kept.contains($0.id) }?.position
     let searchStart = (lastKept ?? lastCompactionPosition).map { $0 + 1 } ?? 0
     let firstLeftOut = calls.first { $0.position >= searchStart && !kept.contains($0.id) }
     return firstLeftOut?.position
+  }
+
+  /// Whether this history holds a tool call with one of `ids`.
+  ///
+  /// - Parameter ids: The ids of the tool calls.
+  /// - Returns: `true` when an entry of this history is one of the tool calls.
+  func holdsToolCall(among ids: Set<String>) -> Bool {
+    toolCallEntries.contains { ids.contains($0.id) }
+  }
+
+  /// Each tool call of this history, with the position of its entry, in order.
+  private var toolCallEntries: [(position: Int, id: String)] {
+    entries.indices.compactMap { position -> (position: Int, id: String)? in
+      guard case .toolCall(let id) = entries[position].id else { return nil }
+      return (position, id.rawValue)
+    }
   }
 }
 

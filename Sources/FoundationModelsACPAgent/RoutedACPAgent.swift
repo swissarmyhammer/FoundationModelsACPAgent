@@ -257,6 +257,12 @@ public actor RoutedACPAgent: Agent {
   /// request (``whileForkRequestWaits(_:_:)``).
   var forkLaunches: [ForkLaunchID: RequestedFork] = [:]
 
+  /// The longest time that the launcher of a fork with no `session/fork` request waits until the
+  /// retained history of the source holds the tool call that forked (D205). Production keeps
+  /// ``defaultForkCallRecordTimeLimit``. A test sets a short value with
+  /// ``useForkCallRecordTimeLimit(_:)``.
+  var forkCallRecordTimeLimit = RoutedACPAgent.defaultForkCallRecordTimeLimit
+
   /// Records the number of open sessions in the `active_sessions` gauge
   /// (``AgentMetrics``).
   ///
@@ -349,6 +355,14 @@ public actor RoutedACPAgent: Agent {
   /// - Parameter limit: The limit.
   func useMailOnlyAnswerLimit(_ limit: Int) {
     mailOnlyAnswerLimit = limit
+  }
+
+  /// Sets ``forkCallRecordTimeLimit`` for the forks that this agent builds after this call. Only
+  /// a test calls it.
+  ///
+  /// - Parameter limit: The time limit.
+  func useForkCallRecordTimeLimit(_ limit: Duration) {
+    forkCallRecordTimeLimit = limit
   }
 
   /// Binds one more wire connection to this agent (ACPA-5, D120 a), and

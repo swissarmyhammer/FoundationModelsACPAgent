@@ -28,6 +28,26 @@ struct ForkLaunchID: RawRepresentable, Hashable, Sendable {
   let rawValue: UUID
 }
 
+/// The error of a fork with no `session/fork` request whose source history does not hold the
+/// tool call that forked (D205).
+///
+/// The launcher throws it, so the session directory refuses the fork, removes its recording
+/// folder and registers nothing. The `sessions` tool puts the text of this error in its
+/// corrective.
+enum ToolForkHistoryError: Error, CustomStringConvertible {
+  /// The retained history of the source did not record the calling tool call in the time limit.
+  case callingToolCallNotRecorded(source: SessionId, timeLimit: Duration)
+
+  /// The text of the error, which tells the model what to do.
+  var description: String {
+    switch self {
+    case .callingToolCallNotRecorded(let source, let timeLimit):
+      "The history of the session \(source.rawValue) did not record the tool call that forks it "
+        + "in \(timeLimit), so no fork was made. Try the call again."
+    }
+  }
+}
+
 /// What one `session/fork` request gives its fork. The launcher reads it when it builds the
 /// fork, and it writes the activation of the fork back.
 struct RequestedFork: Sendable {
@@ -45,6 +65,15 @@ struct RequestedFork: Sendable {
 }
 
 extension RoutedACPAgent {
+  /// The default of ``forkCallRecordTimeLimit``. The record of a tool call is one step of the
+  /// projector of the source and one step of this actor, so it comes in much less time. The
+  /// limit leaves room for a projector that waits on a slow send to the client.
+  static let defaultForkCallRecordTimeLimit = Duration.seconds(10)
+
+  /// The time between two looks at the retained history of the source while the launcher waits
+  /// for the record of the calling tool call (``forkCallRecordTimeLimit``).
+  static let forkCallRecordLookInterval = Duration.milliseconds(10)
+
   /// Runs `body` while `requested` waits for its launcher: the `session/fork` request gets a new
   /// id (``ForkLaunchID``), the agent keeps the request by that id, and `body` runs with the id
   /// as the task local ``ForkLaunchID/current``. The agent removes the request when `body` ends.
@@ -84,7 +113,9 @@ extension RoutedACPAgent {
   ///
   /// The fork has the agent of its source (``recordForkAgent(of:for:in:)``). The agent builds the
   /// fork through `request` one time (`SessionLaunchForkRequest.makeFork(tools:)`). The session
-  /// directory made the cut, so the agent does not map it again. Then the agent mounts the fork
+  /// directory made the cut, so the agent does not map it again. A fork with no request copies
+  /// the history of its source up to the call that forked, after the history recorded that call
+  /// (``toolForkHistory(of:source:)``). Then the agent mounts the fork
   /// (``mountFork(_:composition:placement:history:owner:)``).
   ///
   /// The session directory registers the fork and mails its first prompt after this call. The
@@ -97,8 +128,10 @@ extension RoutedACPAgent {
   ///     (``ForkLaunchID/current``), or `nil` for a fork that no request of this agent asked for.
   /// - Returns: The fork, mounted and not registered.
   /// - Throws: Whatever the load of the configuration, the composition, the build, the write of
-  ///   the history or the mount throws. A throw after the composition releases the surface. The
-  ///   session directory then refuses the fork and removes its recording folder.
+  ///   the history or the mount throws, and the error of a tool fork whose source history does
+  ///   not record the calling tool call in the time limit (``ToolForkHistoryError``). A throw
+  ///   after the composition releases the surface. The session directory then refuses the fork
+  ///   and removes its recording folder.
   func launchFork(_ request: SessionLaunchForkRequest, for launch: ForkLaunchID?) async throws
     -> any RoutedSession
   {
@@ -117,7 +150,7 @@ extension RoutedACPAgent {
       if let requested {
         history = requested.copiedHistory
       } else {
-        history = await toolForkHistory(of: fork, source: request.sourceID)
+        history = try await toolForkHistory(of: fork, source: request.sourceID)
       }
       let activation = try await mountFork(
         fork, composition: composition, placement: placement, history: history,
@@ -208,8 +241,9 @@ extension RoutedACPAgent {
   /// The agent does not know the cut of such a fork. The tool calls of the transcript of the fork
   /// name the tool calls that it keeps, so the part ends before the call that forked
   /// (``SessionMergeEngine/forkEnd(keepingToolCalls:)``). The Router sends the event of a tool
-  /// call before it runs the tool body, and the launcher reads the history only after the
-  /// composition of the fork. When the source left out no tool call,
+  /// call before it runs the tool body, but the projector of the source records that event in its
+  /// own step. So the launcher first waits until the history holds the call that forked
+  /// (``sourceHistoryHoldingCallingRound(of:keeping:)``). When the source left out no tool call,
   /// the fork did not fork at a call, and the agent does not know its cut: the fork then copies
   /// no entry, and never shows the whole source. The source history is the one in the table, else
   /// the one in the file of the source: a fork records in the folder of its source.
@@ -218,19 +252,70 @@ extension RoutedACPAgent {
   ///   - fork: The fork, built.
   ///   - source: The source of the fork.
   /// - Returns: The copied history, empty when the agent does not know the cut.
-  private func toolForkHistory(of fork: any RoutedSession, source: ULID) async
+  /// - Throws: ``ToolForkHistoryError/callingToolCallNotRecorded(source:timeLimit:)`` when the
+  ///   history of the source does not record the call that forked in the time limit; the cancel
+  ///   of the wait.
+  private func toolForkHistory(of fork: any RoutedSession, source: ULID) async throws
     -> SessionMergeEngine
   {
     let sourceId = SessionId(rawValue: source.description)
+    let kept = await fork.transcript.toolCallIds
     let sourceHistory =
-      sessions[sourceId]?.history
+      try await sourceHistoryHoldingCallingRound(of: sourceId, keeping: kept)
+      ?? sessions[sourceId]?.history
       ?? retainedHistory(
         kept: nil, directory: fork.recordingDirectory.deletingLastPathComponent(),
         sessionId: sourceId)
-    let kept = await fork.transcript.toolCallIds
     guard let end = sourceHistory.forkEnd(keepingToolCalls: kept) else {
       return SessionMergeEngine()
     }
     return sourceHistory.copiedHistory(endingAt: end)
+  }
+
+  /// The retained history of a source in the table, after it holds a tool call of the round that
+  /// forked (D205).
+  ///
+  /// The key of the round is the ids of its tool calls. The ACP id of a tool call is the id of
+  /// the call in the transcript (``ACPEventTranslator``). The transcript of the source settled at
+  /// the calling tool call before the fork, so the round is each tool call of that transcript
+  /// that the transcript of the fork does not keep. The cut of the Router
+  /// (`SessionLaunchForkRequest.forkedAtHistoryOrdinal`) is no key: it counts the entries of the
+  /// recorded Router history, and the retained history has other entries.
+  ///
+  /// The Router announces each call of a round before the first tool body of the round runs, so
+  /// a wait for one call of the round never waits for a call that runs after the fork. The wait
+  /// looks at the table again after each sleep, and a sleep suspends this actor, so the record of
+  /// the projector runs while the launcher waits.
+  ///
+  /// - Parameters:
+  ///   - sourceId: The source of the fork.
+  ///   - kept: The ids of the tool calls of the transcript of the fork.
+  /// - Returns: The history, or `nil` when the table does not hold the source or the fork leaves
+  ///   out no tool call of the source: then no record is due.
+  /// - Throws: ``ToolForkHistoryError/callingToolCallNotRecorded(source:timeLimit:)`` when the
+  ///   history does not hold a call of the round in ``forkCallRecordTimeLimit``, also when the
+  ///   source left the table meanwhile; the cancel of the wait.
+  private func sourceHistoryHoldingCallingRound(of sourceId: SessionId, keeping kept: Set<String>)
+    async throws -> SessionMergeEngine?
+  {
+    guard let source = sessions[sourceId]?.session else {
+      return nil
+    }
+    let round = await source.transcript.toolCallIds.subtracting(kept)
+    guard !round.isEmpty else {
+      return nil
+    }
+    let timeLimit = forkCallRecordTimeLimit
+    let deadline = ContinuousClock.now.advanced(by: timeLimit)
+    while true {
+      if let history = sessions[sourceId]?.history, history.holdsToolCall(among: round) {
+        return history
+      }
+      guard ContinuousClock.now < deadline else {
+        throw ToolForkHistoryError.callingToolCallNotRecorded(
+          source: sourceId, timeLimit: timeLimit)
+      }
+      try await Task.sleep(for: Self.forkCallRecordLookInterval)
+    }
   }
 }

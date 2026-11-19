@@ -88,6 +88,29 @@ import Testing
   private static let forkSessionWithPromptArguments =
     #"{"op":"fork session","message":"\#(forkFirstPrompt)"}"#
 
+  /// The prompt whose answer sends ``heldText`` and then calls `fork session` with no id.
+  private static let heldForkPrompt = "Fork after the held text"
+
+  /// The text that the answer of ``heldForkPrompt`` sends before its `fork session` call. The
+  /// agent end of the wire keeps the frame of this text, so the projector of the source waits in
+  /// that send, and the record of the call that forks is late. The answer holds after the text
+  /// until the wire keeps its frame: the Router can give the text to the projector after the
+  /// event of a call that comes later.
+  private static let heldText = "HELD-TEXT-BEFORE-THE-FORK"
+
+  /// The time limit of the record of the calling tool call in a test where the record never
+  /// comes.
+  private static let shortRecordTimeLimit = Duration.milliseconds(300)
+
+  /// The time between two looks at the recording folder of the source.
+  private static let forkNodeLookInterval = Duration.milliseconds(10)
+
+  /// The most looks at the recording folder of the source in one wait.
+  private static let forkNodeLookLimit = 2_000
+
+  /// The name of the record file of a session folder.
+  private static let indexFileName = "index.md"
+
   /// The snippet that the tool prompt runs.
   private static let toolCode = "1 + 1"
 
@@ -160,6 +183,12 @@ import Testing
       .onPrompt(
         containing: forkFirstPrompt,
         play: [.holdUntilReleased(hold), .textDelta(forkAnswerText), .endPass]),
+      .onPrompt(
+        containing: heldForkPrompt,
+        play: [
+          .textDelta(heldText), .holdUntilReleased(hold),
+          .toolCall(name: sessionsToolName, argumentsJSON: forkSessionArguments), .endPass,
+        ]),
       .onPrompt(containing: firstNote, play: [.textDelta(notesReply), .endPass]),
       .onPrompt(
         containing: runPrompt,
@@ -565,6 +594,130 @@ import Testing
   ) async throws -> SessionSummary {
     try await ScriptedPromptFixture.runPrompt(on: fixture, text: prompt, count: twoTurns)
     return try #require(try await forks(in: fixture).first)
+  }
+
+  /// A source session whose agent end of the wire keeps the frame of ``heldText``.
+  private struct HeldRecordSource {
+    /// The fixture of the source, after turn 1.
+    let fixture: ScriptedPromptFixture
+
+    /// The agent end of the wire, which keeps the frame of ``heldText``.
+    let holder: FrameHoldingTransport
+
+    /// The hold of the answer of ``heldForkPrompt`` between ``heldText`` and the call.
+    let hold: ScriptedHold
+
+    /// The recording folder of the source, where the fork node of a tool fork is.
+    let recordingFolder: URL
+  }
+
+  /// Makes a source session whose agent end of the wire keeps the frame of ``heldText``, and runs
+  /// turn 1 in it.
+  ///
+  /// - Parameters:
+  ///   - name: The name of the test, for the directories.
+  ///   - recordTimeLimit: The time limit of the record of the calling tool call of a tool fork,
+  ///     or `nil` for the limit of the agent.
+  /// - Returns: The source.
+  /// - Throws: Whatever the construction or the prompt throws, or a failed requirement when the
+  ///   table does not hold the source.
+  private static func makeHeldRecordSource(_ name: String, recordTimeLimit: Duration? = nil)
+    async throws -> HeldRecordSource
+  {
+    let wire = HarnessWire.makeInMemory()
+    let holder = FrameHoldingTransport(
+      wrapping: wire.agentEnd, holdingFirstFrameContaining: heldText)
+    let hold = ScriptedHold()
+    let fixture = try await ScriptedPromptFixture.make(
+      script: try script(holding: hold), label: "\(label)-\(name)",
+      wire: wire.replacingAgentEnd(with: holder))
+    if let recordTimeLimit {
+      await fixture.harness.agent.useForkCallRecordTimeLimit(recordTimeLimit)
+    }
+    try await ScriptedPromptFixture.runPrompt(on: fixture, text: firstPrompt)
+    let folder = try #require(
+      await fixture.harness.agent.sessions[fixture.sessionId]?.transcriptDirectory)
+    return HeldRecordSource(
+      fixture: fixture, holder: holder, hold: hold, recordingFolder: folder)
+  }
+
+  /// Runs ``heldForkPrompt`` in `source`: waits until the wire keeps the frame of ``heldText``,
+  /// lets the answer go on to its call, runs `whileHeld`, lets the frame go, and waits until the
+  /// prompt ends.
+  ///
+  /// - Parameters:
+  ///   - source: The source.
+  ///   - whileHeld: The work of the test while the wire keeps the frame.
+  /// - Throws: Whatever the prompt, `whileHeld` or a wait throws.
+  private static func runHeldForkPrompt(
+    on source: HeldRecordSource, whileHeld: () async throws -> Void
+  ) async throws {
+    try await ScriptedPromptFixture.runPrompt(
+      on: source.fixture, text: heldForkPrompt, count: twoTurns
+    ) {
+      defer {
+        source.hold.release()
+        source.holder.release()
+      }
+      await source.holder.waitUntilHolding()
+      source.hold.release()
+      try await whileHeld()
+    }
+  }
+
+  /// Whether a recording folder holds a fork node: a folder with a record file.
+  ///
+  /// - Parameter folder: The recording folder of the source.
+  /// - Returns: `true` when a fork node is there.
+  private static func holdsForkNode(_ folder: URL) -> Bool {
+    let children =
+      (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil))
+      ?? []
+    return children.contains { child in
+      FileManager.default.fileExists(atPath: child.appendingPathComponent(indexFileName).path)
+    }
+  }
+
+  /// Waits until the recording folder of the source holds a fork node or not, with a limit on
+  /// the number of looks.
+  ///
+  /// - Parameters:
+  ///   - folder: The recording folder of the source.
+  ///   - present: `true` to wait for a fork node, `false` to wait until none is there.
+  /// - Throws: The cancel of the wait.
+  private static func waitForForkNode(in folder: URL, present: Bool) async throws {
+    try await pollUntil(limit: forkNodeLookLimit, interval: forkNodeLookInterval) {
+      holdsForkNode(folder) == present
+    }
+  }
+
+  /// The JSON text of each tool call of a history, in order: the merged update of the call, with
+  /// its output.
+  ///
+  /// - Parameter history: The history.
+  /// - Returns: The texts.
+  /// - Throws: The error of an encode.
+  private static func toolCallTexts(of history: SessionMergeEngine) throws -> [String] {
+    try history.entries.compactMap { entry -> String? in
+      guard case .toolCall(let call) = entry.kind else { return nil }
+      return String(decoding: try JSONEncoder().encode(call), as: UTF8.self)
+    }
+  }
+
+  /// Runs ``heldForkPrompt`` in a source whose record of the calling tool call never comes before
+  /// the time limit: the wire keeps the frame of ``heldText`` until the session directory
+  /// removed the refused fork node.
+  ///
+  /// - Parameter name: The name of the test, for the directories.
+  /// - Returns: The source, after the prompt.
+  /// - Throws: Whatever the source, the prompt or a wait throws.
+  private static func runForkWithNoCallRecord(_ name: String) async throws -> HeldRecordSource {
+    let source = try await makeHeldRecordSource(name, recordTimeLimit: shortRecordTimeLimit)
+    try await runHeldForkPrompt(on: source) {
+      try await waitForForkNode(in: source.recordingFolder, present: true)
+      try await waitForForkNode(in: source.recordingFolder, present: false)
+    }
+    return source
   }
 
   /// The agent text of the updates of one session.
@@ -1114,6 +1267,52 @@ import Testing
     let live = try #require(fixture.harness.agent.sessionDirectory.session(id: summary.id))
 
     #expect((held as AnyObject) === (live as AnyObject))
+  }
+
+  // MARK: - The late record of the calling tool call
+
+  /// A fork that `fork session` made while the record of its calling tool call was late copies
+  /// the turns before the call. The wire keeps the frame of the text before the call until the
+  /// launcher built the fork node, so the projector of the source records the call only then.
+  @Test(.timeLimit(.minutes(1))) func aToolForkWhoseCallRecordIsLateCopiesTheTurnsBeforeTheCall()
+    async throws
+  {
+    let source = try await Self.makeHeldRecordSource("tool-late-record")
+    try await Self.runHeldForkPrompt(on: source) {
+      try await Self.waitForForkNode(in: source.recordingFolder, present: true)
+    }
+    let fork = try #require(try await Self.forks(in: source.fixture).first)
+
+    let history = try await Self.history(
+      of: SessionId(rawValue: fork.id.description), in: source.fixture)
+
+    #expect(Self.userTexts(of: history) == [Self.firstPrompt, Self.heldForkPrompt])
+  }
+
+  /// When the record of the calling tool call does not come in the time limit, the `fork
+  /// session` call gives the error of the missing record to the model.
+  @Test(.timeLimit(.minutes(1))) func aToolForkWithNoCallRecordFailsWithTheMissingRecordError()
+    async throws
+  {
+    let source = try await Self.runForkWithNoCallRecord("tool-no-record-error")
+    let expected = ToolForkHistoryError.callingToolCallNotRecorded(
+      source: source.fixture.sessionId, timeLimit: Self.shortRecordTimeLimit
+    ).description
+
+    let calls = try Self.toolCallTexts(
+      of: try await Self.history(of: source.fixture.sessionId, in: source.fixture))
+
+    #expect(calls.contains { $0.contains(expected) })
+  }
+
+  /// When the record of the calling tool call does not come in the time limit, the session
+  /// directory registers no fork.
+  @Test(.timeLimit(.minutes(1))) func aToolForkWithNoCallRecordRegistersNoFork() async throws {
+    let source = try await Self.runForkWithNoCallRecord("tool-no-record-fork")
+
+    let forks = try await Self.forks(in: source.fixture)
+
+    #expect(forks.isEmpty)
   }
 }
 

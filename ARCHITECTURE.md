@@ -94,7 +94,11 @@ other root session. All of it is in `Sources/FoundationModelsACPAgent/Agent/`.
   past the start of the answer that runs, and cuts the retained history at the same turn: a user
   message moves to its delivery in the copy. For a fork of the `fork session` operation it finds
   the cut from the tool calls of the fork transcript; when they do not tell the cut, the fork
-  copies no entry, never the whole source. A history file of an earlier build gets the records
+  copies no entry, never the whole source. The projector of the source records the call that
+  forked in its own step, so the launcher first waits, with a time limit, until the retained
+  history holds a call of that round: the tool calls of the settled source transcript that the
+  fork transcript does not keep. When the time limit ends, the launcher throws, and the
+  directory refuses the fork. A history file of an earlier build gets the records
   that that build counted when it is read.
 - **The restore.** A fork restores only by its own id (`restoreColdRoot`, and
   `AgentSessionLauncher.restoreSession(id:)` for the directory). The restore of a source restores
