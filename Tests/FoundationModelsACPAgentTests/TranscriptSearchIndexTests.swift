@@ -68,7 +68,7 @@ import Testing
   private static func makeFilledIndex(label: String, embedder: (any PooledEmbedding)?) async
     -> TranscriptSearchIndex
   {
-    let index = makeIndex(label: label, embedder: embedder)
+    let index = await makeIndex(label: label, embedder: embedder)
     await index.index(
       session: sessionId,
       chunks: chunks(
@@ -87,10 +87,10 @@ import Testing
   ///   - label: The label of the folder.
   ///   - embedder: The embedder of the index, or `nil` for the keyword signals only.
   /// - Returns: The index.
-  private static func makeIndex(label: String, embedder: (any PooledEmbedding)?)
+  private static func makeIndex(label: String, embedder: (any PooledEmbedding)?) async
     -> TranscriptSearchIndex
   {
-    TranscriptSearchIndex(
+    await TranscriptSearchIndex(
       folder: makeResolvedDirectory(label: "TranscriptSearchIndexTests-\(label)"),
       embedder: embedder, modelID: nil, readableFolder: { _ in true })
   }
@@ -176,7 +176,7 @@ import Testing
   /// New facts of a session that the index does not hold add no item: a session gets its items
   /// from its history.
   @Test func newFactsOfASessionThatTheIndexDoesNotHoldAddNoItem() async throws {
-    let index = Self.makeIndex(label: "facts-not-held", embedder: nil)
+    let index = await Self.makeIndex(label: "facts-not-held", embedder: nil)
 
     await index.update(session: Self.sessionId, metadata: Self.metadata)
 
@@ -187,7 +187,7 @@ import Testing
   /// session, and the client index finds nothing.
   @Test func twoIndexesWithDifferentFoldersAreIndependent() async throws {
     let server = await Self.makeFilledIndex(label: "server", embedder: nil)
-    let client = Self.makeIndex(label: "client", embedder: nil)
+    let client = await Self.makeIndex(label: "client", embedder: nil)
 
     #expect(
       [

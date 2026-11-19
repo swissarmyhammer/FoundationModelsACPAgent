@@ -156,8 +156,9 @@ public struct AgentHome: Sendable, Equatable {
   }
 
   /// The folder of the transcript search index of this server (D207): the
-  /// `server` folder of `session-search` in ``local``. The index of the
-  /// sessions that this server records keeps its files there.
+  /// `server` folder of `session-search` in ``local``. The searcher of the
+  /// index of the sessions that this server records keeps its stored catalog
+  /// and its vectors there, and no other file.
   public var serverSessionSearchDirectory: URL {
     sessionSearchDirectory.appendingPathComponent(
       Self.serverSessionSearchFolderName, isDirectory: true)

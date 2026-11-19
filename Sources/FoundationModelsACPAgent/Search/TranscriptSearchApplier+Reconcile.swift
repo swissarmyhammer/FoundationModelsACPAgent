@@ -77,9 +77,11 @@ extension TranscriptSearchApplier {
   ///
   /// The reconcile reads the record and the `session-history.json` of each session folder of
   /// the recording root, and gives the chunk items and the session item of each session that
-  /// has a history file, in one change of the catalog. The registry does no work for an item
-  /// that did not change. It then removes the items of each session of the folder that the
-  /// index holds and that has no history file. A history file that does not read is logged,
+  /// has a history file, in one change of the catalog. The index starts from its stored catalog,
+  /// so it gives the searcher only the items that changed after the last run. It then removes
+  /// the items of each session of the folder that the index holds and that has no history file:
+  /// also a session that the stored catalog holds and whose folder was deleted while the agent
+  /// was off. A history file that does not read is logged,
   /// and the items of its session stay. A root that does not read is logged, and each item of
   /// the folder stays.
   ///

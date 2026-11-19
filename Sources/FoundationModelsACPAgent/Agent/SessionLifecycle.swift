@@ -210,6 +210,10 @@ extension RoutedACPAgent {
   /// A connection that closes while the process lives is not a shutdown: the sessions stay
   /// active (``tearDownConnection(_:after:)``), and nothing is suspended.
   ///
+  /// After the close, the shutdown waits until the transcript search index applied each change
+  /// that it got (the history of each closed session too), and until the index wrote its
+  /// catalog to its folder. Thus the next start of the agent finds the last turn (D207).
+  ///
   /// The call is for `acp-agent acp` and `acp-agent run` when the process ends: on the end of
   /// the input, on `SIGTERM`, and after a prompt of the command line. With no live session it
   /// closes nothing and returns.
@@ -217,6 +221,8 @@ extension RoutedACPAgent {
     sessionDirectory.suspendLiveSessions()
     await closeSessions(where: { _ in true }, isShutdown: true)
     await settingsStore.stopWatching()
+    await transcriptSearchUpdates.waitUntilApplied()
+    await transcriptSearchIndex.waitForSaves()
   }
 
   /// Closes each open session that has no owner now, as `session/close`
