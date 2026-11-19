@@ -570,14 +570,19 @@ public enum ToolCatalog {
   /// The tool gets the transcript exporter of the agent
   /// (``CatalogContext/transcriptExporter``) for its `export session`
   /// operation, and gives it to that endpoint for the `export` field
-  /// (`SessionsGraph.endpoint(of:exporter:)`, D202).
+  /// (`SessionsGraph.endpoint(of:exporter:searcher:)`, D202). In the same
+  /// way, it gets the transcript searcher of the agent
+  /// (``CatalogContext/transcriptSearcher``) for its `search sessions`
+  /// operation and the `searchSessions` field (D207).
   ///
   /// - Parameter context: The catalog context of the session.
   /// - Returns: The tool, or `nil` when the context has no directory.
   /// - Throws: The error of the operation table of `SessionsTool`.
   static func makeSessionsTool(context: CatalogContext) throws -> SessionsTool? {
     try context.sessionDirectory.map {
-      try SessionsTool(directory: $0, exporter: context.transcriptExporter)
+      try SessionsTool(
+        directory: $0, exporter: context.transcriptExporter,
+        searcher: context.transcriptSearcher)
     }
   }
 
