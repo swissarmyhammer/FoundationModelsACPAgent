@@ -53,6 +53,12 @@ public actor RoutedACPAgent: Agent {
   /// models alive between sessions.
   public nonisolated let residentProfile: LanguageModelProfile
 
+  /// The transcript search index of the sessions of this server (D207 (b), Q66), over
+  /// ``AgentHome/serverSessionSearchDirectory``. It embeds with the `embedding` slot of
+  /// ``residentProfile``. The updates of each turn, fork, change of the directory and delete
+  /// come in a later change (^en1kt61); until then the index is empty.
+  nonisolated let transcriptSearchIndex: TranscriptSearchIndex
+
   /// The session directory of the router that resolved
   /// ``residentProfile`` (`Router.sessionDirectory`). Each session that
   /// the profile vends or restores registers in it, so the agent changes
@@ -603,6 +609,11 @@ public actor RoutedACPAgent: Agent {
     }
     residentProfile = try await configuration.profile.resolveResident(
       router: router, reporting: progress)
+    transcriptSearchIndex = TranscriptSearchIndex(
+      folder: home.serverSessionSearchDirectory,
+      embedder: ProfileEmbedding(embedder: residentProfile.embedding),
+      modelID: residentProfile.embedding.chosen.stringValue,
+      readableFolder: Self.everyFolderIsReadable)
     modelsEndpoint = ModelsGraph(
       store: settingsStore,
       storage: modelStorage ?? ModelStorage(cacheDirectory: home.modelCacheDirectory),

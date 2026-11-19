@@ -1,0 +1,237 @@
+import Foundation
+import FoundationModelsACP
+import FoundationModelsMetadataRegistry
+
+/// One item of the catalog of the transcript search (D207 (b) (1)): a chunk of the transcript of
+/// a session, or a session itself.
+///
+/// The `MetadataSearcher` of the registry reads the block of each item with the default
+/// `renderIndexedText(from:)`, `renderEmbeddedText(from:)` and `renderSummaryBlock()`: its BM25,
+/// trigram and cosine signals read the whole block, and the registry decides what matches.
+///
+/// - A **chunk item** holds one chunk of `SessionSearchChunker` of FoundationModelsACP. Its id is
+///   `<session id>/<ordinal>`. Its block is the text of the chunk, with the title of a tool call
+///   as its first line. The chunk keeps the turn, the kind, the author, the date and the wire ids
+///   of its entries with their ranges in the text.
+/// - A **session item** holds the facts of one session (``TranscriptSessionMetadata``). Its id is
+///   the session id. Its block is the name, the slug, the tags, the folder, the agent name, the
+///   recap and the last summary, one on each line.
+public struct TranscriptSearchItem: SearchableMetadata, Codable, Hashable {
+  /// What an item holds.
+  public enum Content: Hashable, Sendable {
+    /// A chunk of the transcript of the session.
+    case chunk(SessionSearchChunk)
+
+    /// The facts of the session.
+    case session(TranscriptSessionMetadata)
+  }
+
+  /// The text between the session id and the ordinal of the chunk in the id of a chunk item.
+  private static let chunkIDSeparator = "/"
+
+  /// The text between two lines of a block.
+  private static let lineSeparator = "\n"
+
+  /// The id of the item: `<session id>/<ordinal>` for a chunk item, and the session id for a
+  /// session item. The ids are unique in one catalog.
+  public let id: String
+
+  /// The session of the item.
+  public let sessionId: SessionId
+
+  /// What the item holds.
+  public let content: Content
+
+  /// Makes the chunk item of one chunk of the transcript of a session.
+  ///
+  /// - Parameters:
+  ///   - chunk: The chunk, from `SessionSearchChunker.chunks(of:dates:)`.
+  ///   - session: The session of the transcript.
+  public init(chunk: SessionSearchChunk, session: SessionId) {
+    id = "\(session.rawValue)\(Self.chunkIDSeparator)\(chunk.ordinal)"
+    sessionId = session
+    content = .chunk(chunk)
+  }
+
+  /// Makes the session item of a session.
+  ///
+  /// - Parameters:
+  ///   - session: The session.
+  ///   - metadata: The facts of the session.
+  public init(session: SessionId, metadata: TranscriptSessionMetadata) {
+    id = session.rawValue
+    sessionId = session
+    content = .session(metadata)
+  }
+
+  /// Renders the item to the text of its search surface: the text of a chunk, with the title of
+  /// a tool call as its first line, or the facts of a session, one on each line.
+  ///
+  /// - Returns: The block.
+  public func renderBlock() -> String {
+    switch content {
+    case .chunk(let chunk):
+      return Self.block(of: chunk)
+    case .session(let metadata):
+      return metadata.blockLines.joined(separator: Self.lineSeparator)
+    }
+  }
+
+  /// The block of a chunk: its text, with the title of a tool call as its first line. The first
+  /// piece of a tool call holds its title as its first line already. A later piece of a long tool
+  /// call does not, so its block gets the title.
+  ///
+  /// - Parameter chunk: The chunk.
+  /// - Returns: The block.
+  private static func block(of chunk: SessionSearchChunk) -> String {
+    let firstLine = chunk.text.prefix { !$0.isNewline }
+    guard chunk.kind == .tool, !chunk.title.isEmpty, firstLine != chunk.title else {
+      return chunk.text
+    }
+    return chunk.title + lineSeparator + chunk.text
+  }
+
+  // MARK: - Coding
+
+  /// The keys of the coded form. The id is not coded: the decode makes it again from the session
+  /// and the content.
+  private enum CodingKeys: String, CodingKey {
+    /// The session id.
+    case sessionId
+    /// The chunk of a chunk item.
+    case chunk
+    /// The facts of a session item.
+    case session
+  }
+
+  /// Decodes an item from the form that ``encode(to:)`` writes.
+  ///
+  /// - Parameter decoder: The decoder.
+  /// - Throws: `DecodingError` when the form has no chunk and no facts, or when a chunk does not
+  ///   read.
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let session = try container.decode(SessionId.self, forKey: .sessionId)
+    if let chunk = try container.decodeIfPresent(CodedChunk.self, forKey: .chunk) {
+      self.init(chunk: try chunk.chunk(codingPath: container.codingPath), session: session)
+      return
+    }
+    guard
+      let metadata = try container.decodeIfPresent(TranscriptSessionMetadata.self, forKey: .session)
+    else {
+      throw DecodingError.dataCorruptedError(
+        forKey: .session, in: container,
+        debugDescription: "A transcript search item holds no chunk and no session facts.")
+    }
+    self.init(session: session, metadata: metadata)
+  }
+
+  /// Encodes the session and the content of the item.
+  ///
+  /// - Parameter encoder: The encoder.
+  /// - Throws: Whatever the encoder throws.
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(sessionId, forKey: .sessionId)
+    switch content {
+    case .chunk(let chunk):
+      try container.encode(CodedChunk(chunk), forKey: .chunk)
+    case .session(let metadata):
+      try container.encode(metadata, forKey: .session)
+    }
+  }
+}
+
+/// The coded form of a `SessionSearchChunk`: the kind as its raw value, and each entry id as its
+/// text form (`SessionEntry.ID.searchHitID`) with the bounds of its range.
+private struct CodedChunk: Codable {
+  /// The coded form of one entry of a chunk with its range.
+  struct CodedEntryRange: Codable {
+    /// The text form of the entry id.
+    let entry: String
+    /// The lower bound of the range, in characters.
+    let lower: Int
+    /// The upper bound of the range, in characters.
+    let upper: Int
+  }
+
+  /// The turn of the chunk.
+  let turn: Int
+  /// The place of the chunk in the session.
+  let ordinal: Int
+  /// The raw value of the kind of the chunk.
+  let kind: String
+  /// The sender of a message from another session, or `nil`.
+  let author: String?
+  /// The date of the chunk, or `nil`.
+  let date: Date?
+  /// The title of a tool call.
+  let title: String
+  /// The text of the chunk.
+  let text: String
+  /// The entries of the chunk with their ranges.
+  let entries: [CodedEntryRange]
+
+  /// Makes the coded form of a chunk.
+  ///
+  /// - Parameter chunk: The chunk.
+  init(_ chunk: SessionSearchChunk) {
+    turn = chunk.turn
+    ordinal = chunk.ordinal
+    kind = chunk.kind.rawValue
+    author = chunk.author
+    date = chunk.date
+    title = chunk.title
+    text = chunk.text
+    entries = chunk.entries.map { range in
+      CodedEntryRange(
+        entry: range.id.searchHitID, lower: range.range.lowerBound, upper: range.range.upperBound)
+    }
+  }
+
+  /// The chunk of this coded form.
+  ///
+  /// - Parameter codingPath: The coding path of the form, for the error.
+  /// - Returns: The chunk.
+  /// - Throws: `DecodingError` when the kind, an entry id or a range does not read.
+  func chunk(codingPath: [any CodingKey]) throws -> SessionSearchChunk {
+    guard let kind = SessionSearchChunk.Kind(rawValue: kind) else {
+      throw Self.corrupted("The kind \(kind) of a chunk is not known.", codingPath: codingPath)
+    }
+    return SessionSearchChunk(
+      turn: turn, ordinal: ordinal, kind: kind, author: author, date: date, title: title,
+      text: text, entries: try entries.map { try Self.entryRange(of: $0, codingPath: codingPath) })
+  }
+
+  /// The entry range of a coded entry.
+  ///
+  /// - Parameters:
+  ///   - coded: The coded entry.
+  ///   - codingPath: The coding path of the form, for the error.
+  /// - Returns: The entry range.
+  /// - Throws: `DecodingError` when the entry id or the range does not read.
+  private static func entryRange(of coded: CodedEntryRange, codingPath: [any CodingKey]) throws
+    -> SessionSearchChunk.EntryRange
+  {
+    guard let id = SessionEntry.ID(searchHitID: coded.entry) else {
+      throw corrupted(
+        "The entry id \(coded.entry) of a chunk is not known.", codingPath: codingPath)
+    }
+    guard coded.lower <= coded.upper else {
+      throw corrupted(
+        "The range of the entry \(coded.entry) ends before it starts.", codingPath: codingPath)
+    }
+    return SessionSearchChunk.EntryRange(id: id, range: coded.lower..<coded.upper)
+  }
+
+  /// The error of a coded chunk that does not read.
+  ///
+  /// - Parameters:
+  ///   - description: What does not read.
+  ///   - codingPath: The coding path of the form.
+  /// - Returns: The error.
+  private static func corrupted(_ description: String, codingPath: [any CodingKey]) -> DecodingError
+  {
+    .dataCorrupted(DecodingError.Context(codingPath: codingPath, debugDescription: description))
+  }
+}

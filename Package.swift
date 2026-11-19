@@ -115,6 +115,15 @@ private let kanbanDependencyName = "FoundationModelsKanban"
 /// so the package identity stays one.
 private let rankerDependencyName = "FoundationModelsRanker"
 
+/// The metadata registry: `SearchableMetadata` and `MetadataSearcher`, the
+/// one engine of the transcript search (D207). The `TranscriptSearchIndex`
+/// gives its chunk items and its session items to one searcher in the
+/// `.retrieval` mode, and the BM25, trigram and cosine signals of the
+/// registry decide the matches and their order. Multitool and Kanban
+/// declare it from the same URL and the same branch, so the package
+/// identity stays one and this declaration adds no checkout.
+private let metadataRegistryDependencyName = "FoundationModelsMetadataRegistry"
+
 /// The Client role: the driver of every test level above a plain unit test.
 /// Do not write a test client.
 ///
@@ -380,6 +389,7 @@ private let familyDependencyNames = [
     agentsDependencyName,
     codeContextDependencyName,
     rankerDependencyName,
+    metadataRegistryDependencyName,
 ]
 
 /// Makes the `.package(url:branch:)` dependency of a family package hosted

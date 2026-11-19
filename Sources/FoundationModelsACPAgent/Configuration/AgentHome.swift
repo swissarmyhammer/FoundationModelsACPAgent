@@ -75,6 +75,15 @@ public struct AgentHome: Sendable, Equatable {
   /// The folder of the code context index in the state folder of a project.
   static let codeContextFolderName = "code-context"
 
+  /// The folder of the transcript search indexes in ``local`` (D207).
+  static let sessionSearchFolderName = "session-search"
+
+  /// The folder of the transcript search index of this server in the session search folder.
+  static let serverSessionSearchFolderName = "server"
+
+  /// The folder of the transcript search index of a client app in the session search folder.
+  static let clientSessionSearchFolderName = "client"
+
   /// The environment key of the base directory of the user configuration
   /// files, in the XDG Base Directory specification.
   static let configHomeEnvironmentKey = "XDG_CONFIG_HOME"
@@ -144,6 +153,27 @@ public struct AgentHome: Sendable, Equatable {
   public var sessionUsageFile: URL {
     local.appendingPathComponent("sessions", isDirectory: true)
       .appendingPathComponent("usage.json", isDirectory: false)
+  }
+
+  /// The folder of the transcript search index of this server (D207): the
+  /// `server` folder of `session-search` in ``local``. The index of the
+  /// sessions that this server records keeps its files there.
+  public var serverSessionSearchDirectory: URL {
+    sessionSearchDirectory.appendingPathComponent(
+      Self.serverSessionSearchFolderName, isDirectory: true)
+  }
+
+  /// The folder of the transcript search index of a client app (D207, Q66):
+  /// the `client` folder of `session-search` in ``local``. The Mac app keeps
+  /// there the index of the transcripts of other agents that it showed.
+  public var clientSessionSearchDirectory: URL {
+    sessionSearchDirectory.appendingPathComponent(
+      Self.clientSessionSearchFolderName, isDirectory: true)
+  }
+
+  /// The folder of the transcript search indexes in ``local``: `session-search`.
+  private var sessionSearchDirectory: URL {
+    local.appendingPathComponent(Self.sessionSearchFolderName, isDirectory: true)
   }
 
   // MARK: - Presets

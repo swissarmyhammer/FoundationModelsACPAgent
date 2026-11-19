@@ -118,11 +118,20 @@ final class RetainedHistory: Sendable {
   /// The merged history, under the lock.
   private let engine: Mutex<SessionMergeEngine>
 
+  /// The clock of the dates that the history records (``EntryDateRecord``).
+  private let now: @Sendable () -> Date
+
   /// Makes the shared history over `history`.
   ///
-  /// - Parameter history: The first state of the history.
-  init(_ history: SessionMergeEngine = SessionMergeEngine()) {
+  /// - Parameters:
+  ///   - history: The first state of the history.
+  ///   - now: The clock of the dates that the history records. The default is the system clock.
+  init(
+    _ history: SessionMergeEngine = SessionMergeEngine(),
+    now: @escaping @Sendable () -> Date = Date.init
+  ) {
     engine = Mutex(history)
+    self.now = now
   }
 
   /// A copy of the history as it is now.
@@ -130,11 +139,21 @@ final class RetainedHistory: Sendable {
     engine.withLock { $0 }
   }
 
-  /// Merges one update into the history.
+  /// Merges one update into the history. When the update adds an entry that the history dates
+  /// (``SessionEntry/isDatedInHistory``), the history also records the date of that entry
+  /// (``EntryDateRecord``) in the same locked operation.
   ///
   /// - Parameter update: The update that the agent sends.
   func apply(_ update: SessionUpdate) {
-    engine.withLock { _ = $0.apply(update) }
+    let now = now
+    engine.withLock { history in
+      let knownCount = history.entries.count
+      _ = history.apply(update)
+      let dated = history.entries.dropFirst(knownCount).filter(\.isDatedInHistory).map(\.id)
+      for entry in dated {
+        _ = history.apply(EntryDateRecord(entry: entry, date: now()).update)
+      }
+    }
   }
 
   /// Records the command list and the configuration options of a
@@ -214,11 +233,14 @@ extension SessionMergeEngine {
   }
 
   /// The transcript part of a replay from the start: each transcript entry as one whole update
-  /// with its id, without a recorded `_mail_delivery_paused` and without a record of the mail
-  /// delivery (``MailDeliveryRecord``), which no client gets. The export of a session as Markdown
-  /// renders the same updates (``RoutedACPAgent/transcriptMarkdown(of:includeThoughts:)``).
+  /// with its id, without a recorded `_mail_delivery_paused`, without a record of the mail
+  /// delivery (``MailDeliveryRecord``) and without a record of the date of an entry
+  /// (``EntryDateRecord``), which no client gets. The export of a session as Markdown renders the
+  /// same updates (``RoutedACPAgent/transcriptMarkdown(of:includeThoughts:)``).
   var replayedTranscriptUpdates: [SessionUpdate] {
-    transcriptUpdates.filter { !$0.isMailDeliveryPause && !$0.isMailDeliveryRecord }
+    transcriptUpdates.filter {
+      !$0.isMailDeliveryPause && !$0.isMailDeliveryRecord && !$0.isEntryDateRecord
+    }
   }
 }
 
