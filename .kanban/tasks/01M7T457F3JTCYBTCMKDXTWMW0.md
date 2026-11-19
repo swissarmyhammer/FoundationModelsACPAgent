@@ -35,8 +35,15 @@ comments:
     - evidence: `timeout 1800 swift test --skip-build`: 2577 tests, 1 failure (TranscriptSearchAgentUpdatesTests/aRecordWithNoTitleGetsTheSlugOfTheRouter, Search code of ^pqweam5, not this change), 1 known issue; ScriptedPassContinuationTests 7/7 pass; build "Build complete!" with 0 compiler warnings
     - next: the owner of ^pqweam5 corrects the Search failure
   timestamp: 2026-11-19T15:04:46.649874+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m7t673v05dj2es4rbhb7x37c
+  text: |-
+    ### review — clean
+    - evidence: `review sha a33d8e7~1..a33d8e7`: 0 findings, 0 confirmed, 1 refuted, 7 attempted, 0 failed. 4 source files reviewed. 4 .kanban files not reviewed (.reviewignore).
+    - next: move the task to done. After the push, do the client check in FoundationModelsACPClient.
+  timestamp: 2026-11-19T15:18:47.904007+00:00
+position_column: done
+position_ordinal: ffffff9e80
 title: A scripted session continues its open pass after a Router compaction stop, and does not play it again from step 1
 ---
 Bug report from the FoundationModelsACPClient session (2026-11-19). Brief: `/Users/wballard/github/swissarmyhammer/.briefs/acpagent-scripted-continuation.md` (read it: it has the evidence).
