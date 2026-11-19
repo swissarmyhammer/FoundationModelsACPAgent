@@ -64,10 +64,17 @@ comments:
     - evidence: swift build --build-tests: Build complete!, 0 compiler warnings. swift test --skip-build: 2593 tests in 269 suites passed, 1 known issue (withKnownIssue in HarnessSmokeTests). The new load tests in TranscriptSearchPersistenceTests: 15/15 passed. Benchmarks: Build complete!, 1 test passed (numbers in the comment above).
     - next: /review
   timestamp: 2026-11-19T15:53:57.095371+00:00
+- actor: claude-code
+  id: 01m7t8de283xv14x2mc0wqabma
+  text: |-
+    ### review — clean
+    - evidence: `review sha HEAD~1..HEAD` (07f35f6). 0 findings, 0 confirmed, 0 refuted. 7 engine tasks attempted, 0 failed. 19 files reviewed. The engine declined 15 rule items. Each item names an old path of a renamed file (TranscriptSearchMeasurementTests.swift, Support/CountingEmbedding.swift, Support/WordBucketEmbedding.swift). The new paths of these files are in the reviewed set. All prior findings are checked.
+    - next: none. The task moved to done.
+  timestamp: 2026-11-19T15:57:12.136179+00:00
 depends_on:
 - 01M7SY663TJBRCSAEXBJEX3G34
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: ffffff9f80
 title: 'D207: persist the transcript search catalog with the registry, and measure 1,000 sessions'
 ---
 Decision D207. Brief: `/Users/wballard/github/swissarmyhammer/.briefs/search/acpa-brief.md`, change step 5 and the last test. Overview: `overview.md` ("Across launches").
