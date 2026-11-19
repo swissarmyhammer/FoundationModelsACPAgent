@@ -201,34 +201,67 @@ extension SessionMergeEngine {
 }
 
 extension SessionMergeEngine {
-  /// The position of a fork cut in this history: the number of transcript entries (``entries``)
-  /// that the fork keeps (D205).
+  /// The position in ``entries`` of the first message entry with an id (``SessionEntry/ID/messageId``).
+  /// An entry keeps the place where it first appeared, so a message that came in chunks has one
+  /// position.
   ///
-  /// - ``ForkCutSide/before`` keeps the entries before the message, and not the message.
-  /// - ``ForkCutSide/after`` keeps the entries up to the end of the message, and the message.
+  /// - Parameter messageId: The ACP message id.
+  /// - Returns: The position, or `nil` when no message of the history has the id.
+  func messagePosition(of messageId: MessageId) -> Int? {
+    entries.firstIndex { $0.id.messageId == messageId }
+  }
+
+  /// The position in ``entries`` of the entry that starts each turn, in order (D205).
   ///
-  /// Thus the cut after the last agent message of a turn and the cut before the user message of
-  /// the next turn give the same position. The message is the first message entry of the history
-  /// with the id (``SessionEntry/ID/messageId``). An entry keeps the place where it first
-  /// appeared, so a message that came in chunks has one position.
+  /// A turn is the rule of the session directory (`SessionForkCut`): one delivered user message,
+  /// or one delivered message from another session, and all the entries after it up to the next
+  /// turn. Thus each user message starts a turn, and so does each incoming `session_message`
+  /// (from the directory, from the `agents` tool, or from the mail route of the host). An
+  /// outgoing `session_message` is the view of a message that this session sent: it was not
+  /// delivered to this session, so it starts no turn. A continuation of a tool loop, the result
+  /// of a run and the answer to an elicitation have no entry of these kinds, so they start no
+  /// turn either.
   ///
-  /// The history keeps the ACP ids that the client saw live, and the file of the history keeps
-  /// them for a new process (``SessionHistoryFile``). Thus the map is the same for a session that
-  /// was resumed after a restart (``RoutedACPAgent/retainedHistory(kept:directory:sessionId:)``).
+  /// The count covers the whole retained history. A compaction changes only the model context,
+  /// never this history, so a turn that a compaction folded still counts.
+  ///
+  /// - Parameter recipients: The ids that an incoming message names as its recipient: the id of
+  ///   this session, and the id of each session that this session is a fork of.
+  /// - Returns: The positions, in order. The turn index is the index in this list.
+  func turnStarts(receivedBy recipients: Set<SessionId>) -> [Int] {
+    entries.indices.filter { entries[$0].startsTurn(receivedBy: recipients) }
+  }
+
+  /// The index of the turn that holds the entry at a position: the last turn that starts at or
+  /// before the position (``turnStarts(receivedBy:)``).
   ///
   /// - Parameters:
-  ///   - messageId: The ACP message id at the cut.
-  ///   - side: The side of the message where the cut is.
-  /// - Returns: The position, or `nil` when no message of the history has the id.
-  func forkPosition(of messageId: MessageId, on side: ForkCutSide) -> Int? {
-    guard let index = entries.firstIndex(where: { $0.id.messageId == messageId }) else {
-      return nil
-    }
-    switch side {
-    case .before:
-      return index
-    case .after:
-      return entries.index(after: index)
+  ///   - position: The position of an entry in ``entries``.
+  ///   - recipients: The ids that an incoming message names as its recipient.
+  /// - Returns: The 0-based turn index, or `nil` when the entry comes before the first turn.
+  func turn(holding position: Int, receivedBy recipients: Set<SessionId>) -> Int? {
+    let started = turnStarts(receivedBy: recipients).prefix { $0 <= position }.count
+    return started == 0 ? nil : started - 1
+  }
+}
+
+extension SessionEntry {
+  /// Whether this entry starts a turn (``SessionMergeEngine/turnStarts(receivedBy:)``): a user
+  /// message, or a `session_message` whose recipient is one of `recipients`.
+  ///
+  /// - Parameter recipients: The ids that an incoming message names as its recipient.
+  /// - Returns: `true` when the entry starts a turn.
+  func startsTurn(receivedBy recipients: Set<SessionId>) -> Bool {
+    switch kind {
+    case .userMessage:
+      return true
+    case .sessionMessage(let message):
+      guard case .value(let recipient) = message.recipientSessionId else {
+        return false
+      }
+      return recipients.contains(recipient)
+    case .agentMessage, .agentThought, .toolCall, .terminal, .plan, .compaction, .unknown:
+      return false
     }
   }
 }

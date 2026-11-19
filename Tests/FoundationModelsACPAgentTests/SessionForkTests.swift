@@ -6,8 +6,8 @@ import Testing
 @testable import FoundationModelsACPAgent
 
 /// The `session/fork` method (D205): the `fork` capability with the cut flag, the cut in
-/// `_meta.sah.forkCut`, and the map from an ACP message id to a position in the retained history
-/// of the source.
+/// `_meta.sah.forkCut`, and the map from an ACP message id to the index of the turn that holds the
+/// message in the retained history of the source.
 @Suite(.closesHarnesses) struct SessionForkTests {
   // MARK: - Constants
 
@@ -29,8 +29,21 @@ import Testing
   /// A side that the agent does not know.
   private static let unknownSide = SAH.ForkCut.Side(rawValue: "middle")
 
-  /// The position after turn 1 of the sample history: its user message and its agent message.
-  private static let positionAfterFirstTurn = 2
+  /// The index of turn 1 of the sample history.
+  private static let firstTurn = 0
+
+  /// The index of turn 2 of the sample history.
+  private static let secondTurn = 1
+
+  /// The index of the turn after a user message, a message from another session and a second
+  /// user message: the message from the other session is a turn of its own.
+  private static let turnAfterIncomingMessage = 2
+
+  /// The id of a message from another session in a sample history.
+  private static let sessionMessageId = MessageId(rawValue: "session-message-1")
+
+  /// Another session, which sends a message to the sample session or gets one from it.
+  private static let otherSessionId = SessionId(rawValue: "SessionForkTests-other")
 
   /// The session that the map tests name in their refusals.
   private static let sampleSessionId = SessionId(rawValue: "SessionForkTests-sample")
@@ -50,6 +63,29 @@ import Testing
           messageId: secondUserMessageId, content: .value([.text(TextContent(text: "Two"))]))),
       .agentMessageChunk(
         ContentChunk(content: .text(TextContent(text: "Second")), messageId: secondAgentMessageId)),
+    ])
+  }
+
+  /// A history with a user message, a message between the sample session and another session,
+  /// and a second user message.
+  ///
+  /// - Parameter recipient: The session that gets the message between the sessions.
+  /// - Returns: The history.
+  private static func historyWithSessionMessage(to recipient: SessionId) -> SessionMergeEngine {
+    let sender = recipient == sampleSessionId ? otherSessionId : sampleSessionId
+    return SessionMergeEngine(replaying: [
+      .userMessage(
+        UserMessage(
+          messageId: firstUserMessageId, content: .value([.text(TextContent(text: "One"))]))),
+      .agentMessageChunk(
+        ContentChunk(content: .text(TextContent(text: "First")), messageId: firstAgentMessageId)),
+      .sessionMessage(
+        FoundationModelsACP.SessionMessage(
+          messageId: sessionMessageId, content: .value([.text(TextContent(text: "Note"))]),
+          recipientSessionId: .value(recipient), senderSessionId: .value(sender))),
+      .userMessage(
+        UserMessage(
+          messageId: secondUserMessageId, content: .value([.text(TextContent(text: "Two"))]))),
     ])
   }
 
@@ -116,19 +152,50 @@ import Testing
 
   // MARK: - The map
 
-  /// The cut after the agent message of turn 1 is the position after turn 1.
-  @Test func theCutAfterTheAgentMessageOfTurnOneIsThePositionAfterTurnOne() throws {
+  /// The cut after the agent message of turn 1 is the cut after turn 1.
+  @Test func theCutAfterTheAgentMessageOfTurnOneIsAfterTurnOne() throws {
     #expect(
       try Self.forkPoint(cutting: Self.firstAgentMessageId, on: .after)
-        == .retainedHistoryPosition(Self.positionAfterFirstTurn))
+        == .afterTurn(Self.firstTurn))
   }
 
-  /// The cut before the user message of turn 2 is the same position as the cut after the agent
-  /// message of turn 1.
-  @Test func theCutBeforeTheUserMessageOfTurnTwoIsTheCutAfterTurnOne() throws {
+  /// The cut before the user message of turn 2 is the cut before turn 2.
+  @Test func theCutBeforeTheUserMessageOfTurnTwoIsBeforeTurnTwo() throws {
     #expect(
       try Self.forkPoint(cutting: Self.secondUserMessageId, on: .before)
-        == Self.forkPoint(cutting: Self.firstAgentMessageId, on: .after))
+        == .beforeTurn(Self.secondTurn))
+  }
+
+  /// The cut after the user message of turn 2 rounds to the end of turn 2.
+  @Test func theCutAfterAUserMessageIsAfterItsTurn() throws {
+    #expect(
+      try Self.forkPoint(cutting: Self.secondUserMessageId, on: .after)
+        == .afterTurn(Self.secondTurn))
+  }
+
+  /// The cut before the agent message of turn 2 rounds to the start of turn 2.
+  @Test func theCutBeforeAnAgentMessageIsBeforeItsTurn() throws {
+    #expect(
+      try Self.forkPoint(cutting: Self.secondAgentMessageId, on: .before)
+        == .beforeTurn(Self.secondTurn))
+  }
+
+  /// A message from another session to this session between two user messages is one turn.
+  @Test func anIncomingSessionMessageIsATurn() throws {
+    #expect(
+      try Self.forkPoint(
+        cutting: Self.secondUserMessageId, on: .before,
+        in: Self.historyWithSessionMessage(to: Self.sampleSessionId))
+        == .beforeTurn(Self.turnAfterIncomingMessage))
+  }
+
+  /// A message that this session sent to another session is no turn of this session.
+  @Test func anOutgoingSessionMessageIsNoTurn() throws {
+    #expect(
+      try Self.forkPoint(
+        cutting: Self.secondUserMessageId, on: .before,
+        in: Self.historyWithSessionMessage(to: Self.otherSessionId))
+        == .beforeTurn(Self.secondTurn))
   }
 
   /// The map works on the history that a resume reads from the file of an earlier process.
@@ -142,7 +209,7 @@ import Testing
 
     #expect(
       try Self.forkPoint(cutting: Self.secondUserMessageId, on: .before, in: resumed)
-        == .retainedHistoryPosition(Self.positionAfterFirstTurn))
+        == .beforeTurn(Self.secondTurn))
   }
 
   /// A request with no cut forks at the last completed turn.

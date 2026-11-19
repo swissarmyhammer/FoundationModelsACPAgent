@@ -7,9 +7,16 @@ enum SessionForkPoint: Equatable, Sendable {
   /// with no cut in `_meta.sah.forkCut` forks here.
   case lastCompletedTurn
 
-  /// A position in the retained ACP history of the source: the number of transcript entries that
-  /// the fork keeps (``SessionMergeEngine/forkPosition(of:on:)``).
-  case retainedHistoryPosition(Int)
+  /// The end of the turn with this 0-based index (``SessionMergeEngine/turnStarts(receivedBy:)``).
+  /// The fork keeps the turn. A cut after a message of the turn forks here.
+  case afterTurn(Int)
+
+  /// The start of the turn with this 0-based index. The fork does not keep the turn. A cut before
+  /// a message of the turn forks here.
+  case beforeTurn(Int)
+
+  /// The index of the first turn of a history.
+  static let firstTurn = 0
 }
 
 /// The side of a message where a fork cut is, for each side that the agent knows
@@ -88,8 +95,19 @@ extension RoutedACPAgent {
   /// Reads the cut of a `session/fork` request and maps it to a point of the source history.
   ///
   /// - No `_meta.sah.forkCut` member, or JSON `null`: ``SessionForkPoint/lastCompletedTurn``.
-  /// - A cut: the position of the cut in the retained history
-  ///   (``SessionMergeEngine/forkPosition(of:on:)``).
+  /// - A cut: the turn that holds the message of the cut in the retained history
+  ///   (``SessionMergeEngine/turn(holding:receivedBy:)``). The session directory cuts only at
+  ///   the edge of a turn, so a cut in a turn rounds to an edge of that turn:
+  ///   ``ForkCutSide/after`` gives ``SessionForkPoint/afterTurn(_:)``, and the fork keeps the
+  ///   message. ``ForkCutSide/before`` gives ``SessionForkPoint/beforeTurn(_:)``, and the fork
+  ///   does not keep the message. Thus a cut after an agent message keeps the whole turn of the
+  ///   message, and a cut before a user message keeps the turns before it.
+  /// - A cut on a message before the first turn: ``SessionForkPoint/beforeTurn(_:)`` of the first
+  ///   turn (``SessionForkPoint/firstTurn``).
+  ///
+  /// The history keeps the ACP ids that the client saw live, and the file of the history keeps
+  /// them for a new process (``SessionHistoryFile``). Thus the map is the same for a session
+  /// that was resumed after a restart.
   ///
   /// - Parameters:
   ///   - meta: The `_meta` of the request, or `nil`.
@@ -111,10 +129,18 @@ extension RoutedACPAgent {
     guard let side = ForkCutSide(cut.side) else {
       throw RequestError.unknownForkCutSide(cut.side, id: sessionId)
     }
-    guard let position = history.forkPosition(of: cut.messageId, on: side) else {
+    guard let position = history.messagePosition(of: cut.messageId) else {
       throw RequestError.unknownForkCutMessage(cut.messageId, id: sessionId)
     }
-    return .retainedHistoryPosition(position)
+    guard let turn = history.turn(holding: position, receivedBy: [sessionId]) else {
+      return .beforeTurn(SessionForkPoint.firstTurn)
+    }
+    switch side {
+    case .before:
+      return .beforeTurn(turn)
+    case .after:
+      return .afterTurn(turn)
+    }
   }
 
   /// Whether `_meta.sah.forkCut` has a value that is not JSON `null`. A request with such a member
