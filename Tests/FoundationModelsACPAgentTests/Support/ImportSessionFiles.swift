@@ -37,6 +37,10 @@ enum ImportSessionFiles {
   /// A word of ``claudeCodeAnswer`` that no other text of the fixtures holds.
   static let claudeCodeAnswerWord = "zanzibar"
 
+  /// The time of the last record of the answer of a Claude Code session file, in ISO 8601
+  /// form: the time of the record of ``claudeCodeAnswer``.
+  static let claudeCodeLastRecordTimestamp = "2026-11-01T10:00:04.000Z"
+
   /// The bytes of a Claude Code session file: one user record, the records of an answer when
   /// `withAnswer` is true, and a custom title record when a title is given.
   ///
@@ -78,7 +82,7 @@ enum ImportSessionFiles {
       {"type":"user","uuid":"u-2","sessionId":"\(id)","timestamp":"2026-11-01T10:00:03.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu-1","content":"\(claudeCodeToolOutput)"}]}}
       """,
       """
-      {"type":"assistant","uuid":"a-2","sessionId":"\(id)","timestamp":"2026-11-01T10:00:04.000Z","message":{"id":"msg-2","role":"assistant","content":[{"type":"text","text":"\(claudeCodeAnswer)"}]}}
+      {"type":"assistant","uuid":"a-2","sessionId":"\(id)","timestamp":"\(claudeCodeLastRecordTimestamp)","message":{"id":"msg-2","role":"assistant","content":[{"type":"text","text":"\(claudeCodeAnswer)"}]}}
       """,
     ]
   }

@@ -255,7 +255,9 @@ import ULID
     defer { await imported.fixture.close() }
     let missing = imported.fixture.cwd.appendingPathComponent("missing", isDirectory: true)
 
-    _ = try? await imported.importSource(folder: missing)
+    await #expect(throws: SessionImportError.folderUnavailable(missing)) {
+      try await imported.importSource(folder: missing)
+    }
 
     #expect(!FileManager.default.fileExists(atPath: missing.path))
   }

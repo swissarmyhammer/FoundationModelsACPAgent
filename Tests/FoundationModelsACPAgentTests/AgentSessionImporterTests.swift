@@ -49,8 +49,15 @@ import ULID
   /// The most sessions of a page that holds each fixture session.
   private static let wideLimit = 50
 
-  /// The modification date of a file whose bytes change with no change of size or date.
-  private static let fixedDate = Date(timeIntervalSince1970: 1_790_000_000)
+  /// The date of the earlier of two imports of a source.
+  private static let earlierImportDate = Date(timeIntervalSince1970: 1)
+
+  /// The date of the later of two imports of a source, after ``earlierImportDate``.
+  private static let laterImportDate = earlierImportDate.addingTimeInterval(1)
+
+  /// The modification date of a file whose bytes change with no change of size or date: the
+  /// start of 1970, a whole second, which the file system keeps with no loss.
+  private static let fixedDate = Date(timeIntervalSince1970: 0)
 
   // MARK: - Fixtures
 
@@ -407,8 +414,8 @@ import ULID
     let directory = InMemorySessionDirectory(
       launcher: InMemorySessionDirectory.Launcher(
         agentIDs: ["default"], defaultWorkingDirectory: Self.claudeFolder))
-    let earlier = try await Self.recordImport(in: directory, at: Date(timeIntervalSince1970: 1))
-    let later = try await Self.recordImport(in: directory, at: Date(timeIntervalSince1970: 2))
+    let earlier = try await Self.recordImport(in: directory, at: Self.earlierImportDate)
+    let later = try await Self.recordImport(in: directory, at: Self.laterImportDate)
 
     let page = try await Self.importer(roots.all, directory: directory).importable(Self.request())
 
@@ -455,7 +462,7 @@ import ULID
       provenance
         == SessionImportProvenance(
           agent: ImportSourceAgent.claudeCode.rawValue, sourceID: Self.claudeID,
-          sourcePath: fixture.file.path, sourceLastDate: ImportFixture.lastRecordDate,
+          sourcePath: fixture.file.path, sourceLastDate: try ImportFixture.lastRecordDate(),
           importedAt: provenance.importedAt))
   }
 
@@ -579,7 +586,9 @@ import ULID
     let fixture = try ImportFixture.make()
     let missing = fixture.folder.appendingPathComponent("missing", isDirectory: true)
 
-    _ = try? await fixture.importer.importSession(fixture.order(folder: missing))
+    await #expect(throws: SessionImportError.folderUnavailable(missing)) {
+      try await fixture.importer.importSession(fixture.order(folder: missing))
+    }
 
     #expect(
       try await fixture.directory.sessions(
@@ -601,7 +610,9 @@ import ULID
   func aFailedHistoryWriteRemovesTheFolder() async throws {
     let fixture = try ImportFixture.make(store: RecordingHistoryStore(failsWrite: true))
 
-    _ = try? await fixture.importer.importSession(fixture.order())
+    await #expect(throws: RecordingHistoryStore.WriteFailure.self) {
+      try await fixture.importer.importSession(fixture.order())
+    }
 
     #expect(fixture.store.removedSessions.count == 1)
   }
@@ -627,8 +638,15 @@ private struct ImportFixture {
   /// The source id of the Claude Code session.
   private static let claudeID = "5a1e0000-0000-4000-8000-000000000001"
 
-  /// The date of the last record of the session file.
-  static let lastRecordDate = Date(timeIntervalSince1970: 1_793_527_204)
+  /// The date of the last record of the session file
+  /// (``ImportSessionFiles/claudeCodeLastRecordTimestamp``).
+  ///
+  /// - Returns: The date.
+  /// - Throws: The error of the parse of the timestamp.
+  static func lastRecordDate() throws -> Date {
+    try Date.ISO8601FormatStyle(includingFractionalSeconds: true)
+      .parse(ImportSessionFiles.claudeCodeLastRecordTimestamp)
+  }
 
   /// The working folder of the source session. It exists.
   let folder: URL
