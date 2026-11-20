@@ -125,8 +125,15 @@ comments:
     - evidence: `swift build --build-tests` gave "Build complete!" with 0 project warnings. `swift test --skip-build --filter "AgentSessionImporter|NoUnifiedLogging"`: 19 tests in 2 suites pass; the parameterized test ran 2 test cases (stamp, kind).
     - next: review
   timestamp: 2026-11-20T00:18:28.252667+00:00
-position_column: review
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m7v57v30d7a8c5kbmnw5r8n9
+  text: |-
+    ### review — clean
+    - evidence: `review sha 694fccb~1..694fccb` (HEAD~1..HEAD); 0 findings (0 confirmed, 0 refuted). All 14 items of the 17:44, 18:03 and 18:12 sections are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-11-20T00:20:57.568963+00:00
+position_column: done
+position_ordinal: ffffffb080
 title: 'D209: AgentSessionImporter lists the importable sessions of the host roots (Claude Code, Codex)'
 ---
 Decision D209 in `TestudoApp/features/decisions.md` (commit 56a8a59; final), parts (a)–(j), (l), (m), with the answers Q81–Q87 in D209 (n). Brief: `/Users/wballard/github/swissarmyhammer/.briefs/import/acpa-brief.md`, change items 1, 2, 5 and 6. Overview: `overview.md` in the same folder. Wave 3.
