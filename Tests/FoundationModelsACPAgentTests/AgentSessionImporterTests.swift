@@ -1,12 +1,15 @@
 import ACPImport
 import Foundation
 import FoundationModels
+import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsExtras
 import FoundationModelsMultitool
 import Logging
+import Synchronization
 import TelemetryTestSupport
 import Testing
+import ULID
 
 @testable import FoundationModelsACPAgent
 
@@ -123,12 +126,15 @@ import Testing
   /// - Parameters:
   ///   - roots: The import roots.
   ///   - directory: The session directory. A new empty directory by default.
+  ///   - historyStore: The store of the histories of the new sessions. A new recording store
+  ///     by default.
   /// - Returns: The importer.
   private static func importer(
     _ roots: [ImportSourceAgent: URL],
-    directory: any SessionDirectory = InMemorySessionDirectory()
+    directory: any SessionDirectory = InMemorySessionDirectory(),
+    historyStore: any ImportedHistoryStore = RecordingHistoryStore()
   ) -> AgentSessionImporter {
-    AgentSessionImporter(roots: roots, directory: directory)
+    AgentSessionImporter(roots: roots, directory: directory, historyStore: historyStore)
   }
 
   /// The source ids of the first page of an importer.
@@ -434,5 +440,292 @@ import Testing
     await #expect(throws: SessionImportError.folderUnavailable(missing)) {
       try await Self.importer(roots.all).importSession(order)
     }
+  }
+
+  // MARK: - The write of an import
+
+  @Test("an import makes a new session with the provenance of the source")
+  func anImportHasTheProvenanceOfTheSource() async throws {
+    let fixture = try ImportFixture.make()
+
+    let result = try await fixture.importer.importSession(fixture.order())
+
+    let provenance = try #require(try await fixture.directory.summary(of: result.session)?.importedFrom)
+    #expect(
+      provenance
+        == SessionImportProvenance(
+          agent: ImportSourceAgent.claudeCode.rawValue, sourceID: Self.claudeID,
+          sourcePath: fixture.file.path, sourceLastDate: ImportFixture.lastRecordDate,
+          importedAt: provenance.importedAt))
+  }
+
+  @Test("an import with no folder works in the folder of the source session")
+  func anImportWithNoFolderWorksInTheSourceFolder() async throws {
+    let fixture = try ImportFixture.make()
+
+    let result = try await fixture.importer.importSession(fixture.order())
+
+    #expect(
+      try await fixture.directory.summary(of: result.session)?.workingDirectory.canonicalPath
+        == fixture.folder.canonicalPath)
+  }
+
+  @Test("the transcript of an import holds the prompt and the answer of the source")
+  func theTranscriptHoldsThePromptAndTheAnswer() async throws {
+    let fixture = try ImportFixture.make()
+
+    let result = try await fixture.importer.importSession(fixture.order())
+
+    let transcript = try #require(fixture.directory.importedTranscript(of: result.session))
+    #expect(
+      ImportedTranscriptReading.texts(of: transcript) == [
+        "prompt: \(ImportSessionFiles.claudeCodeQuestion)",
+        "response: Tool Bash: \(ImportSessionFiles.claudeCodeToolCommand): completed\n"
+          + "\(ImportSessionFiles.claudeCodeToolOutput)\n\n\(ImportSessionFiles.claudeCodeAnswer)",
+      ])
+  }
+
+  @Test("an import writes the updates of the source as the history of the new session")
+  func anImportWritesTheHistory() async throws {
+    let fixture = try ImportFixture.make()
+    let updates = try ClaudeCodeSessionReader(sourceID: Self.claudeID)
+      .read(Data(contentsOf: fixture.file)).updates
+
+    let result = try await fixture.importer.importSession(fixture.order())
+
+    #expect(
+      fixture.store.history(of: result.session)?.transcriptUpdates
+        == SessionMergeEngine(replaying: updates).transcriptUpdates)
+  }
+
+  @Test("the result of an import names the new session")
+  func theResultNamesTheNewSession() async throws {
+    let fixture = try ImportFixture.make()
+
+    let result = try await fixture.importer.importSession(fixture.order())
+
+    #expect(try await fixture.directory.summary(of: result.session)?.title == result.name)
+  }
+
+  @Test("the name of the order is the name of the new session")
+  func theNameOfTheOrderIsTheName() async throws {
+    let fixture = try ImportFixture.make()
+
+    let result = try await fixture.importer.importSession(fixture.order(name: Self.longerTitle))
+
+    #expect(result.name == Self.longerTitle)
+  }
+
+  @Test("an import with no name takes the title of the source")
+  func anImportWithNoNameTakesTheTitle() async throws {
+    let fixture = try ImportFixture.make()
+
+    let result = try await fixture.importer.importSession(fixture.order())
+
+    #expect(result.name == Self.firstTitle)
+  }
+
+  @Test("a source with no title gives the name claude-code-import")
+  func aSourceWithNoTitleGivesTheAgentImportName() async throws {
+    let fixture = try ImportFixture.make(title: nil)
+
+    let result = try await fixture.importer.importSession(fixture.order())
+
+    #expect(result.name == "claude-code-import")
+  }
+
+  @Test("a second import of the same source makes a second session with a new name")
+  func aSecondImportMakesASecondSession() async throws {
+    let fixture = try ImportFixture.make()
+
+    let first = try await fixture.importer.importSession(fixture.order())
+    let second = try await fixture.importer.importSession(fixture.order())
+
+    #expect(first.session != second.session && first.name != second.name)
+  }
+
+  @Test("after two imports of a source, previousImports has two entries")
+  func twoImportsGiveTwoPreviousImports() async throws {
+    let fixture = try ImportFixture.make()
+    _ = try await fixture.importer.importSession(fixture.order())
+    _ = try await fixture.importer.importSession(fixture.order())
+
+    let page = try await fixture.importer.importable(Self.request())
+
+    #expect(page.sessions.first { $0.sourceID == Self.claudeID }?.previousImports.count == 2)
+  }
+
+  @Test("an import of a source by the path of its file imports that file")
+  func anImportByPathImportsTheFile() async throws {
+    let fixture = try ImportFixture.make()
+
+    let result = try await fixture.importer.importSession(fixture.order(source: fixture.file.path))
+
+    #expect(
+      try await fixture.directory.summary(of: result.session)?.importedFrom?.sourceID == Self.claudeID)
+  }
+
+  @Test("an import of a source that the root does not hold gives unknownSource")
+  func anUnknownSourceThrows() async throws {
+    let fixture = try ImportFixture.make()
+
+    await #expect(throws: AgentSessionImportError.unknownSource("no-such-session")) {
+      try await fixture.importer.importSession(fixture.order(source: "no-such-session"))
+    }
+  }
+
+  @Test("an import into a folder that does not exist makes no session")
+  func anImportIntoAMissingFolderMakesNoSession() async throws {
+    let fixture = try ImportFixture.make()
+    let missing = fixture.folder.appendingPathComponent("missing", isDirectory: true)
+
+    _ = try? await fixture.importer.importSession(fixture.order(folder: missing))
+
+    #expect(
+      try await fixture.directory.sessions(
+        matching: SessionQuery(includesRecorded: true, limit: .max)
+      ).isEmpty)
+  }
+
+  @Test("an import does not change the bytes or the date of the source file")
+  func anImportLeavesTheSourceUnchanged() async throws {
+    let fixture = try ImportFixture.make()
+    let before = try Self.fileStates(under: fixture.claude)
+
+    _ = try await fixture.importer.importSession(fixture.order())
+
+    #expect(try Self.fileStates(under: fixture.claude) == before)
+  }
+
+  @Test("a failed write of the history removes the folder of the new session")
+  func aFailedHistoryWriteRemovesTheFolder() async throws {
+    let fixture = try ImportFixture.make(store: RecordingHistoryStore(failsWrite: true))
+
+    _ = try? await fixture.importer.importSession(fixture.order())
+
+    #expect(fixture.store.removedSessions.count == 1)
+  }
+
+  @Test("a failed write of the history fails the import")
+  func aFailedHistoryWriteFailsTheImport() async throws {
+    let fixture = try ImportFixture.make(store: RecordingHistoryStore(failsWrite: true))
+
+    await #expect(throws: RecordingHistoryStore.WriteFailure.self) {
+      try await fixture.importer.importSession(fixture.order())
+    }
+  }
+}
+
+// MARK: - The fixtures of an import
+
+/// A Claude Code root whose session works in a folder that exists, a directory that imports,
+/// and a store that records the histories of the new sessions.
+private struct ImportFixture {
+  /// The directory label of the fixture.
+  private static let label = "AgentSessionImporterTests-import"
+
+  /// The source id of the Claude Code session.
+  private static let claudeID = "5a1e0000-0000-4000-8000-000000000001"
+
+  /// The date of the last record of the session file.
+  static let lastRecordDate = Date(timeIntervalSince1970: 1_793_527_204)
+
+  /// The working folder of the source session. It exists.
+  let folder: URL
+
+  /// The Claude Code root (`~/.claude`).
+  let claude: URL
+
+  /// The file of the source session.
+  let file: URL
+
+  /// The session directory of the new sessions.
+  let directory: InMemorySessionDirectory
+
+  /// The store of the histories of the new sessions.
+  let store: RecordingHistoryStore
+
+  /// The importer under test.
+  let importer: AgentSessionImporter
+
+  /// Makes the fixture.
+  ///
+  /// - Parameters:
+  ///   - title: The custom title of the source session, or `nil` for none.
+  ///   - store: The store of the histories. A store whose writes succeed by default.
+  /// - Returns: The fixture.
+  /// - Throws: The error of a write.
+  static func make(
+    title: String? = "Title A", store: RecordingHistoryStore = RecordingHistoryStore()
+  ) throws -> ImportFixture {
+    let base = makeResolvedDirectory(label: label)
+    let folder = base.appendingPathComponent("work", isDirectory: true)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let claude = base.appendingPathComponent(".claude", isDirectory: true)
+    let file = try ImportSessionFiles.writeClaudeCode(
+      id: claudeID, folder: folder, title: title, withAnswer: true, in: claude)
+    let directory = InMemorySessionDirectory(
+      launcher: InMemorySessionDirectory.Launcher(
+        agentIDs: ["default"], defaultWorkingDirectory: folder))
+    return ImportFixture(
+      folder: folder, claude: claude, file: file, directory: directory, store: store,
+      importer: AgentSessionImporter(
+        roots: [.claudeCode: claude], directory: directory, historyStore: store))
+  }
+
+  /// The order that imports the source session.
+  ///
+  /// - Parameters:
+  ///   - source: The id or the path of the source session. The id by default.
+  ///   - folder: The folder of the new session, or `nil` for the folder of the source.
+  ///   - name: The name of the new session, or `nil`.
+  /// - Returns: The order.
+  func order(source: String = claudeID, folder: URL? = nil, name: String? = nil)
+    -> SessionImportOrder
+  {
+    SessionImportOrder(
+      agent: ImportSourceAgent.claudeCode.rawValue, source: source, folder: folder, name: name)
+  }
+}
+
+/// A store of the histories of imported sessions that records each write and each removal.
+final class RecordingHistoryStore: ImportedHistoryStore {
+  /// The error of a write that fails.
+  struct WriteFailure: Error {}
+
+  /// True when each write throws ``WriteFailure``.
+  private let failsWrite: Bool
+
+  /// The written history of each session.
+  private let histories = Mutex<[ULID: SessionMergeEngine]>([:])
+
+  /// The sessions whose folder the importer removed, in order.
+  private let removals = Mutex<[ULID]>([])
+
+  /// Makes the store.
+  ///
+  /// - Parameter failsWrite: True when each write throws. False by default.
+  init(failsWrite: Bool = false) {
+    self.failsWrite = failsWrite
+  }
+
+  /// The sessions whose folder the importer removed, in order.
+  var removedSessions: [ULID] { removals.withLock { $0 } }
+
+  /// The written history of a session.
+  ///
+  /// - Parameter session: The session.
+  /// - Returns: The history, or `nil` when no write gave one.
+  func history(of session: ULID) -> SessionMergeEngine? {
+    histories.withLock { $0[session] }
+  }
+
+  func writeHistory(_ history: SessionMergeEngine, of session: SessionSummary) throws {
+    guard !failsWrite else { throw WriteFailure() }
+    histories.withLock { $0[session.id] = history }
+  }
+
+  func removeFolder(of session: SessionSummary) {
+    removals.withLock { $0.append(session.id) }
   }
 }

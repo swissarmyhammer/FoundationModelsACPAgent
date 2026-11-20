@@ -21,6 +21,9 @@ import FoundationModelsRouter
 ///   registers it (D205,
 ///   ``RoutedACPAgent/launchFork(_:for:)``). So the first prompt of a fork runs
 ///   on the surface of the agent, and the agent holds the fork from its start.
+/// - ``importTarget(for:)`` gives the model handle and the configuration of a new root session
+///   in the folder of an import (D209, ``RoutedACPAgent/importTarget(for:)``). The directory
+///   writes the recording of the imported session with them. No session is live.
 ///
 /// The launcher holds the agent weakly: the agent holds the directory, and
 /// the directory holds the launcher. When the agent is gone, each call
@@ -75,6 +78,19 @@ final class AgentSessionLauncher: SessionLauncher, @unchecked Sendable {
   ///   the error of the build. The directory then refuses the fork.
   func forkSession(_ request: SessionLaunchForkRequest) async throws -> any RoutedSession {
     try await liveAgent().launchFork(request, for: ForkLaunchID.current)
+  }
+
+  /// Gives the model handle and the configuration that the session directory writes an
+  /// imported session with (``RoutedACPAgent/importTarget(for:)``).
+  ///
+  /// - Parameter request: The import request of the session directory.
+  /// - Returns: The model handle and the configuration of a new root session in the folder of
+  ///   the request.
+  /// - Throws: `SessionDirectoryError.noLauncher` when the agent is gone,
+  ///   `SessionDirectoryError.notADirectory(_:)` when the folder is not a folder, or the error
+  ///   of the composition.
+  func importTarget(for request: SessionImportRequest) async throws -> SessionImportTarget {
+    try await liveAgent().importTarget(for: request)
   }
 
   /// The agent of the launcher.

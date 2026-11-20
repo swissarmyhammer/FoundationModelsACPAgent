@@ -1,5 +1,6 @@
 import ACPImport
 import Foundation
+import FoundationModelsACP
 import FoundationModelsExtras
 import FoundationModelsMultitool
 import Logging
@@ -13,6 +14,12 @@ enum AgentSessionImportError: Error, Equatable, CustomStringConvertible {
   /// The cursor of the request is not a cursor of the importer.
   case invalidCursor(String)
 
+  /// The root of the agent holds no session with this id or this path.
+  case unknownSource(String)
+
+  /// The order gives no folder, and the source session with this id gives no folder either.
+  case noFolder(String)
+
   /// The text of the error in a corrective.
   var description: String {
     switch self {
@@ -21,6 +28,12 @@ enum AgentSessionImportError: Error, Equatable, CustomStringConvertible {
       return "the agent \(agent) is not a source of an import. The sources are: \(known)"
     case .invalidCursor(let cursor):
       return "the cursor \(cursor) is not the cursor of a page. Use the cursor of the last page"
+    case .unknownSource(let source):
+      return
+        "the source \(source) is not a session of the agent. Use the id or the path of a session of list imports"
+    case .noFolder(let source):
+      return
+        "the session \(source) names no folder. Give the folder of the new session"
     }
   }
 }
@@ -44,6 +57,9 @@ actor AgentSessionImporter: SessionImporter {
   /// The session directory, for the earlier imports and for the new sessions.
   private let directory: any SessionDirectory
 
+  /// The store of the history of each new session.
+  private let historyStore: any ImportedHistoryStore
+
   /// The last read of each session file of each agent, by the path of the file.
   private var scans: [ImportSourceAgent: [String: ImportFileScan]] = [:]
 
@@ -53,9 +69,13 @@ actor AgentSessionImporter: SessionImporter {
   ///   - roots: The root of each source agent that the host can read. A source with no root is
   ///     in the `unreadableSources` of each page.
   ///   - directory: The session directory.
-  init(roots: [ImportSourceAgent: URL], directory: any SessionDirectory) {
+  init(
+    roots: [ImportSourceAgent: URL], directory: any SessionDirectory,
+    historyStore: any ImportedHistoryStore
+  ) {
     self.roots = roots
     self.directory = directory
+    self.historyStore = historyStore
   }
 
   /// The sessions of the readable source agents, the newest first, with the sessions of the
@@ -80,22 +100,115 @@ actor AgentSessionImporter: SessionImporter {
       unreadableSources: agents.filter { roots[$0] == nil }.map(\.rawValue))
   }
 
-  /// Checks an import: the agent must have a root, and the folder of the new session must
-  /// exist. The write of the new session is not in this importer.
+  /// Imports a source session into a new session of the agent (D209, Q83, Q84, Q85).
+  ///
+  /// The importer reads the source file, makes the model transcript of its updates
+  /// (``ImportedTranscript``), and gives it to the session directory, which writes the
+  /// recording of a new root session with the origin `import` and the provenance of the
+  /// source. The history store then writes the updates as the retained history of the new
+  /// session (``ImportedHistoryStore``). When that write fails, the importer removes the folder
+  /// of the new session and gives the error.
+  ///
+  /// Each import makes a new session, also for a source that an earlier import read (Q85). The
+  /// folder of the new session is the folder of the order, else the folder of the source
+  /// session. The name is the name of the order, else the title of the source, else
+  /// `<agent>-import` (Q84). The directory adds the next free number to a name that a session
+  /// of the folder has. The importer only reads the source file: it never changes, moves or
+  /// deletes it.
   ///
   /// - Parameter order: The source session, and the folder and the name of the new session.
-  /// - Returns: No value: the importer cannot write a new session.
+  /// - Returns: The id and the name of the new session, and the number of records of the source
+  ///   that the reader did not read.
   /// - Throws: ``AgentSessionImportError/unknownAgent(_:)`` for an unknown agent,
   ///   `SessionImportError.sourceUnreadable(agent:)` for an agent with no root,
-  ///   `SessionImportError.folderUnavailable(_:)` for a folder that does not exist, and
-  ///   `SessionDirectoryError.importUnsupported` for each other order.
+  ///   `SessionImportError.folderUnavailable(_:)` for a folder that does not exist or that the
+  ///   host cannot read, ``AgentSessionImportError/unknownSource(_:)`` for a source that the
+  ///   root does not hold, ``AgentSessionImportError/noFolder(_:)`` for an order with no folder
+  ///   of a source with no folder, and the error of the read, of the directory or of the
+  ///   history store.
   func importSession(_ order: SessionImportOrder) async throws -> SessionImportResult {
     let agent = try Self.agent(named: order.agent)
     guard roots[agent] != nil else {
       throw SessionImportError.sourceUnreadable(agent: order.agent)
     }
     try Self.requireFolder(order.folder)
-    throw SessionDirectoryError.importUnsupported
+    let source = try located(order.source, of: agent)
+    let folder = try Self.folder(of: order, source: source)
+    let imported = try agent.session(
+      of: Data(contentsOf: source.file, options: .mappedIfSafe), in: source.file)
+    let request = Self.request(for: order, source: source, imported: imported, folder: folder)
+    let summary = try await directory.importSession(
+      request, transcript: ImportedTranscript.make(from: imported.updates))
+    try writeHistory(of: imported, for: summary)
+    ACPAgentTelemetry.logger(.session).info(
+      "The importer made a new session from a session of another agent.",
+      metadata: ACPAgentTelemetry.sessionMetadata(SessionId(rawValue: summary.id.description)))
+    return SessionImportResult(
+      session: summary.id, name: summary.title ?? request.title,
+      skippedRecordCount: imported.skippedRecordCount)
+  }
+
+  /// Writes the updates of the source as the retained history of the new session. When the
+  /// write fails, the folder of the new session is removed.
+  ///
+  /// - Parameters:
+  ///   - imported: The session that the reader read.
+  ///   - summary: The summary of the new session.
+  /// - Throws: The error of the write.
+  private func writeHistory(of imported: ImportedSession, for summary: SessionSummary) throws {
+    do {
+      try historyStore.writeHistory(SessionMergeEngine(replaying: imported.updates), of: summary)
+    } catch {
+      historyStore.removeFolder(of: summary)
+      throw error
+    }
+  }
+
+  /// The session file of a source of an agent: the session whose id is `source`, or whose
+  /// file has the path `source`.
+  ///
+  /// - Parameters:
+  ///   - source: The id or the file path of the source session.
+  ///   - agent: The agent.
+  /// - Returns: The session and its file.
+  /// - Throws: ``AgentSessionImportError/unknownSource(_:)`` when the root of the agent holds
+  ///   no such session.
+  private func located(_ source: String, of agent: ImportSourceAgent) throws
+    -> LocatedSessionMetadata
+  {
+    let path = URL(fileURLWithPath: source).standardizedFileURL.path
+    guard
+      let session = sessions(of: agent).first(where: { session in
+        Self.sourceID(of: session) == source || session.file.standardizedFileURL.path == path
+      })
+    else {
+      throw AgentSessionImportError.unknownSource(source)
+    }
+    return session
+  }
+
+  /// The import request of an order for the session directory.
+  ///
+  /// - Parameters:
+  ///   - order: The order.
+  ///   - source: The source session and its file.
+  ///   - imported: The session that the reader read.
+  ///   - folder: The folder of the new session.
+  /// - Returns: The request: the folder, the name (Q84) and the provenance of the source.
+  private static func request(
+    for order: SessionImportOrder, source: LocatedSessionMetadata, imported: ImportedSession,
+    folder: URL
+  ) -> SessionImportRequest {
+    let agent = source.metadata.agent.rawValue
+    let title =
+      [order.name, imported.metadata.title].compactMap { $0 }.first { !$0.isEmpty }
+      ?? "\(agent)-import"
+    return SessionImportRequest(
+      workingDirectory: folder, title: title,
+      provenance: SessionImportProvenance(
+        agent: agent, sourceID: sourceID(of: source), sourcePath: source.file.path,
+        sourceLastDate: imported.metadata.lastDate, importedAt: Date(),
+        skippedRecordCount: imported.skippedRecordCount))
   }
 
   // MARK: - The scan
@@ -279,15 +392,24 @@ actor AgentSessionImporter: SessionImporter {
     earlierImports: [ImportSourceKey: [SessionPreviousImport]]
   ) -> ImportableSession {
     let metadata = session.metadata
-    let sourceID =
-      metadata.sourceID.isEmpty
-      ? session.file.deletingPathExtension().lastPathComponent : metadata.sourceID
+    let sourceID = sourceID(of: session)
     return ImportableSession(
       agent: metadata.agent.rawValue, sourceID: sourceID, sourcePath: session.file.path,
       title: metadata.title, folder: metadata.cwd, lastDate: metadata.lastDate,
       turnCount: metadata.turnCount,
       previousImports: earlierImports[
         ImportSourceKey(agent: metadata.agent.rawValue, sourceID: sourceID)] ?? [])
+  }
+
+  /// The id of a source session: the id that its file gives, else the name of its file with
+  /// no extension.
+  ///
+  /// - Parameter session: The session and its file.
+  /// - Returns: The id.
+  private static func sourceID(of session: LocatedSessionMetadata) -> String {
+    let metadata = session.metadata
+    return metadata.sourceID.isEmpty
+      ? session.file.deletingPathExtension().lastPathComponent : metadata.sourceID
   }
 
   /// The sessions in the order of the list: the sessions of the preferred folder first, then
@@ -374,16 +496,40 @@ actor AgentSessionImporter: SessionImporter {
     return agent
   }
 
-  /// Checks the folder of a new session: the folder must exist. No folder passes, because the
-  /// import then uses the folder of the source session.
+  /// Checks the folder of a new session: the folder must exist, and the host must be able to
+  /// read it. No folder passes, because the import then uses the folder of the source
+  /// session.
   ///
   /// - Parameter folder: The folder of the new session, or `nil`.
-  /// - Throws: `SessionImportError.folderUnavailable(_:)` for a folder that does not exist.
+  /// - Throws: `SessionImportError.folderUnavailable(_:)` for a folder that does not exist or
+  ///   that the host cannot read.
   private static func requireFolder(_ folder: URL?) throws {
     guard let folder else { return }
-    guard PathKind.of(folder) == .directory else {
+    guard PathKind.of(folder) == .directory,
+      FileManager.default.isReadableFile(atPath: folder.path)
+    else {
       throw SessionImportError.folderUnavailable(folder)
     }
+  }
+
+  /// The folder of the new session of an order: the folder of the order, else the folder of
+  /// the source session. The folder must exist, and the host must be able to read it.
+  ///
+  /// - Parameters:
+  ///   - order: The order.
+  ///   - source: The source session.
+  /// - Returns: The folder.
+  /// - Throws: ``AgentSessionImportError/noFolder(_:)`` when the order and the source give no
+  ///   folder, and `SessionImportError.folderUnavailable(_:)` for a folder that does not exist
+  ///   or that the host cannot read.
+  private static func folder(of order: SessionImportOrder, source: LocatedSessionMetadata)
+    throws -> URL
+  {
+    guard let folder = order.folder ?? source.cwd else {
+      throw AgentSessionImportError.noFolder(sourceID(of: source))
+    }
+    try requireFolder(folder)
+    return folder
   }
 }
 

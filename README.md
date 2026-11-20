@@ -788,6 +788,24 @@ reads only the changed files. Each row shows the earlier imports of its source
 (the sessions whose `importedFrom` names that source). This is information
 only: each import makes a new session.
 
+`import session` makes a new root session of this agent from a source session.
+The folder of the new session is the folder of the order, else the folder of the
+source session. The folder must exist, and the host must be able to read it. The
+name is the name of the order, else the title of the source, else
+`<agent>-import` (for example `claude-code-import`). When a session of the folder
+has that name, the session directory adds the next free number. The new session
+has the origin `import`, and `importedFrom` holds the source agent, the source
+id, the source path, the date of the last record and the date of the import.
+
+The session holds the full history of the source. The model reads each user
+message as a prompt and the agent messages of a turn as one response. A tool
+call is a short text in the response (`Tool <title>: <status>`, then its text
+output, cut at 4 KB). The model reads no thought, and an image is one line with
+its type. The first prompt runs the normal automatic compaction when the history
+is larger than the budget. `session/resume` replays the updates of the source,
+the export gives their Markdown, and a search finds their words. The import only
+reads the source file: it never changes, moves or deletes it.
+
 ## Instructions
 
 The base system prompt of a session is the `default` agent: an `AGENT.md`

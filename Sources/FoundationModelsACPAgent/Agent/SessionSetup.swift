@@ -1389,11 +1389,64 @@ extension RoutedACPAgent {
 }
 
 extension RoutedLLM {
-  /// Vends one session with the derived auto-compaction budget.
+  /// Vends one session with the derived auto-compaction budget
+  /// (``budgetedConfiguration(instructions:workingDirectory:recordingRoot:tools:compaction:repetition:inlineSettleGrace:userPresence:mailOnlyAnswerLimit:hookLineage:agentID:agentName:transcriptReader:)``).
+  /// `session/new` vends through this one door.
+  ///
+  /// - Parameters:
+  ///   - instructions: The session's assembled instructions text.
+  ///   - workingDirectory: The session working directory.
+  ///   - recordingRoot: The per-session recording root.
+  ///   - tools: The tools the model can call.
+  ///   - compaction: The `compaction:` section the budget derives from.
+  ///   - repetition: The `repetition:` section the repetition detector of
+  ///     the session takes.
+  ///   - inlineSettleGrace: The settle period of the session, in seconds.
+  ///   - userPresence: Whether a user can answer the questions of the
+  ///     session. The default is Router's default.
+  ///   - mailOnlyAnswerLimit: The most answers in a row that run mail
+  ///     alone starts. The default is Router's default.
+  ///   - hookLineage: The hook lineage that the host gives the session, or
+  ///     `nil` (the default) to let Router give it.
+  ///   - agentID: The resolved id of the agent of the session, or `nil`
+  ///     (the default) for none.
+  ///   - agentName: The name of the agent of the session, or `nil` (the
+  ///     default) for none.
+  ///   - transcriptReader: The reader that a tool of the session uses to
+  ///     read the transcript of a session.
+  /// - Returns: A new session over this model, with automatic compaction on.
+  func makeBudgetedSession(
+    instructions: String,
+    workingDirectory: URL,
+    recordingRoot: URL,
+    tools: [any FoundationModels.Tool],
+    compaction: CompactionConfiguration,
+    repetition: RepetitionConfiguration,
+    inlineSettleGrace: TimeInterval,
+    userPresence: UserPresence = .interactive,
+    mailOnlyAnswerLimit: Int = SessionConfiguration.defaultMailOnlyAnswerLimit,
+    hookLineage: HookLineage? = nil,
+    agentID: String? = nil,
+    agentName: String? = nil,
+    transcriptReader: (any SessionTranscriptReader)?
+  ) -> any RoutedSession {
+    makeSession(
+      configuration: budgetedConfiguration(
+        instructions: instructions, workingDirectory: workingDirectory,
+        recordingRoot: recordingRoot, tools: tools, compaction: compaction,
+        repetition: repetition, inlineSettleGrace: inlineSettleGrace,
+        userPresence: userPresence, mailOnlyAnswerLimit: mailOnlyAnswerLimit,
+        hookLineage: hookLineage, agentID: agentID, agentName: agentName,
+        transcriptReader: transcriptReader))
+  }
+
+  /// The configuration of one session with the derived auto-compaction budget.
   /// The context size comes from the model, never from configuration.
   /// `compaction` carries the fractions and the tool-output cap.
   /// This model carries the resolved working context that the fractions measure against.
-  /// `session/new` vends through this one door.
+  /// A new session (``makeBudgetedSession(instructions:workingDirectory:recordingRoot:tools:compaction:repetition:inlineSettleGrace:userPresence:mailOnlyAnswerLimit:hookLineage:agentID:agentName:transcriptReader:)``)
+  /// and an imported session (``RoutedACPAgent/importTarget(for:)``) take it, so the two
+  /// cannot differ.
   ///
   /// - Parameters:
   ///   - instructions: The session's assembled instructions text.
@@ -1428,12 +1481,12 @@ extension RoutedLLM {
   ///     transcript of a session (``RoutedACPAgent/transcriptReader``).
   ///     Every session that the agent makes gets it.
   ///     It is `nil` only in a test that checks the missing source.
-  /// - Returns: A new session over this model, with automatic
-  ///   compaction on. The compaction keeps each skill that the model
-  ///   loads with `use skill` (``SkillOutputProtection``). While an
+  /// - Returns: The configuration of a session over this model, with
+  ///   automatic compaction on. The compaction keeps each skill that the
+  ///   model loads with `use skill` (``SkillOutputProtection``). While an
   ///   operation is pending, the session does not run a no-op tool call
   ///   (``NoOpToolCall``).
-  func makeBudgetedSession(
+  func budgetedConfiguration(
     instructions: String,
     workingDirectory: URL,
     recordingRoot: URL,
@@ -1447,7 +1500,7 @@ extension RoutedLLM {
     agentID: String? = nil,
     agentName: String? = nil,
     transcriptReader: (any SessionTranscriptReader)?
-  ) -> any RoutedSession {
+  ) -> SessionConfiguration {
     // The resolved context decides two things that a reader cannot see otherwise.
     // They are the fold point of the compaction, and the token ceiling
     // of each generation call.
@@ -1469,24 +1522,23 @@ extension RoutedLLM {
       target: compaction.target,
       hardCeiling: compaction.hardCeiling,
       toolOutputLimit: compaction.toolOutputLimit)
-    return makeSession(
-      configuration: SessionConfiguration(
-        instructions: instructions,
-        workingDirectory: workingDirectory,
-        recordingRoot: recordingRoot,
-        tools: tools,
-        compaction: CompactionSettings(
-          budget: budget, prompt: .default, toolOutputProtection: HostRules.toolOutputProtection),
-        repetitionDetection: repetition.detection,
-        mailOnlyAnswerLimit: mailOnlyAnswerLimit,
-        inlineSettleGrace: inlineSettleGrace,
-        isNoOpToolCall: HostRules.isNoOpToolCall,
-        userPresence: userPresence,
-        hookSessionKey: hookLineage?.sessionKey,
-        hookOrigin: hookLineage?.origin,
-        agentID: agentID,
-        agentName: agentName,
-        transcriptReader: transcriptReader))
+    return SessionConfiguration(
+      instructions: instructions,
+      workingDirectory: workingDirectory,
+      recordingRoot: recordingRoot,
+      tools: tools,
+      compaction: CompactionSettings(
+        budget: budget, prompt: .default, toolOutputProtection: HostRules.toolOutputProtection),
+      repetitionDetection: repetition.detection,
+      mailOnlyAnswerLimit: mailOnlyAnswerLimit,
+      inlineSettleGrace: inlineSettleGrace,
+      isNoOpToolCall: HostRules.isNoOpToolCall,
+      userPresence: userPresence,
+      hookSessionKey: hookLineage?.sessionKey,
+      hookOrigin: hookLineage?.origin,
+      agentID: agentID,
+      agentName: agentName,
+      transcriptReader: transcriptReader)
   }
 
   /// Restores one recorded session with the host rules that

@@ -241,9 +241,25 @@ Multitool.
   gives it to the `sessions` endpoint of the directory, beside the exporter, the searcher and
   the sharer.
 - **The import.** `importSession` checks the agent (`SessionImportError.sourceUnreadable`) and
-  the folder of the new session (`SessionImportError.folderUnavailable`). The write of the new
-  session is the next step of D209: until it is in, the importer throws
-  `SessionDirectoryError.importUnsupported` after the checks.
+  the folder of the new session (`SessionImportError.folderUnavailable`), and finds the source
+  file among the scanned files by its id or its path. It reads the file whole with the
+  `ACPImport` reader, and makes the model transcript of its updates (`ImportedTranscript`: a
+  prompt for each user message, one response for each turn, a tool call as a short text, no
+  thought). It gives the transcript to `RouterSessionDirectory.importSession(_:transcript:)`,
+  which writes the recording of a new root session with the origin `import` and the
+  provenance (`importedFrom`), and applies the next free name. The importer then gives the
+  updates to its `ImportedHistoryStore`. The store of the agent (`AgentImportedHistoryStore`)
+  writes them as `session-history.json` with the writer of a fork (`SessionHistoryFile`), and
+  gives the history to the transcript search index. When that write fails, the store removes
+  the folder of the new session.
+- **The target of the write.** The Router directory asks the launcher of the agent for the
+  model and the configuration of the import (`AgentSessionLauncher.importTarget(for:)`, in
+  `Agent/SessionImportLaunch.swift`). The agent composes the session as `session/new` does,
+  takes the handle of the start slot of the agent, and builds the configuration with
+  `RoutedLLM.budgetedConfiguration`, the same function that `makeBudgetedSession` uses. It
+  then shuts the surface down: no session is live after an import. A later `session/resume`
+  restores the recording with the normal cold restore, which gives the instructions of the
+  agent.
 
 ## Settings
 

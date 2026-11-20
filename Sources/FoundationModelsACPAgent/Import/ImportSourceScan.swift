@@ -56,11 +56,35 @@ extension ImportSourceAgent {
   func metadata(of data: Data, in file: URL) throws -> ImportedSessionMetadata {
     switch self {
     case .claudeCode:
-      try ClaudeCodeSessionReader(sourceID: file.deletingPathExtension().lastPathComponent)
-        .metadata(data)
+      try Self.claudeCodeReader(for: file).metadata(data)
     case .codex:
       try CodexSessionReader().metadata(data)
     }
+  }
+
+  /// Reads one session file of the agent whole, with the reader of `ACPImport`: its metadata,
+  /// its updates and the count of the records that the reader did not read.
+  ///
+  /// - Parameters:
+  ///   - data: The bytes of the file.
+  ///   - file: The file. A Claude Code session has the name of its file as its id.
+  /// - Returns: The session.
+  /// - Throws: `ImportReadError` when the file is not a session of the agent.
+  func session(of data: Data, in file: URL) throws -> ImportedSession {
+    switch self {
+    case .claudeCode:
+      try Self.claudeCodeReader(for: file).read(data)
+    case .codex:
+      try CodexSessionReader().read(data)
+    }
+  }
+
+  /// The Claude Code reader of a session file: the session has the name of its file as its id.
+  ///
+  /// - Parameter file: The session file.
+  /// - Returns: The reader.
+  private static func claudeCodeReader(for file: URL) -> ClaudeCodeSessionReader {
+    ClaudeCodeSessionReader(sourceID: file.deletingPathExtension().lastPathComponent)
   }
 }
 

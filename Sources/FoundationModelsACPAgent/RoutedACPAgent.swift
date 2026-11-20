@@ -618,8 +618,6 @@ public actor RoutedACPAgent: Agent {
     self.hooks = hooks
     self.userDeviceTokens = userDeviceTokens
     self.sessionShareHost = sessionShareHost
-    self.sessionImporter = AgentSessionImporter(
-      roots: importRoots, directory: router.sessionDirectory)
     self.settingsFolders = SettingsFolders(name: name, home: home, environment: environment)
     self.environment = environment
     self.inlineSettleGrace = inlineSettleGrace
@@ -663,6 +661,12 @@ public actor RoutedACPAgent: Agent {
     transcriptSearchUpdates = TranscriptSearchUpdates(
       index: transcriptSearchIndex,
       summaryReader: Self.directorySummaryReader(router.sessionDirectory))
+    // The importer writes the history of each new session with the writer of a fork, and gives
+    // it to the search index (D209). Thus it is made after the search updates.
+    self.sessionImporter = AgentSessionImporter(
+      roots: importRoots, directory: router.sessionDirectory,
+      historyStore: AgentImportedHistoryStore(
+        name: settingsFolders.name, searchUpdates: transcriptSearchUpdates))
     modelsEndpoint = ModelsGraph(
       store: settingsStore,
       storage: modelStorage ?? ModelStorage(cacheDirectory: home.modelCacheDirectory),
