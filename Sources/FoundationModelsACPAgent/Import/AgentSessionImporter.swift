@@ -47,9 +47,6 @@ actor AgentSessionImporter: SessionImporter {
   /// The last read of each session file of each agent, by the path of the file.
   private var scans: [ImportSourceAgent: [String: ImportFileScan]] = [:]
 
-  /// The logger of the scan.
-  private static let logger = ACPAgentTelemetry.logger(.session)
-
   /// Makes the importer.
   ///
   /// - Parameters:
@@ -97,9 +94,7 @@ actor AgentSessionImporter: SessionImporter {
     guard roots[agent] != nil else {
       throw SessionImportError.sourceUnreadable(agent: order.agent)
     }
-    if let folder = order.folder, !Self.isFolder(folder) {
-      throw SessionImportError.folderUnavailable(folder)
-    }
+    try Self.requireFolder(order.folder)
     throw SessionDirectoryError.importUnsupported
   }
 
@@ -116,7 +111,7 @@ actor AgentSessionImporter: SessionImporter {
     guard let root = roots[agent] else { return [] }
     let kept = scans[agent] ?? [:]
     let found = Self.sessionFiles(of: agent, under: root).compactMap { file in
-      ImportFileStamp.of(file).map { stamp in
+      ImportFileStamp.makeStamp(of: file).map { stamp in
         (file: file, scan: Self.scan(file, of: agent, stamp: stamp, kept: kept[file.path]))
       }
     }
@@ -167,12 +162,12 @@ actor AgentSessionImporter: SessionImporter {
   /// - Parameter folder: The folder.
   /// - Returns: The files, or no file when the folder does not exist.
   private static func files(under folder: URL) -> [URL] {
-    guard isFolder(folder) else { return [] }
+    guard PathKind.of(folder) == .directory else { return [] }
     let enumerator = FileManager.default.enumerator(
       at: folder, includingPropertiesForKeys: ImportFileStamp.resourceKeys + [.isRegularFileKey],
       options: [.skipsHiddenFiles, .skipsPackageDescendants]
     ) { url, error in
-      logger.warning(
+      ACPAgentTelemetry.logger(.session).warning(
         "The importer cannot read a file of an import root. It skips the file.",
         metadata: ["path": "\(url.path)", "error": "\(error)"])
       return true
@@ -197,11 +192,11 @@ actor AgentSessionImporter: SessionImporter {
       let data = try Data(contentsOf: file, options: .mappedIfSafe)
       return ImportFileScan(stamp: stamp, metadata: try agent.metadata(of: data, in: file))
     } catch let error as ImportReadError {
-      logger.debug(
+      ACPAgentTelemetry.logger(.session).debug(
         "A file of an import root is not a session that the importer can list.",
         metadata: ["path": "\(file.path)", "error": "\(error)"])
     } catch {
-      logger.warning(
+      ACPAgentTelemetry.logger(.session).warning(
         "The importer cannot read a session file of an import root. The list does not show it.",
         metadata: ["path": "\(file.path)", "error": "\(error)"])
     }
@@ -337,22 +332,30 @@ actor AgentSessionImporter: SessionImporter {
     return agent
   }
 
-  /// True when a folder exists.
+  /// Checks the folder of a new session: the folder must exist. No folder passes, because the
+  /// import then uses the folder of the source session.
   ///
-  /// - Parameter folder: The folder.
-  /// - Returns: True for an existing folder.
-  private static func isFolder(_ folder: URL) -> Bool {
-    var isDirectory: ObjCBool = false
-    return FileManager.default.fileExists(atPath: folder.path, isDirectory: &isDirectory)
-      && isDirectory.boolValue
+  /// - Parameter folder: The folder of the new session, or `nil`.
+  /// - Throws: `SessionImportError.folderUnavailable(_:)` for a folder that does not exist.
+  private static func requireFolder(_ folder: URL?) throws {
+    guard let folder else { return }
+    guard PathKind.of(folder) == .directory else {
+      throw SessionImportError.folderUnavailable(folder)
+    }
   }
 }
 
 /// A source session by its agent and its id: the key of the earlier imports.
 struct ImportSourceKey: Hashable, Sendable {
   /// The source agent, for example `claude-code`.
+  ///
+  /// The synthesized `Hashable` conformance reads it; periphery sees no reader.
+  // periphery:ignore
   let agent: String
 
   /// The id of the session in the store of the source agent.
+  ///
+  /// The synthesized `Hashable` conformance reads it; periphery sees no reader.
+  // periphery:ignore
   let sourceID: String
 }

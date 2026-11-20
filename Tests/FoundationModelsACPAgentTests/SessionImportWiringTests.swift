@@ -30,6 +30,9 @@ import Testing
   /// The source id of the Claude Code session of the root.
   private static let claudeID = "7c1e0000-0000-4000-8000-000000000002"
 
+  /// The working folder of the Claude Code session of the root.
+  private static let claudeFolder = URL(fileURLWithPath: "/work/app", isDirectory: true)
+
   // MARK: - Fixtures
 
   /// Makes a Claude Code root with one session.
@@ -38,15 +41,7 @@ import Testing
   /// - Throws: The error of the write.
   private static func makeClaudeRoot() throws -> URL {
     let root = makeResolvedDirectory(label: label).appendingPathComponent(".claude", isDirectory: true)
-    let file = root.appendingPathComponent("projects/-work-app/\(claudeID).jsonl")
-    try FileManager.default.createDirectory(
-      at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try Data(
-      """
-      {"type":"user","uuid":"u-1","sessionId":"\(claudeID)","timestamp":"2026-11-01T10:00:01.000Z","cwd":"/work/app","message":{"role":"user","content":"Fix the test."}}
-
-      """.utf8
-    ).write(to: file)
+    try ImportSessionFiles.writeClaudeCode(id: claudeID, folder: claudeFolder, in: root)
     return root
   }
 

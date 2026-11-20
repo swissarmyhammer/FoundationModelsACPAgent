@@ -778,7 +778,8 @@ initializer of `RoutedACPAgent`): `~/.claude` and `~/.codex`, or the folders
 that an app in the App Sandbox holds a bookmark for. A source with no folder
 shows in the list as a source with no access. The `acp-agent` CLI gives the
 folders of the real home folder, and the folder of `CLAUDE_CONFIG_DIR` when it
-is set.
+is set to an absolute path. When `CLAUDE_CONFIG_DIR` is not an absolute path,
+the CLI writes a warning to stderr and uses `~/.claude`.
 
 The importer reads the folders only in a call. It runs no child process,
 watches nothing, and changes no file of a folder. It keeps the metadata of each

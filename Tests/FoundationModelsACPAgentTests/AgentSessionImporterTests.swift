@@ -49,32 +49,12 @@ import Testing
 
   // MARK: - Fixtures
 
-  /// The lines of a Claude Code session file with a custom title.
+  /// The bytes of the Claude Code session file with a custom title.
   ///
   /// - Parameter title: The custom title.
   /// - Returns: The bytes of the file.
   private static func claudeFile(title: String) -> Data {
-    Data(
-      """
-      {"type":"user","uuid":"u-1","sessionId":"\(claudeID)","timestamp":"2026-11-01T10:00:01.000Z","cwd":"\(claudeFolder.path)","message":{"role":"user","content":"Fix the test."}}
-      {"type":"custom-title","customTitle":"\(title)","sessionId":"\(claudeID)"}
-
-      """.utf8)
-  }
-
-  /// The lines of a Codex session file.
-  ///
-  /// - Parameters:
-  ///   - id: The id of the session.
-  ///   - day: The day of the records, `2026-11-<day>`.
-  /// - Returns: The bytes of the file.
-  private static func codexFile(id: String, day: String) -> Data {
-    Data(
-      """
-      {"timestamp":"2026-11-\(day)T09:00:00.000Z","type":"session_meta","payload":{"id":"\(id)","timestamp":"2026-11-\(day)T09:00:00.000Z","cwd":"\(codexFolder.path)"}}
-      {"timestamp":"2026-11-\(day)T09:00:02.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"List the files."}]}}
-
-      """.utf8)
+    ImportSessionFiles.claudeCode(id: claudeID, folder: claudeFolder, title: title)
   }
 
   /// The roots of one test: a Claude Code root and a Codex root in a new temporary folder.
@@ -87,7 +67,7 @@ import Testing
 
     /// The file of the Claude Code session.
     var claudeSession: URL {
-      claude.appendingPathComponent("projects/-work-app/\(claudeID).jsonl")
+      ImportSessionFiles.claudeCodeFile(of: claudeID, folder: claudeFolder, in: claude)
     }
 
     /// Both roots by their agent.
@@ -103,11 +83,10 @@ import Testing
       let roots = Roots(
         claude: base.appendingPathComponent(".claude", isDirectory: true),
         codex: base.appendingPathComponent(".codex", isDirectory: true))
-      try write(claudeFile(title: firstTitle), to: roots.claudeSession)
-      try write(
-        codexFile(id: codexID, day: "02"),
-        to: roots.codex.appendingPathComponent(
-          "sessions/2026/11/02/rollout-2026-11-02T09-00-00-\(codexID).jsonl"))
+      try ImportSessionFiles.writeClaudeCode(
+        id: claudeID, folder: claudeFolder, title: firstTitle, in: roots.claude)
+      try ImportSessionFiles.writeCodex(
+        id: codexID, day: "02", folder: codexFolder, in: roots.codex)
       return roots
     }
 
@@ -115,22 +94,8 @@ import Testing
     ///
     /// - Throws: The error of the write.
     func addArchivedCodexSession() throws {
-      try Self.write(
-        codexFile(id: archivedCodexID, day: "03"),
-        to: codex.appendingPathComponent(
-          "archived_sessions/rollout-2026-11-03T09-00-00-\(archivedCodexID).jsonl"))
-    }
-
-    /// Writes a file and makes its folder.
-    ///
-    /// - Parameters:
-    ///   - data: The bytes.
-    ///   - file: The file.
-    /// - Throws: The error of the write.
-    static func write(_ data: Data, to file: URL) throws {
-      try FileManager.default.createDirectory(
-        at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-      try data.write(to: file)
+      try ImportSessionFiles.writeCodex(
+        id: archivedCodexID, day: "03", folder: codexFolder, isArchived: true, in: codex)
     }
   }
 

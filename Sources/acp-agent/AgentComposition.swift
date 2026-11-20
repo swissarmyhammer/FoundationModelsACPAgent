@@ -3,6 +3,7 @@ import Foundation
 import FoundationModelsACPAgent
 import FoundationModelsKanban
 import FoundationModelsRouter
+import Logging
 
 /// The CLI choices every subcommand shares (cli-plan.md §5.10): the
 /// dotfolder name, and the model choice of the executable.
@@ -50,6 +51,19 @@ enum AgentComposition {
   /// of Claude Code, in place of `~/.claude`. The CLI gives that folder as
   /// the Claude Code import root (``importRoots(environment:homeDirectory:)``).
   static let claudeConfigVariable = "CLAUDE_CONFIG_DIR"
+
+  /// The log metadata key of the environment variable that a warning of
+  /// the composition names.
+  static let variableMetadataKey = "variable"
+
+  /// The log metadata key of the folder that the composition uses in
+  /// place of the folder that a variable names.
+  static let fallbackMetadataKey = "fallback"
+
+  /// The label of the logger of the composition. Each warning makes a new
+  /// logger with this label, so the warning uses the logging system as it
+  /// is at the time of the warning.
+  private static let logLabel = "\(dotfolderName).composition"
 
   /// The folder of each source agent in the home folder, when no variable
   /// names it (D209).
@@ -146,8 +160,10 @@ enum AgentComposition {
   /// The import roots of the CLI (D209): the folder of each source agent
   /// in the real home folder, `~/.claude` and `~/.codex`. When
   /// ``claudeConfigVariable`` names an absolute folder, that folder is the
-  /// Claude Code root. The CLI runs outside the App Sandbox, so it can read
-  /// each root.
+  /// Claude Code root. When it names a path that is not absolute, the
+  /// root stays `~/.claude`, and the CLI logs a warning that names the
+  /// variable and that folder. The CLI runs outside the App Sandbox, so it
+  /// can read each root.
   ///
   /// - Parameters:
   ///   - environment: The environment to read.
@@ -157,9 +173,16 @@ enum AgentComposition {
     var roots = importRootFolderNames.mapValues {
       homeDirectory.appendingPathComponent($0, isDirectory: true)
     }
-    if let folder = environment[claudeConfigVariable], folder.hasPrefix("/") {
-      roots[.claudeCode] = URL(fileURLWithPath: folder, isDirectory: true)
+    guard let folder = environment[claudeConfigVariable], !folder.isEmpty else { return roots }
+    guard folder.hasPrefix("/") else {
+      var metadata: Logger.Metadata = [variableMetadataKey: .string(claudeConfigVariable)]
+      metadata[fallbackMetadataKey] = roots[.claudeCode].map { .string($0.path) }
+      Logger(label: logLabel).warning(
+        "The Claude Code configuration folder is not an absolute path. The import root is the folder in the home folder.",
+        metadata: metadata)
+      return roots
     }
+    roots[.claudeCode] = URL(fileURLWithPath: folder, isDirectory: true)
     return roots
   }
 

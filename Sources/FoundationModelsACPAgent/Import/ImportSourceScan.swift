@@ -18,6 +18,9 @@ struct ImportSourceLayout: Sendable {
   /// The extension of each session file.
   static let fileExtension = "jsonl"
 
+  /// The depth of a Claude Code session file under `projects`: `<project>/<id>.jsonl`.
+  static let claudeCodeFileDepth = 2
+
   /// True when `file`, at `depth` under its folder, is a session file of this layout.
   ///
   /// - Parameters:
@@ -35,7 +38,8 @@ extension ImportSourceAgent {
   var layout: ImportSourceLayout {
     switch self {
     case .claudeCode:
-      ImportSourceLayout(folders: ["projects"], fileDepth: 2, namePrefix: "")
+      ImportSourceLayout(
+        folders: ["projects"], fileDepth: ImportSourceLayout.claudeCodeFileDepth, namePrefix: "")
     case .codex:
       ImportSourceLayout(
         folders: ["sessions", "archived_sessions"], fileDepth: nil, namePrefix: "rollout-")
@@ -67,16 +71,22 @@ struct ImportFileStamp: Sendable, Equatable {
   static let resourceKeys: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey]
 
   /// The size of the file, in bytes.
+  ///
+  /// The synthesized `Equatable` conformance reads it; periphery sees no reader.
+  // periphery:ignore
   let size: Int
 
   /// The modification date of the file.
+  ///
+  /// The synthesized `Equatable` conformance reads it; periphery sees no reader.
+  // periphery:ignore
   let modified: Date
 
-  /// The stamp of a file, from the resource values of its enumeration.
+  /// Makes the stamp of a file, from the resource values of its enumeration.
   ///
   /// - Parameter file: The file.
   /// - Returns: The stamp, or `nil` when the file system gives no size or no date.
-  static func of(_ file: URL) -> ImportFileStamp? {
+  static func makeStamp(of file: URL) -> ImportFileStamp? {
     let values = try? file.resourceValues(forKeys: Set(resourceKeys))
     guard let size = values?.fileSize, let modified = values?.contentModificationDate else {
       return nil

@@ -58,16 +58,14 @@ private let wireDependencyName = "FoundationModelsACP"
 /// The Markdown renderer of the session updates, a second product of
 /// `wireDependencyName` (D202). The library target renders the export of a
 /// session with it, and the test target compares an export with it.
-private let markdownProduct = Target.Dependency.product(
-    name: "ACPMarkdown", package: wireDependencyName)
+private let markdownProduct = makeWireProduct(name: "ACPMarkdown")
 
 /// The readers of the session files of other agents (Claude Code and Codex), a
 /// third product of `wireDependencyName` (D209). The library target lists
 /// and imports their sessions with it (`AgentSessionImporter`), the CLI names
 /// its import roots by `ImportSourceAgent`, and the test targets give
 /// fixture roots by the same type.
-private let importProduct = Target.Dependency.product(
-    name: "ACPImport", package: wireDependencyName)
+private let importProduct = makeWireProduct(name: "ACPImport")
 
 /// The runtime: self-folding, token-metered, event-streaming, recorded
 /// sessions. This package owns what the runtime does not: file I/O, the
@@ -410,6 +408,13 @@ private func makeFamilyPackage(name: String) -> Package.Dependency {
 /// ships one library product with the package's own name.
 private func makeFamilyProduct(name: String) -> Target.Dependency {
     .product(name: name, package: name)
+}
+
+/// Makes the dependency on one more library product of `wireDependencyName`.
+/// The wire package ships products in addition to the product with its own
+/// name, for example `markdownProduct` and `importProduct`.
+private func makeWireProduct(name: String) -> Target.Dependency {
+    .product(name: name, package: wireDependencyName)
 }
 
 /// The library products of `familyDependencyNames`, linked by the library

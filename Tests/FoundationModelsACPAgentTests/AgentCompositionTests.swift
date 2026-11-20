@@ -3,6 +3,8 @@ import Foundation
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsRouter
 import FoundationModelsSkills
+import Logging
+import TelemetryTestSupport
 import Testing
 
 @testable import FoundationModelsACPAgent
@@ -236,6 +238,23 @@ import Testing
       environment: ["CLAUDE_CONFIG_DIR": "/elsewhere/claude"], homeDirectory: Self.importHome)
 
     #expect(roots[.claudeCode] == URL(fileURLWithPath: "/elsewhere/claude", isDirectory: true))
+  }
+
+  /// A `CLAUDE_CONFIG_DIR` that is not an absolute path gives a warning that names the variable.
+  /// The root stays `~/.claude`.
+  @Test func aRelativeClaudeConfigDirGivesAWarning() async throws {
+    let records = try await TelemetryCapture.run(forbidding: []) { context in
+      _ = AgentComposition.importRoots(
+        environment: [AgentComposition.claudeConfigVariable: "relative/claude"],
+        homeDirectory: Self.importHome)
+      return context.logRecords
+    }
+
+    let variable = Logger.MetadataValue.string(AgentComposition.claudeConfigVariable)
+    #expect(
+      records.contains {
+        $0.level == .warning && $0.metadata[AgentComposition.variableMetadataKey] == variable
+      })
   }
 
   /// The recording root of `workspace` under the CLI's own dotfolder
