@@ -18,4 +18,4 @@ CI run 44656716753 (head f120f89): the job "Integration (opt-in, real dependenci
 ## Change
 - [x] The test expects the doctor warnings exit code (5) and the warning on stderr, and nothing on stdout. Change its name and its doc comment to match. Commit 9413d77.
 - [x] `swift test --package-path IntegrationTests --filter CLIProcessTests` passes. 7 tests in 1 suite passed, after `swift package --package-path IntegrationTests update` (the local ACP pin of the nested package had no ACPImport).
-- [ ] The CI integration job is green after the push. #ci #bug
+- [x] The CI integration job is green after the push. #ci #bug
