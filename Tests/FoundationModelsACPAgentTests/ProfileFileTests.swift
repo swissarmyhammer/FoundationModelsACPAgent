@@ -144,6 +144,11 @@ import Testing
     #expect(try Self.decode("kvBits: 8\n").kvCacheQuantization == .bits8)
   }
 
+  /// `kvBits: 4` gives a 4-bit KV cache.
+  @Test func fourKVBitsGiveAFourBitKVCache() throws {
+    #expect(try Self.decode("kvBits: 4\n").kvCacheQuantization == .bits4)
+  }
+
   /// No `kvBits` gives an unquantized KV cache: `large` names none.
   @Test func noKVBitsGiveAnUnquantizedKVCache() throws {
     #expect(try Self.decode("").kvCacheQuantization == nil)

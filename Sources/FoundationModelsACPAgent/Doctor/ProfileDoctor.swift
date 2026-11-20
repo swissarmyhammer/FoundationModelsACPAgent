@@ -572,11 +572,11 @@ public struct ProfileDoctor: Doctorable {
     }
   }
 
-  /// The fix of a volume that is too small: make space, or name smaller
-  /// models.
-  private static let diskFix =
-    "make space on the volume of the model cache, or set \"profile: \(smallerProfileName)\" in "
-    + "\(ConfigurationLoader.configFileName), with \(editCommand)"
+  /// The fix of a volume that is too small: make space, or select the
+  /// smaller profile with the same step as ``smallerProfileFix``.
+  private static var diskFix: String {
+    "make space on the volume of the model cache, or " + smallerProfileFix
+  }
 
   // MARK: - The shared shapes
 

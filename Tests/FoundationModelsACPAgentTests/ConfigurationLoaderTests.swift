@@ -1024,10 +1024,9 @@ import Testing
   /// A profile file of the project layer is selected by its name.
   @Test func theNameSelectsAProjectProfileFile() throws {
     let fixture = Fixture()
-    let profiles = fixture.projectDirectory.appendingPathComponent(ProfileFile.folderName)
-    try FileManager.default.createDirectory(at: profiles, withIntermediateDirectories: true)
-    try "standard:\n  - \(Self.configuredStandardModel)\n".write(
-      to: profiles.appendingPathComponent("custom.yaml"), atomically: true, encoding: .utf8)
+    try writeProfileFile(
+      named: "custom", contents: "standard:\n  - \(Self.configuredStandardModel)\n",
+      in: fixture.projectDirectory)
 
     let loaded = try fixture.loadProjectConfig("profile: custom\n")
 
@@ -1037,10 +1036,7 @@ import Testing
   /// A selected profile file that does not decode is a load error.
   @Test func aBadSelectedProfileFileIsAnError() throws {
     let fixture = Fixture()
-    let profiles = fixture.projectDirectory.appendingPathComponent(ProfileFile.folderName)
-    try FileManager.default.createDirectory(at: profiles, withIntermediateDirectories: true)
-    try "slots: []\n".write(
-      to: profiles.appendingPathComponent("custom.yaml"), atomically: true, encoding: .utf8)
+    try writeProfileFile(named: "custom", contents: "slots: []\n", in: fixture.projectDirectory)
 
     #expect(throws: ProfileFileError.self) { try fixture.loadProjectConfig("profile: custom\n") }
   }

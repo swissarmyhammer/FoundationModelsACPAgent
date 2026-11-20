@@ -279,11 +279,9 @@ import Testing
   @Test
   func aProfileThatDoesNotResolveExitsErrorWithItsReason() async throws {
     let fixture = ConfigCommandFixture(label: "ExitCodeTests-unresolvable")
-    let profiles = fixture.projectDirectory.appendingPathComponent(ProfileFile.folderName)
-    try FileManager.default.createDirectory(at: profiles, withIntermediateDirectories: true)
-    try Self.unresolvableProfileDocument.write(
-      to: profiles.appendingPathComponent("\(Self.unresolvableProfileName).yaml"),
-      atomically: true, encoding: .utf8)
+    try writeProfileFile(
+      named: Self.unresolvableProfileName, contents: Self.unresolvableProfileDocument,
+      in: fixture.projectDirectory)
     try fixture.writeProjectConfig("profile: \(Self.unresolvableProfileName)\n")
     let capture = try AnswerCapture(label: "ExitCodeTests-unresolvable-answer")
     let run = try #require(

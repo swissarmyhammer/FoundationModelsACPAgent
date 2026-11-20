@@ -6,7 +6,7 @@ import FoundationModelsExtras
 /// The endpoint gives each case in the `errors` list of a response, with its
 /// ``code`` in `extensions.code`. The ``message`` tells how to correct the
 /// call.
-public enum ModelsGraphError: CodedError, Equatable {
+public enum ModelsGraphError: StoreCodedError, Equatable {
   /// `READ_ONLY`: the call names the bundled layer, which no call changes.
   case readOnlyLayer
 
@@ -72,12 +72,11 @@ public enum ModelsGraphError: CodedError, Equatable {
     }
   }
 
-  /// Gives the coded error of an error of the profile store.
+  /// Gives the coded error of a known error of the profile store.
   ///
   /// - Parameter error: The error that a store call threw.
-  /// - Returns: The coded error of a known store error, or `error` with no
-  ///   change.
-  static func coded(_ error: any Error) -> any Error {
+  /// - Returns: The coded error of a known store error, or `nil`.
+  static func knownCode(of error: any Error) -> (any Error)? {
     switch error {
     case let error as ProfileFileError:
       ModelsGraphError.invalidProfile(detail: error.description)
@@ -88,21 +87,7 @@ public enum ModelsGraphError: CodedError, Equatable {
     case let error as ProfileStoreError:
       ModelsGraphError.noLevel(detail: error.description)
     default:
-      error
-    }
-  }
-
-  /// Runs one call of the profile store, and gives each error that it
-  /// throws as ``coded(_:)`` gives it.
-  ///
-  /// - Parameter storeCall: The call of the store.
-  /// - Returns: What `storeCall` returns.
-  /// - Throws: The coded error of the error that `storeCall` throws.
-  static func withCodedErrors<Value>(of storeCall: () async throws -> Value) async throws -> Value {
-    do {
-      return try await storeCall()
-    } catch {
-      throw coded(error)
+      nil
     }
   }
 }

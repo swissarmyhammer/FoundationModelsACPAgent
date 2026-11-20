@@ -80,6 +80,23 @@ import Testing
     #expect(name.rawValue == "acp-agent")
   }
 
+  /// The settings folders of the CLI are over the home of the CLI.
+  @Test func theSettingsFoldersOfTheCLIAreOverTheHomeOfTheCLI() throws {
+    let home = makeResolvedDirectory(label: "AgentCompositionTests-folders-home")
+    let environment = [AgentComposition.homeVariable: home.path]
+
+    let folders = try AgentComposition.settingsFolders(environment: environment)
+
+    #expect(try folders.home == AgentComposition.home(environment: environment))
+  }
+
+  /// The settings folders of the CLI have the dotfolder name of the CLI.
+  @Test func theSettingsFoldersOfTheCLIHaveTheDotfolderNameOfTheCLI() throws {
+    let folders = try AgentComposition.settingsFolders(environment: [:])
+
+    #expect(folders.name.rawValue == AgentComposition.dotfolderName)
+  }
+
   // MARK: - The secret store
 
   /// The CLI gives the agent the login Keychain, under the service

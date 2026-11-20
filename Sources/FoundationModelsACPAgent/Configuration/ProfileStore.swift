@@ -407,13 +407,17 @@ public actor ProfileStore {
 
   /// Stops each watcher, and ends each open ``changes()`` stream.
   public func stopWatching() {
-    watchers.values.forEach { $0.stop() }
+    for watcher in watchers.values {
+      watcher.stop()
+    }
     watchers.removeAll()
     let continuations = subscribers.withLock { subscribers in
       defer { subscribers.removeAll() }
       return Array(subscribers.values)
     }
-    continuations.forEach { $0.finish() }
+    for continuation in continuations {
+      continuation.finish()
+    }
   }
 
   /// Forgets the continuation of a ``changes()`` stream that ended.
@@ -428,6 +432,8 @@ public actor ProfileStore {
   /// - Parameter change: The change.
   private nonisolated func send(_ change: ProfileChange) {
     let continuations = subscribers.withLock { Array($0.values) }
-    continuations.forEach { $0.yield(change) }
+    for continuation in continuations {
+      continuation.yield(change)
+    }
   }
 }

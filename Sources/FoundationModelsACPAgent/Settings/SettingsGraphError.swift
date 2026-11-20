@@ -7,7 +7,7 @@ import FoundationModelsExtras
 /// `errors` list of a response, with its ``code`` in `extensions.code`. The
 /// ``message`` tells how to correct the call. No case holds a secret value:
 /// a case names a key path or a reference only.
-public enum SettingsGraphError: CodedError, Equatable {
+public enum SettingsGraphError: StoreCodedError, Equatable {
   /// `UNKNOWN_SECTION`: the first key of the key path is not a section of
   /// the configuration. The value is that key.
   case unknownSection(key: String)
@@ -127,12 +127,11 @@ public enum SettingsGraphError: CodedError, Equatable {
     }
   }
 
-  /// Gives the coded error of an error of the settings store.
+  /// Gives the coded error of a known error of the settings store.
   ///
   /// - Parameter error: The error that a store call threw.
-  /// - Returns: The coded error of a known store error, or `error` with no
-  ///   change. The toolkit gives each other error as `INTERNAL`.
-  static func coded(_ error: any Error) -> any Error {
+  /// - Returns: The coded error of a known store error, or `nil`.
+  static func knownCode(of error: any Error) -> (any Error)? {
     switch error {
     case let error as SettingsTreeError:
       SettingsGraphError.invalidKeyPath(detail: error.description)
@@ -149,23 +148,7 @@ public enum SettingsGraphError: CodedError, Equatable {
     case let error as SettingsStoreError:
       SettingsGraphError.noLevel(detail: error.description)
     default:
-      error
-    }
-  }
-
-  /// Runs one call of the settings store, and gives each error that it
-  /// throws as ``coded(_:)`` gives it.
-  ///
-  /// - Parameter storeCall: The call of the store.
-  /// - Returns: What `storeCall` returns.
-  /// - Throws: The coded error of the error that `storeCall` throws.
-  static func withCodedErrors<Value>(
-    of storeCall: () async throws -> Value
-  ) async throws -> Value {
-    do {
-      return try await storeCall()
-    } catch {
-      throw coded(error)
+      nil
     }
   }
 }

@@ -28,12 +28,10 @@ extension AcpAgentCommand {
     /// - Returns: The inventory. The call reads no file.
     /// - Throws: `DotfolderNameError` when the dotfolder name is refused.
     static func makeInventory(environment: [String: String]) throws -> SnapshotInventory {
-      let name = try DotfolderName(AgentComposition.dotfolderName)
-      let home = try AgentComposition.home(environment: environment)
+      let folders = try AgentComposition.settingsFolders(environment: environment)
       return SnapshotInventory(
-        hooksDataDirectory: home.hooksDirectory,
-        settingsStore: SettingsStore(
-          settingsFolders: SettingsFolders(name: name, home: home, environment: environment)))
+        hooksDataDirectory: folders.home.hooksDirectory,
+        settingsStore: SettingsStore(settingsFolders: folders))
     }
 
     /// `snapshots list`: one line for each snapshot folder, or one JSON

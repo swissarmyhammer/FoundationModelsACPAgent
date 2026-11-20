@@ -47,10 +47,7 @@ extension AcpAgentCommand {
     /// - Returns: The store. The call reads no file.
     /// - Throws: `DotfolderNameError` when the dotfolder name is refused.
     static func makeStore(environment: [String: String]) throws -> ProfileStore {
-      ProfileStore(
-        settingsFolders: SettingsFolders(
-          name: try DotfolderName(AgentComposition.dotfolderName),
-          home: try AgentComposition.home(environment: environment), environment: environment))
+      ProfileStore(settingsFolders: try AgentComposition.settingsFolders(environment: environment))
     }
 
     /// The level that a save or a delete changes.

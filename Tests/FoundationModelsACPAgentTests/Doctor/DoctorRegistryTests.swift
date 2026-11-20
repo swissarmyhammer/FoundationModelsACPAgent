@@ -95,10 +95,8 @@ struct DoctorRegistryTests {
   /// finding of the profile component that names the file.
   @Test func aBadProfileFileIsAFinding() async throws {
     let fixture = ConfigCommandFixture(label: "DoctorRegistryTests-bad-profile")
-    let profiles = fixture.projectDirectory.appendingPathComponent(ProfileFile.folderName)
-    try FileManager.default.createDirectory(at: profiles, withIntermediateDirectories: true)
-    let file = profiles.appendingPathComponent("custom.yaml")
-    try "slots: []\n".write(to: file, atomically: true, encoding: .utf8)
+    let file = try writeProfileFile(
+      named: "custom", contents: "slots: []\n", in: fixture.projectDirectory)
 
     let report = await DoctorRunner(components: Self.components(in: fixture)).run()
 

@@ -306,12 +306,24 @@ enum AgentComposition {
     fallbackProfileName: String = BundledProfiles.smallestName
   ) throws -> ConfigurationLoader {
     ConfigurationLoader(
-      settingsFolders: SettingsFolders(
-        name: try DotfolderName(dotfolderName), home: try home(environment: environment),
-        environment: environment),
+      settingsFolders: try settingsFolders(environment: environment),
       workingDirectory: workingDirectory,
       secretStore: secretStore,
       fallbackProfileName: fallbackProfileName)
+  }
+
+  /// The settings folders of the CLI: the folders of ``dotfolderName`` over
+  /// the home of ``home(environment:)``. Each command that reads or writes
+  /// the settings of the CLI builds its store over these folders.
+  ///
+  /// - Parameter environment: The environment that the home and the
+  ///   defaults layer are read from.
+  /// - Returns: The settings folders. The call reads no file.
+  /// - Throws: `DotfolderNameError` when ``dotfolderName`` is refused.
+  static func settingsFolders(environment: [String: String]) throws -> SettingsFolders {
+    SettingsFolders(
+      name: try DotfolderName(dotfolderName), home: try home(environment: environment),
+      environment: environment)
   }
 
   /// The profile of a load of the CLI where no layer sets `profile`: the
