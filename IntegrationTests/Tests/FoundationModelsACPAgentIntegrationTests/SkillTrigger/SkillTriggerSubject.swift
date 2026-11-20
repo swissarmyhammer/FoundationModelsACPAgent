@@ -41,25 +41,18 @@ struct SkillTriggerRun: Sendable {
   }
 }
 
-/// The builtin profile of a live run (ACPA-21).
+/// The builtin profile that `ACP_AGENT_SKILL_TRIGGER_PRESET` selects for a
+/// live run (ACPA-21), or `nil` when the variable is not set or is empty.
 ///
-/// The default is the profile the agent ships with
-/// (`ModelProfiles.defaultName`), because the proof that matters is that
-/// the shipped model uses skills. The test follows a change of that default
-/// with no edit. `ACP_AGENT_SKILL_TRIGGER_PRESET` selects another builtin
-/// profile.
-let skillTriggerPreset: String = {
+/// When it is `nil`, the run sets no profile, and the agent loads the
+/// profile that the shipped agent chooses on this Mac: the largest bundled
+/// profile that fits (``LiveAgent``). The proof that matters is that the
+/// shipped model uses skills, and the test follows a change of that choice
+/// with no edit.
+let skillTriggerPreset: String? = {
   let variable = "ACP_AGENT_SKILL_TRIGGER_PRESET"
   let value = ProcessInfo.processInfo.environment[variable]
-  return (value?.isEmpty == false ? value : nil) ?? ModelProfiles.defaultName
-}()
-
-/// The standard model of ``skillTriggerPreset``.
-let skillTriggerModel: String = {
-  guard let model = ModelProfiles.named(skillTriggerPreset)?.standard.first?.stringValue else {
-    preconditionFailure("ACP_AGENT_SKILL_TRIGGER_PRESET names no builtin profile")
-  }
-  return model
+  return value?.isEmpty == false ? value : nil
 }()
 
 /// The live subject of the skill trigger gate: one composed agent, one
@@ -91,18 +84,25 @@ struct SkillTriggerSubject {
   /// samples, and the skills of the default marketplace would change that
   /// set and need the network.
   ///
-  /// The profile is ``skillTriggerPreset``, which is the shipped profile
-  /// unless `ACP_AGENT_SKILL_TRIGGER_PRESET` selects another one.
+  /// The file sets the profile only when ``skillTriggerPreset`` selects
+  /// one. Else it sets no profile, and the agent loads the profile of the
+  /// shipped choice.
   static var userConfigYAML: String {
-    """
-    tools:
-      shell: false
-      codeContext: false
-      skills:
-        marketplaces: []
-    profile:
-      preset: \(skillTriggerPreset)
-    """
+    let base = """
+      tools:
+        shell: false
+        codeContext: false
+        skills:
+          marketplaces: []
+      """
+    guard let skillTriggerPreset else {
+      return base
+    }
+    return base + """
+
+      profile:
+        preset: \(skillTriggerPreset)
+      """
   }
 
   /// The wired harness of the run.

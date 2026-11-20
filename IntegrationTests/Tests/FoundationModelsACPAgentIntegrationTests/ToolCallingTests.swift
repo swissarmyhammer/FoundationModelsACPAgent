@@ -59,18 +59,16 @@ struct ToolCallingTests {
   /// it and it makes a prompt slower. The skills marketplace list is
   /// empty: the gate measures the tool calls of a fixed tool set, and the
   /// skills of the default marketplace would change that set and need the
-  /// network.
-  private static var userConfigYAML: String {
-    """
+  /// network. The file sets no profile, thus the agent loads the profile
+  /// that the shipped agent chooses on this Mac: the largest bundled
+  /// profile that fits (``LiveAgent``).
+  private static let userConfigYAML = """
     tools:
       shell: true
       codeContext: false
       skills:
         marketplaces: []
-    profile:
-      preset: \(ModelProfiles.defaultName)
     """
-  }
 
   /// The prompt text. It names the two verb paths and the
   /// workspace, so the gate measures the tool calls and not a search for

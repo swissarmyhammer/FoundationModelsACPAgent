@@ -16,6 +16,9 @@ enum LiveAgent {
   /// over a live router, and wires a recording harness to it.
   ///
   /// The agent resolves its profile here, thus the real models load here.
+  /// When `userConfigYAML` sets no profile, the profile is the choice of
+  /// the shipped agent: ``BundledProfiles/fallbackName(using:)`` with the
+  /// router of the agent as the fit source.
   /// Greedy decoding makes a run repeatable: the same model and the same
   /// code give the same tool calls in every run.
   ///
@@ -37,25 +40,32 @@ enum LiveAgent {
       to: userDirectory.appendingPathComponent(ConfigurationLoader.configFileName),
       atomically: true, encoding: .utf8)
     let home = AgentHomeFixture.make(label: label, synced: userDirectory)
-    let configuration = try ConfigurationLoader(
-      name: DotfolderName(AgentClientHarness.dotfolderName),
-      workingDirectory: userDirectory,
-      home: home,
-      environment: [:]
-    ).load().configuration
     let hooks = AgentHooks(dataDirectory: home.hooksDirectory)
     let router = Router(
       recordingsDir: makeResolvedDirectory(label: "\(label)-recordings"),
       loader: LiveModelLoader(),
       samplingMode: .greedy,
       hooks: hooks.dispatcher)
+    // The shipped agent makes this choice before the load
+    // (`ComposedAgent`): the largest bundled profile that fits the
+    // memory of this Mac. A configuration that sets no profile thus
+    // loads the same profile here as in the shipped agent.
+    let fallbackProfileName = await BundledProfiles.fallbackName(using: router)
+    let configuration = try ConfigurationLoader(
+      name: DotfolderName(AgentClientHarness.dotfolderName),
+      workingDirectory: userDirectory,
+      home: home,
+      environment: [:],
+      fallbackProfileName: fallbackProfileName
+    ).load().configuration
     let agent = try await RoutedACPAgent(
       name: DotfolderName(AgentClientHarness.dotfolderName),
       router: router,
       hooks: hooks,
       configuration: configuration,
       home: home, mode: .open,
-      environment: [:])
+      environment: [:],
+      fallbackProfileName: fallbackProfileName)
     return await AgentClientHarness.makeRecording(agent: agent)
   }
 }

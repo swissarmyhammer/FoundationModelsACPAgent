@@ -1,9 +1,10 @@
 // `TierThreeFixture` — the shared setup of the tier-3 suites.
 //
 // `StdioContractTests` and `ClientServerTests` both spawn built binaries
-// across a real process boundary, and inject the same shipped-profile user
-// configuration. This one home keeps the names and the configuration in
-// one place, so the two suites cannot drift apart.
+// across a real process boundary, and inject the same user configuration,
+// which lets the agent make the shipped profile choice. This one home
+// keeps the names and the configuration in one place, so the two suites
+// cannot drift apart.
 //
 // The suites carry no gate. This package is the gate: the root
 // `swift test` never sees these targets, and
@@ -174,26 +175,27 @@ enum TierThreeFixture {
       chunkGate: gated.gate)
   }
 
-  /// The user-layer `config.yaml` the spawned agent resolves its
-  /// profile from: the shipped profile (ACPA-21).
+  /// The user-layer `config.yaml` of the spawned agent: an empty mapping
+  /// (ACPA-21).
   ///
+  /// The file sets no profile, thus the spawned agent loads the profile
+  /// that the shipped agent chooses on the Mac that runs it: the largest
+  /// bundled profile that fits (``BundledProfiles/fallbackName(using:)``).
   /// The tests drive the models the agent ships, so a pass says the
-  /// shipped agent works, and a change of a default reaches the tests
-  /// with no edit here.
-  static var userConfigYAML: String {
-    """
-    profile:
-      preset: \(ModelProfiles.defaultName)
-    """
-  }
+  /// shipped agent works, and a change of that choice reaches the tests
+  /// with no edit here. The value is a mapping and not an empty file,
+  /// because an empty file is a null tree, and a null tree replaces the
+  /// lower layers, such as the offline defaults layer.
+  static let userConfigYAML = "{}\n"
 
   /// Writes the user-layer `config.yaml` under `configHome`, at
   /// `<configHome>/<dotfolder name>/config.yaml`.
   ///
   /// - Parameters:
   ///   - configHome: The injected `XDG_CONFIG_HOME` root.
-  ///   - yaml: The configuration to write; the shipped-profile default
-  ///     resolves a real profile.
+  ///   - yaml: The configuration to write; the default
+  ///     (``userConfigYAML``) sets no key, so the agent makes the shipped
+  ///     profile choice.
   /// - Throws: The directory-creation or write error.
   static func writeUserConfig(under configHome: URL, yaml: String = userConfigYAML) throws {
     try ConfigFileFixture.write(
