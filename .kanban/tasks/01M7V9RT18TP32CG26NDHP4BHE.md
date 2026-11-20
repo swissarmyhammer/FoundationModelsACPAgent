@@ -43,4 +43,4 @@ TestudoApp asked for this on 2026-11-19. In the sandboxed app, the user grants a
 - [x] An agent with no root: `importable` (the `list imports` action) gives that source in `unreadableSources`, not an empty list. `importSession` throws `SessionImportError.sourceUnreadable` (the endpoint code NO_SOURCE_ACCESS). Prove both with tests. This can be there already; then add only the tests that prove it.
 - [x] Tests: no root at launch, then `setImportRoots` with a root, then `importable` lists the sessions of that root, through the real agent and through `ComposedAgent`.
 - [x] Update the import sections of `README.md` and `ARCHITECTURE.md`.
-- [ ] Push to origin/main and send the sha to the TestudoApp session (testudoapp-9a). #d209 #import
+- [x] Push to origin/main and send the sha to the TestudoApp session (testudoapp-9a). Pushed as 451928c and sent. #d209 #import
