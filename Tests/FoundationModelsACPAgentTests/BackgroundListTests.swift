@@ -722,19 +722,38 @@ import Testing
 
     /// Drives the events through a projector over a state ledger, and gives what went out.
     ///
-    /// - Parameter events: The events, in order.
-    /// - Returns: Every update that the ledger and the projector sent, in order.
-    private static func updates(driving events: [SessionEvent]) async -> [SessionUpdate] {
+    /// - Parameters:
+    ///   - events: The events, in order.
+    ///   - ledger: The state ledger of the session. By default, a ledger that sends to the same
+    ///     sink as the projector.
+    ///   - mailId: The mail of a prompt that opens before the events, with an owner over the
+    ///     ledger. The events then have the origin of that mail. By default, no prompt opens, and
+    ///     the events have the system origin.
+    /// - Returns: Every update that the projector sent, in order, and each update of the default
+    ///   ledger.
+    private static func updates(
+      driving events: [SessionEvent], through ledger: SessionStateLedger? = nil,
+      promptOf mailId: MailID? = nil
+    ) async -> [SessionUpdate] {
       let sink = RecordingSink()
-      let ledger = SessionStateLedger(send: sink.send)
+      let ledger = ledger ?? SessionStateLedger(send: sink.send)
       let projector = SessionProjector(
         sessionId: SessionId(rawValue: syntheticSessionIdValue), modelName: syntheticModelName,
         send: sink.send, relay: nil, runCallJoins: RunCallJoinTable(), stateLedger: ledger)
       let (outputs, input) = AsyncStream.makeStream(of: SessionOutput.self)
       let source = SessionProjector.Source(id: ULID.generate(), session: nil)
+      if let mailId {
+        projector.open(
+          SessionProjector.Prompt(
+            mailId: mailId, sourceId: source.id,
+            awaitAnswer: { _ in throw CancellationError() },
+            owner: PromptStateOwner(ledger: ledger), modelName: syntheticModelName,
+            onEnd: { _ in }))
+      }
       await projector.attach(outputs, from: source)
+      let origin = mailId.map { Origin.mail([$0]) } ?? .system
       for event in events {
-        input.yield(SessionOutput(origin: .system, event: event))
+        input.yield(SessionOutput(origin: origin, event: event))
       }
       input.finish()
       await projector.stop(after: [source.id])
@@ -830,121 +849,6 @@ import Testing
     }
   }
 
-  // MARK: - A call that a cancel closes
-
-  /// A cancel closes a detached call with a final `cancelled` status, and no settlement comes for
-  /// its run. The list drops the call after that status went out, so the session can become
-  /// inactive and its parent can drop it.
-  @Suite struct CancelledCalls {
-    /// The completion token of the run of the tests: a ULID, as the envelope requires.
-    private static let token = "01M7WM3BH0G6E466XTSR888PR8"
-
-    /// The SDK id of the call of the run of the tests.
-    private static let sdkId = "sdk-cancelled-call-1"
-
-    /// The tool of the run of the tests.
-    private static let tool = "runCode"
-
-    /// The op of the run of the tests.
-    private static let op = "run code"
-
-    /// The rendered pending envelope of the run. The translator keeps the call of a run open only
-    /// when the run gives this envelope.
-    private static let envelope =
-      #"{"pending":true,"completionToken":"\#(token)","next":"The result comes later."}"#
-
-    /// The events of a prompt whose call returned its envelope, whose run goes on, and whose
-    /// answer a cancel stopped. Router drops the settlement of the run after the cancel.
-    ///
-    /// - Parameter mailId: The mail of the prompt.
-    /// - Returns: The events, in order.
-    private static func events(cancelling mailId: MailID) -> [SessionEvent] {
-      [
-        .workStarted,
-        .toolInvocation(
-          ToolInvocationRecord(
-            tool: tool, op: op, correlationID: token, sessionID: ULID.generate(),
-            openedAt: Date()),
-          toolCallID: sdkId),
-        .runProgress(
-          OperationEvent(
-            tool: tool, op: op, correlationID: token, kind: .progress, detail: envelope)),
-        .toolCall(id: sdkId, name: tool, argumentsJSON: "{}"),
-        .toolStatus(
-          id: sdkId, status: .completed, summary: nil,
-          output: [.text(id: "segment-1", content: envelope)]),
-        .answerFailed(AnswerFailure(mailIds: [mailId], reason: .cancelled)),
-        .workEnded,
-      ]
-    }
-
-    /// Drives one cancelled prompt through a projector over `ledger`.
-    ///
-    /// - Parameters:
-    ///   - ledger: The state ledger of the session.
-    ///   - sink: The history sink of the session.
-    private static func driveACancelledCall(
-      through ledger: SessionStateLedger, sentTo sink: RecordingSink
-    ) async {
-      let projector = SessionProjector(
-        sessionId: SessionId(rawValue: syntheticSessionIdValue), modelName: syntheticModelName,
-        send: sink.send, relay: nil, runCallJoins: RunCallJoinTable(), stateLedger: ledger)
-      let source = SessionProjector.Source(id: ULID.generate(), session: nil)
-      let mailId = MailID()
-      projector.open(
-        SessionProjector.Prompt(
-          mailId: mailId, sourceId: source.id,
-          awaitAnswer: { _ in throw CancellationError() },
-          owner: PromptStateOwner(ledger: ledger), modelName: syntheticModelName,
-          onEnd: { _ in }))
-      let (outputs, input) = AsyncStream.makeStream(of: SessionOutput.self)
-      await projector.attach(outputs, from: source)
-      for event in events(cancelling: mailId) {
-        input.yield(SessionOutput(origin: .mail([mailId]), event: event))
-      }
-      input.finish()
-      await projector.stop(after: [source.id])
-    }
-
-    /// Whether an update is the final `cancelled` status of the call.
-    private static func isCancelledStatusOfTheCall(_ update: SessionUpdate) -> Bool {
-      guard case .toolCallUpdate(let call) = update, call.toolCallId.rawValue == sdkId,
-        case .value(.cancelled) = call.status
-      else {
-        return false
-      }
-      return true
-    }
-
-    @Test func theNextStateAfterTheCancelledStatusDoesNotListTheCall() async throws {
-      let sink = RecordingSink()
-
-      await Self.driveACancelledCall(
-        through: SessionStateLedger(send: sink.send), sentTo: sink)
-
-      let updates = sink.updates
-      let cancelled = try #require(updates.firstIndex(where: Self.isCancelledStatusOfTheCall))
-      let next = updates.dropFirst(cancelled + 1).first { $0.isStateUpdate }
-      #expect(BackgroundListTests.list(of: next) == [])
-    }
-
-    @Test func aChildWhoseOnlyWorkWasTheCallLeavesTheListOfItsParent() async {
-      let parentSink = RecordingSink()
-      let parent = SessionStateLedger(send: parentSink.send)
-      await parent.promptStarted()
-      await parent.subagentAnnounced(BackgroundListTests.child)
-      let childSink = RecordingSink()
-      let child = SessionStateLedger(send: childSink.send)
-      await child.observeActivity { isActive, version in
-        await parent.subagentActivity(BackgroundListTests.child, isActive: isActive, version: version)
-      }
-
-      await Self.driveACancelledCall(through: child, sentTo: childSink)
-
-      #expect(BackgroundListTests.lists(of: parentSink.updates).last == [])
-    }
-  }
-
   // MARK: - The terminal stream
 
   /// The terminal stream tells the ledger about the terminal of a run. It tells after the wire
@@ -1011,5 +915,91 @@ import Testing
 
       #expect(steps == [.announceSent, .announceReported, .exitSent, .exitReported])
     }
+  }
+}
+
+// MARK: - A call that a cancel closes
+
+/// A cancel closes a detached call with a final `cancelled` status, and no settlement comes for its
+/// run. The list drops the call after that status went out, so the session can become inactive and
+/// its parent can drop it.
+extension BackgroundListTests.Projection {
+  /// The completion token of the run that a cancel stops: a ULID, as the envelope requires.
+  private static let cancelledToken = "01M7WM3BH0G6E466XTSR888PR8"
+
+  /// The rendered pending envelope of the run that a cancel stops. The translator keeps the call
+  /// of a run open only when the run gives this envelope.
+  private static let envelope =
+    #"{"pending":true,"completionToken":"\#(cancelledToken)","next":"The result comes later."}"#
+
+  /// The events of a prompt whose call returned its envelope, whose run goes on, and whose answer
+  /// a cancel stopped. Router drops the settlement of the run after the cancel.
+  ///
+  /// - Parameter mailId: The mail of the prompt.
+  /// - Returns: The events, in order.
+  private static func events(cancelling mailId: MailID) -> [SessionEvent] {
+    [
+      .workStarted,
+      .toolInvocation(
+        ToolInvocationRecord(
+          tool: tool, op: op, correlationID: cancelledToken, sessionID: ULID.generate(),
+          openedAt: Date()),
+        toolCallID: sdkId),
+      .runProgress(
+        OperationEvent(
+          tool: tool, op: op, correlationID: cancelledToken, kind: .progress, detail: envelope)),
+      .toolCall(id: sdkId, name: tool, argumentsJSON: "{}"),
+      .toolStatus(
+        id: sdkId, status: .completed, summary: nil,
+        output: [.text(id: "segment-1", content: envelope)]),
+      .answerFailed(AnswerFailure(mailIds: [mailId], reason: .cancelled)),
+      .workEnded,
+    ]
+  }
+
+  /// Drives one cancelled prompt through a projector.
+  ///
+  /// - Parameter ledger: The state ledger of the session. By default, a ledger that sends to the
+  ///   same sink as the projector.
+  /// - Returns: Every update that the projector sent, in order, and each update of the default
+  ///   ledger.
+  private static func updatesOfACancelledCall(through ledger: SessionStateLedger? = nil) async
+    -> [SessionUpdate]
+  {
+    let mailId = MailID()
+    return await updates(driving: events(cancelling: mailId), through: ledger, promptOf: mailId)
+  }
+
+  /// Whether an update is the final `cancelled` status of the call.
+  private static func isCancelledStatusOfTheCall(_ update: SessionUpdate) -> Bool {
+    guard isUpdateOfTheCall(update), case .toolCallUpdate(let call) = update,
+      case .value(.cancelled) = call.status
+    else {
+      return false
+    }
+    return true
+  }
+
+  @Test func theNextStateAfterTheCancelledStatusDoesNotListTheCall() async throws {
+    let updates = await Self.updatesOfACancelledCall()
+
+    let cancelled = try #require(updates.firstIndex(where: Self.isCancelledStatusOfTheCall))
+    let next = updates.dropFirst(cancelled + 1).first { $0.isStateUpdate }
+    #expect(BackgroundListTests.list(of: next) == [])
+  }
+
+  @Test func aChildWhoseOnlyWorkWasTheCallLeavesTheListOfItsParent() async {
+    let parentSink = RecordingSink()
+    let parent = SessionStateLedger(send: parentSink.send)
+    await parent.promptStarted()
+    await parent.subagentAnnounced(BackgroundListTests.child)
+    let child = SessionStateLedger(send: RecordingSink().send)
+    await child.observeActivity { isActive, version in
+      await parent.subagentActivity(BackgroundListTests.child, isActive: isActive, version: version)
+    }
+
+    _ = await Self.updatesOfACancelledCall(through: child)
+
+    #expect(BackgroundListTests.lists(of: parentSink.updates).last == [])
   }
 }

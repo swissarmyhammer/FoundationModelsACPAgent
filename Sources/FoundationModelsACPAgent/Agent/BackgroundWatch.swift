@@ -70,12 +70,14 @@ final class BackgroundWatch: Sendable {
     /// call of the session, as the join table does.
     var announcedCalls: Set<ToolCallId> = []
 
-    /// The token of the run that the final status of a call ends.
+    /// The token of an open run of a call that matches a condition.
     ///
-    /// - Parameter call: The wire id of the call.
-    /// - Returns: The token, or `nil` when no run of the call settles or is detached.
-    func endingToken(of call: ToolCallId) -> RunToken? {
-      runs.first { $0.value.call == call && $0.value.endsAtFinalStatus }?.key
+    /// - Parameters:
+    ///   - call: The wire id of the call.
+    ///   - matches: The condition that the run must meet.
+    /// - Returns: The token, or `nil` when no open run of the call meets the condition.
+    func token(of call: ToolCallId, where matches: (Run) -> Bool) -> RunToken? {
+      runs.first { $0.value.call == call && matches($0.value) }?.key
     }
   }
 
@@ -140,9 +142,7 @@ final class BackgroundWatch: Sendable {
   private func detach(callWithSDKId id: String) -> [BackgroundChange] {
     state.withLock { state in
       let wanted = ToolCallId(rawValue: id)
-      guard
-        let token = state.runs.first(where: { $0.value.call == wanted && $0.value.canDetach })?.key
-      else {
+      guard let token = state.token(of: wanted, where: \.canDetach) else {
         return []
       }
       state.runs[token]?.isDetached = true
@@ -165,7 +165,7 @@ final class BackgroundWatch: Sendable {
       if state.announcedCalls.insert(call.toolCallId).inserted {
         changes.append(.callAnnounced(call.toolCallId))
       }
-      if Self.isFinal(call.status), let token = state.endingToken(of: call.toolCallId) {
+      if Self.isFinal(call.status), let token = state.token(of: call.toolCallId, where: \.endsAtFinalStatus) {
         state.runs.removeValue(forKey: token)
         changes.append(.callSettled(call.toolCallId))
       }
