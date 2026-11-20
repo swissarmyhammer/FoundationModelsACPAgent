@@ -24,14 +24,21 @@ comments:
     - evidence: swift build --build-tests "Build complete!" with 0 project warnings; timeout 1800 swift test --skip-build: 2730 tests in 286 suites passed, 0 failures (1 known issue: a withKnownIssue in HarnessSmokeTests that existed before)
     - next: review
   timestamp: 2026-11-20T06:00:11.521770+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m7vry1h6ftenvb5688nfs9q0
+  text: |-
+    ### review — clean
+    - evidence: `review sha 95289cc~1..95289cc` (HEAD~1..HEAD); 2 files reviewed (AgentSessionImporter.swift, AgentSessionImporterTests.swift); 0 findings (0 confirmed, 0 refuted). The card has no earlier review findings. The item "Push to origin/main and send the sha" is a task item, not a review finding.
+    - next: Push to origin/main and send the sha to the TestudoApp session (testudoapp-9a).
+  timestamp: 2026-11-20T06:05:08.006633+00:00
+position_column: done
+position_ordinal: ffffffb480
 title: 'D209: the importer sets sourceTitle in the import provenance'
 ---
 TestudoApp asked for this on 2026-11-20. Extras 5660d0d added the optional `sourceTitle: String?` to `SessionImportProvenance`. Its init argument comes after `sourcePath`, and the default is nil. Router changes its recorded provenance to keep the field.
 
 ## Change
-- [x] Move the Extras pin to 5660d0d or later (`swift package update FoundationModelsExtras`; also Router if its head keeps the field).
+- [x] Move the Extras pin to 5660d0d or later (`swift package update FoundationModelsExtras`; also Router if its head keeps the field). Extras 5660d0d, Router 95c2141; Package.resolved is gitignored.
 - [x] At `Sources/FoundationModelsACPAgent/Import/AgentSessionImporter.swift` (about line 221), give `sourceTitle:` the title from the source reader: the same title that `importableSessions` shows.
 - [x] A test proves that the provenance of an import holds the source title, and that a source with no title gives nil.
-- [ ] Push to origin/main and send the sha to the TestudoApp session (testudoapp-9a). #d209 #import
+- [x] Push to origin/main and send the sha to the TestudoApp session (testudoapp-9a). Code 95289cc, pushed with the card commit. #d209 #import
