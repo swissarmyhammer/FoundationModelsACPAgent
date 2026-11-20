@@ -357,46 +357,40 @@ import Testing
 
   // MARK: - The skipped files
 
-  /// The log records of a block.
-  ///
-  /// - Parameter body: The block.
-  /// - Returns: The log records that the block wrote.
-  /// - Throws: The error of the capture.
-  private static func logRecords(of body: @Sendable () -> Void) async throws
-    -> [TelemetryCapture.LogRecord]
-  {
-    try await TelemetryCapture.run(forbidding: []) { context in
-      body()
-      return context.logRecords
+  /// A read of the scan that skips a file it cannot read, and logs a warning with its path.
+  enum SkippingRead: String, CaseIterable, Sendable, CustomTestStringConvertible {
+    /// The read of the size and the date of a file.
+    case stamp
+
+    /// The read of the kind of a file.
+    case kind
+
+    /// The name of the read in the test results.
+    var testDescription: String { rawValue }
+
+    /// Does the read on a file.
+    ///
+    /// - Parameter file: The file.
+    func run(on file: URL) {
+      switch self {
+      case .stamp: _ = AgentSessionImporter.stamp(of: file)
+      case .kind: _ = AgentSessionImporter.isRegularFile(file)
+      }
     }
   }
 
-  /// True when the records hold a warning with the path of a file.
-  ///
-  /// - Parameters:
-  ///   - records: The log records.
-  ///   - file: The file.
-  /// - Returns: True for a warning with the path of `file`.
-  private static func holdWarning(_ records: [TelemetryCapture.LogRecord], about file: URL) -> Bool {
-    records.contains { $0.level == .warning && $0.metadata["path"] == .string(file.path) }
-  }
-
-  @Test("a file with no stamp gives a warning with its path")
-  func aFileWithNoStampGivesAWarning() async throws {
+  @Test("a file that a read of the scan cannot read gives a warning with its path",
+    arguments: SkippingRead.allCases)
+  func aFileThatAReadCannotReadGivesAWarning(_ read: SkippingRead) async throws {
     let missing = makeResolvedDirectory(label: Self.label).appendingPathComponent("gone.jsonl")
 
-    let records = try await Self.logRecords { _ = AgentSessionImporter.stamp(of: missing) }
+    let records = try await TelemetryCapture.run(forbidding: []) { context in
+      read.run(on: missing)
+      return context.logRecords
+    }
 
-    #expect(Self.holdWarning(records, about: missing))
-  }
-
-  @Test("a file whose kind cannot be read gives a warning with its path")
-  func aFileWithNoKindGivesAWarning() async throws {
-    let missing = makeResolvedDirectory(label: Self.label).appendingPathComponent("gone.jsonl")
-
-    let records = try await Self.logRecords { _ = AgentSessionImporter.isRegularFile(missing) }
-
-    #expect(Self.holdWarning(records, about: missing))
+    #expect(
+      records.contains { $0.level == .warning && $0.metadata["path"] == .string(missing.path) })
   }
 
   // MARK: - The earlier imports

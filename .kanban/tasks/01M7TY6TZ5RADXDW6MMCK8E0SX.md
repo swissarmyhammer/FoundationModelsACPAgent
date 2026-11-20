@@ -107,6 +107,24 @@ comments:
     - evidence: `swift build --build-tests` gave "Build complete!" with 0 project warnings. `swift test --skip-build --filter "AgentSessionImporter|SessionImportWiring|AgentComposition|NoUnifiedLogging"`: 37 tests in 4 suites pass. The coordinator did not ask for a full suite run for this change.
     - next: review
   timestamp: 2026-11-20T00:12:11.298793+00:00
+- actor: claude-code
+  id: 01m7v4zkcrb88d5z2xmhf0vy1z
+  text: |-
+    ### review — findings
+    - evidence: `review sha 3ff3708~1..3ff3708` (HEAD~1..HEAD); 1 finding (1 confirmed, 1 refuted). Tests/FoundationModelsACPAgentTests/AgentSessionImporterTests.swift:393. All 13 items of the 17:44 and 18:03 sections are checked.
+    - next: Correct the item in the "Review Findings (2026-11-19 18:12)" section. Then do the review again. The task stays in review.
+  timestamp: 2026-11-20T00:16:27.544479+00:00
+- actor: claude-code
+  id: 01m7v5398wb6z45rzkjwhdpd3d
+  text: |-
+    ### implement — changed
+    - evidence: 1 file — Tests/FoundationModelsACPAgentTests/AgentSessionImporterTests.swift. The two skip tests are now one parameterized test `aFileThatAReadCannotReadGivesAWarning(_:)` over `SkippingRead.allCases` (`stamp`, `kind`). The one-use helpers `logRecords(of:)` and `holdWarning(_:about:)` are folded into its body. The finding of "Review Findings (2026-11-19 18:12)" is checked.
+    - next: test
+
+    ### test — green
+    - evidence: `swift build --build-tests` gave "Build complete!" with 0 project warnings. `swift test --skip-build --filter "AgentSessionImporter|NoUnifiedLogging"`: 19 tests in 2 suites pass; the parameterized test ran 2 test cases (stamp, kind).
+    - next: review
+  timestamp: 2026-11-20T00:18:28.252667+00:00
 position_column: review
 position_ordinal: '80'
 title: 'D209: AgentSessionImporter lists the importable sessions of the host roots (Claude Code, Codex)'
@@ -169,3 +187,12 @@ Decision D209 in `TestudoApp/features/decisions.md` (commit 56a8a59; final), par
 
 - [x] `Sources/FoundationModelsACPAgent/Import/AgentSessionImporter.swift:114` `completeness/public-output-contract` — A session file whose stamp cannot be read is dropped with no log. The same kind of read failure in files(under:) logs a warning, so the two paths handle the same condition in different ways. The operator gets no sign that a session file is missing from the list. Log a warning with the file path when makeStamp returns nil, in the same way files(under:) logs, and then skip the file. Add a test that covers this path, or state in the doc comment that the stamp case is silent on purpose.
 - [x] `Tests/FoundationModelsACPAgentTests/AgentCompositionTests.swift:247` `completeness/public-output-contract` — The test for a relative CLAUDE_CONFIG_DIR checks only the warning. It discards the returned roots with `_ =`, so the documented fallback (the root stays ~/.claude) is never asserted. A regression that returns a wrong root on this path would still pass. Keep the roots and add #expect(roots[.claudeCode] == Self.importHome.appendingPathComponent(".claude", isDirectory: true)) to the same test, so the fallback result is proven as well as the warning.
+
+## Review Findings (2026-11-19 18:12)
+
+> Scope: `review sha 3ff3708~1..3ff3708` — reviewed the diffs only — lines this change added or modified. 3 file(s) reviewed, 2 not reviewed.
+
+> 2 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 2 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTests/AgentSessionImporterTests.swift:393` `reuse/reuse` — The test `aFileWithNoKindGivesAWarning` is a near-copy of `aFileWithNoStampGivesAWarning` (line 384). Both build the same missing path with `makeResolvedDirectory(label:).appendingPathComponent("gone.jsonl")`, both call `logRecords`, and both assert `holdWarning`. They differ only in the one call inside the closure. The second test copies the first instead of sharing one parameterized body, so a change to the path setup or the assertion has to be made twice. Make one parameterized test over the two probes, for example with `@Test(arguments:)` over a list of closures or labels, or extract a helper such as `assertMissingFileWarns(_ probe: (URL) -> Void)` that both tests call. Keep the two names if a reader needs them, but share the body.
