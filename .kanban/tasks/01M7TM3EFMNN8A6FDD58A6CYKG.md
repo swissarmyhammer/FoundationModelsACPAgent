@@ -40,6 +40,10 @@ comments:
     - note: The second defect (a trap at top level) is in the LiveAgentServer @main of the client repository, not in this repository. acp-agent already exits with code 1 and gives the reason. A guard test covers this. This is a record, not a finding.
     - next: The task is in done. Push to origin/main and send the sha to the FoundationModelsACPClient session.
   timestamp: 2026-11-19T20:11:07.633590+00:00
+- actor: claude-code
+  id: 01m7wnr2pbgefp0wh833nz26wr
+  text: 'The `sah --cwd` card write on the FoundationModelsACPClient board failed (exit 144, no card). The client card request went to the live session foundationmodelsacpclient-1d with SendMessage: catch each error in `LiveAgentServer.main()`, write it to stderr, and exit 1. The sha of this card goes to that session when it lands.'
+  timestamp: 2026-11-20T14:28:41.291058+00:00
 position_column: done
 position_ordinal: ffffffa980
 title: 'D203: an old profile map with no preset takes the default by fit, and a profile that does not resolve is a reported error, not a fatal error'

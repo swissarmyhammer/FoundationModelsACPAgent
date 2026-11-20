@@ -25,6 +25,11 @@ typealias BackgroundReport = @Sendable (BackgroundChange) async -> Void
 /// keeps back (``AgentCallHolds``) does not reach the sink yet. So the call stays listed until the
 /// hold lets it go.
 ///
+/// A cancel can close a call with no settlement: Router drops the settlement of each run of a
+/// stopped answer (``ACPEventTranslator/closeCancelledRun(of:)``), and the end of the inbox closes
+/// each call that stays open. Thus the final status of a detached call ends its run, also when no
+/// settlement came. The final status goes out first, and the end of the run comes after it.
+///
 /// The watch keeps one entry for each open run, and one short id for each call of the session.
 /// The join table (``RunCallJoinTable``) has the same bound.
 final class BackgroundWatch: Sendable {
@@ -47,6 +52,13 @@ final class BackgroundWatch: Sendable {
     var canDetach: Bool {
       hasProgress && !isSettling && !isDetached
     }
+
+    /// Whether the final status of the call ends the run: the run settles, or it is detached. A
+    /// cancel closes a detached call with no settlement, so the detach alone is sufficient. The
+    /// final status of a call that returned before its run detached does not end the run.
+    var endsAtFinalStatus: Bool {
+      isSettling || isDetached
+    }
   }
 
   /// What the watch keeps, under one lock.
@@ -58,12 +70,12 @@ final class BackgroundWatch: Sendable {
     /// call of the session, as the join table does.
     var announcedCalls: Set<ToolCallId> = []
 
-    /// The token of the run that settles on a call.
+    /// The token of the run that the final status of a call ends.
     ///
     /// - Parameter call: The wire id of the call.
-    /// - Returns: The token, or `nil` when no run settles on the call.
-    func settlingToken(of call: ToolCallId) -> RunToken? {
-      runs.first { $0.value.call == call && $0.value.isSettling }?.key
+    /// - Returns: The token, or `nil` when no run of the call settles or is detached.
+    func endingToken(of call: ToolCallId) -> RunToken? {
+      runs.first { $0.value.call == call && $0.value.endsAtFinalStatus }?.key
     }
   }
 
@@ -142,7 +154,8 @@ final class BackgroundWatch: Sendable {
   ///
   /// - Parameter update: The update that went to the client.
   /// - Returns: The announcement of its call. Also the end of the run, when the update carries
-  ///   the final status of a run that settles.
+  ///   the final status of a run that settles, or of a detached run that a cancel closes with no
+  ///   settlement.
   private func changes(afterSending update: SessionUpdate) -> [BackgroundChange] {
     guard case .toolCallUpdate(let call) = update else {
       return []
@@ -152,7 +165,7 @@ final class BackgroundWatch: Sendable {
       if state.announcedCalls.insert(call.toolCallId).inserted {
         changes.append(.callAnnounced(call.toolCallId))
       }
-      if let token = state.settlingToken(of: call.toolCallId), Self.isFinal(call.status) {
+      if Self.isFinal(call.status), let token = state.endingToken(of: call.toolCallId) {
         state.runs.removeValue(forKey: token)
         changes.append(.callSettled(call.toolCallId))
       }
