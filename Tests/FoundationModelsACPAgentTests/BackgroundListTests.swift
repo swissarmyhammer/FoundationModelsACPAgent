@@ -73,6 +73,19 @@ import Testing
     updates.filter { stateNames(of: [$0]).count == 1 }.map { list(of: $0) }
   }
 
+  /// A running parent ledger that knows the child of the tests.
+  ///
+  /// - Returns: The ledger and its sink.
+  static func makeParentOfAnAnnouncedChild() async -> (
+    ledger: SessionStateLedger, sink: RecordingSink
+  ) {
+    let sink = RecordingSink()
+    let ledger = SessionStateLedger(send: sink.send)
+    await ledger.promptStarted()
+    await ledger.subagentAnnounced(child)
+    return (ledger, sink)
+  }
+
   /// The book after some changes.
   ///
   /// - Parameter changes: The changes, in order.
@@ -305,19 +318,6 @@ import Testing
   /// A child ledger tells its observer when the child starts or stops to work. The parent ledger
   /// lists the child while it works.
   @Suite struct Activity {
-    /// A running parent ledger that knows the child.
-    ///
-    /// - Returns: The ledger and its sink.
-    private static func makeParentOfAnAnnouncedChild() async -> (
-      ledger: SessionStateLedger, sink: RecordingSink
-    ) {
-      let sink = RecordingSink()
-      let ledger = SessionStateLedger(send: sink.send)
-      await ledger.promptStarted()
-      await ledger.subagentAnnounced(BackgroundListTests.child)
-      return (ledger, sink)
-    }
-
     @Test func aSessionTellsItsObserverAfterItsRunningStateWentOut() async {
       let log = Mutex<[String]>([])
       let ledger = SessionStateLedger(send: { _ in log.withLock { $0.append("sent") } })
@@ -367,7 +367,7 @@ import Testing
     }
 
     @Test func aParentListsAnAnnouncedChildThatWorks() async {
-      let parts = await Self.makeParentOfAnAnnouncedChild()
+      let parts = await BackgroundListTests.makeParentOfAnAnnouncedChild()
 
       await parts.ledger.subagentActivity(BackgroundListTests.child, isActive: true, version: 1)
 
@@ -376,7 +376,7 @@ import Testing
     }
 
     @Test func aParentDropsTheChildWhenItIsIdleAgain() async {
-      let parts = await Self.makeParentOfAnAnnouncedChild()
+      let parts = await BackgroundListTests.makeParentOfAnAnnouncedChild()
       await parts.ledger.subagentActivity(BackgroundListTests.child, isActive: true, version: 1)
 
       await parts.ledger.subagentActivity(BackgroundListTests.child, isActive: false, version: 2)
@@ -385,7 +385,7 @@ import Testing
     }
 
     @Test func aParentTakesNoReportThatIsOlderThanTheLastOne() async {
-      let parts = await Self.makeParentOfAnAnnouncedChild()
+      let parts = await BackgroundListTests.makeParentOfAnAnnouncedChild()
       await parts.ledger.subagentActivity(BackgroundListTests.child, isActive: true, version: 2)
 
       await parts.ledger.subagentActivity(BackgroundListTests.child, isActive: false, version: 1)
@@ -405,7 +405,7 @@ import Testing
     }
 
     @Test func aParentDropsARetiredChild() async {
-      let parts = await Self.makeParentOfAnAnnouncedChild()
+      let parts = await BackgroundListTests.makeParentOfAnAnnouncedChild()
       await parts.ledger.subagentActivity(BackgroundListTests.child, isActive: true, version: 1)
 
       await parts.ledger.subagentRetired(BackgroundListTests.child)
@@ -691,25 +691,40 @@ import Testing
     /// The events of a run that starts, posts progress, and whose call returns.
     private static var runningRun: [SessionEvent] {
       [
-        .workStarted, open, progress,
+        .workStarted, open(token: token), started,
         .toolCall(id: sdkId, name: tool, argumentsJSON: "{}"),
         .toolStatus(id: sdkId, status: .completed, summary: nil, output: nil),
       ]
     }
 
-    /// The open record of the run, joined to its SDK call.
-    private static var open: SessionEvent {
+    /// The detail of the first progress of the run of the tests.
+    private static let startedDetail = "started"
+
+    /// The first progress of the run of the tests.
+    private static var started: SessionEvent {
+      progress(token: token, detail: startedDetail)
+    }
+
+    /// The open record of a run, joined to the SDK call of the tests.
+    ///
+    /// - Parameter token: The completion token of the run.
+    /// - Returns: The event.
+    private static func open(token: String) -> SessionEvent {
       .toolInvocation(
         ToolInvocationRecord(
           tool: tool, op: op, correlationID: token, sessionID: ULID.generate(), openedAt: Date()),
         toolCallID: sdkId)
     }
 
-    /// The first progress of the run.
-    private static var progress: SessionEvent {
+    /// A progress of a run.
+    ///
+    /// - Parameters:
+    ///   - token: The completion token of the run.
+    ///   - detail: The detail of the progress.
+    /// - Returns: The event.
+    private static func progress(token: String, detail: String) -> SessionEvent {
       .runProgress(
-        OperationEvent(
-          tool: tool, op: op, correlationID: token, kind: .progress, detail: "started"))
+        OperationEvent(tool: tool, op: op, correlationID: token, kind: .progress, detail: detail))
     }
 
     /// The settlement of the run.
@@ -815,7 +830,7 @@ import Testing
     }
 
     @Test func aRunWithoutProgressIsNotListed() async {
-      let events = Self.runningRun.filter { $0 != Self.progress }
+      let events = Self.runningRun.filter { $0 != Self.started }
 
       let updates = await Self.updates(driving: events)
 
@@ -824,7 +839,7 @@ import Testing
 
     @Test func aRunThatSettledBeforeItsCallReturnedIsNotListed() async {
       let events: [SessionEvent] = [
-        .workStarted, Self.open, Self.progress, Self.settlement,
+        .workStarted, Self.open(token: Self.token), Self.started, Self.settlement,
         .toolCall(id: Self.sdkId, name: Self.tool, argumentsJSON: "{}"),
         .toolStatus(id: Self.sdkId, status: .completed, summary: nil, output: nil),
       ]
@@ -940,14 +955,8 @@ extension BackgroundListTests.Projection {
   private static func events(cancelling mailId: MailID) -> [SessionEvent] {
     [
       .workStarted,
-      .toolInvocation(
-        ToolInvocationRecord(
-          tool: tool, op: op, correlationID: cancelledToken, sessionID: ULID.generate(),
-          openedAt: Date()),
-        toolCallID: sdkId),
-      .runProgress(
-        OperationEvent(
-          tool: tool, op: op, correlationID: cancelledToken, kind: .progress, detail: envelope)),
+      open(token: cancelledToken),
+      progress(token: cancelledToken, detail: envelope),
       .toolCall(id: sdkId, name: tool, argumentsJSON: "{}"),
       .toolStatus(
         id: sdkId, status: .completed, summary: nil,
@@ -989,17 +998,15 @@ extension BackgroundListTests.Projection {
   }
 
   @Test func aChildWhoseOnlyWorkWasTheCallLeavesTheListOfItsParent() async {
-    let parentSink = RecordingSink()
-    let parent = SessionStateLedger(send: parentSink.send)
-    await parent.promptStarted()
-    await parent.subagentAnnounced(BackgroundListTests.child)
+    let parent = await BackgroundListTests.makeParentOfAnAnnouncedChild()
     let child = SessionStateLedger(send: RecordingSink().send)
     await child.observeActivity { isActive, version in
-      await parent.subagentActivity(BackgroundListTests.child, isActive: isActive, version: version)
+      await parent.ledger.subagentActivity(
+        BackgroundListTests.child, isActive: isActive, version: version)
     }
 
     _ = await Self.updatesOfACancelledCall(through: child)
 
-    #expect(BackgroundListTests.lists(of: parentSink.updates).last == [])
+    #expect(BackgroundListTests.lists(of: parent.sink.updates).last == [])
   }
 }
