@@ -73,8 +73,15 @@ comments:
     - evidence: 18 files — Sources/FoundationModelsACPAgent/Configuration/ProfileStore.swift, Sources/FoundationModelsACPAgent/Doctor/ProfileDoctor.swift, Sources/FoundationModelsACPAgent/Models/ModelsGraphError.swift, Sources/FoundationModelsACPAgent/Settings/SettingsGraphError.swift, Sources/FoundationModelsACPAgent/Settings/StoreCodedError.swift (new), Sources/acp-agent/AgentComposition.swift, Sources/acp-agent/ProfilesCommand.swift, Sources/acp-agent/SnapshotsCommand.swift, Tests/FoundationModelsACPAgentTests/AgentCompositionTests.swift, ConfigurationLoaderTests.swift, Doctor/DoctorRegistryTests.swift, ExitCodeTests.swift, ProfileFileTests.swift, StoreCodedErrorTests.swift (new), Support/ProfileFileWrite.swift (new), Support/ScriptedPromptFixture.swift. `swift build --build-tests`: Build complete!, no warnings. Full root `swift test`: Build complete!, 2738 tests in 287 suites passed, 1 known issue (HarnessSmokeTests, it was there before), XCTest 0 tests 0 failures. 12 of 12 findings checked. Not committed.
     - next: /review
   timestamp: 2026-11-20T20:08:48.928456+00:00
-position_column: review
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m7x9cca66bdmxr5e25e1fhyy
+  text: |-
+    ### review — clean
+    - evidence: `review sha f4e81d2~1..f4e81d2` (HEAD~1..HEAD); 16 files reviewed; 0 findings (0 confirmed, 2 refuted). All 12 items of the 13:44 section are checked.
+    - next: none. The task is in done.
+  timestamp: 2026-11-20T20:11:49.446424+00:00
+position_column: done
+position_ordinal: ffffffb880
 title: 'Profiles are files: `profile: <name>`, named profile files per layer, builtins bundled with ACPAgent'
 ---
 User decision, 2026-11-17. This replaces ACPA-21's `profile.preset`, my `profile.kvBits` key (7d66b77/c6a2d28) and ^6r566bt.
