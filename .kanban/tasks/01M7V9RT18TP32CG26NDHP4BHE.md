@@ -24,8 +24,15 @@ comments:
     - evidence: `swift build --build-tests` printed "Build complete!" with 0 project warnings; `timeout 1800 swift test --skip-build` gave 2729 tests in 286 suites passed, 0 failures, 1 known issue (the deliberate withKnownIssue in HarnessSmokeTests.orderedSubsequenceAssertionChecksOrderWithGaps)
     - next: review
   timestamp: 2026-11-20T01:48:09.264914+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m7vadx34fj6gaxcraz5b9ppq
+  text: |-
+    ### review — clean
+    - evidence: `review sha 128c1d4~1..128c1d4` (HEAD~1..HEAD); 0 findings (0 confirmed, 0 refuted). The card has no earlier review findings. The open item "Push to origin/main and send the sha" is a task item, not a review finding.
+    - next: Push to origin/main and send the sha to the TestudoApp session (testudoapp-9a).
+  timestamp: 2026-11-20T01:51:39.108611+00:00
+position_column: done
+position_ordinal: ffffffb280
 title: 'D209: setImportRoots on the running agent, so a sandbox grant after launch applies with no restart'
 ---
 TestudoApp asked for this on 2026-11-19. In the sandboxed app, the user grants access to `~/.claude` or `~/.codex` through the open panel after launch. The app cannot restart the agent part safely. `ComposedAgent.compose(importRoots:)` and `RoutedACPAgent.init(importRoots:)` set the roots only one time.
