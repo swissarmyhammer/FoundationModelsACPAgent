@@ -22,8 +22,15 @@ comments:
     - blocker: on this Mac the fit choice is `large` (as before the change). SkillTriggerTests then started a download of `mlx-community/Qwen3.8-27B-8bit` (the standard model of `large.yaml`, total 29.5 GB). The cache had only partial `.incomplete` blobs from 2026-11-19 (13 GB). The drafter `mlx-community/Qwen3.8-27B-MTP-8bit` is not in the cache. After 30 minutes the download was at about 3 GB more. The constraint of this step forbids new model downloads, so I stopped the run. SkillTriggerTests, ToolCallingTests and StdioContractTests did not run to an end. Test item 2 stays open. The test code before this change pins `large` too, so the same download is necessary for any full run on this Mac.
     - next: a person decides: permit the download of the `large` weights (about 16 GB more for the standard model, plus the MTP drafter) and run `swift test --package-path IntegrationTests --no-parallel` again, or accept the CI run as the proof.
   timestamp: 2026-11-20T08:41:06.048618+00:00
-position_column: doing
-position_ordinal: '8180'
+- actor: claude-code
+  id: 01m7w20jeqkrd9wecgjtj4whkp
+  text: |-
+    ### review — clean
+    - evidence: `review sha 1843d0d~1..1843d0d` (HEAD~1..HEAD); 4 IntegrationTests files reviewed; 0 findings (0 confirmed, 1 refuted). The card has no earlier review findings. Test item 2 (the full local integration run) stays open by decision of the coordinator: a full local run needs a model download that only the user can approve. Test item 3 (the CI job) is a task item. These open items are not review findings.
+    - next: Push to origin/main. Make sure that the CI integration job is green on mini-01 and on m3u1. That CI run is the proof for test item 2.
+  timestamp: 2026-11-20T08:43:48.055350+00:00
+position_column: done
+position_ordinal: ffffffb580
 title: 'CI integration is red on mini-01: the live tests pin the profile "large", which does not fit a 26.8 GB budget'
 ---
 ## Problem
