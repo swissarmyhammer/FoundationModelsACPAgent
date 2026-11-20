@@ -21,9 +21,9 @@ import Testing
 /// The exit code of a usage error (cli-plan.md §5.8).
 private let usageExitCode: Int32 = 2
 
-/// The exit code of an error (cli-plan.md §5.8): `doctor` exits with it
-/// when any check fails.
-private let errorExitCode: Int32 = 1
+/// The exit code of a `doctor` run whose worst check is a warning
+/// (cli-plan.md §5.12, `AgentExitCode.doctorWarnings`).
+private let doctorWarningsExitCode: Int32 = 5
 
 /// The process contract of `--help`, `--version`, a usage error and
 /// `doctor`.
@@ -115,16 +115,18 @@ struct CLIProcessTests {
     #expect(run.standardOutput.isEmpty, "a usage error wrote to stdout: \(run.standardOutput)")
   }
 
-  /// `doctor` finds the profile that no layer has, exits 1, and states
-  /// the failure on stderr, with nothing on stdout (cli-plan.md §5.12).
-  @Test func anUnknownProfileMakesDoctorExitOneWithTheFailureOnStderr() async throws {
+  /// `doctor` finds the profile that no layer has, exits with the warnings
+  /// code, and states the warning on stderr, with nothing on stdout
+  /// (cli-plan.md §5.12). An unknown profile name is a warning, and the
+  /// agent uses the fallback profile (^sc4qx6z).
+  @Test func anUnknownProfileMakesDoctorExitWithWarningsAndTheWarningOnStderr() async throws {
     let configHome = makeResolvedDirectory(label: "CLIProcess-config")
     try TierThreeFixture.writeUserConfig(under: configHome, yaml: Self.unknownProfileYAML)
 
     let run = try await Self.runAgentCLI(
       arguments: [Self.doctorSubcommand], configHome: configHome)
 
-    #expect(run.exitCode == errorExitCode, "stderr: \(run.standardError)")
+    #expect(run.exitCode == doctorWarningsExitCode, "stderr: \(run.standardError)")
     #expect(
       run.standardError.contains(Self.unknownProfileMarker),
       "stderr: \(run.standardError)")
