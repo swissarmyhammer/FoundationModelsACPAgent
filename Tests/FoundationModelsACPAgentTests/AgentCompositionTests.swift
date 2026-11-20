@@ -243,11 +243,11 @@ import Testing
   /// A `CLAUDE_CONFIG_DIR` that is not an absolute path gives a warning that names the variable.
   /// The root stays `~/.claude`.
   @Test func aRelativeClaudeConfigDirGivesAWarning() async throws {
-    let records = try await TelemetryCapture.run(forbidding: []) { context in
-      _ = AgentComposition.importRoots(
+    let (roots, records) = try await TelemetryCapture.run(forbidding: []) { context in
+      let roots = AgentComposition.importRoots(
         environment: [AgentComposition.claudeConfigVariable: "relative/claude"],
         homeDirectory: Self.importHome)
-      return context.logRecords
+      return (roots, context.logRecords)
     }
 
     let variable = Logger.MetadataValue.string(AgentComposition.claudeConfigVariable)
@@ -255,6 +255,8 @@ import Testing
       records.contains {
         $0.level == .warning && $0.metadata[AgentComposition.variableMetadataKey] == variable
       })
+    #expect(
+      roots[.claudeCode] == Self.importHome.appendingPathComponent(".claude", isDirectory: true))
   }
 
   /// The recording root of `workspace` under the CLI's own dotfolder

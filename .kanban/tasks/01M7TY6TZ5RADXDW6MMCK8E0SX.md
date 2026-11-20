@@ -89,6 +89,24 @@ comments:
     - evidence: `swift build --build-tests` gave "Build complete!" with 0 compiler warnings in project sources. `swift test --skip-build --filter "AgentSessionImporter|SessionImportWiring|AgentComposition|NoUnifiedLogging"`: 35 tests in 4 suites pass. `timeout 1800 swift test --skip-build`: 2689 tests in 284 suites pass, 0 failures (1 known issue, recorded with withKnownIssue before this change).
     - next: review
   timestamp: 2026-11-20T00:03:21.183801+00:00
+- actor: claude-code
+  id: 01m7v4faf2t536bxmqvqgvbg02
+  text: |-
+    ### review — findings
+    - evidence: `review sha ba7ae6e~1..ba7ae6e`; 2 findings (2 confirmed, 1 refuted). Sources/FoundationModelsACPAgent/Import/AgentSessionImporter.swift:114, Tests/FoundationModelsACPAgentTests/AgentCompositionTests.swift:247. All 11 items of the 17:44 section are checked.
+    - next: Correct the 2 items in the "Review Findings (2026-11-19 18:03)" section. Then do the review again. The task stays in review.
+  timestamp: 2026-11-20T00:07:34.114715+00:00
+- actor: claude-code
+  id: 01m7v4qs527cjq4me5fxhn40na
+  text: |-
+    ### implement — changed
+    - evidence: 3 files — Sources/FoundationModelsACPAgent/Import/AgentSessionImporter.swift (new `stamp(of:)` and `isRegularFile(_:)` each log a warning with the path of a skipped file through the shared `logSkippedFile(_:_:error:)`, with `ACPAgentTelemetry.logger(.session)` at the call; the same cause was also in the `try?` regular-file filter of `files(under:)`, now removed), Tests/FoundationModelsACPAgentTests/AgentSessionImporterTests.swift (2 new tests: RED, then GREEN), Tests/FoundationModelsACPAgentTests/AgentCompositionTests.swift (the relative `CLAUDE_CONFIG_DIR` test also checks that the root stays `~/.claude`). The 2 findings of "Review Findings (2026-11-19 18:03)" are checked.
+    - next: test
+
+    ### test — green
+    - evidence: `swift build --build-tests` gave "Build complete!" with 0 project warnings. `swift test --skip-build --filter "AgentSessionImporter|SessionImportWiring|AgentComposition|NoUnifiedLogging"`: 37 tests in 4 suites pass. The coordinator did not ask for a full suite run for this change.
+    - next: review
+  timestamp: 2026-11-20T00:12:11.298793+00:00
 position_column: review
 position_ordinal: '80'
 title: 'D209: AgentSessionImporter lists the importable sessions of the host roots (Claude Code, Codex)'
@@ -138,3 +156,16 @@ Decision D209 in `TestudoApp/features/decisions.md` (commit 56a8a59; final), par
 - [x] `Sources/FoundationModelsACPAgent/Import/ImportSourceScan.swift:79` `swift/fluent-usage` — The static method `ImportFileStamp.of(_:)` is a factory: it builds and returns a new `ImportFileStamp`. The rule requires factory methods to begin with `make`, so the name does not match the stated convention. Rename it to `makeStamp(of file: URL) -> ImportFileStamp?`, or to `makeStamp(for file: URL)`, and update the call site in AgentSessionImporter.swift. If the team treats `of` as a conversion name, record that exception in the rule instead.
 - [x] `Sources/acp-agent/AgentComposition.swift:160` `completeness/public-output-contract` — When `CLAUDE_CONFIG_DIR` is set to a relative path or to `~/...`, the `hasPrefix("/")` guard skips the override with no warning. The root silently falls back to `~/.claude`, so the operator's configured folder is ignored and `list imports` lists a different folder with no sign that the variable was rejected. The doc comment says only that an absolute folder is used, so the rejection is intended, but the silence is not. Under the rule's error-silenced check, the skip should at least warn. Log a warning when the variable is set but is not an absolute path, naming the variable and the fallback folder, then keep the fallback. The behaviour stays the same; only the silence changes.
 - [x] `Tests/FoundationModelsACPAgentTests/SessionImportWiringTests.swift:39` `reuse/reuse` — makeClaudeRoot writes a Claude Code session file with an inline JSON literal. The same record is already built by claudeFile(title:) in AgentSessionImporterTests.swift (line 56), and Roots.make (line 101) writes the same file in the same change. The two fixtures can drift apart, and a change to the session format must then be made in two places. Move the Claude Code and Codex session fixtures into a shared file under Tests/FoundationModelsACPAgentTests/Support/ (or FoundationModelsACPAgentTestSupport). Have both suites call that helper and pass the root, the session id and the cwd as parameters.
+
+## Review Findings (2026-11-19 18:03)
+
+> Scope: `review sha ba7ae6e~1..ba7ae6e` — reviewed the diffs only — lines this change added or modified. 8 file(s) reviewed, 5 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+> 1 file(s) not reviewed — no validator matched:
+> - `README.md` — no validator matches this file
+
+- [x] `Sources/FoundationModelsACPAgent/Import/AgentSessionImporter.swift:114` `completeness/public-output-contract` — A session file whose stamp cannot be read is dropped with no log. The same kind of read failure in files(under:) logs a warning, so the two paths handle the same condition in different ways. The operator gets no sign that a session file is missing from the list. Log a warning with the file path when makeStamp returns nil, in the same way files(under:) logs, and then skip the file. Add a test that covers this path, or state in the doc comment that the stamp case is silent on purpose.
+- [x] `Tests/FoundationModelsACPAgentTests/AgentCompositionTests.swift:247` `completeness/public-output-contract` — The test for a relative CLAUDE_CONFIG_DIR checks only the warning. It discards the returned roots with `_ =`, so the documented fallback (the root stays ~/.claude) is never asserted. A regression that returns a wrong root on this path would still pass. Keep the roots and add #expect(roots[.claudeCode] == Self.importHome.appendingPathComponent(".claude", isDirectory: true)) to the same test, so the fallback result is proven as well as the warning.

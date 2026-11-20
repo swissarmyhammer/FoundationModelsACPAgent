@@ -111,7 +111,7 @@ actor AgentSessionImporter: SessionImporter {
     guard let root = roots[agent] else { return [] }
     let kept = scans[agent] ?? [:]
     let found = Self.sessionFiles(of: agent, under: root).compactMap { file in
-      ImportFileStamp.makeStamp(of: file).map { stamp in
+      Self.stamp(of: file).map { stamp in
         (file: file, scan: Self.scan(file, of: agent, stamp: stamp, kept: kept[file.path]))
       }
     }
@@ -167,14 +167,56 @@ actor AgentSessionImporter: SessionImporter {
       at: folder, includingPropertiesForKeys: ImportFileStamp.resourceKeys + [.isRegularFileKey],
       options: [.skipsHiddenFiles, .skipsPackageDescendants]
     ) { url, error in
-      ACPAgentTelemetry.logger(.session).warning(
-        "The importer cannot read a file of an import root. It skips the file.",
-        metadata: ["path": "\(url.path)", "error": "\(error)"])
+      logSkippedFile(
+        url, "The importer cannot read a file of an import root. It skips the file.",
+        error: error)
       return true
     }
-    return (enumerator?.allObjects ?? []).compactMap { $0 as? URL }.filter {
-      (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+    return (enumerator?.allObjects ?? []).compactMap { $0 as? URL }.filter(isRegularFile)
+  }
+
+  /// The stamp of a session file. A file with no stamp gives a warning.
+  ///
+  /// - Parameter file: The file.
+  /// - Returns: The stamp, or `nil` when the file system gives no size or no date.
+  static func stamp(of file: URL) -> ImportFileStamp? {
+    guard let stamp = ImportFileStamp.makeStamp(of: file) else {
+      logSkippedFile(
+        file,
+        "The importer cannot read the size or the date of a file of an import root. It skips the file.")
+      return nil
     }
+    return stamp
+  }
+
+  /// True when a file is a regular file. A file whose kind the importer cannot read gives a
+  /// warning, and is not a regular file.
+  ///
+  /// - Parameter file: The file.
+  /// - Returns: True for a regular file.
+  static func isRegularFile(_ file: URL) -> Bool {
+    do {
+      return try file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true
+    } catch {
+      logSkippedFile(
+        file, "The importer cannot read the kind of a file of an import root. It skips the file.",
+        error: error)
+      return false
+    }
+  }
+
+  /// Logs a warning for a file of an import root that the scan skips.
+  ///
+  /// - Parameters:
+  ///   - file: The file.
+  ///   - message: The message of the warning.
+  ///   - error: The error of the read, or `nil` when the read gave no error.
+  private static func logSkippedFile(
+    _ file: URL, _ message: Logger.Message, error: (any Error)? = nil
+  ) {
+    var metadata: Logger.Metadata = ["path": .string(file.path)]
+    metadata["error"] = error.map { .string("\($0)") }
+    ACPAgentTelemetry.logger(.session).warning(message, metadata: metadata)
   }
 
   /// Reads the metadata of one session file. A file that the reader refuses, or that the
