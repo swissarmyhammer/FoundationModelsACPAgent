@@ -368,6 +368,106 @@ import ULID
     #expect(title == Self.firstTitle)
   }
 
+  // MARK: - The change of the roots
+
+  /// A change of the Claude Code root that removes the root of the first call.
+  enum ClaudeRootChange: String, CaseIterable, Sendable, CustomTestStringConvertible {
+    /// The host gives a different Claude Code root.
+    case moved
+
+    /// The host gives no Claude Code root.
+    case removed
+
+    /// The name of the change in the test results.
+    var testDescription: String { rawValue }
+
+    /// The roots after the change.
+    ///
+    /// - Parameter codexRoot: The Codex root, which the change keeps.
+    /// - Returns: The roots with the changed Claude Code root.
+    func roots(keepingCodexRoot codexRoot: URL) -> [ImportSourceAgent: URL] {
+      switch self {
+      case .moved:
+        [.claudeCode: makeResolvedDirectory(label: label), .codex: codexRoot]
+      case .removed:
+        [.codex: codexRoot]
+      }
+    }
+  }
+
+  /// Makes the roots with a Claude Code session file of ``firstTitle`` at ``fixedDate``, and
+  /// an importer whose first call read them. The test then writes ``sameLengthTitle`` with
+  /// the same size and the same date, so only a new read of the file gives the new title.
+  ///
+  /// - Returns: The roots and the importer.
+  /// - Throws: The error of a write or of the importer.
+  private static func scannedRootsWithAChangeTheStampHides() async throws
+    -> (roots: Roots, importer: AgentSessionImporter)
+  {
+    let roots = try Roots.make()
+    try write(claudeFile(title: firstTitle), to: roots.claudeSession, modified: fixedDate)
+    let importer = importer(roots.all)
+    _ = try await importer.importable(request())
+    try write(claudeFile(title: sameLengthTitle), to: roots.claudeSession, modified: fixedDate)
+    return (roots, importer)
+  }
+
+  @Test("a root that the host gives after the start is in the next page")
+  func aRootGivenLaterIsInTheNextPage() async throws {
+    let roots = try Roots.make()
+    let importer = Self.importer([:])
+
+    await importer.replaceRoots([.claudeCode: roots.claude])
+
+    #expect(try await Self.sourceIDs(of: importer) == [Self.claudeID])
+  }
+
+  @Test("a root that the host takes away is in unreadableSources")
+  func aRootTakenAwayIsUnreadable() async throws {
+    let roots = try Roots.make()
+    let importer = Self.importer(roots.all)
+    _ = try await importer.importable(Self.request())
+
+    await importer.replaceRoots([.claudeCode: roots.claude])
+
+    #expect(
+      try await importer.importable(Self.request()).unreadableSources
+        == [ImportSourceAgent.codex.rawValue])
+  }
+
+  @Test("an import from a root that the host takes away gives sourceUnreadable")
+  func anImportFromARootTakenAwayIsUnreadable() async throws {
+    let roots = try Roots.make()
+    let importer = Self.importer(roots.all)
+    let order = SessionImportOrder(
+      agent: ImportSourceAgent.codex.rawValue, source: Self.codexID, folder: nil, name: nil)
+
+    await importer.replaceRoots([.claudeCode: roots.claude])
+
+    await #expect(throws: SessionImportError.sourceUnreadable(agent: ImportSourceAgent.codex.rawValue)) {
+      try await importer.importSession(order)
+    }
+  }
+
+  @Test("a root that changes and comes back is read again", arguments: ClaudeRootChange.allCases)
+  func aChangedRootIsReadAgain(_ change: ClaudeRootChange) async throws {
+    let (roots, importer) = try await Self.scannedRootsWithAChangeTheStampHides()
+
+    await importer.replaceRoots(change.roots(keepingCodexRoot: roots.codex))
+    await importer.replaceRoots(roots.all)
+
+    #expect(try await Self.claudeTitle(of: importer) == Self.sameLengthTitle)
+  }
+
+  @Test("a root that the host gives again with no change keeps the metadata of its files")
+  func anUnchangedRootKeepsItsMetadata() async throws {
+    let (roots, importer) = try await Self.scannedRootsWithAChangeTheStampHides()
+
+    await importer.replaceRoots(roots.all)
+
+    #expect(try await Self.claudeTitle(of: importer) == Self.firstTitle)
+  }
+
   // MARK: - The skipped files
 
   /// A read of the scan that skips a file it cannot read, and logs a warning with its path.

@@ -76,6 +76,17 @@ public actor RoutedACPAgent: Agent {
   /// agent with no root is in the `unreadableSources` of each page of the importer.
   nonisolated let sessionImporter: AgentSessionImporter
 
+  /// Replaces all the import roots of the host (D209). The next `list imports` or
+  /// `import session` reads the new roots, with no restart of the agent: a sandboxed app calls
+  /// it when the user gives the access to `~/.claude` or `~/.codex` after the launch.
+  ///
+  /// - Parameter roots: The folder of each source agent whose sessions the host can read now.
+  ///   A source agent with no folder is in the `unreadableSources` of `list imports`, and an
+  ///   import from it gives `SessionImportError.sourceUnreadable`.
+  public nonisolated func setImportRoots(_ roots: [ImportSourceAgent: URL]) async {
+    await sessionImporter.replaceRoots(roots)
+  }
+
   /// The subscribers of the turn ends of the sessions of this server (``turnEnds()``).
   nonisolated let turnEndFeed = SubscriberFeed<SessionId> {
     ACPAgentTelemetry.logger(.session).warning(

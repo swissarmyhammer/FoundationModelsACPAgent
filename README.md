@@ -776,9 +776,14 @@ read with an `AgentSessionImporter`. A host gives the folder of each source
 agent as `importRoots` to `ComposedAgent.compose(importRoots:)` (or to the
 initializer of `RoutedACPAgent`): `~/.claude` and `~/.codex`, or the folders
 that an app in the App Sandbox holds a bookmark for. A source with no folder
-shows in the list as a source with no access. The `acp-agent` CLI gives the
-folders of the real home folder, and the folder of `CLAUDE_CONFIG_DIR` when it
-is set to an absolute path. When `CLAUDE_CONFIG_DIR` is not an absolute path,
+shows in the list as a source with no access, and an import from it fails with
+the code `NO_SOURCE_ACCESS`. The host can replace all the folders while the
+agent runs with `ComposedAgent.setImportRoots(_:)` (or
+`RoutedACPAgent.setImportRoots(_:)`): an app in the App Sandbox calls it when
+the user gives the access to `~/.claude` or `~/.codex` after the launch. The
+next list or import reads the new folders, with no restart. The `acp-agent`
+CLI gives the folders of the real home folder, and the folder of
+`CLAUDE_CONFIG_DIR` when it is set to an absolute path. When `CLAUDE_CONFIG_DIR` is not an absolute path,
 the CLI writes a warning to stderr and uses `~/.claude`.
 
 The importer reads the folders only in a call. It runs no child process,

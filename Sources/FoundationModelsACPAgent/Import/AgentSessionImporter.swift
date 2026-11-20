@@ -43,7 +43,8 @@ enum AgentSessionImportError: Error, Equatable, CustomStringConvertible {
 /// endpoint call it.
 ///
 /// The host gives the roots of the source agents that it can read (`~/.claude`, `~/.codex`).
-/// The importer reads the roots only in a call: it runs no child process (D128), watches
+/// The host can replace the roots while the agent runs (``replaceRoots(_:)``): a sandboxed app
+/// gets the access to a root after the launch. The importer reads the roots only in a call: it runs no child process (D128), watches
 /// nothing, and changes no file of a root. It keeps the metadata of each session file in
 /// memory, by path, size and modification date, so a second call reads only the changed files.
 ///
@@ -51,8 +52,8 @@ enum AgentSessionImportError: Error, Equatable, CustomStringConvertible {
 /// sessions of the directory. It is only information: an import of the source makes a new
 /// session also when the source has earlier imports (Q85).
 actor AgentSessionImporter: SessionImporter {
-  /// The root of each source agent that the host can read.
-  private let roots: [ImportSourceAgent: URL]
+  /// The root of each source agent that the host can read. ``replaceRoots(_:)`` changes it.
+  private var roots: [ImportSourceAgent: URL]
 
   /// The session directory, for the earlier imports and for the new sessions.
   private let directory: any SessionDirectory
@@ -76,6 +77,18 @@ actor AgentSessionImporter: SessionImporter {
     self.roots = roots
     self.directory = directory
     self.historyStore = historyStore
+  }
+
+  /// Replaces all the roots. The next call of ``importable(_:)`` or ``importSession(_:)``
+  /// reads the new roots. The importer forgets the kept file metadata of each source agent
+  /// whose root changed or is gone, so a later call reads each file of that agent again. A
+  /// source agent whose root is the same keeps its file metadata.
+  ///
+  /// - Parameter newRoots: The root of each source agent that the host can read now. A source
+  ///   with no root is in the `unreadableSources` of each page.
+  func replaceRoots(_ newRoots: [ImportSourceAgent: URL]) {
+    scans = scans.filter { agent, _ in newRoots[agent] == roots[agent] }
+    roots = newRoots
   }
 
   /// The sessions of the readable source agents, the newest first, with the sessions of the

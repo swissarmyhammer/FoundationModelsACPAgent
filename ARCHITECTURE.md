@@ -226,7 +226,12 @@ Multitool.
 - **The roots.** The host gives the folder of each source agent that it can read as
   `importRoots: [ImportSourceAgent: URL]` to the initializer of `RoutedACPAgent` (or to
   `ComposedAgent.compose`). The `acp-agent` CLI gives `~/.claude` (or `CLAUDE_CONFIG_DIR`) and
-  `~/.codex`. A source with no root is in the `unreadableSources` of each page.
+  `~/.codex`. A source with no root is in the `unreadableSources` of each page, and an import
+  from it gives `SessionImportError.sourceUnreadable`. The host replaces all the roots of the
+  running agent with `setImportRoots(_:)` of `RoutedACPAgent` or `ComposedAgent`
+  (`AgentSessionImporter.replaceRoots(_:)`): a sandboxed app gets the access to a root after
+  the launch, and the next call reads the new roots. The importer forgets the kept scans of a
+  root that changed or is gone.
 - **The scan.** `AgentSessionImporter` (an actor) lists the session files of each root
   (`ImportSourceLayout`: `projects/*/*.jsonl` for Claude Code, `sessions/**/rollout-*.jsonl` and
   `archived_sessions/` for Codex) and reads their metadata with the `ACPImport` readers. It

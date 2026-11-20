@@ -311,6 +311,16 @@ public struct ComposedAgent: Sendable {
     agent.transcriptSearchChanges
   }
 
+  /// Replaces all the import roots of the host (D209) on ``agent``
+  /// (``RoutedACPAgent/setImportRoots(_:)``). The next `list imports` or `import session`
+  /// reads the new roots, with no new composition: Testudo calls it when the user gives the
+  /// access to `~/.claude` or `~/.codex` through the open panel after the launch.
+  ///
+  /// - Parameter roots: The folder of each source agent whose sessions the host can read now.
+  public func setImportRoots(_ roots: [ImportSourceAgent: URL]) async {
+    await agent.setImportRoots(roots)
+  }
+
   /// Makes a new stream of the turn ends of the sessions of the server
   /// (``RoutedACPAgent/turnEnds()`` of ``agent``). A host with a share that Keep Updated is on
   /// for updates the share at each turn end of its session (D208 Q74).
