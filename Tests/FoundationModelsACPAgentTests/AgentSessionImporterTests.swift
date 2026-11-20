@@ -562,8 +562,18 @@ import ULID
       provenance
         == SessionImportProvenance(
           agent: ImportSourceAgent.claudeCode.rawValue, sourceID: Self.claudeID,
-          sourcePath: fixture.file.path, sourceLastDate: try ImportFixture.lastRecordDate(),
-          importedAt: provenance.importedAt))
+          sourcePath: fixture.file.path, sourceTitle: ImportFixture.sourceTitle,
+          sourceLastDate: try ImportFixture.lastRecordDate(), importedAt: provenance.importedAt))
+  }
+
+  @Test("an import from a source with no title has no source title in its provenance")
+  func anImportFromASourceWithNoTitleHasNoSourceTitle() async throws {
+    let fixture = try ImportFixture.make(title: nil)
+
+    let result = try await fixture.importer.importSession(fixture.order())
+
+    let provenance = try #require(try await fixture.directory.summary(of: result.session)?.importedFrom)
+    #expect(provenance.sourceTitle == nil)
   }
 
   @Test("an import with no folder works in the folder of the source session")
@@ -738,6 +748,9 @@ private struct ImportFixture {
   /// The source id of the Claude Code session.
   private static let claudeID = "5a1e0000-0000-4000-8000-000000000001"
 
+  /// The custom title of the source session by default.
+  static let sourceTitle = "Title A"
+
   /// The date of the last record of the session file
   /// (``ImportSessionFiles/claudeCodeLastRecordTimestamp``).
   ///
@@ -774,7 +787,7 @@ private struct ImportFixture {
   /// - Returns: The fixture.
   /// - Throws: The error of a write.
   static func make(
-    title: String? = "Title A", store: RecordingHistoryStore = RecordingHistoryStore()
+    title: String? = sourceTitle, store: RecordingHistoryStore = RecordingHistoryStore()
   ) throws -> ImportFixture {
     let base = makeResolvedDirectory(label: label)
     let folder = base.appendingPathComponent("work", isDirectory: true)

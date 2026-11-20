@@ -207,7 +207,8 @@ actor AgentSessionImporter: SessionImporter {
   ///   - source: The source session and its file.
   ///   - imported: The session that the reader read.
   ///   - folder: The folder of the new session.
-  /// - Returns: The request: the folder, the name (Q84) and the provenance of the source.
+  /// - Returns: The request: the folder, the name (Q84) and the provenance of the source. The
+  ///   source title of the provenance is the title that ``importable(_:)`` shows for the source.
   private static func request(
     for order: SessionImportOrder, source: LocatedSessionMetadata, imported: ImportedSession,
     folder: URL
@@ -220,7 +221,7 @@ actor AgentSessionImporter: SessionImporter {
       workingDirectory: folder, title: title,
       provenance: SessionImportProvenance(
         agent: agent, sourceID: sourceID(of: source), sourcePath: source.file.path,
-        sourceLastDate: imported.metadata.lastDate, importedAt: Date(),
+        sourceTitle: source.metadata.title, sourceLastDate: imported.metadata.lastDate, importedAt: Date(),
         skippedRecordCount: imported.skippedRecordCount))
   }
 
