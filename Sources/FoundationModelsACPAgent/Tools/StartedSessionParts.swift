@@ -5,8 +5,9 @@ import FoundationModelsSkills
 /// The parts that a session composition started and still owns, which
 /// ``stop()`` stops (task ^2zm9hbk).
 ///
-/// `RoutedACPAgent.composeSession` and ``ToolCatalog/sessionSurface(context:skills:agentRegistry:)``
-/// add each part when they start it. A step that throws before the surface
+/// `RoutedACPAgent.composeSession`, ``ToolCatalog/sessionSurface(context:skills:agentRegistry:)``
+/// and ``ToolCatalog/makeRegistry(context:)`` add each part when they start
+/// it (tasks ^2zm9hbk and ^0rma59k). A step that throws before the surface
 /// owns the parts then stops them, and the caller gets the error of the
 /// step. ``SessionSurface/shutdown()`` stops the parts of a surface with the
 /// same ``stop()``.

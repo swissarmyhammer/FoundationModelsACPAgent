@@ -692,8 +692,10 @@ public enum ToolCatalog {
   /// - Throws: Whatever the shell store, `withMCP(servers:)` or
   ///   `buildRegistry()` throws, for example
   ///   `ToolModeError.openModeInSandbox` when the mode is `open` in a
-  ///   sandboxed process. After a failure the build gives its shell store
-  ///   lease back.
+  ///   sandboxed process. After a failure the build stops the parts that it
+  ///   started (``StartedSessionParts``): it gives its shell store lease and
+  ///   its code-context lease back, and it shuts down its server pool, which
+  ///   holds each MCP server that it connected and their processes.
   static func makeRegistry(context: CatalogContext) async throws -> BuiltRegistry {
     let builder = MultiTool.Builder(mode: context.toolMode, sandboxProbe: context.sandboxProbe)
     if case .enabled(let options) = context.configuration.tools.files {
@@ -706,10 +708,15 @@ public enum ToolCatalog {
         excludePatterns: options.exclude ?? [])
     }
     let shell = try await composeShell(into: builder, context: context)
+    // Until the built registry owns them, an error stops the parts that the
+    // build started. The error then goes to the caller unchanged.
+    var started = StartedSessionParts(
+      shellStoreLease: shell?.storeLease, serverPool: builder.serverPool)
     do {
-      return try await composeRest(into: builder, context: context, shell: shell)
+      return try await composeRest(
+        into: builder, context: context, shell: shell, started: &started)
     } catch {
-      await shell?.storeLease.release()
+      await started.stop()
       throw error
     }
   }
@@ -796,11 +803,16 @@ public enum ToolCatalog {
   ///   - context: What the builder calls need.
   ///   - shell: The shell mount of the session, or `nil` when the shell
   ///     section is off.
+  ///   - started: The parts that the build started. The code-context lease
+  ///     joins it. Each connected MCP server and each server process goes
+  ///     into the server pool of `builder` before the next step that can
+  ///     throw, so the pool of `started` holds them.
   /// - Returns: The built registry and the MCP composition around it.
   /// - Throws: Whatever `withMCP(servers:)`, the code context or
   ///   `buildRegistry()` throws.
   private static func composeRest(
-    into builder: MultiTool.Builder, context: CatalogContext, shell: ShellMount?
+    into builder: MultiTool.Builder, context: CatalogContext, shell: ShellMount?,
+    started: inout StartedSessionParts
   ) async throws -> BuiltRegistry {
     WebComposition.compose(into: builder, context: context)
     if context.configuration.tools.git.mountedOptions != nil {
@@ -832,29 +844,31 @@ public enum ToolCatalog {
       section: context.configuration.tools.mcp,
       clientServers: context.clientMCPServers,
       userPresence: context.userPresence)
-    if !composed.servers.isEmpty {
-      try await builder.withMCP(servers: composed.servers)
+    // The pool takes the connected servers and their processes first, so
+    // a failure of a later step shuts them down. `withMCP(servers:)` adds
+    // each server to the pool too; the pool keeps one entry for a server.
+    for server in composed.servers {
+      await builder.serverPool.add(server: server)
     }
     for process in composed.processes {
       await builder.serverPool.add(process: process)
     }
+    if !composed.servers.isEmpty {
+      try await builder.withMCP(servers: composed.servers)
+    }
     // The code context is the last composition step, so a failure
     // before it leaves no lease behind.
     let codeContextLease = try await composeCodeContext(into: builder, context: context)
-    do {
-      return BuiltRegistry(
-        registry: try builder.buildRegistry(),
-        source: builder.registrySource,
-        pool: builder.serverPool,
-        mcpServers: composed.servers,
-        mcpServerOutcomes: composed.outcomes,
-        shellOutput: shell?.output,
-        codeContextLease: codeContextLease,
-        shellStoreLease: shell?.storeLease)
-    } catch {
-      await codeContextLease?.release()
-      throw error
-    }
+    started.codeContextLease = codeContextLease
+    return BuiltRegistry(
+      registry: try builder.buildRegistry(),
+      source: builder.registrySource,
+      pool: builder.serverPool,
+      mcpServers: composed.servers,
+      mcpServerOutcomes: composed.outcomes,
+      shellOutput: shell?.output,
+      codeContextLease: codeContextLease,
+      shellStoreLease: shell?.storeLease)
   }
 
   /// Leases the shared code context of the session working directory from

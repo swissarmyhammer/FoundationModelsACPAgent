@@ -20,11 +20,18 @@ enum ProcessExitWatch {
   /// the process a zombie, and after the reap the system can give the pid
   /// to a new process.
   ///
+  /// A cancel of the task, for example by the time limit of a test, ends the
+  /// wait with `false`. So a process that does not exit fails the test, and
+  /// the test run continues.
+  ///
   /// - Parameters:
   ///   - pid: The process to watch.
   ///   - isGone: Tells if the process is gone. It is read one time, after
   ///     the arm.
-  static func waitForExit(of pid: pid_t, isGone: @escaping @Sendable () -> Bool) async {
+  /// - Returns: `true` when the process exited, or `false` when the task was
+  ///   cancelled first.
+  @discardableResult
+  static func waitForExit(of pid: pid_t, isGone: @escaping @Sendable () -> Bool) async -> Bool {
     let queue = DispatchQueue(label: "ProcessExitWatch")
     let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: queue)
     let exited = OneShot()
@@ -32,14 +39,18 @@ enum ProcessExitWatch {
       exited.fire(true)
     }
     defer { source.cancel() }
-    _ = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-      exited.arm(continuation)
-      source.resume()
-      queue.async {
-        if isGone() {
-          exited.fire(true)
+    return await withTaskCancellationHandler {
+      await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+        exited.arm(continuation)
+        source.resume()
+        queue.async {
+          if isGone() {
+            exited.fire(true)
+          }
         }
       }
+    } onCancel: {
+      exited.fire(false)
     }
   }
 }
