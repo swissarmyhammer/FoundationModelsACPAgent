@@ -258,8 +258,8 @@ comments:
   timestamp: 2026-11-21T12:15:35.457185+00:00
 depends_on:
 - 01M7QPE4FQH8810KJV056R9VP9
-position_column: doing
-position_ordinal: '8180'
+position_column: done
+position_ordinal: ffffffbb80
 title: 'ACPA-23 (D203): real Mac check of small (MTP, kvBits 8), and measure kvBits 8 for large and medium — downloads approved'
 ---
 Decision D203 in `TestudoApp/features/decisions.md` (commit 4ab65e8). Brief: `/Users/wballard/github/swissarmyhammer/.briefs/profiles/acpa-brief.md`, part 1 (the measurement) and the last test. Facts: `research.md` in the same folder.

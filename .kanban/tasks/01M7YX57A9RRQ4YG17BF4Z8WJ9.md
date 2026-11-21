@@ -126,7 +126,7 @@ User decision, 2026-11-21: "inheriting from large is a bad choice, there should 
 - [x] A profile file that names only one key gets the code defaults for each other key, not the keys of `large.yaml`.
 - [x] The bundled `large` decodes with an 8-bit KV cache; `medium` and `small` decode as before.
 - [x] A saved fp16 profile and a saved 8-bit profile load back the same.
-- [ ] `swift test` passes, and the CI integration job is green after the push. #profiles #d203
+- [x] `swift test` passes, and the CI integration job is green after the push. #profiles #d203
 
 ## Review Findings (2026-11-21 11:10)
 
