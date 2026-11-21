@@ -30,7 +30,8 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
     return CatalogContext(
       workingDirectory: base.workingDirectory, configuration: base.configuration,
       profile: base.profile, settingsFolders: base.settingsFolders, mode: .open,
-      environment: base.environment, agentRunHost: host)
+      environment: base.environment, agentRunHost: host,
+      agentConflictVersions: InertConflictVersionSource())
   }
 
   /// The store saves the tasks of a session, loads them back, and removes

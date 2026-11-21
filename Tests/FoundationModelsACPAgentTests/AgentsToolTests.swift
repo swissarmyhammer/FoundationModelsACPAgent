@@ -177,7 +177,8 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
       profile: profile,
       settingsFolders: try SettingsFoldersFixture.make(label: "AgentsToolTests"), mode: .open,
       environment: [:],
-      inlineSettleGrace: inlineSettleGrace)
+      inlineSettleGrace: inlineSettleGrace,
+      agentConflictVersions: InertConflictVersionSource())
   }
 
   /// The script of the `start agent` proofs. Each run plays the branch of

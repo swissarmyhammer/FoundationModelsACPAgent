@@ -101,7 +101,7 @@ import Testing
       profile: try await makeStubProfile(
         cacheDirectory: makeResolvedDirectory(label: "SkillsLibraryTests-\(label)-cache")),
       settingsFolders: try SettingsFoldersFixture.make(label: "SkillsLibraryTests-\(label)"),
-      mode: .open)
+      mode: .open, agentConflictVersions: InertConflictVersionSource())
     return try await ToolCatalog.sessionSurface(context: context)
   }
 

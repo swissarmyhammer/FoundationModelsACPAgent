@@ -2,6 +2,7 @@ import ACPImport
 import Foundation
 import FoundationModels
 import FoundationModelsACP
+import FoundationModelsAgents
 import FoundationModelsExtras
 import FoundationModelsSkills
 import FoundationModelsHooks
@@ -163,6 +164,10 @@ public actor RoutedACPAgent: Agent {
   /// ``toolMode`` against it, and each session gives it to the Multitool
   /// builder (``CatalogContext/sandboxProbe``).
   nonisolated let sandboxProbe: SandboxProbe
+
+  /// The source of the conflict versions of the agent registry of each
+  /// session (``CatalogContext/agentConflictVersions``).
+  nonisolated let agentConflictVersions: any AgentConflictVersionSource
 
   /// The client capabilities of the `initialize` of one connection.
   ///
@@ -582,6 +587,10 @@ public actor RoutedACPAgent: Agent {
   ///     `router` as the fit source. A host that loaded its start-up
   ///     configuration with a choice gives that choice here, so the agent
   ///     makes no second choice.
+  ///   - agentConflictVersions: The source of the conflict versions of the agent registry of
+  ///     each session (``CatalogContext/agentConflictVersions``). The default is
+  ///     `FileVersionConflictSource`, which adds one file presenter for each watched root. A
+  ///     test agent gives a source that adds no presenter.
   ///   - readableFolder: Tells whether the process can read a working folder now with no
   ///     prompt (D207): an app in the App Sandbox gives the folders that it holds a bookmark
   ///     for. The reconcile of the transcript search index at launch reads only such folders.
@@ -610,6 +619,7 @@ public actor RoutedACPAgent: Agent {
     sessionShareHost: SessionShareHost? = nil,
     importRoots: [ImportSourceAgent: URL] = [:],
     fallbackProfileName: String? = nil,
+    agentConflictVersions: any AgentConflictVersionSource = FileVersionConflictSource(),
     readableFolder: @escaping @Sendable (URL) -> Bool = RoutedACPAgent.everyFolderIsReadable
   ) async throws {
     try mode.validate(probe: sandboxProbe)
@@ -621,6 +631,7 @@ public actor RoutedACPAgent: Agent {
     }
     self.toolMode = mode
     self.sandboxProbe = sandboxProbe
+    self.agentConflictVersions = agentConflictVersions
     self.openTestudoDownloadURL = openTestudoDownloadURL
     self.agentName = agentName
     self.name = name

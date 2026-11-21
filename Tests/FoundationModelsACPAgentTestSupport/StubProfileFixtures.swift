@@ -1,6 +1,7 @@
 import ACPImport
 import Foundation
 import FoundationModelsACPAgent
+import FoundationModelsAgents
 import FoundationModelsExtras
 import FoundationModelsRouter
 import Tracing
@@ -77,6 +78,9 @@ import Tracing
 ///   - importRoots: The folder of each source agent whose sessions the
 ///     importer of the `sessions` tool lists. None by default. A suite of the
 ///     import gives fixture roots in a temporary folder here.
+///   - agentConflictVersions: The conflict source of the agent registry of
+///     each session. The default, ``InertConflictVersionSource``, adds no
+///     file presenter. A suite of that seam gives a recording source here.
 ///   - prepareRouter: The work on the router before the agent resolves its
 ///     profile. A suite that drives the timers of its runs gives the router
 ///     a `ManualRunClock` here. It does nothing by default.
@@ -100,6 +104,7 @@ public func makeStubAgent(
   sandboxProbe: SandboxProbe = .live,
   sessionShareHost: SessionShareHost? = nil,
   importRoots: [ImportSourceAgent: URL] = [:],
+  agentConflictVersions: any AgentConflictVersionSource = InertConflictVersionSource(),
   prepareRouter: @Sendable (Router) async -> Void = { _ in }
 ) async throws -> RoutedACPAgent {
   // A custom home over throwaway folders, so no test reads or writes the
@@ -128,12 +133,13 @@ public func makeStubAgent(
     userDeviceTokens: userDeviceTokens,
     modelStorage: offlineModelStorage(of: home),
     sessionShareHost: sessionShareHost,
-    importRoots: importRoots)
+    importRoots: importRoots,
+    agentConflictVersions: agentConflictVersions)
 }
 
 // MARK: - The defaults layer of a stub agent
 
-/// The defaults layer that ``makeStubAgent(name:cacheDirectory:recordingsDirectory:userDirectory:loader:configuration:tracer:inlineSettleGrace:environment:secretStore:userDeviceTokens:mode:sandboxProbe:sessionShareHost:importRoots:prepareRouter:)``
+/// The defaults layer that ``makeStubAgent(name:cacheDirectory:recordingsDirectory:userDirectory:loader:configuration:tracer:inlineSettleGrace:environment:secretStore:userDeviceTokens:mode:sandboxProbe:sessionShareHost:importRoots:agentConflictVersions:prepareRouter:)``
 /// gives each agent: the lowest layer of the configuration stack, below the
 /// user layer and the project layer.
 ///

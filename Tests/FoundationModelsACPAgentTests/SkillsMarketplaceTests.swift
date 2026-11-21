@@ -157,7 +157,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
         cacheDirectory: makeResolvedDirectory(label: "SkillsMarketplaceTests-models")),
       settingsFolders: SettingsFolders(
         name: try DotfolderName(dotfolderName), home: home, environment: [:]), mode: .open,
-      environment: environment)
+      environment: environment, agentConflictVersions: InertConflictVersionSource())
   }
 
   /// Makes the skills source of `context`, and reads the entry names of

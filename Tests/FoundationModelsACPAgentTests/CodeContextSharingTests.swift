@@ -88,7 +88,7 @@ import Testing
         configuration: configuration,
         profile: agent.profile,
         settingsFolders: agent.settingsFolders, mode: .open,
-        environment: [:]))
+        environment: [:], agentConflictVersions: InertConflictVersionSource()))
   }
 
   /// The code context that `surface` leased.

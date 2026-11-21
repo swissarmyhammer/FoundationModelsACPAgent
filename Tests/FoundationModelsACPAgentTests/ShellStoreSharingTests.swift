@@ -58,7 +58,7 @@ import Testing
       configuration: configuration,
       profile: agent.profile,
       settingsFolders: agent.settingsFolders, mode: .open,
-      environment: [:])
+      environment: [:], agentConflictVersions: InertConflictVersionSource())
   }
 
   /// Builds the registry of one session of `agent` in `workingDirectory`.

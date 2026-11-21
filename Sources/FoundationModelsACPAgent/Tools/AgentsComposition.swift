@@ -249,10 +249,15 @@ enum AgentsComposition {
   /// `AgentRegistry.stopWatching()`, thus a closed session leaves no running
   /// watcher. The registry keeps its last catalog.
   ///
+  /// The registry reads the conflict versions of each agent file from
+  /// ``CatalogContext/agentConflictVersions``, and follows the changes of
+  /// that source for its watched roots.
+  ///
   /// - Parameters:
   ///   - context: The session whose working directory roots the project layer
   ///     of the stack. Its settings folders give the defaults layer and the
-  ///     user layer of the stack.
+  ///     user layer of the stack. Its conflict source gives the conflict
+  ///     versions.
   ///   - marketplaces: The marketplace layers of the session, or `nil`.
   /// - Returns: The registry.
   static func makeAgentRegistry(
@@ -263,10 +268,13 @@ enum AgentsComposition {
     let templateContext = ToolCatalog.skillsTemplateContext(
       context.configuration.tools, mode: context.toolMode)
     guard let marketplaces else {
-      return AgentRegistry(stack: stack, templateContext: templateContext, watch: true)
+      return AgentRegistry(
+        stack: stack, templateContext: templateContext, watch: true,
+        conflictVersions: context.agentConflictVersions)
     }
     return AgentRegistry(
-      marketplaces: marketplaces, stack: stack, templateContext: templateContext, watch: true)
+      marketplaces: marketplaces, stack: stack, templateContext: templateContext, watch: true,
+      conflictVersions: context.agentConflictVersions)
   }
 
   /// Makes the agent registry of the session

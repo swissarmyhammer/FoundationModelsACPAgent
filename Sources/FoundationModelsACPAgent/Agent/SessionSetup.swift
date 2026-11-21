@@ -1160,7 +1160,8 @@ extension RoutedACPAgent {
       sessionImporter: sessionImporter,
       modelsEndpoint: modelsEndpoint,
       mcpServerRegistry: mcpServerRegistry,
-      marketplaceMount: marketplaceMount(workingDirectory: workingDirectory))
+      marketplaceMount: marketplaceMount(workingDirectory: workingDirectory),
+      agentConflictVersions: agentConflictVersions)
   }
 
   /// The marketplace mount of a session: the registry of the agent, and

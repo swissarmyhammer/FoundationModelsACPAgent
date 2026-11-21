@@ -241,7 +241,7 @@ import Testing
       profile: try await makeStubProfile(
         cacheDirectory: Self.makeResolvedDirectory(named: "shell-cache")),
       settingsFolders: try SettingsFoldersFixture.make(label: "MultiRootConfinementTests"),
-      mode: .open)
+      mode: .open, agentConflictVersions: InertConflictVersionSource())
     let registry = try await ToolCatalog.makeRegistry(context: context).registry
 
     _ = try await ShellVerbSupport.invokeExecute(

@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsACPAgentTestSupport
+import FoundationModelsAgents
 import FoundationModelsExtras
 import FoundationModelsMultitool
 
@@ -19,7 +20,7 @@ enum CatalogRegistryFixture {
 
   /// Builds the catalog registry of a session over `workingDirectory`
   /// with `configuration`, and returns all that the build gives. The
-  /// context comes from ``makeContext(workingDirectory:configuration:mode:)``.
+  /// context comes from ``makeContext(workingDirectory:configuration:mode:sandboxProbe:agentConflictVersions:)``.
   ///
   /// - Parameters:
   ///   - workingDirectory: The session working directory.
@@ -29,8 +30,8 @@ enum CatalogRegistryFixture {
   /// - Throws: Whatever the profile resolve or the registry build throws.
   static func makeBuiltRegistry(
     workingDirectory: URL, configuration: AgentConfiguration, mode: ToolMode = .open
-  ) async throws -> ToolCatalog.BuiltRegistry {
-    try await ToolCatalog.makeRegistry(
+  ) async throws -> FoundationModelsACPAgent.ToolCatalog.BuiltRegistry {
+    try await FoundationModelsACPAgent.ToolCatalog.makeRegistry(
       context: makeContext(
         workingDirectory: workingDirectory, configuration: configuration, mode: mode))
   }
@@ -47,11 +48,14 @@ enum CatalogRegistryFixture {
   ///   - configuration: The configuration under test.
   ///   - mode: The tool mode of the session. `.open` by default.
   ///   - sandboxProbe: The sandbox probe of the session. `.live` by default.
+  ///   - agentConflictVersions: The conflict source of the agent registry.
+  ///     The default, ``InertConflictVersionSource``, adds no file presenter.
   /// - Returns: The catalog context.
   /// - Throws: Whatever the profile resolve or the settings folders throw.
   static func makeContext(
     workingDirectory: URL, configuration: AgentConfiguration, mode: ToolMode = .open,
-    sandboxProbe: SandboxProbe = .live
+    sandboxProbe: SandboxProbe = .live,
+    agentConflictVersions: any AgentConflictVersionSource = InertConflictVersionSource()
   ) async throws -> CatalogContext {
     CatalogContext(
       workingDirectory: workingDirectory,
@@ -61,7 +65,8 @@ enum CatalogRegistryFixture {
       settingsFolders: try SettingsFoldersFixture.make(label: cacheLabel),
       mode: mode,
       sandboxProbe: sandboxProbe,
-      environment: [:])
+      environment: [:],
+      agentConflictVersions: agentConflictVersions)
   }
 
   /// Builds the catalog registry of a session over `workingDirectory`

@@ -125,7 +125,7 @@ import Testing
         cacheDirectory: try makeTemporaryDirectory(label: "cache")),
       clientMCPServers: clientServers,
       settingsFolders: try SettingsFoldersFixture.make(label: "MCPCompositionTests"), mode: .open,
-      userPresence: userPresence)
+      userPresence: userPresence, agentConflictVersions: InertConflictVersionSource())
   }
 
   /// A config-derived stdio entry that spawns the `mcp-test-server`

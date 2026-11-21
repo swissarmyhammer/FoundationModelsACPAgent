@@ -177,7 +177,8 @@ import Testing
         ? try SettingsGraph(
           store: SettingsStore(settingsFolders: settingsFolders, secretStore: InMemorySecretStore())
         )
-        : nil)
+        : nil,
+      agentConflictVersions: InertConflictVersionSource())
   }
 
   /// Invokes `tools.files.read` on `path` and decodes the wire result
@@ -839,7 +840,8 @@ import Testing
       sessionOperationTools: [
         SessionOperationMount(
           noun: KanbanOperationTool.noun, tool: KanbanOperationTool(KanbanTool(graph: graph)))
-      ])
+      ],
+      agentConflictVersions: InertConflictVersionSource())
 
     let registry = try await ToolCatalog.makeRegistry(context: context).registry
     let surface = try await ToolCatalog.sessionSurface(context: context)

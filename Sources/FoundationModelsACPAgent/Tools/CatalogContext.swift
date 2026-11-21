@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModelsACP
+import FoundationModelsAgents
 import FoundationModelsExtras
 import FoundationModelsMultitool
 import FoundationModelsHooks
@@ -173,6 +174,16 @@ public struct CatalogContext: Sendable {
   /// follow each change of the registry (``SessionMarketplaces``).
   public let marketplaceMount: MarketplaceMount?
 
+  /// The source of the conflict versions of the agent registry of the
+  /// session (``AgentsComposition/makeAgentRegistry(context:marketplaces:)``).
+  ///
+  /// The default source, `FileVersionConflictSource`, adds one
+  /// `NSFileCoordinator` file presenter for each watched root of the
+  /// registry. Each coordinated read of the process takes more time for
+  /// each presenter of the process. A host that makes many sessions in one
+  /// process, for example a test run, gives a source that adds no presenter.
+  public let agentConflictVersions: any AgentConflictVersionSource
+
   /// Makes a catalog context.
   ///
   /// - Parameters:
@@ -220,6 +231,9 @@ public struct CatalogContext: Sendable {
   ///     (the default) for no `mcpServers` tool (``mcpServerRegistry``).
   ///   - marketplaceMount: The marketplace registry of the agent, or `nil`
   ///     (the default) for no registry (``marketplaceMount``).
+  ///   - agentConflictVersions: The source of the conflict versions of the
+  ///     agent registry (``agentConflictVersions``). The default is
+  ///     `FileVersionConflictSource`.
   public init(
     workingDirectory: URL,
     additionalRoots: [URL] = [],
@@ -243,8 +257,10 @@ public struct CatalogContext: Sendable {
     sessionImporter: (any SessionImporter)? = nil,
     modelsEndpoint: ModelsGraph? = nil,
     mcpServerRegistry: MCPServerRegistry? = nil,
-    marketplaceMount: MarketplaceMount? = nil
+    marketplaceMount: MarketplaceMount? = nil,
+    agentConflictVersions: any AgentConflictVersionSource = FileVersionConflictSource()
   ) {
+    self.agentConflictVersions = agentConflictVersions
     self.marketplaceMount = marketplaceMount
     self.modelsEndpoint = modelsEndpoint
     self.mcpServerRegistry = mcpServerRegistry
