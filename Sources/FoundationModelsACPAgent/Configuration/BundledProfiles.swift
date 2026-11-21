@@ -8,24 +8,24 @@ import FoundationModelsRouter
 ///
 /// They are the lowest layer of the profiles, under the user layer and the
 /// project layer (``ProfileStore``), and they are read-only. Each key that a
-/// profile file leaves out takes its value from `large` (``baseName``,
-/// ``ProfileFile``). The profile of a load where no layer sets `profile` is
-/// the largest bundled profile that fits the machine
-/// (``fallbackName(using:)``).
+/// profile file leaves out takes the default of Router's `ProfileDefinition`
+/// (``ProfileFile``), thus each bundled file names only the keys that differ
+/// from those defaults. No bundled file is the base of an other file. The
+/// profile of a load where no layer sets `profile` is the largest bundled
+/// profile that fits the machine (``fallbackName(using:)``).
 ///
 /// The files are part of the library, and the unit tests pin their contents,
 /// thus a file that does not decode is a fault of the build and stops the
 /// process.
 public enum BundledProfiles {
-  /// The name of the bundled profile whose file is the base of the merge of
-  /// each profile file (``baseKeys``).
-  static let baseName = "large"
+  /// The name of the largest bundled profile, the first of ``names``.
+  static let largestName = "large"
 
   /// The name of the profile of a configuration that a caller makes in
   /// code (`ProfileConfiguration()`): `large`. A load where no layer sets
   /// `profile` does not use it: it uses the choice of
   /// ``fallbackName(using:)``.
-  public static let defaultName = baseName
+  public static let defaultName = largestName
 
   /// The name of the smallest bundled profile. It is the choice of
   /// ``fallbackName(using:)`` when no fit can be read.
@@ -71,7 +71,7 @@ public enum BundledProfiles {
   /// profile files do not hold it, because Router's profile has no such
   /// key; the description of each file names the same memory.
   private static let targetMemories = [
-    baseName: "48 GB or more",
+    largestName: "48 GB or more",
     mediumName: "32 GB",
     smallestName: "16 GB or 24 GB",
   ]
@@ -87,19 +87,10 @@ public enum BundledProfiles {
 
   /// The names of the bundled profiles, from the largest to the smallest.
   /// A list shows the profiles in this order.
-  static let names = [baseName, mediumName, smallestName]
+  static let names = [largestName, mediumName, smallestName]
 
   /// The name of the bundled profile between `large` and `small`.
   static let mediumName = "medium"
-
-  /// The keys of the file of ``baseName``: the base of the merge of each
-  /// profile file.
-  static let baseKeys: [String: YAMLValue] = {
-    guard case .dictionary(let keys) = tree(of: baseName) else {
-      preconditionFailure("the bundled profile \(baseName) is not a mapping")
-    }
-    return keys
-  }()
 
   /// The bundled profiles, in the order of ``names``.
   public static let all: [ProfileDefinition] = names.map { name in

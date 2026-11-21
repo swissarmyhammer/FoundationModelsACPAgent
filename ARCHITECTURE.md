@@ -309,7 +309,9 @@ A model profile is a file, `profiles/<name>.yaml`. `ProfileStore` (in
 layers and folders: the project layer of a working directory, then the user layer, then the
 profiles that ship in the resources of the library (`BundledProfiles`). The first layer that has a
 name wins, as a whole file. `ProfileFile` decodes one file as Router's `ProfileDefinition`, with
-each key that the file leaves out taken from the bundled `large`.
+the name of the file as its name. Each key that the file leaves out takes the default of Router's
+`ProfileDefinition` (only `name` has no default); no profile file is the base of another, and each
+bundled file names only the keys that differ from those defaults.
 
 - **The selection.** `profile: <name>` in `config.yaml` selects a profile. `ConfigurationLoader`
   reads the file of the name for the working directory of the load, thus the resolved profile

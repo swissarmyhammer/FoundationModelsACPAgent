@@ -516,12 +516,13 @@ public enum ToolCatalog {
   /// The description of the `models` tool for the model.
   static let modelsToolDescription =
     "Read and change the model profiles with GraphQL. A profile is a file profiles/<name>.yaml in the "
-    + "PROJECT layer, the USER layer or the BUNDLED profiles (large, small); the first layer of a name wins. "
+    + "PROJECT layer, the USER layer or the BUNDLED profiles (large, medium, small); the first layer of a name wins. "
     + "`{ profiles(cwd:) { name layer description selected active downloadBytes state fit } }` gives each "
     + "profile, its layer, its download size, its disk state and if it fits this Mac; "
     + "`{ models { slot repo drafter sizeBytes state active } }` gives the model of each slot of the "
     + "selected profile. `mutation { saveProfile(name:, profile: {standard: [...]}, layer: USER) { name } }` "
-    + "writes a profile file; each key left out takes the value of large. "
+    + "writes a profile file; each key left out takes the default of Router (standard: Qwen3.5 9B; "
+    + "flash: the standard list; kvBits: none, an unquantized KV cache). "
     + "`mutation { deleteProfile(name:, layer: USER) }` deletes one. To select a profile, use the settings "
     + "tool with the key path [\"profile\"] and the name of the profile. A change of a profile, or of the "
     + "selected profile, applies at the next launch of the agent."

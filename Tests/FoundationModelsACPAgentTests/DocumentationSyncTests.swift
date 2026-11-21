@@ -163,10 +163,18 @@ import Testing
   /// profile fails the README test until the README changes too.
   static var defaultProfileModels: [String] {
     BundledProfiles.all.flatMap { profile in
-      (profile.standard + profile.flash + profile.embedding + profile.decision).flatMap {
-        reference in
-        [reference.stringValue] + (reference.drafter.map { [$0.stringValue] } ?? [])
-      }
+      modelIds(of: profile.standard + profile.flash + profile.embedding + profile.decision)
+    }
+  }
+
+  /// The model id of each reference, and the id of its MTP drafter when it
+  /// names one, in order.
+  ///
+  /// - Parameter references: The model references.
+  /// - Returns: The model ids.
+  static func modelIds(of references: [ModelRef]) -> [String] {
+    references.flatMap { reference in
+      [reference.stringValue] + (reference.drafter.map { [$0.stringValue] } ?? [])
     }
   }
 
@@ -177,6 +185,27 @@ import Testing
 
     for model in Self.defaultProfileModels {
       #expect(readme.contains(model), "README names no model \(model)")
+    }
+  }
+
+  /// Every model of the defaults of Router's `ProfileDefinition`, and the
+  /// MTP drafter of each reference that names one: the models of a key that
+  /// a profile file leaves out.
+  static var profileDefaultModels: [String] {
+    modelIds(
+      of: ProfileDefinition.defaultStandardCandidates
+        + ProfileDefinition.defaultEmbeddingCandidates
+        + ProfileDefinition.defaultDecisionCandidates)
+  }
+
+  /// The README names every model of the defaults of a profile file, exactly
+  /// as Router gives them, so a changed default fails this test until the
+  /// README changes too.
+  @Test func readmeNamesEveryDefaultModelOfAProfileFile() throws {
+    let readme = try Self.readmeText()
+
+    for model in Self.profileDefaultModels {
+      #expect(readme.contains(model), "README names no default model \(model)")
     }
   }
 

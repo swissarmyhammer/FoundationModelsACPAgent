@@ -385,8 +385,8 @@ struct ModelsGraphAPI: API {
           Argument("profile", at: \.profile)
             .description(
               "The keys of the profile file: description, standard, flash, embedding, decision, context, "
-                + "decisionContext, kvBits. Each key is optional; a key left out takes the value of the "
-                + "bundled profile large. A slot is a list of models: a string owner/name[/path][@revision], "
+                + "decisionContext, kvBits. Each key is optional; a key left out takes the default of Router's "
+                + "profile definition (flash: the standard list; kvBits: none, an unquantized KV cache). A slot is a list of models: a string owner/name[/path][@revision], "
                 + "or an object {repo, drafter}.")
           Argument("layer", at: \.layer).description("USER or PROJECT. BUNDLED is read-only.")
           Argument("cwd", at: \.cwd).description(cwdDescription)

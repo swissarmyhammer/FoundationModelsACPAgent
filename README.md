@@ -84,7 +84,7 @@ The agent ships three profiles, from the largest to the smallest:
 
 | `profile` | `standard` and `flash` | Download | Target memory |
 |---|---|---|---|
-| `large` | `mlx-community/Qwen3.8-27B-8bit` with its MTP drafter `mlx-community/Qwen3.8-27B-MTP-8bit` | 33.0 GB | 48 GB or more |
+| `large` | `mlx-community/Qwen3.8-27B-8bit` with its MTP drafter `mlx-community/Qwen3.8-27B-MTP-8bit`, and an 8-bit KV cache (`kvBits: 8`) | 33.0 GB | 48 GB or more |
 | `medium` | `mlx-community/Qwen3.8-27B-4bit` with its MTP drafter `mlx-community/Qwen3.8-27B-MTP-4bit`, and an 8-bit KV cache (`kvBits: 8`) | 19.3 GB | 32 GB |
 | `small` | `mlx-community/Qwen3.5-9B-4bit` with its MTP drafter `mlx-community/Qwen3.5-9B-MTP-4bit`, and an 8-bit KV cache (`kvBits: 8`) | 9.1 GB | 16 GB or 24 GB |
 
@@ -126,12 +126,26 @@ flash:
 
 The keys are `description`, `standard`, `flash`, `embedding`, `decision`,
 `context`, `decisionContext` and `kvBits`. Each key is optional. A key that the
-file leaves out takes its value from the shipped profile `large` — not from the
-selected profile, and not from another layer. The merge is by key: a slot of
-the file replaces the slot of `large` as a whole. Thus `decision` defaults to
-Router's `h2o-lightning-4b` GGUF at a decision context of 16384 tokens, and a
-file with only `kvBits: 8` has the models of `large`. A slot is a list of
-models, each a string `owner/name[/path][@revision]` or a mapping
+file leaves out takes the default of Router's `ProfileDefinition` — not a key
+of another profile (a shipped profile included), not of the selected profile,
+and not of another layer:
+
+| Key | Default |
+|---|---|
+| `description` | an empty text |
+| `standard` | `mlx-community/Qwen3.5-9B-4bit` with its MTP drafter `mlx-community/Qwen3.5-9B-MTP-4bit` (`defaultStandardCandidates`) |
+| `flash` | the `standard` list of the same file |
+| `embedding` | `erjigit17/embeddinggemma-300m-ane-coreml` (`defaultEmbeddingCandidates`) |
+| `decision` | the `h2o-lightning-4b` GGUF (`defaultDecisionCandidates`) |
+| `context` | none: the context comes from the model |
+| `decisionContext` | 16384 tokens (`defaultDecisionContext`) |
+| `kvBits` | none: an unquantized KV cache |
+
+Thus an empty file has the models of `small` with an unquantized KV cache, and
+a file with only `standard` uses that model in the `flash` slot too. Each
+shipped profile file names only the keys that differ from the defaults (and
+`small` names its `standard` model, so that the file shows it). A slot is a
+list of models, each a string `owner/name[/path][@revision]` or a mapping
 `{repo, drafter}`. `kvBits` quantizes the KV cache of each language model of
 the profile: `8` or `4`, and no key for an unquantized cache; any other value is
 an error. `context` overrides the working context in tokens; a file
@@ -194,7 +208,7 @@ subcommand, so `acp-agent "write a haiku"` runs a prompt.
 | `acp-agent instructions eject` | Write `Instructions.md` into a layer. |
 | `acp-agent doctor` | Check that this configuration will actually work. |
 | `acp-agent profiles list` | List each profile with its layer (`project`, `user` or `bundled`) and the path of its file. A file that does not decode goes to stderr. `--json` gives the same data as one JSON array. |
-| `acp-agent profiles show <name>` | Print the profile of a name as the text of a profile file, with each key that the file leaves out from `large`. |
+| `acp-agent profiles show <name>` | Print the profile of a name as the text of a profile file, with each key that the file leaves out at the default of Router. |
 | `acp-agent profiles save <name> <file>` | Check a profile file and save it to the user layer, or to the project layer with `--project`. |
 | `acp-agent profiles delete <name>` | Delete the profile file of a name from the user layer, or from the project layer with `--project`. |
 | `acp-agent snapshots list` | List each snapshot folder, with its checkpoint count, the time of its last checkpoint, and `recorded` or `unrecorded`. `--json` gives the same data as one JSON array. |

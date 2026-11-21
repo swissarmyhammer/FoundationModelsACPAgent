@@ -249,6 +249,13 @@ comments:
     - evidence: no file changed. The `kvBits: 8` change of `large.yaml` waits for ^f4z8wj9 (defaults from the profile config type in code, not from `large.yaml`). ^f4z8wj9 is stuck on a question for the user: a code default for `standard` (and `flash`, `embedding`, `description`); see the comments of ^f4z8wj9.
     - next: when the user answers, implement ^f4z8wj9, then add `kvBits: 8` to `large.yaml` with TDD.
   timestamp: 2026-11-21T11:17:44.618222+00:00
+- actor: claude-code
+  id: 01m7z0h311pjw3w4j1sd45ngtg
+  text: |-
+    ### implement — changed
+    - evidence: `large.yaml` has `kvBits: 8` (in the change set of ^f4z8wj9: the merge over `large.yaml` is removed, so the 8-bit KV cache of `large` does not go to other profile files). Test `ProfileFileTests.largeIsTheEightBitModelWithItsDrafterAndAnEightBitKVCache`: RED on the old file, GREEN after. README: the `large` row names the 8-bit KV cache. `medium` and `small` decode as before (their tests pass).
+    - next: /review together with ^f4z8wj9. The full-run failures are on ^j5dys15 (also on the base commit).
+  timestamp: 2026-11-21T12:15:35.457185+00:00
 depends_on:
 - 01M7QPE4FQH8810KJV056R9VP9
 position_column: doing

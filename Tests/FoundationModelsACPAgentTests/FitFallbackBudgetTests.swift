@@ -79,7 +79,7 @@ import Testing
   ///
   /// - Returns: The router.
   static func makeRunnerRouter() throws -> Router {
-    let large = try #require(BundledProfiles.named(BundledProfiles.baseName))
+    let large = try #require(BundledProfiles.named(BundledProfiles.largestName))
     let models = large.standard + large.flash
     let repositories = models.map(\.repo) + models.compactMap(\.drafter?.repo)
     return Router(
@@ -94,7 +94,7 @@ import Testing
   @Test func theChoiceOnTheRunnerBudgetIsNotLarge() async throws {
     let name = await BundledProfiles.fallbackName(using: try Self.makeRunnerRouter())
 
-    #expect(name != BundledProfiles.baseName)
+    #expect(name != BundledProfiles.largestName)
   }
 
   /// The router that chose the fallback resolves it: the choice and the

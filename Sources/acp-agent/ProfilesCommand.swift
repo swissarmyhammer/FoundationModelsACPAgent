@@ -132,7 +132,7 @@ extension AcpAgentCommand {
         abstract: "Print a profile as the text of a profile file.",
         discussion: """
           The text has each key of the profile: a key that its file leaves out has \
-          the value of the bundled profile large.
+          the default of Router's profile definition.
           """)
 
       /// The name of the profile.

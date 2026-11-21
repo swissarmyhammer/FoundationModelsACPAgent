@@ -6,7 +6,9 @@ import Testing
 @testable import FoundationModelsACPAgent
 
 /// The profile files: the three bundled profiles, `large`, `medium` and
-/// `small`, and the decode of one profile file over the bundled `large` profile.
+/// `small`, and the decode of one profile file. A key that a file leaves out
+/// takes the default of Router's `ProfileDefinition`, and not a key of an
+/// other profile.
 @Suite struct ProfileFileTests {
   /// The path that each decode in this suite names in its errors.
   private static let path = "/tmp/profiles/custom.yaml"
@@ -68,13 +70,16 @@ import Testing
     #expect(BundledProfiles.defaultName == "large")
   }
 
-  /// `large` is Qwen3.8 27B at 8 bits with its 8-bit MTP drafter.
-  @Test func largeIsTheEightBitModelWithItsDrafter() throws {
+  /// `large` is Qwen3.8 27B at 8 bits with its 8-bit MTP drafter and an
+  /// 8-bit KV cache. The 8-bit KV cache gives a window of more than the
+  /// minimum of Router on a Mac with 48 GB (task ^wx4ewrs).
+  @Test func largeIsTheEightBitModelWithItsDrafterAndAnEightBitKVCache() throws {
     let expected = Self.profile(
       name: "large",
       description: "Qwen3.8 27B 8-bit with its MTP drafter, for a Mac with 48 GB or more.",
       model: ModelRef(
-        repo: "mlx-community/Qwen3.8-27B-8bit", drafter: "mlx-community/Qwen3.8-27B-MTP-8bit"))
+        repo: "mlx-community/Qwen3.8-27B-8bit", drafter: "mlx-community/Qwen3.8-27B-MTP-8bit"),
+      kvCache: .bits8)
 
     let large = try #require(BundledProfiles.named("large"))
 
@@ -116,22 +121,22 @@ import Testing
 
   // MARK: - The decode of a file
 
-  /// An empty file is the bundled `large` profile under the name of the file.
-  @Test func anEmptyFileIsLargeUnderTheFileName() throws {
-    var expected = BundledProfiles.defaultProfile
-    expected.name = Self.name
+  /// An empty file is the profile of the defaults of Router's
+  /// `ProfileDefinition`, under the name of the file.
+  @Test func anEmptyFileHasTheDefaultsOfRouter() throws {
+    let expected = ProfileDefinition(name: Self.name)
 
     #expect(try Self.encoding(of: Self.decode("")) == Self.encoding(of: expected))
   }
 
-  /// A file that sets one slot replaces that slot as a whole, and keeps each
-  /// other key of `large`.
-  @Test func aSlotOfTheFileReplacesTheSlotOfLarge() throws {
-    var expected = BundledProfiles.defaultProfile
-    expected.name = Self.name
-    expected.standard = ["mlx-community/Qwen3-4B-4bit"]
+  /// A file that names one key gets the default of Router for each other
+  /// key, and not a key of `large.yaml`. The `flash` default is the
+  /// `standard` list of the file.
+  @Test func aFileWithOneKeyGetsTheDefaultsOfRouterForEachOtherKey() throws {
+    let model: ModelRef = "mlx-community/Qwen3-4B-4bit"
+    let expected = ProfileDefinition(name: Self.name, standard: [model])
 
-    let decoded = try Self.decode("standard:\n  - mlx-community/Qwen3-4B-4bit\n")
+    let decoded = try Self.decode("standard:\n  - \(model.repo)\n")
 
     #expect(try Self.encoding(of: decoded) == Self.encoding(of: expected))
   }
@@ -151,7 +156,8 @@ import Testing
     #expect(try Self.decode("kvBits: 4\n").kvCacheQuantization == .bits4)
   }
 
-  /// No `kvBits` gives an unquantized KV cache: `large` names none.
+  /// No `kvBits` gives an unquantized KV cache, also when the bundled
+  /// `large` has `kvBits: 8`.
   @Test func noKVBitsGiveAnUnquantizedKVCache() throws {
     #expect(try Self.decode("").kvCacheQuantization == nil)
   }
@@ -203,7 +209,19 @@ import Testing
     }
   }
 
-  /// The text of a profile decodes back to the same profile.
+  /// The text of a profile with an fp16 KV cache decodes back to the same
+  /// profile: no `kvBits` key in the text gives fp16 again.
+  @Test func theTextOfAnFP16ProfileDecodesBack() throws {
+    let expected = Self.profile(
+      name: Self.name, description: "fp16", model: "mlx-community/Qwen3-4B-4bit")
+
+    let decoded = try Self.decode(ProfileFile.text(of: expected))
+
+    #expect(try Self.encoding(of: decoded) == Self.encoding(of: expected))
+  }
+
+  /// The text of a profile with an 8-bit KV cache decodes back to the same
+  /// profile.
   @Test func theTextOfAProfileDecodesBack() throws {
     let small = try #require(BundledProfiles.named("small"))
     var expected = small

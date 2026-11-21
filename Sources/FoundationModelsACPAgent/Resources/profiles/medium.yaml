@@ -1,12 +1,11 @@
-# The bundled profile `medium`: the model of `large` at 4 bits with an 8-bit
-# KV cache, for a Mac with 32 GB. The 8-bit KV cache gives a window of more
-# than the minimum window of Router on that Mac. Each key that this file
-# leaves out comes from `large`.
+# The bundled profile `medium`: Qwen3.8 27B at 4 bits with an 8-bit KV
+# cache, for a Mac with 32 GB. The 8-bit KV cache gives a window of more than
+# the minimum window of Router on that Mac. Each key that this file leaves
+# out takes the default of Router's `ProfileDefinition`: `flash` is the
+# `standard` list, and `embedding`, `decision` and `decisionContext` are the
+# defaults of Router.
 description: Qwen3.8 27B 4-bit with its MTP drafter, for a Mac with 32 GB.
 standard:
-  - repo: mlx-community/Qwen3.8-27B-4bit
-    drafter: mlx-community/Qwen3.8-27B-MTP-4bit
-flash:
   - repo: mlx-community/Qwen3.8-27B-4bit
     drafter: mlx-community/Qwen3.8-27B-MTP-4bit
 kvBits: 8

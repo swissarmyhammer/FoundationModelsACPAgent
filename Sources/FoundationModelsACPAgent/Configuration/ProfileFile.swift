@@ -49,12 +49,10 @@ public enum ProfileFileError: Error, Equatable, Sendable, CustomStringConvertibl
 /// One profile file, `<name>.yaml` in a `profiles` folder: Router's
 /// `ProfileDefinition` in YAML, with the name of the file as its name.
 ///
-/// Each key is optional. A key that the file leaves out takes the value of
-/// the bundled base profile `large` (``BundledProfiles/baseName``), and not of
-/// the selected profile or of an other layer. The merge is at the top level:
-/// a slot of the file replaces the slot of the base profile as a whole. A
-/// key that a profile does not have, and a value that does not decode, are
-/// errors that name the file.
+/// Each key is optional. A key that the file leaves out takes the default of
+/// Router's `ProfileDefinition`, and never a key of an other profile, of the
+/// selected profile or of an other layer. A key that a profile does not have,
+/// and a value that does not decode, are errors that name the file.
 enum ProfileFile {
   /// The extension of a profile file.
   static let fileExtension = "yaml"
@@ -94,7 +92,9 @@ enum ProfileFile {
     return try definition(of: tree, name: name, path: path)
   }
 
-  /// Decodes the tree of a profile file over the bundled default profile.
+  /// Decodes the tree of a profile file as Router's `ProfileDefinition`,
+  /// with the name of the file as its name. Router gives the default of
+  /// each key that the file leaves out.
   ///
   /// - Parameters:
   ///   - tree: The tree of the file. `.null` is an empty file.
@@ -105,11 +105,10 @@ enum ProfileFile {
   static func definition(of tree: YAMLValue, name: String, path: String) throws(ProfileFileError)
     -> ProfileDefinition
   {
-    let keys = try checkedKeys(of: tree, name: name, path: path)
-    var merged = BundledProfiles.baseKeys.merging(keys) { _, fileValue in fileValue }
-    merged[nameKey] = .string(name)
+    var keys = try checkedKeys(of: tree, name: name, path: path)
+    keys[nameKey] = .string(name)
     do {
-      return try YAMLValue.dictionary(merged).decoded(as: ProfileDefinition.self)
+      return try YAMLValue.dictionary(keys).decoded(as: ProfileDefinition.self)
     } catch {
       throw .invalidValue(path: path, message: String(describing: error))
     }

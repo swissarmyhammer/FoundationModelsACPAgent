@@ -36,6 +36,58 @@ comments:
     - The request went to the session foundationmodelsrouter-f1 (proposals: flash = the standard list when absent; embedding = erjigit17/embeddinggemma-300m-ane-coreml; description = empty; standard = a model constant that Router names on its own terms, not "large"; kvBits absent = fp16; encode then decode gives the same definition).
     - Next in this repository, after the Router sha: remove the merge over large.yaml (BundledProfiles.baseKeys in ProfileFile), state the keys that differ from the Router defaults in each bundled file, add kvBits 8 to large.yaml, and update the docs and tests.
   timestamp: 2026-11-21T11:33:01.156894+00:00
+- actor: claude-code
+  id: 01m7z01rw6g3mt3xgjyb32afxf
+  text: |-
+    Implementation (2026-11-21), after the user decision: each key has a default in Router's `ProfileDefinition` (Router origin/main e221cbdd).
+
+    Pin: `swift package update FoundationModelsRouter` gives Router e221cbd (`Package.resolved`, gitignored). Extras 49c6965 and Multitool d8863fb did not move. No llama.cpp clone in the root package.
+
+    The defaults (all from Router, in one place: `ProfileDefinition`; this repository adds no default of its own):
+    - `name`: required; the file name gives it.
+    - `description`: `defaultDescription`, an empty text.
+    - `standard`: `defaultStandardCandidates`, Qwen3.5-9B-4bit with the drafter Qwen3.5-9B-MTP-4bit (it fits the 16 GB floor).
+    - `flash`: the `standard` list of the same profile.
+    - `embedding`: `defaultEmbeddingCandidates`, erjigit17/embeddinggemma-300m-ane-coreml.
+    - `decision`: `defaultDecisionCandidates` (h2o-lightning-4b GGUF); `context`: none (from the model); `decisionContext`: 16384; `kvBits`: no key, fp16.
+
+    Code:
+    - `ProfileFile.definition(of:name:path:)` decodes the keys of the file directly as Router's `ProfileDefinition` with `name` = the file name. The merge over `large.yaml` is removed. An unknown key, a wrong `name` and a bad value stay errors that name the file (the tests of these did not change and pass).
+    - `BundledProfiles.baseKeys` is removed. `baseName` is now `largestName` (it is no longer a base); `defaultName` is still `large`.
+    - The bundled files name only the keys that differ from the defaults: `description`, `standard` and `kvBits: 8` in each. `flash`, `embedding`, `decision` and `decisionContext` are removed, because they are equal to the defaults. My choice: `small.yaml` names its `standard` model, also though it is the default, so that the file shows its model (the header comment says so).
+    - `large.yaml` has `kvBits: 8` (^wx4ewrs).
+    - Texts: README (a table of the defaults; the `large` row names the 8-bit KV cache; `profiles show`), ARCHITECTURE.md (Profiles), the doc comments of `ProfileFile` and `BundledProfiles`, the help of `profiles show`, the `saveProfile` argument description of the `models` endpoint, and the `models` tool description. The `models` tool description also named the bundled profiles as "(large, small)"; it now says "(large, medium, small)".
+    - `DocumentationSyncTests`: new test `readmeNamesEveryDefaultModelOfAProfileFile` (the README names each model of Router's defaults). It passed at the first run, because the README names those models already; it holds the README to a later change of a default. The repeated id closure is now one helper `modelIds(of:)`.
+
+    TDD:
+    - RED 1 (old code, new Router): `anEmptyFileHasTheDefaultsOfRouter`, `aFileWithOneKeyGetsTheDefaultsOfRouterForEachOtherKey` and `largeIsTheEightBitModelWithItsDrafterAndAnEightBitKVCache` failed.
+    - RED 2 (`kvBits: 8` in `large.yaml`, merge still there): `noKVBitsGiveAnUnquantizedKVCache` and the new `theTextOfAnFP16ProfileDecodesBack` failed. This shows that they catch the inheritance from `large`.
+    - GREEN (merge removed): ProfileFileTests 30 of 30 pass.
+
+    Checks:
+    - Tests that write a file with only `kvBits` or only `description` (`aFileWithKVBitsAloneIsValid`, `ProfileStoreTests` `description: mine`) still pass: Router gives each other key.
+    - `DefaultProfileChoiceTests` use a fake fit source; `FitFallbackBudgetTests` assert "not `large`" and "the same router resolves its choice". Both still describe the right behavior and pass.
+
+    IntegrationTests package: NOT BUILT. `swift build --package-path IntegrationTests --build-tests` made fresh checkouts in `IntegrationTests/.build`, and git started a submodule clone of `https://github.com/ggml-org/llama.cpp.git` into `llama-cpp-swift`. I stopped the build at once (the instruction says stop on a llama.cpp clone). Its pin of Router is still 95c2141. A person decides if the clone may run.
+  timestamp: 2026-11-21T12:07:13.542972+00:00
+- actor: claude-code
+  id: 01m7z0h0p8dhs7wd8vffp6edzm
+  text: |-
+    ### implement — changed
+    - evidence: 13 files — Sources/FoundationModelsACPAgent/Configuration/ProfileFile.swift, Sources/FoundationModelsACPAgent/Configuration/BundledProfiles.swift, Sources/FoundationModelsACPAgent/Resources/profiles/{large,medium,small}.yaml, Sources/FoundationModelsACPAgent/Models/ModelsGraph.swift, Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift, Sources/acp-agent/ProfilesCommand.swift, README.md, ARCHITECTURE.md, Tests/FoundationModelsACPAgentTests/{ProfileFileTests,DocumentationSyncTests,FitFallbackBudgetTests}.swift. Router pin e221cbd. RED 1, RED 2, GREEN as in the comment above; ProfileFileTests 30/30, the 5 profile and doc suites 57/57.
+    - full root `swift test` (after "Build complete!"): exit 1. Failures only in MCP stdio connect tests (ToolModeTests, MCPCompositionTests) and AgentCatalogWatchTests (time limit). The base commit a844424 without this change fails the same tests in a full run (checked with the change set aside, then restored); each suite passes alone. New card ^j5dys15 records them. Thus card test 5 stays open.
+    - IntegrationTests: not built. Its build started a llama.cpp submodule clone; I stopped it at once. Its Router pin is still 95c2141.
+    - next: a person decides on the llama.cpp clone of the IntegrationTests package; ^j5dys15 for the full-run failures; then /review.
+  timestamp: 2026-11-21T12:15:33.064460+00:00
+- actor: claude-code
+  id: 01m7z0j3nwh5tr2b0wqk4x27k8
+  text: |-
+    ### implement — stuck
+    - correction of the record above: the code work is complete (13 files changed), but two required checks are not complete, so the outcome is stuck, not changed.
+    - gap 1: the IntegrationTests package is not built. Its build starts a llama.cpp submodule clone (fresh checkouts in IntegrationTests/.build), and the order says stop on a llama.cpp clone. A person decides if the clone can run (or if IntegrationTests/.build can use the checkouts of the root package).
+    - gap 2: the full root `swift test` is not green. The failures (MCP stdio connect tests, AgentCatalogWatchTests) are also on the base commit a844424 without this change; ^j5dys15 records them.
+    - next: the decision on the clone; then build IntegrationTests (update its Router pin if needed) and /review.
+  timestamp: 2026-11-21T12:16:08.892379+00:00
 position_column: doing
 position_ordinal: '8280'
 title: A profile file takes its defaults from the profile config type, not from large.yaml; then large gets kvBits 8
@@ -56,8 +108,8 @@ User decision, 2026-11-21: "inheriting from large is a bad choice, there should 
 
 ## Tests
 
-- [ ] A profile file with no `kvBits` key decodes with an fp16 KV cache, also when `large` has `kvBits: 8`.
-- [ ] A profile file that names only one key gets the code defaults for each other key, not the keys of `large.yaml`.
-- [ ] The bundled `large` decodes with an 8-bit KV cache; `medium` and `small` decode as before.
-- [ ] A saved fp16 profile and a saved 8-bit profile load back the same.
+- [x] A profile file with no `kvBits` key decodes with an fp16 KV cache, also when `large` has `kvBits: 8`.
+- [x] A profile file that names only one key gets the code defaults for each other key, not the keys of `large.yaml`.
+- [x] The bundled `large` decodes with an 8-bit KV cache; `medium` and `small` decode as before.
+- [x] A saved fp16 profile and a saved 8-bit profile load back the same.
 - [ ] `swift test` passes, and the CI integration job is green after the push. #profiles #d203

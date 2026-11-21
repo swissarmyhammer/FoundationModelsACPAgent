@@ -1,14 +1,11 @@
-# The bundled profile `large`, the default profile of the agent. A key that
-# a profile file leaves out takes its value from this file.
+# The bundled profile `large`: Qwen3.8 27B at 8 bits with an 8-bit KV cache,
+# for a Mac with 48 GB or more. The 8-bit KV cache gives a window of more
+# than the minimum window of Router on that Mac. Each key that this file
+# leaves out takes the default of Router's `ProfileDefinition`: `flash` is
+# the `standard` list, and `embedding`, `decision` and `decisionContext` are
+# the defaults of Router.
 description: Qwen3.8 27B 8-bit with its MTP drafter, for a Mac with 48 GB or more.
 standard:
   - repo: mlx-community/Qwen3.8-27B-8bit
     drafter: mlx-community/Qwen3.8-27B-MTP-8bit
-flash:
-  - repo: mlx-community/Qwen3.8-27B-8bit
-    drafter: mlx-community/Qwen3.8-27B-MTP-8bit
-embedding:
-  - erjigit17/embeddinggemma-300m-ane-coreml
-decision:
-  - h2oai/h2o-lightning-4b-gguf/h2o-lightning-4b-Q4_K_M.gguf@61f8d8b7a8c2d84426d0d143ca187f65d235934b
-decisionContext: 16384
+kvBits: 8
