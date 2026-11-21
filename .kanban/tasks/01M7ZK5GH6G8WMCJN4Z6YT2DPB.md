@@ -65,8 +65,19 @@ comments:
     - evidence: `swift build --build-tests` gave "Build complete!"; BlockingFileReadsTests + AgentRegistryFixtureTests: 5 tests passed; full root `swift test`: 2747 tests in 290 suites passed, 0 failures, 0 warnings (1 known issue is the deliberate `withKnownIssue` of HarnessSmokeTests). Files: Support/CooperativePoolReadRecorder.swift (new), Support/ProbingConflictVersionSource.swift, BlockingFileReadsTests.swift.
     - next: review again. Not committed.
   timestamp: 2026-11-21T18:06:05.597950+00:00
-position_column: review
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m7zmm14qkv7gx841b7gyz43s
+  text: 'Request for FoundationModelsAgents (2026-11-21): the reads that this repository cannot move (the reload tasks of the watcher and the conflict source, and the writes of the agents tool) need a change in FoundationModelsAgents. No FoundationModelsAgents session runs. The `sah --cwd` card write on its board hung for 5 minutes and made no card, so I stopped it. The request is in the brief `/Users/wballard/github/swissarmyhammer/.briefs/foundationmodelsagents-coordinated-reads-off-pool.md` for the next session of that repository.'
+  timestamp: 2026-11-21T18:06:43.351664+00:00
+- actor: claude-code
+  id: 01m7zmmzykz3cyv5dbr47cxgnt
+  text: |-
+    ### review — clean
+    - evidence: `review sha 6b5b7a3~1..6b5b7a3` (HEAD~1..HEAD); 3 files reviewed; 0 findings (0 confirmed, 0 refuted). The item of the 12:01 section is checked.
+    - next: none. The task is in done.
+  timestamp: 2026-11-21T18:07:14.899439+00:00
+position_column: done
+position_ordinal: ffffffbc80
 title: The session open path blocks a cooperative thread on a synchronous NSFileCoordinator read, and test sessions leak agent registries
 ---
 Found on 2026-11-21 during ^j5dys15.
