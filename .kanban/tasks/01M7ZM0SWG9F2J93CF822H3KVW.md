@@ -33,8 +33,15 @@ comments:
     - evidence: 2 files — Tests/FoundationModelsACPAgentTests/FailedSessionCompositionTests.swift (`liveStreamsAfterFailure` now has `defer { hold.release(); failed.cancel() }` right after it makes the task, so each exit path releases the hold and cancels the composition task; this was the only unstructured task in the file), Tests/FoundationModelsACPAgentTests/Support/ReloadHold.swift (`release()` now opens the hold for good and does nothing on a second call; it also signals `reloadEntered`, so a first build that still waits for the reload continues when a test ends early). `swift test --skip-build --filter FailedSessionCompositionTests` after "Build complete!": 3 passed. Full root `swift test --skip-build`: 2750 tests in 291 suites passed, 0 failures (1 known issue, from an earlier test).
     - next: /review again.
   timestamp: 2026-11-21T18:25:01.513818+00:00
-position_column: review
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m7znqekbew6dfe6rcq5vyw5d
+  text: |-
+    ### review — clean
+    - evidence: `review sha c5d15e7~1..c5d15e7` (HEAD~1..HEAD); 2 files reviewed; 0 findings (0 confirmed, 0 refuted). The item of the 12:20 section is checked.
+    - next: none. The task is in done.
+  timestamp: 2026-11-21T18:26:04.011583+00:00
+position_column: done
+position_ordinal: ffffffbd80
 title: A session composition that fails after the agent registry load leaves the registry watching
 ---
 Found on 2026-11-21 during ^6yt2dpb.
