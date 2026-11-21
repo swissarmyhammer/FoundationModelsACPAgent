@@ -285,7 +285,8 @@ import Testing
 
   /// The agent catalog of a session over `cwd`: the agent registry that the
   /// session composition makes, over the catalog context of
-  /// ``CatalogRegistryFixture``, loaded.
+  /// ``CatalogRegistryFixture``, loaded and stopped
+  /// (``AgentRegistryFixture/loadedCatalog(of:)``).
   ///
   /// - Parameter cwd: The working directory.
   /// - Returns: The catalog.
@@ -293,9 +294,8 @@ import Testing
   private static func makeCatalog(workingDirectory cwd: URL) async throws -> AgentCatalog {
     let context = try await CatalogRegistryFixture.makeContext(
       workingDirectory: cwd, configuration: AgentConfiguration())
-    let registry = AgentsComposition.makeAgentRegistry(context: context, marketplaces: nil)
-    try await registry.load()
-    return registry.catalog()
+    return try await AgentRegistryFixture.loadedCatalog(
+      of: AgentsComposition.makeAgentRegistry(context: context, marketplaces: nil))
   }
 
   /// Resolves the agent of a new session over `cwd` with no catalog layer
@@ -309,7 +309,7 @@ import Testing
   private static func resolve(in cwd: URL, requested: String?) async throws
     -> ResolvedSessionAgent
   {
-    try SessionAgentResolution.resolve(
+    try await SessionAgentResolution.resolve(
       requested: requested, catalog: try await makeCatalog(workingDirectory: cwd),
       workingDirectory: cwd, layerRoots: [])
   }

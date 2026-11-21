@@ -69,6 +69,16 @@ struct ResolvedSessionAgent: Sendable {
 ///   folder. That id is always valid, also for a name with spaces or other
 ///   characters that an id does not allow.
 enum SessionAgentResolution {
+  /// Reads the root `AGENT.md` of a folder as the agent with an id: the
+  /// folder, then the id of the agent.
+  typealias RootAgentReader = @Sendable (_ folder: URL, _ id: String) -> RootAgentLoad
+
+  /// The reader of a session: `AgentRegistry.rootAgent(in:id:)`, a
+  /// coordinated read of the file.
+  static let coordinatedRootAgentReader: RootAgentReader = { folder, id in
+    AgentRegistry.rootAgent(in: folder, id: id)
+  }
+
   /// The maximum count of characters in an agent id.
   static let maximumIDLength = 64
 
@@ -96,15 +106,19 @@ enum SessionAgentResolution {
   ///   - catalog: The agent catalog of the session.
   ///   - workingDirectory: The working directory of the session.
   ///   - layerRoots: The root of each local layer of the agent catalog.
+  ///   - readRootAgent: The reader of the `AGENT.md` of the working
+  ///     directory. The default is ``coordinatedRootAgentReader``.
   /// - Returns: The agent of the session.
   /// - Throws: `RequestError.invalidConfigOptionValue(id:)` when no agent
   ///   that a user can start has the id `requested`.
   static func resolve(
-    requested: String?, catalog: AgentCatalog, workingDirectory: URL, layerRoots: [URL]
-  ) throws -> ResolvedSessionAgent {
+    requested: String?, catalog: AgentCatalog, workingDirectory: URL, layerRoots: [URL],
+    readRootAgent: @escaping RootAgentReader = coordinatedRootAgentReader
+  ) async throws -> ResolvedSessionAgent {
     guard let requested else {
-      return resolveUnselected(
-        catalog: catalog, workingDirectory: workingDirectory, layerRoots: layerRoots)
+      return await resolveUnselected(
+        catalog: catalog, workingDirectory: workingDirectory, layerRoots: layerRoots,
+        readRootAgent: readRootAgent)
     }
     guard let agent = catalogAgent(id: requested, source: .option, in: catalog) else {
       throw RequestError.invalidConfigOptionValue(id: ConfigOptions.agentOptionId)
@@ -121,17 +135,20 @@ enum SessionAgentResolution {
   ///   - catalog: The agent catalog of the session.
   ///   - workingDirectory: The working directory of the session.
   ///   - layerRoots: The root of each local layer of the agent catalog.
+  ///   - readRootAgent: The reader of the `AGENT.md` of the working
+  ///     directory. The default is ``coordinatedRootAgentReader``.
   /// - Returns: The agent of the session.
   static func restore(
     _ choice: SessionAgentChoice, catalog: AgentCatalog, workingDirectory: URL,
-    layerRoots: [URL]
-  ) -> ResolvedSessionAgent {
+    layerRoots: [URL], readRootAgent: @escaping RootAgentReader = coordinatedRootAgentReader
+  ) async -> ResolvedSessionAgent {
     let restored: ResolvedSessionAgent?
     switch choice.source {
     case .option, .defaultAgent:
       restored = catalogAgent(id: choice.id, source: choice.source, in: catalog)
     case .workingDirectory:
-      restored = workingDirectoryAgent(in: workingDirectory, id: choice.id)
+      restored = await workingDirectoryAgent(
+        in: workingDirectory, id: choice.id, readRootAgent: readRootAgent)
     }
     if let restored {
       return restored
@@ -139,18 +156,22 @@ enum SessionAgentResolution {
     ACPAgentTelemetry.logger(.sessionResume).warning(
       "The recorded agent of the session is gone. The session gets the agent of a new session.",
       metadata: [ACPAgentTelemetry.LogMetadataKey.agentID: "\(choice.id)"])
-    return resolveUnselected(
-      catalog: catalog, workingDirectory: workingDirectory, layerRoots: layerRoots)
+    return await resolveUnselected(
+      catalog: catalog, workingDirectory: workingDirectory, layerRoots: layerRoots,
+      readRootAgent: readRootAgent)
   }
 
   /// The agent of a session when the client gives no `agent` option: the
   /// `AGENT.md` of the working directory, else the default agent, else the
   /// builtin floor.
   private static func resolveUnselected(
-    catalog: AgentCatalog, workingDirectory: URL, layerRoots: [URL]
-  ) -> ResolvedSessionAgent {
+    catalog: AgentCatalog, workingDirectory: URL, layerRoots: [URL],
+    readRootAgent: @escaping RootAgentReader
+  ) async -> ResolvedSessionAgent {
     let id = workingDirectoryAgentID(of: workingDirectory, layerRoots: layerRoots)
-    if let agent = workingDirectoryAgent(in: workingDirectory, id: id) {
+    if let agent = await workingDirectoryAgent(
+      in: workingDirectory, id: id, readRootAgent: readRootAgent)
+    {
       return agent
     }
     return ResolvedSessionAgent(
@@ -184,14 +205,19 @@ enum SessionAgentResolution {
   /// The root `AGENT.md` of the working directory as the agent `id`. Each
   /// diagnostic of the read goes to the log as a warning.
   ///
+  /// The read is a coordinated read, which can wait for a file presenter or
+  /// a sync engine. Thus it runs off the cooperative pool
+  /// (``BlockingFileReads/read(_:)``).
+  ///
   /// - Parameters:
   ///   - workingDirectory: The working directory of the session.
   ///   - id: The id of the agent.
+  ///   - readRootAgent: The reader of the `AGENT.md`.
   /// - Returns: The agent, or `nil` when the folder has no valid `AGENT.md`.
-  private static func workingDirectoryAgent(in workingDirectory: URL, id: String)
-    -> ResolvedSessionAgent?
-  {
-    let load = AgentRegistry.rootAgent(in: workingDirectory, id: id)
+  private static func workingDirectoryAgent(
+    in workingDirectory: URL, id: String, readRootAgent: @escaping RootAgentReader
+  ) async -> ResolvedSessionAgent? {
+    let load = await BlockingFileReads.read { readRootAgent(workingDirectory, id) }
     for diagnostic in load.diagnostics {
       ACPAgentTelemetry.logger(.session).warning(
         "The AGENT.md of the working directory has a problem: \(diagnostic)")

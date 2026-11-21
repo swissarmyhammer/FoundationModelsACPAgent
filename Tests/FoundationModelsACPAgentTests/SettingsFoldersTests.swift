@@ -595,7 +595,8 @@ struct SettingsFoldersTests {
   }
 
   /// The agent catalog that the session composition loads over the folders
-  /// of `fixture`.
+  /// of `fixture`. The registry stops after the load
+  /// (``AgentRegistryFixture/loadedCatalog(of:)``).
   ///
   /// - Parameters:
   ///   - fixture: The folders of the test.
@@ -607,9 +608,8 @@ struct SettingsFoldersTests {
     -> AgentCatalog
   {
     let context = try await catalogContext(of: fixture, hasRoot: hasRoot)
-    let registry = AgentsComposition.makeAgentRegistry(context: context, marketplaces: nil)
-    try await registry.load()
-    return registry.catalog()
+    return try await AgentRegistryFixture.loadedCatalog(
+      of: AgentsComposition.makeAgentRegistry(context: context, marketplaces: nil))
   }
 
   /// The id and the document path of each agent of `catalog`, in catalog

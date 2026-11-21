@@ -82,6 +82,7 @@ import Testing
   // MARK: - The mounted tool
 
   /// Builds the session surface over a workspace that holds the library.
+  /// The caller shuts the surface down, so its agent registry stops to watch.
   ///
   /// - Parameters:
   ///   - label: The directory label of the calling test.
@@ -124,6 +125,7 @@ import Testing
     #expect(tool.description.contains("- \(Self.releaseNotesID):"))
     #expect(!tool.description.contains(Self.hiddenID))
     #expect(tool.description.contains(#"{"op": "use skill", "id": "<id>"}"#))
+    await surface.shutdown()
   }
 
   /// The `id` parameter is a plain string with no enum, so that a skill
@@ -142,6 +144,7 @@ import Testing
     #expect(id["enum"] == nil)
     #expect(!schema.contains(Self.exploreID))
     #expect(!schema.contains(Self.hiddenID))
+    await surface.shutdown()
   }
 
   // MARK: - A prompt that loads a skill

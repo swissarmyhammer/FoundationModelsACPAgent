@@ -1244,7 +1244,7 @@ extension RoutedACPAgent {
     let agentRegistry = try await AgentsComposition.loadedAgentRegistry(
       context: catalogContext, marketplaces: marketplaces)
     let catalog = agentRegistry.catalog()
-    let resolvedAgent = try resolveSessionAgent(
+    let resolvedAgent = try await resolveSessionAgent(
       in: catalog, requested: requestedAgent, resuming: resumedSessionId,
       workingDirectory: workingDirectory, transcriptRoot: context.transcriptRoot)
 

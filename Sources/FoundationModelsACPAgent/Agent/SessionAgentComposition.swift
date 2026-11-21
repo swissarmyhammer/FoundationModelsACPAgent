@@ -54,20 +54,19 @@ extension RoutedACPAgent {
     resuming resumedSessionId: SessionId?,
     workingDirectory: URL,
     transcriptRoot: URL
-  ) throws -> ResolvedSessionAgent {
+  ) async throws -> ResolvedSessionAgent {
     let layerRoots = settingsFolders.stack(for: .agents, workingDirectory: workingDirectory)
       .layers.map(\.root)
     let recorded = resumedSessionId.flatMap { id in
       SessionAgentStore.choice(of: id, in: transcriptRoot)
     }
-    return
-      try recorded.map { choice in
-        SessionAgentResolution.restore(
-          choice, catalog: catalog, workingDirectory: workingDirectory, layerRoots: layerRoots)
-      }
-      ?? SessionAgentResolution.resolve(
+    guard let recorded else {
+      return try await SessionAgentResolution.resolve(
         requested: requested, catalog: catalog, workingDirectory: workingDirectory,
         layerRoots: layerRoots)
+    }
+    return await SessionAgentResolution.restore(
+      recorded, catalog: catalog, workingDirectory: workingDirectory, layerRoots: layerRoots)
   }
 
   /// Renders the instructions of the resolved agent of one session.

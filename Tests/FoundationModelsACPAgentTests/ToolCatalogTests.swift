@@ -223,6 +223,7 @@ import Testing
 
     #expect(loaded.configuration.tools.skills == SkillsToolOptions())
     #expect(surface.tools.map(\.name) == MountOrder.defaultToolNames)
+    await surface.shutdown()
   }
 
   // MARK: The profile embedder
@@ -253,6 +254,7 @@ import Testing
     try await Self.searchOnce(on: surface)
 
     #expect(embedder.batches == [catalogTexts])
+    await surface.shutdown()
   }
 
   /// Two open sessions of one profile share one catalog embed. Each session
@@ -797,6 +799,7 @@ import Testing
     let names = surface.tools.map(\.name)
     #expect(names == MountOrder.defaultToolNames)
     #expect(!names.contains(SettingsGraph.endpointName))
+    await surface.shutdown()
   }
 
   /// A call of the `settings` verb through the registry with no `cwd`
@@ -850,6 +853,7 @@ import Testing
     #expect(paths == [Self.kanbanVerbPath])
     #expect(surface.tools.map(\.name) == MountOrder.defaultToolNames)
     #expect(surface.graphQLEndpoints.contains { $0.name == KanbanOperationTool.noun })
+    await surface.shutdown()
   }
 
   /// The kanban verb takes the parameters of the shared GraphQL arguments,

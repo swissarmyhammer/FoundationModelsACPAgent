@@ -284,6 +284,12 @@ enum AgentsComposition {
   /// session agent comes from the catalog of this registry, and the
   /// template values of the skills follow the keys of that agent.
   ///
+  /// The build of the load reads each agent file with a coordinated read,
+  /// synchronously, in the task of the caller. Thus the load runs with the
+  /// queue of ``BlockingFileReads`` as its task executor
+  /// (``BlockingFileReads/withReadExecutor(_:)``), and a slow read holds no
+  /// thread of the cooperative pool.
+  ///
   /// - Parameters:
   ///   - context: The session whose folders give the stack.
   ///   - marketplaces: The marketplace layers of the session, or `nil`.
@@ -293,7 +299,7 @@ enum AgentsComposition {
     context: CatalogContext, marketplaces: SessionMarketplaces?
   ) async throws -> AgentRegistry {
     let registry = makeAgentRegistry(context: context, marketplaces: marketplaces)
-    try await registry.load()
+    try await BlockingFileReads.withReadExecutor { try await registry.load() }
     return registry
   }
 
