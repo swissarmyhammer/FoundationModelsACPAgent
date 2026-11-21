@@ -95,8 +95,15 @@ comments:
     - evidence: `review sha d5628d6~1..d5628d6` (HEAD~1..HEAD); 8 files reviewed; 1 finding (1 confirmed, 0 refuted): Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift:525. The three bundled profile files were read against the card and Router e221cbdd: no finding. Test item 5 is an orchestrator step, not a finding.
     - next: Correct the item in the "Review Findings (2026-11-21 11:10)" section. Then do the review again. The task stays in review.
   timestamp: 2026-11-21T17:12:51.410840+00:00
-position_column: review
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m7zhxdfbp4835szjr67x20f4
+  text: |-
+    ### review — clean
+    - evidence: `review sha 4a9f598~1..4a9f598` (HEAD~1..HEAD); 2 files reviewed; 0 findings (0 confirmed, 0 refuted). The item of the 11:10 section is checked. Test item 5 (`swift test` and CI) is an orchestrator step, not a review finding.
+    - next: Push to origin/main and make sure that the CI integration job is green (test item 5).
+  timestamp: 2026-11-21T17:19:25.163560+00:00
+position_column: done
+position_ordinal: ffffffb980
 title: A profile file takes its defaults from the profile config type, not from large.yaml; then large gets kvBits 8
 ---
 User decision, 2026-11-21: "inheriting from large is a bad choice, there should be defaults in the config objects, but assuming large as the default is a mistake". This replaces the rule of ^eq7gjw2 (2026-11-17) that a key that a profile file leaves out comes from the bundled `large`.
