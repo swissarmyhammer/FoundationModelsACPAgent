@@ -26,8 +26,15 @@ comments:
     - Follow-up: ^0rma59k (a failed `makeRegistry` leaves the connected MCP servers running).
     - next: /review.
   timestamp: 2026-11-21T18:38:04.241349+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m7zpjpj126xft3ccza36kpmm
+  text: |-
+    ### review — clean
+    - evidence: `review sha 4e07ab4~1..4e07ab4` (HEAD~1..HEAD); 7 files reviewed; 0 findings (0 confirmed, 1 refuted). The card has no earlier review findings.
+    - next: none. The task is in done.
+  timestamp: 2026-11-21T18:40:56.897129+00:00
+position_column: done
+position_ordinal: ffffffbe80
 title: A failed session surface leaves the skills registry, the marketplaces and the built surface parts running
 ---
 Found on 2026-11-21 during ^22h3kvw.
