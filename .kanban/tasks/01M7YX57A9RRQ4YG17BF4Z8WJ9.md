@@ -88,8 +88,15 @@ comments:
     - gap 2: the full root `swift test` is not green. The failures (MCP stdio connect tests, AgentCatalogWatchTests) are also on the base commit a844424 without this change; ^j5dys15 records them.
     - next: the decision on the clone; then build IntegrationTests (update its Router pin if needed) and /review.
   timestamp: 2026-11-21T12:16:08.892379+00:00
-position_column: doing
-position_ordinal: '8280'
+- actor: claude-code
+  id: 01m7zhhcyjhvmpg5v06r25vqmg
+  text: |-
+    ### review — findings
+    - evidence: `review sha d5628d6~1..d5628d6` (HEAD~1..HEAD); 8 files reviewed; 1 finding (1 confirmed, 0 refuted): Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift:525. The three bundled profile files were read against the card and Router e221cbdd: no finding. Test item 5 is an orchestrator step, not a finding.
+    - next: Correct the item in the "Review Findings (2026-11-21 11:10)" section. Then do the review again. The task stays in review.
+  timestamp: 2026-11-21T17:12:51.410840+00:00
+position_column: review
+position_ordinal: '80'
 title: A profile file takes its defaults from the profile config type, not from large.yaml; then large gets kvBits 8
 ---
 User decision, 2026-11-21: "inheriting from large is a bad choice, there should be defaults in the config objects, but assuming large as the default is a mistake". This replaces the rule of ^eq7gjw2 (2026-11-17) that a key that a profile file leaves out comes from the bundled `large`.
@@ -113,3 +120,23 @@ User decision, 2026-11-21: "inheriting from large is a bad choice, there should 
 - [x] The bundled `large` decodes with an 8-bit KV cache; `medium` and `small` decode as before.
 - [x] A saved fp16 profile and a saved 8-bit profile load back the same.
 - [ ] `swift test` passes, and the CI integration job is green after the push. #profiles #d203
+
+## Review Findings (2026-11-21 11:10)
+
+> Scope: `review sha d5628d6~1..d5628d6` — reviewed the diffs only — lines this change added or modified. 8 file(s) reviewed, 11 not reviewed.
+
+> 6 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 6 file(s)
+
+> 5 file(s) not reviewed — no validator matched:
+> - `ARCHITECTURE.md` — no validator matches this file
+> - `README.md` — no validator matches this file
+> - `Sources/FoundationModelsACPAgent/Resources/profiles/large.yaml` — no validator matches this file
+> - `Sources/FoundationModelsACPAgent/Resources/profiles/medium.yaml` — no validator matches this file
+> - `Sources/FoundationModelsACPAgent/Resources/profiles/small.yaml` — no validator matches this file
+
+> The three bundled profile files were also read against this card and Router e221cbdd (`ProfileDefinition`), as the coordinator told. No finding: each file names `description`, `standard` and `kvBits: 8`. The keys that the change removed (`flash`, `embedding`, `decision`, `decisionContext`) are equal to the Router defaults (`flash` = the `standard` list, `defaultEmbeddingCandidates`, `defaultDecisionCandidates` with the same GGUF revision, `defaultDecisionContext` 16384). `large.yaml` has `kvBits: 8` (work item 3). `medium.yaml` and `small.yaml` do not use `large.yaml` (work item 2). `small.yaml` also names its `standard` model, which is equal to the Router default; the implement comment records this choice.
+>
+> Test item 5 (`swift test` and CI) is an orchestrator step, not a finding of this change.
+
+- [x] `Sources/FoundationModelsACPAgent/Tools/ToolCatalog.swift:525` `duplication/duplication` — The description of the `models` tool repeats the default-key facts already written in the description of the `saveProfile` mutation. The phrase "flash: the standard list; kvBits: none, an unquantized KV cache" appears in both places. If Router's defaults or the kvBits meaning change, one copy can be updated and the other left stale, so the two tool descriptions drift apart. Define the shared default text once, for example a `static let` in `ProfileFile` or `BundledProfiles`. Use it in both the `saveProfile` argument description (ModelsGraph.swift:388-389) and `modelsToolDescription` (ToolCatalog.swift:524-525). Each site then keeps only its own surrounding wording.
