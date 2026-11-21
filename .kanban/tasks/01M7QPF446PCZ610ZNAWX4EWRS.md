@@ -146,6 +146,14 @@ comments:
     - evidence: 3 files — Sources/FoundationModelsACPAgent/Resources/profiles/medium.yaml, Tests/FoundationModelsACPAgentTests/ProfileFileTests.swift, README.md. RED then GREEN on `ProfileFileTests/mediumIs...`. Full root `swift test` after "Build complete!": 2738 tests in 287 suites passed (1 known issue: the existing `withKnownIssue` self-test in HarnessSmokeTests), exit 0. No commit.
     - next: /review. The `large` part of work item 2 stays open (download not complete); the card stays in doing.
   timestamp: 2026-11-21T02:59:27.074652+00:00
+- actor: claude-code
+  id: 01m7y0san9ce8d0ss1amztb8hp
+  text: |-
+    ### review — clean
+    - evidence: `review sha c23afde~1..c23afde` (HEAD~1..HEAD); 1 file reviewed (ProfileFileTests.swift); 0 findings (0 confirmed, 0 refuted). No validator matched README.md and Sources/FoundationModelsACPAgent/Resources/profiles/medium.yaml, thus the engine did not review them. The card has no earlier review findings.
+    - note: By decision of the coordinator, the card stays in doing. Work item 2 (the `large` part) and work item 3 are open while the `large` models download.
+    - next: Measure `large` and `large-kv8` when the download is complete. Then record the results on this task.
+  timestamp: 2026-11-21T03:00:50.985727+00:00
 depends_on:
 - 01M7QPE4FQH8810KJV056R9VP9
 position_column: doing
