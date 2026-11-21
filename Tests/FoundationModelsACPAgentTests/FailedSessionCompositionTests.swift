@@ -94,7 +94,9 @@ import Testing
   /// The composition runs in a task of its own: after the stop of the
   /// registry, the composition waits for the end of the kept reload. When
   /// the streams ended, the hold lets the reload continue, and the
-  /// composition gives its error.
+  /// composition gives its error. On each exit, also when a wait throws,
+  /// the helper releases the hold and cancels the task of the composition,
+  /// so no thread stays in the hold.
   ///
   /// - Parameters:
   ///   - composition: The composition, which loads the registry over
@@ -109,6 +111,10 @@ import Testing
     source: ProbingConflictVersionSource, hold: ReloadHold
   ) async throws -> Int {
     let failed = Task { try await composition() }
+    defer {
+      hold.release()
+      failed.cancel()
+    }
     _ = try await hold.isHoldingReload.wait(for: "the kept reload") { $0 }
     let live = try await source.liveChangeStreams.wait(for: "the end of each stream") { $0 == 0 }
     hold.release()

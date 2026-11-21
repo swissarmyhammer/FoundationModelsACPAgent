@@ -18,6 +18,10 @@ import Synchronization
 /// 2. The next read comes from that reload. The hold keeps it until
 ///    ``release()``.
 /// 3. Each later read passes at once.
+///
+/// ``release()`` opens the hold for good: a read that waits, or that comes
+/// later, passes. A test calls it on each exit path, so no thread stays in
+/// the hold when the test ends early.
 final class ReloadHold: Sendable {
   /// The progress of the hold.
   private enum Phase {
@@ -39,6 +43,9 @@ final class ReloadHold: Sendable {
 
   /// The gate that keeps the read of the reload until ``release()``.
   private let gate = DispatchSemaphore(value: 0)
+
+  /// Whether ``release()`` opened the hold.
+  private let isReleased = Mutex(false)
 
   /// Whether the hold keeps a reload now, with its waits.
   let isHoldingReload = WatchedValue(false)
@@ -74,8 +81,16 @@ final class ReloadHold: Sendable {
     }
   }
 
-  /// Lets the kept read of the reload continue.
+  /// Opens the hold for good. The kept read of the reload continues, a
+  /// first build that waits for the reload continues, and each later read
+  /// passes. A second call does nothing.
   func release() {
+    let wasReleased = isReleased.withLock { released -> Bool in
+      defer { released = true }
+      return released
+    }
+    guard !wasReleased else { return }
+    reloadEntered.signal()
     gate.signal()
   }
 }
