@@ -29,8 +29,15 @@ comments:
     - evidence: `swift build --build-tests` Build complete!, no warning. RED: AgentConflictVersionSourceTests did not compile (extra argument 'agentConflictVersions'); GREEN: 2 tests pass. Full root `swift test` two times: 2742 tests in 288 suites pass, 1 known issue (HarnessSmokeTests, expected), 66.8 s at load 19.48 to 30.84 and 72.4 s at load 30.84 to 36.34. Files: Sources/FoundationModelsACPAgent/Tools/CatalogContext.swift, Sources/FoundationModelsACPAgent/Tools/AgentsComposition.swift, Sources/FoundationModelsACPAgent/RoutedACPAgent.swift, Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift, Tests/FoundationModelsACPAgentTestSupport/InertConflictVersionSource.swift (new), Tests/FoundationModelsACPAgentTestSupport/StubProfileFixtures.swift, Tests/FoundationModelsACPAgentTests/AgentConflictVersionSourceTests.swift (new), Tests/FoundationModelsACPAgentTests/Support/CatalogRegistryFixture.swift, and the CatalogContext of AgentsToolTests, CodeContextSharingTests, Integration/SkillsLibraryTests, MCPCompositionTests, MultiRootConfinementTests, ScheduledAgentStoreTests, SettingsFoldersTests, ShellStoreSharingTests, SkillsMarketplaceTests, ToolCatalogTests; a doc reference in SessionSettingsStoreTests.
     - next: /review. New task ^6yt2dpb records the synchronous coordinated read on the cooperative pool and the agent registries that tests do not stop.
   timestamp: 2026-11-21T17:41:34.193189+00:00
-position_column: doing
-position_ordinal: '8380'
+- actor: claude-code
+  id: 01m7zkavsgknyaxe8r09jfmsw6
+  text: |-
+    ### review — clean
+    - evidence: `review sha 371233e~1..371233e` (HEAD~1..HEAD); 19 files reviewed; 0 findings (0 confirmed, 1 refuted). The card has no earlier review findings.
+    - next: none. The task is in done.
+  timestamp: 2026-11-21T17:44:14.384625+00:00
+position_column: done
+position_ordinal: ffffffba80
 title: 'Full root swift test: MCP stdio connect tests and AgentCatalogWatchTests fail in the full run, pass alone'
 ---
 Found on 2026-11-21 during ^f4z8wj9. The failures are also on the base commit a844424 without the changes of ^f4z8wj9 (same dependencies, Router e221cbd).
