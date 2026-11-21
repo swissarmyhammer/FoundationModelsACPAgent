@@ -125,6 +125,27 @@ comments:
     - blocker: the `large` models are not downloaded: about 19.8 GB of 30.7 GB, at about 0.27 MB/s (about 11 hours left). The `large` run (download through the product path) still runs in the background.
     - next: when the download is complete, run `large` and `large-kv8` with the 5 prompts (scratchpad driver), and record the comparison. A person gives the go (or not) for the proposal.
   timestamp: 2026-11-20T20:46:53.919814+00:00
+- actor: claude-code
+  id: 01m7y0pp2eyq3h9xbgryvpy9qj
+  text: |-
+    The user gave the go for proposal 1 (2026-11-20): add `kvBits: 8` to the bundled `medium` profile. `large` and `small` do not change. `large` stays open (its quality check is not done).
+
+    Implementation (TDD):
+    - RED: `ProfileFileTests.mediumIsTheFourBitModelWithItsDrafterAndAnEightBitKVCache` (the old `mediumIsTheFourBitModelWithItsDrafter`, now with `kvCache: .bits8`) failed on the old file.
+    - GREEN: `Resources/profiles/medium.yaml` has `kvBits: 8`, and its header comment names the 8-bit KV cache and the reason (a window of more than the minimum of Router on a 32 GB Mac).
+    - The `description` of `medium.yaml` does not change. It did not name the KV cache before. (The `description` of `small` names its KV cache. A person can decide if the `medium` description must name it too; the test pins the description.)
+    - README: the `medium` row of the profile table names the 8-bit KV cache (`kvBits: 8`).
+    - ARCHITECTURE.md and the doc comments of `BundledProfiles.swift` do not list the `kvBits` of a profile, so they do not change.
+    - `DefaultProfileChoiceTests` use a stub fit source, and `FitFallbackBudgetTests` assert only "not `large`" and "the same router resolves its choice". Both still describe the right behavior.
+    - Note: SwiftPM gives the warning "missing creator for mutated node ... mlx-swift_Cmlx.bundle/Contents/MacOS" at each build. It is from the build graph of the dependency, not from a change of this task.
+  timestamp: 2026-11-21T02:59:24.366276+00:00
+- actor: claude-code
+  id: 01m7y0prq20ha4zxad5wj3521j
+  text: |-
+    ### implement — changed
+    - evidence: 3 files — Sources/FoundationModelsACPAgent/Resources/profiles/medium.yaml, Tests/FoundationModelsACPAgentTests/ProfileFileTests.swift, README.md. RED then GREEN on `ProfileFileTests/mediumIs...`. Full root `swift test` after "Build complete!": 2738 tests in 287 suites passed (1 known issue: the existing `withKnownIssue` self-test in HarnessSmokeTests), exit 0. No commit.
+    - next: /review. The `large` part of work item 2 stays open (download not complete); the card stays in doing.
+  timestamp: 2026-11-21T02:59:27.074652+00:00
 depends_on:
 - 01M7QPE4FQH8810KJV056R9VP9
 position_column: doing

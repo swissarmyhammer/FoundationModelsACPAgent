@@ -81,14 +81,16 @@ import Testing
     #expect(try Self.encoding(of: large) == Self.encoding(of: expected))
   }
 
-  /// `medium` is Qwen3.8 27B at 4 bits with its 4-bit MTP drafter: the
-  /// models of the old `small`.
-  @Test func mediumIsTheFourBitModelWithItsDrafter() throws {
+  /// `medium` is Qwen3.8 27B at 4 bits with its 4-bit MTP drafter and an
+  /// 8-bit KV cache. The 8-bit KV cache gives a window of more than the
+  /// minimum of Router on a Mac with 32 GB (task ^wx4ewrs).
+  @Test func mediumIsTheFourBitModelWithItsDrafterAndAnEightBitKVCache() throws {
     let expected = Self.profile(
       name: "medium",
       description: "Qwen3.8 27B 4-bit with its MTP drafter, for a Mac with 32 GB.",
       model: ModelRef(
-        repo: "mlx-community/Qwen3.8-27B-4bit", drafter: "mlx-community/Qwen3.8-27B-MTP-4bit"))
+        repo: "mlx-community/Qwen3.8-27B-4bit", drafter: "mlx-community/Qwen3.8-27B-MTP-4bit"),
+      kvCache: .bits8)
 
     let medium = try #require(BundledProfiles.named("medium"))
 
