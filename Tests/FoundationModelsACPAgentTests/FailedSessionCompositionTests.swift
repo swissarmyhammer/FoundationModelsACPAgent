@@ -4,7 +4,6 @@ import FoundationModelsACPAgentTestSupport
 import FoundationModelsAgents
 import FoundationModelsExtras
 import FoundationModelsSkills
-import Synchronization
 import Testing
 
 @testable import FoundationModelsACPAgent
@@ -68,7 +67,7 @@ import Testing
     try await makeStubAgent(
       name: label, cacheDirectory: makeResolvedDirectory(label: "\(label)-cache"),
       configuration: makeChildlessConfiguration(), mode: .open,
-      sandboxProbe: SandboxProbe { sandbox.isSandboxed }, agentConflictVersions: source)
+      sandboxProbe: sandbox.probe, agentConflictVersions: source)
   }
 
   /// Composes one session of `agent` over `workingDirectory`.
@@ -179,22 +178,5 @@ import Testing
       expecting: ToolModeError.openModeInSandbox, source: source, hold: hold)
 
     #expect(live == 0)
-  }
-}
-
-/// A switch that a test sandbox probe reads. The agent checks its mode with
-/// the probe when it starts. A test turns the switch on after the start, so a
-/// later session composition sees a sandboxed process.
-private final class SandboxSwitch: Sendable {
-  /// The state of the switch.
-  private let state = Mutex(false)
-
-  /// Makes a switch that is off.
-  init() {}
-
-  /// Whether the probe tells that the process is sandboxed.
-  var isSandboxed: Bool {
-    get { state.withLock { $0 } }
-    set { state.withLock { $0 = newValue } }
   }
 }

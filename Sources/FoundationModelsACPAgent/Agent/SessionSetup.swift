@@ -1209,9 +1209,9 @@ extension RoutedACPAgent {
   /// - Returns: The composed inputs of `makeSession`.
   /// - Throws: Whatever the agent resolution, the instructions assembly or
   ///   the tool composition throws. Before the error goes to the caller, the
-  ///   composition stops the agent registry that it loaded
-  ///   (`AgentRegistry.stopWatching()`), or shuts down the surface that owns
-  ///   that registry.
+  ///   composition stops the parts that it started (``StartedSessionParts``):
+  ///   the marketplace layers, the agent registry and the skills registry.
+  ///   After the surface owns them, it shuts down the surface.
   func composeSession(
     from context: LoadedSessionContext,
     workingDirectory: URL,
@@ -1244,16 +1244,21 @@ extension RoutedACPAgent {
     // then reuses the loaded agent registry, so the `agents` tool and the
     // session agent read one catalog.
     let marketplaces = await ToolCatalog.startSkillsMarketplaces(context: catalogContext)
-    let agentRegistry = try await AgentsComposition.loadedAgentRegistry(
-      context: catalogContext, marketplaces: marketplaces)
-    let catalog = agentRegistry.catalog()
 
-    // Until the surface owns the registry, an error stops the registry here.
-    // The error then goes to the caller unchanged.
+    // Until the surface owns them, an error stops the parts that this
+    // function started: the marketplace layers, the agent registry and the
+    // skills registry. The error then goes to the caller unchanged.
+    var started = StartedSessionParts(marketplaces: marketplaces)
+    let agentRegistry: AgentRegistry
+    let catalog: AgentCatalog
     let resolvedAgent: ResolvedSessionAgent
     let skills: SkillsSource
     let fullSurface: SessionSurface
     do {
+      agentRegistry = try await AgentsComposition.loadedAgentRegistry(
+        context: catalogContext, marketplaces: marketplaces)
+      started.agentRegistry = agentRegistry
+      catalog = agentRegistry.catalog()
       resolvedAgent = try await resolveSessionAgent(
         in: catalog, requested: requestedAgent, resuming: resumedSessionId,
         workingDirectory: workingDirectory, transcriptRoot: context.transcriptRoot)
@@ -1267,11 +1272,12 @@ extension RoutedACPAgent {
       skills = ToolCatalog.makeSkillsSource(
         context: catalogContext, marketplaces: marketplaces,
         sessionAgent: resolvedAgent.definition)
+      started.add(skills)
       fullSurface = try await ToolCatalog.sessionSurface(
         context: catalogContext, skills: skills, agentRegistry: agentRegistry
       ).appending(hostTools: hostTools)
     } catch {
-      await agentRegistry.stopWatching()
+      await started.stop()
       throw error
     }
 

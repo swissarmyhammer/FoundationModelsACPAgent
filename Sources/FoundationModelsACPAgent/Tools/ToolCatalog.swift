@@ -253,12 +253,11 @@ public struct SessionSurface: Sendable {
   /// still need.
   public func shutdown() async {
     await stopAgentRuns()
-    await agents?.registry.stopWatching()
-    await agents?.environment.skills.stopWatching()
-    await agents?.marketplaces?.stop()
-    await codeContextLease?.release()
-    await shellStoreLease?.release()
-    await serverPool.shutdownAll()
+    await StartedSessionParts(
+      agentRegistry: agents?.registry, skillsRegistry: agents?.environment.skills,
+      marketplaces: agents?.marketplaces, codeContextLease: codeContextLease,
+      shellStoreLease: shellStoreLease, serverPool: serverPool
+    ).stop()
   }
 }
 
@@ -441,21 +440,60 @@ public enum ToolCatalog {
   /// - Throws: Whatever the registry build, the session-tool
   ///   construction, the skills assembly, or the agents composition
   ///   throws. An MCP server that fails to connect does not throw: its
-  ///   outcome is `.failed`.
+  ///   outcome is `.failed`. Before the error goes to the caller, the
+  ///   function stops the parts that it started (``StartedSessionParts``):
+  ///   the leases and the server pool of the build, the agent runs, the
+  ///   skills source that it made, and the agent registry that the agents
+  ///   composition loaded. A part that the caller gave stays with the caller.
   public static func sessionSurface(
     context: CatalogContext, skills: SkillsSource? = nil, agentRegistry: AgentRegistry? = nil
   ) async throws -> SessionSurface {
     let built = try await makeRegistry(context: context)
+    // Until the surface owns them, an error stops the parts that this
+    // function started. The parts that the caller gave stay with the caller.
+    var started = StartedSessionParts()
+    started.add(built)
+    do {
+      return try await composeSurface(
+        context: context, built: built, skills: skills, agentRegistry: agentRegistry,
+        started: &started)
+    } catch {
+      await started.stop()
+      throw error
+    }
+  }
+
+  /// Builds the session surface over a built registry
+  /// (``sessionSurface(context:skills:agentRegistry:)``). It adds each part
+  /// that it starts to `started`.
+  ///
+  /// - Parameters:
+  ///   - context: The session whose tools the surface composes.
+  ///   - built: The built registry of the session.
+  ///   - skills: The skills source of the caller, or `nil` to make one. A
+  ///     source that this function makes joins `started`.
+  ///   - agentRegistry: The loaded agent registry of the caller, or `nil`
+  ///     for the agents composition to load one. A registry that the
+  ///     composition loads joins `started`.
+  ///   - started: The parts that the surface composition started.
+  /// - Returns: The surface.
+  /// - Throws: Whatever the session tools, the agents composition, the
+  ///   `sessions` tool or the `mcpServers` tool throws.
+  private static func composeSurface(
+    context: CatalogContext, built: BuiltRegistry, skills: SkillsSource?,
+    agentRegistry: AgentRegistry?, started: inout StartedSessionParts
+  ) async throws -> SessionSurface {
     let selection = makeSearchSelection(profile: context.profile)
     let embedder = ProfileEmbedding(embedder: context.profile.embedding)
     let mounted = try built.registry.makeSessionToolsAndStaging(
       selection: selection, embedder: embedder)
-    let skillsSource =
-      if let skills {
-        skills
-      } else {
-        await makeSkillsSource(context: context)
-      }
+    let skillsSource: SkillsSource
+    if let skills {
+      skillsSource = skills
+    } else {
+      skillsSource = await makeSkillsSource(context: context)
+      started.add(skillsSource)
+    }
     // The messages of the surface show each message that the session directory delivers to a
     // session of the surface (ACPA-6).
     let runCallJoins = RunCallJoinTable(
@@ -467,6 +505,10 @@ public enum ToolCatalog {
         registry: built.registry, mcpServerNames: mcpServerNames, selection: selection,
         embedder: embedder, mounted: mounted.tools),
       runCallJoins: runCallJoins)
+    started.agentRuns = agents
+    if agentRegistry == nil {
+      started.agentRegistry = agents.registry
+    }
     let tools =
       mounted.tools
       + makeStandaloneTools(
