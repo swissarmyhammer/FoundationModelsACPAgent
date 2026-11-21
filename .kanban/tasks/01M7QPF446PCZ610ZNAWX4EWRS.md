@@ -154,6 +154,101 @@ comments:
     - note: By decision of the coordinator, the card stays in doing. Work item 2 (the `large` part) and work item 3 are open while the `large` models download.
     - next: Measure `large` and `large-kv8` when the download is complete. Then record the results on this task.
   timestamp: 2026-11-21T03:00:50.985727+00:00
+- actor: claude-code
+  id: 01m7y1eykev7xp2n0e70aq1z1q
+  text: |-
+    `large` download, second attempt: ended at 2026-11-21T03:08:22Z after 7.2 hours.
+
+    - Cause (stderr of the driver run and the telemetry): a network failure at resolve. `FoundationModelsExtras.model.load` of `mlx-community/Qwen3.8-27B-8bit` ended with `NSURLError` -1005 "The network connection was lost." during the download of `model-00004-of-00006.safetensors` from the Hub CDN (`us.aws.cdn.hf.co/xet-bridge-us`). Then `FoundationModelsRouter.resolve` of `large` failed, and `acp-agent acp` ended ("Error: profile "large" did not resolve"). It is not a fault of the model or of the agent code.
+    - State on disk: 26 GB of `Qwen3.8-27B-8bit` (1 complete file, 5 partial files of about 4.93 GB). The MTP-8bit drafter is not started.
+    - Third attempt started at 03:13Z: the old driver is stopped; debug build "Build complete!" (main at a844424, with c23afde; the binary did not change, the profile files are resources); `acp-agent acp` through the product path, which continues from the partial files.
+    - Discovery: one dropped connection in a multi-hour download ends the resolve and the process, and the agent does not try again. A retry of the download in the resolve would make the first launch more robust.
+  timestamp: 2026-11-21T03:12:39.534721+00:00
+- actor: claude-code
+  id: 01m7y2tftp97jdt9jezrq1y30e
+  text: |-
+    Download retry (FoundationModelsExtras 49c6965) is in the debug build (2026-11-21 03:36Z).
+
+    - `swift package update FoundationModelsExtras`: pin 49c6965. No llama.cpp clone, no new repository.
+    - The first build failed: `FoundationModelsRouter/Directory/SessionAddressResolution.swift:164: type 'SessionAddress' has no member 'folder'`. Cause: Extras 41c13c9 removed the `.folder` session address, and the Router pin (95c2141) and the Multitool pin (48581fd) still used it. Router `main` (65cfc07) and Multitool `main` (7fe269e) have the matching change.
+    - Thus also `swift package update FoundationModelsRouter` (pin 9b30a4c) and `swift package update FoundationModelsMultitool` (pin d8863fb). No llama.cpp clone, no new repository. The code of this repository does not use the removed case.
+    - Debug build: "Build complete!" (12.93 s). Pins now: FoundationModelsExtras 49c6965, FoundationModelsRouter 9b30a4c, FoundationModelsMultitool d8863fb, mlx-swift-lm 74e499b, llama-cpp-swift 6b273d6.
+    - The `large` download that runs now (started 03:13Z) uses the old binary, with no retry. Each later `acp-agent` start (a restart after a drop, and the `large` / `large-kv8` measurement runs) uses the new binary with the retry.
+  timestamp: 2026-11-21T03:36:26.198361+00:00
+- actor: claude-code
+  id: 01m7y6yqgakq2s2cr75w11fqrg
+  text: |-
+    Work item 2, part `large`: DONE (2026-11-21, M5 Max 128 GB, debug build, pins Extras 49c6965 / Router 9b30a4c / Multitool d8863fb / mlx-swift-lm 74e499b). Same 5 prompts, one session for each profile, one run each.
+
+    - Download, third attempt (product path, from the partial files): complete at 04:25:51Z. `Qwen3.8-27B-8bit` 28 GB and `Qwen3.8-27B-MTP-8bit` 452 MB. The third attempt used the old binary (no retry) and had no drop.
+
+    | | `large` (bundled, KV fp16) | `large-kv8` (same models, `kvBits: 8`) |
+    |---|---|---|
+    | Resolve (models in the cache) | 4420.7 s with the download (standard load 4402.8 s) | 20.6 s (standard 4.7 s, embedding 14.4 s cold) |
+    | standard footprint (estimate) | 47.13 GB | 39.08 GB |
+    | `requiredBytes` (fit, 262144 tokens) | 68.75 GB | 52.39 GB |
+    | Window on this Mac | 262144 | 262144 |
+    | Process memory (`top` MEM max / RSS max) | 34.0 GB / 11.8 GB | 32.0 GB / 11.8 GB |
+    | Decode, all calls | 37.4 tok/s (6538 tokens) | 35.7 tok/s (3408 tokens) |
+    | Decode, the long answer | 40.4 tok/s (4760 tokens) | 38.5 tok/s (2522 tokens) |
+    | Prefill of the first prompt (14165 tokens) | 904 s (see the note) | 20.6 s |
+    | MTP acceptance | 0.919 | 0.924 |
+    | Answers correct | 4 of 5 | 5 of 5 |
+
+    - Quality: both give 391, $0.05, "marigold" (with a tool call) and a correct text of about 250 words on collisions. The `is_prime` of `large` (fp16) has a fault: `i += 2` is indented under `return False`, so it is never done, and the loop does not stop for an odd composite with no small factor (for example 25). The `is_prime` of `large-kv8` is correct. One sample is not a quality difference; it shows that `kvBits: 8` is not worse on these prompts.
+    - Speed: `kvBits: 8` decodes about 5 % slower for `large` (for `medium` it was about 20 to 25 %).
+    - Note on the 904 s: the first call of `large` came just after the end of the download. The process memory went to 27 GB in about 70 s, then stayed the same for about 14 minutes before the first token. The cause is not known (maybe other GPU work on the Mac, or a cold first pass of the 28 GB of new weights). The second session (`large-kv8`, same weights) did not show it (20.6 s).
+    - Window on the target Mac (from the earlier calculation): on a 48 GB Mac (budget 3/4), 32531 tokens with fp16 (less than the minimum of 32768) and 64849 tokens with `kvBits: 8`.
+  timestamp: 2026-11-21T04:48:39.434820+00:00
+- actor: claude-code
+  id: 01m7y6ytff9gtekbsnx5cb2746
+  text: |-
+    PROPOSAL for the user, `large` (no profile file is changed; the coordinator asks the user):
+
+    `large.yaml`: add `kvBits: 8`.
+    - Same quality on the 5 prompts (5 of 5 correct with `kvBits: 8`; the fp16 run had one faulty `is_prime`, a sample fault).
+    - MTP acceptance the same (0.924 vs 0.919).
+    - A larger window on the target Mac: 64849 vs 32531 tokens on a 48 GB Mac (budget 3/4). With fp16 the window is less than the minimum of 32768, so on a 48 GB Mac the agent does not select `large`, its own target profile. On a 64 GB Mac: 249892 vs 130835.
+    - The cost: about 5 % slower decode on this M5 Max (35.7 vs 37.4 tok/s; 38.5 vs 40.4 on the long answer).
+    - Before the change, verify the budget (`recommendedMaxWorkingSetSize`) of a real 48 GB Mac: the result depends on it.
+  timestamp: 2026-11-21T04:48:42.479395+00:00
+- actor: claude-code
+  id: 01m7y6za95fa04akc54gdrsa0m
+  text: |-
+    ### implement — no-change
+    - evidence: all work items done. `small` (after mlx-swift-lm 74e499b): 5/5 correct, 46.0 tok/s, MTP 0.862, window 262144. `medium` vs `medium-kv8`: 5/5 vs 5/5, 31.8 vs 24.4 tok/s, MTP 0.913 vs 0.891. `large` vs `large-kv8`: 4/5 vs 5/5, 37.4 vs 35.7 tok/s, MTP 0.919 vs 0.924. Calculated window with `kvBits: 8` on the target Mac: `medium` 34846 vs 16592 (32 GB, budget 2/3), `large` 64849 vs 32531 (48 GB, budget 3/4). The `large` proposal is on the card (no profile file change by this step; `medium` has `kvBits: 8` on main from c23afde). No tracked file of the repository changed in this step; only the gitignored `Package.resolved` (pins Extras 49c6965, Router 9b30a4c, Multitool d8863fb, mlx-swift-lm 74e499b) and the debug build.
+    - next: the user decides the `large` proposal. Verify `recommendedMaxWorkingSetSize` of a real 32 GB and 48 GB Mac.
+  timestamp: 2026-11-21T04:48:58.661024+00:00
+- actor: claude-code
+  id: 01m7yq6fg6kccfbdkaqhpbjy91
+  text: |-
+    The user gave the go (2026-11-21) to add `kvBits: 8` to the bundled `large` profile. BLOCKED before the first edit: a conflict with a documented contract. No file changed.
+
+    The conflict:
+    - `large.yaml` is the base of the merge of each profile file (`BundledProfiles.baseKeys`, `ProfileFile.definition(of:name:path:)`: `baseKeys.merging(keys)`). Each key that a file leaves out comes from `large`. With `kvBits: 8` in `large.yaml`, each profile file that has no `kvBits` key gets an 8-bit KV cache.
+    - The README and Router's `ProfileDefinition` say: "no key for an unquantized cache" (Router: "A missing `kvBits` key gives an fp16 cache"). The `ProfileFileTests` test "No `kvBits` gives an unquantized KV cache: `large` names none" holds the same contract.
+    - The save path breaks: `ProfileStore` saves a profile as `ProfileFile.text(of:)`, and Router's `encode(to:)` writes no `kvBits` key for fp16 (`encodeIfPresent(kvCacheQuantization?.bits)`). Thus a saved fp16 profile reads back with an 8-bit cache. The doc comment of `text(of:)` says the text "decodes back to the profile".
+    - A user file then has no documented way to name fp16. (`kvBits: null` can possibly give fp16 through the merge, but it is not documented and `text(of:)` does not write it.)
+
+    A person must choose one:
+    - A. `kvBits` does not come from the base: the merge leaves out `kvBits` of `large`. Only the bundled `large` gets 8 bits; a file without `kvBits` stays fp16. The rule "each key that a file leaves out comes from `large`" gets one exception (README, ARCHITECTURE.md, doc comments).
+    - B. `kvBits` comes from the base, and fp16 gets a spelling (for example `kvBits: 16` or `kvBits: null`) that `text(of:)` writes. A Router change can be necessary (Router accepts only 8 or 4, or no key), and the README contract changes.
+    - C. Another choice.
+  timestamp: 2026-11-21T09:32:30.598296+00:00
+- actor: claude-code
+  id: 01m7yq6j1dp813yr7s872keq0p
+  text: |-
+    ### implement — stuck
+    - evidence: no file changed. `large.yaml` is the merge base of each profile file (`ProfileFile.definition(of:name:path:)`, `BundledProfiles.baseKeys`), so `kvBits: 8` in it gives 8 bits to each file with no `kvBits` key. This fights the documented contract "no key for an unquantized cache" (README, Router `ProfileDefinition`, ProfileFileTests), and breaks the round trip of a saved fp16 profile (`ProfileFile.text(of:)` writes no `kvBits` for fp16).
+    - next: a person chooses option A (do not inherit `kvBits` from the base), B (inherit, plus a written spelling for fp16), or C. Then implement with TDD.
+  timestamp: 2026-11-21T09:32:33.197961+00:00
+- actor: claude-code
+  id: 01m7yx75hahk97kn7ctxkardj0
+  text: |-
+    ### implement — stuck
+    - evidence: no file changed. The `kvBits: 8` change of `large.yaml` waits for ^f4z8wj9 (defaults from the profile config type in code, not from `large.yaml`). ^f4z8wj9 is stuck on a question for the user: a code default for `standard` (and `flash`, `embedding`, `description`); see the comments of ^f4z8wj9.
+    - next: when the user answers, implement ^f4z8wj9, then add `kvBits: 8` to `large.yaml` with TDD.
+  timestamp: 2026-11-21T11:17:44.618222+00:00
 depends_on:
 - 01M7QPE4FQH8810KJV056R9VP9
 position_column: doing
@@ -174,12 +269,12 @@ Decision D203 in `TestudoApp/features/decisions.md` (commit 4ab65e8). Brief: `/U
 ## Work
 
 - [x] 1. On a real Mac: a session with the `small` profile loads and answers with the MTP drafter and `kvBits: 8`. `research.md` says that this path is not verified. Report the result (load time, memory, window, tokens per second, drafter acceptance if available) to the user. (Done on an M5 Max after the fix of ^xgqst2y: see the comments.)
-- [ ] 2. Measure `kvBits: 8` for `large` and `medium`: quality on the same prompts, the window that the fit estimate gives, and the speed. If `kvBits: 8` gives the same quality and a larger window, propose the change to the user. Change the profile files only with a go.
+- [x] 2. Measure `kvBits: 8` for `large` and `medium`: quality on the same prompts, the window that the fit estimate gives, and the speed. If `kvBits: 8` gives the same quality and a larger window, propose the change to the user. Change the profile files only with a go.
   - [x] `medium` and `medium-kv8`: quality, window, speed. The proposal is on the card.
   - [x] The fit window of all profiles, and the calculated window on the target Macs.
-  - [ ] `large` and `large-kv8`: quality and speed. Blocked: the download of `mlx-community/Qwen3.8-27B-8bit` and its MTP drafter is not complete (about 0.27 MB/s from the Hub).
-- [ ] 3. Record the results on this task. (Done for each measured part; the `large` part is open.)
+  - [x] `large` and `large-kv8`: quality and speed. The proposal is on the card.
+- [x] 3. Record the results on this task.
 
 ## Tests
 
-- No unit test. The result is a record on this task and a report to the user. #d203 #profiles #acpa-23 
+- No unit test. The result is a record on this task and a report to the user. #d203 #profiles #acpa-23
