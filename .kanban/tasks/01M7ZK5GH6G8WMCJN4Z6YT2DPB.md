@@ -50,8 +50,23 @@ comments:
     - evidence: two full root `swift test` runs: 2747 tests in 290 suites passed, 0 failures, 0 warnings each (1 known issue is the deliberate `withKnownIssue` of HarnessSmokeTests.orderedSubsequenceAssertionChecksOrderWithGaps). Files: Sources/FoundationModelsACPAgent/Agent/BlockingFileReads.swift (new), Agent/SessionAgentResolution.swift, Agent/SessionAgentComposition.swift, Agent/SessionSetup.swift, Tools/AgentsComposition.swift; Tests: BlockingFileReadsTests.swift (new), AgentRegistryFixtureTests.swift (new), Support/CooperativePool.swift (new), Support/ProbingConflictVersionSource.swift (new), Support/AgentRegistryFixture.swift (new), SessionAgentTests.swift, SettingsFoldersTests.swift, ToolCatalogTests.swift, Integration/SkillsLibraryTests.swift.
     - next: /review. Not committed.
   timestamp: 2026-11-21T18:00:08.126632+00:00
-position_column: doing
-position_ordinal: '8280'
+- actor: claude-code
+  id: 01m7zmdnpy57y33nzbcweqytw8
+  text: |-
+    ### review — findings
+    - evidence: `review sha 5b4b48d~1..5b4b48d` (HEAD~1..HEAD); 14 files reviewed; 1 finding (1 confirmed, 1 refuted): Tests/FoundationModelsACPAgentTests/Support/ProbingConflictVersionSource.swift:39.
+    - next: Correct the item in the "Review Findings (2026-11-21 12:01)" section. Then do the review again. The task stays in review.
+  timestamp: 2026-11-21T18:03:15.038446+00:00
+- actor: claude-code
+  id: 01m7zmjw8xy36t2q116d1s4nkw
+  text: |-
+    ### implement — changed
+    - Finding `ProbingConflictVersionSource.swift:39` (reuse/reuse) corrected: the new `CooperativePoolReadRecorder` (Tests/FoundationModelsACPAgentTests/Support/CooperativePoolReadRecorder.swift) is the one recorder of pool reads, with `record()` and `reads`. `ProbingConflictVersionSource` and `RootAgentReadProbe` each hold one recorder and call `record()` before they read. No other `Mutex<[Bool]>` pool recorder stays in the test code. The only other use of `CooperativePool.isCurrentThreadInPool` is the probe sanity test, which records nothing.
+    - evidence: `swift build --build-tests` gave "Build complete!"; BlockingFileReadsTests + AgentRegistryFixtureTests: 5 tests passed; full root `swift test`: 2747 tests in 290 suites passed, 0 failures, 0 warnings (1 known issue is the deliberate `withKnownIssue` of HarnessSmokeTests). Files: Support/CooperativePoolReadRecorder.swift (new), Support/ProbingConflictVersionSource.swift, BlockingFileReadsTests.swift.
+    - next: review again. Not committed.
+  timestamp: 2026-11-21T18:06:05.597950+00:00
+position_column: review
+position_ordinal: '80'
 title: The session open path blocks a cooperative thread on a synchronous NSFileCoordinator read, and test sessions leak agent registries
 ---
 Found on 2026-11-21 during ^j5dys15.
@@ -70,3 +85,12 @@ Found on 2026-11-21 during ^j5dys15.
 ## Tests
 
 - [x] A test shows the fix of each work item. #flaky
+
+## Review Findings (2026-11-21 12:01)
+
+> Scope: `review sha 5b4b48d~1..5b4b48d` — reviewed the diffs only — lines this change added or modified. 14 file(s) reviewed, 4 not reviewed.
+
+> 4 file(s) not reviewed — excluded by an ignore rule:
+> - `.kanban/ (from .reviewignore)` — 4 file(s)
+
+- [x] `Tests/FoundationModelsACPAgentTests/Support/ProbingConflictVersionSource.swift:39` `reuse/reuse` — The new `conflictVersions(of:)` repeats the record-on-pool logic that already exists in `RootAgentReadProbe`. Both keep a `Mutex<[Bool]>` of pool reads, both read `CooperativePool.isCurrentThreadInPool`, and both expose `readsOnCooperativePool`. Two copies of this recorder can drift apart, and a fix to one does not reach the other. Move the recorder into one shared test-support type, for example a `CooperativePoolReadRecorder` with `record()` and `reads`, in Tests/FoundationModelsACPAgentTests/Support/. Let both `ProbingConflictVersionSource` and `RootAgentReadProbe` hold it. Each keeps its own read logic and calls `record()` before it reads.

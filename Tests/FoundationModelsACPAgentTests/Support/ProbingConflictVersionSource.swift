@@ -1,7 +1,6 @@
 import Foundation
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsAgents
-import Synchronization
 
 /// A conflict source of an agent registry that gives no conflict version and
 /// adds no file presenter, and that records what the registry does with it
@@ -14,9 +13,8 @@ import Synchronization
 ///   A registry with `watch: true` starts to follow a stream at its first
 ///   build, and ends the stream when it stops to watch.
 final class ProbingConflictVersionSource: AgentConflictVersionSource {
-  /// For each `conflictVersions(of:)` call, in order, whether it ran on a
-  /// thread of the cooperative pool.
-  private let reads = Mutex<[Bool]>([])
+  /// The recorder of the thread of each `conflictVersions(of:)` call.
+  private let recorder = CooperativePoolReadRecorder()
 
   /// The count of `changes(under:)` streams that did not end, with its
   /// waits.
@@ -28,7 +26,7 @@ final class ProbingConflictVersionSource: AgentConflictVersionSource {
   /// For each `conflictVersions(of:)` call so far, in order, whether it ran
   /// on a thread of the cooperative pool.
   var readsOnCooperativePool: [Bool] {
-    reads.withLock { $0 }
+    recorder.reads
   }
 
   /// Records the thread of the call, and gives no conflict version.
@@ -36,8 +34,7 @@ final class ProbingConflictVersionSource: AgentConflictVersionSource {
   /// - Parameter url: The URL of the agent file.
   /// - Returns: An empty list.
   func conflictVersions(of url: URL) -> [AgentConflictVersion] {
-    let onPool = CooperativePool.isCurrentThreadInPool
-    reads.withLock { $0.append(onPool) }
+    recorder.record()
     return []
   }
 

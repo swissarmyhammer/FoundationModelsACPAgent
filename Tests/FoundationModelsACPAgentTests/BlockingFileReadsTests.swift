@@ -1,7 +1,6 @@
 import Foundation
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsAgents
-import Synchronization
 import Testing
 
 @testable import FoundationModelsACPAgent
@@ -81,12 +80,12 @@ import Testing
 /// whether it ran on a thread of the cooperative pool, and then reads as the
 /// session does.
 private final class RootAgentReadProbe: Sendable {
-  /// For each read, in order, whether it ran on a thread of the pool.
-  private let reads = Mutex<[Bool]>([])
+  /// The recorder of the thread of each read.
+  private let recorder = CooperativePoolReadRecorder()
 
   /// For each read so far, in order, whether it ran on a thread of the pool.
   var readsOnCooperativePool: [Bool] {
-    reads.withLock { $0 }
+    recorder.reads
   }
 
   /// Records the thread of the read, and reads the root `AGENT.md` of
@@ -97,8 +96,7 @@ private final class RootAgentReadProbe: Sendable {
   ///   - id: The id of the agent.
   /// - Returns: The load of the read.
   func read(in folder: URL, id: String) -> RootAgentLoad {
-    let onPool = CooperativePool.isCurrentThreadInPool
-    reads.withLock { $0.append(onPool) }
+    recorder.record()
     return AgentRegistry.rootAgent(in: folder, id: id)
   }
 }
