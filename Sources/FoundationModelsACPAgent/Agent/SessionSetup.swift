@@ -1208,7 +1208,10 @@ extension RoutedACPAgent {
   ///     new session. A resumed session gets its recorded tag and agent.
   /// - Returns: The composed inputs of `makeSession`.
   /// - Throws: Whatever the agent resolution, the instructions assembly or
-  ///   the tool composition throws.
+  ///   the tool composition throws. Before the error goes to the caller, the
+  ///   composition stops the agent registry that it loaded
+  ///   (`AgentRegistry.stopWatching()`), or shuts down the surface that owns
+  ///   that registry.
   func composeSession(
     from context: LoadedSessionContext,
     workingDirectory: URL,
@@ -1244,22 +1247,33 @@ extension RoutedACPAgent {
     let agentRegistry = try await AgentsComposition.loadedAgentRegistry(
       context: catalogContext, marketplaces: marketplaces)
     let catalog = agentRegistry.catalog()
-    let resolvedAgent = try await resolveSessionAgent(
-      in: catalog, requested: requestedAgent, resuming: resumedSessionId,
-      workingDirectory: workingDirectory, transcriptRoot: context.transcriptRoot)
 
-    // One watched registry serves the preload assembly here.
-    // It also serves the slash-command source below.
-    // It also serves the `skills` tool and the agent runs.
-    // These are a standalone tool, not a Multitool capability.
-    // With `watch: true` it rebuilds on a skill file change, and its
-    // `commandUpdates` gives each rebuild to the slash-command source.
-    let skills = ToolCatalog.makeSkillsSource(
-      context: catalogContext, marketplaces: marketplaces,
-      sessionAgent: resolvedAgent.definition)
-    let fullSurface = try await ToolCatalog.sessionSurface(
-      context: catalogContext, skills: skills, agentRegistry: agentRegistry
-    ).appending(hostTools: hostTools)
+    // Until the surface owns the registry, an error stops the registry here.
+    // The error then goes to the caller unchanged.
+    let resolvedAgent: ResolvedSessionAgent
+    let skills: SkillsSource
+    let fullSurface: SessionSurface
+    do {
+      resolvedAgent = try await resolveSessionAgent(
+        in: catalog, requested: requestedAgent, resuming: resumedSessionId,
+        workingDirectory: workingDirectory, transcriptRoot: context.transcriptRoot)
+
+      // One watched registry serves the preload assembly here.
+      // It also serves the slash-command source below.
+      // It also serves the `skills` tool and the agent runs.
+      // These are a standalone tool, not a Multitool capability.
+      // With `watch: true` it rebuilds on a skill file change, and its
+      // `commandUpdates` gives each rebuild to the slash-command source.
+      skills = ToolCatalog.makeSkillsSource(
+        context: catalogContext, marketplaces: marketplaces,
+        sessionAgent: resolvedAgent.definition)
+      fullSurface = try await ToolCatalog.sessionSurface(
+        context: catalogContext, skills: skills, agentRegistry: agentRegistry
+      ).appending(hostTools: hostTools)
+    } catch {
+      await agentRegistry.stopWatching()
+      throw error
+    }
 
     // The session agent is the base prompt of the root session: its body
     // and its `skills:` preload, rendered with the tool groups of the

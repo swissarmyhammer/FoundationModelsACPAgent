@@ -1,7 +1,25 @@
 ---
 assignees:
 - claude-code
-position_column: todo
+comments:
+- actor: claude-code
+  id: 01m7zn9paqg60581g5ye8ex71c
+  text: |-
+    Research and RED notes:
+    - A plain ProbingConflictVersionSource test does not fail before the fix. When the composition throws, nothing keeps the registry, and `AgentReloadLoop.deinit` halts the watch at the same moment as an explicit stop. The first test run (no fix) passed all 3 tests.
+    - To make the test sensitive, I added `ReloadHold` (Tests/FoundationModelsACPAgentTests/Support/ReloadHold.swift) and an optional `reloadHold:` on `ProbingConflictVersionSource`. At the first conflict-version read of the first build, the hold yields a change on the newest change stream. The registry then starts a reload, and the hold keeps that reload inside its read. The running reload keeps the registry, so only a stop ends the stream. Do not yield from inside `changes(under:)`: the first build calls it inside the lock of `currentWatch`, and the reload then blocks on that lock (deadlock).
+    - RED (no fix): `swift test --skip-build --filter FailedSessionCompositionTests` gave 3 failures, each "Time limit was exceeded: 60.000 seconds".
+    - GREEN (with fix): the same filter gave 3 passes in 0.08 s.
+    - Discovery (not in the scope of this card): when `ToolCatalog.sessionSurface` throws inside `composeSession`, the skills source from `makeSkillsSource` (a watching `SkillsRegistry`) and the started marketplaces also get no stop. Also `sessionSurface` itself does not stop the parts it built (MCP pool, leases, the agents mount) when a step after `AgentsComposition.compose` throws.
+  timestamp: 2026-11-21T18:18:33.175996+00:00
+- actor: claude-code
+  id: 01m7znc4a2vjdv5htmfnmjv5md
+  text: |-
+    ### implement — changed
+    - evidence: 5 files — Sources/FoundationModelsACPAgent/Agent/SessionSetup.swift (do/catch stops the agent registry when `resolveSessionAgent` or `sessionSurface` throws), Sources/FoundationModelsACPAgent/Tools/AgentsComposition.swift (`compose` stops a registry that it loaded itself; the body moved to the private `mount(registry:...)`), Tests/FoundationModelsACPAgentTests/FailedSessionCompositionTests.swift (new, 3 tests), Tests/FoundationModelsACPAgentTests/Support/ReloadHold.swift (new), Tests/FoundationModelsACPAgentTests/Support/ProbingConflictVersionSource.swift (optional `reloadHold:`). RED: 3 time-limit failures with no fix. GREEN: 3 passes. Full root `swift test --skip-build` after "Build complete!": 2750 tests in 291 suites passed, 0 failures (1 known issue, from an earlier test).
+    - next: /review. Follow-up task ^2zm9hbk holds the skills registry, marketplace and surface-part leaks found here.
+  timestamp: 2026-11-21T18:19:53.026237+00:00
+position_column: doing
 position_ordinal: '80'
 title: A session composition that fails after the agent registry load leaves the registry watching
 ---
@@ -15,9 +33,9 @@ Found on 2026-11-21 during ^6yt2dpb.
 
 ## Work
 
-- [ ] Stop the loaded agent registry on each error path of `composeSession` before the surface owns it.
-- [ ] Stop the registry that `AgentsComposition.compose` loaded itself when a later step of `compose` throws.
+- [x] Stop the loaded agent registry on each error path of `composeSession` before the surface owns it.
+- [x] Stop the registry that `AgentsComposition.compose` loaded itself when a later step of `compose` throws.
 
 ## Tests
 
-- [ ] A test with `ProbingConflictVersionSource` (Tests/FoundationModelsACPAgentTests/Support) shows that each failed composition ends the change stream of its registry. #flaky
+- [x] A test with `ProbingConflictVersionSource` (Tests/FoundationModelsACPAgentTests/Support) shows that each failed composition ends the change stream of its registry. #flaky

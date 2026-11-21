@@ -122,17 +122,47 @@ enum AgentsComposition {
   ///   or `AgentsTool.make(context:)` throws. `AgentEnvironment.make` throws
   ///   `ToolModeError.openModeInSandbox` when the registry of `skills` is in
   ///   the `open` mode and the probe of `context` tells that the process is
-  ///   sandboxed.
+  ///   sandboxed. When the composition loaded the registry itself, it stops
+  ///   that registry (`AgentRegistry.stopWatching()`) before it gives the
+  ///   error. A registry from `agentRegistry` stays with the caller.
   static func compose(
     context: CatalogContext, skills: SkillsSource, agentRegistry: AgentRegistry? = nil,
     runTools: FoundationModelsAgents::ToolCatalog, runCallJoins: RunCallJoinTable
   ) async throws -> AgentsMount {
-    let registry =
-      if let agentRegistry {
-        agentRegistry
-      } else {
-        try await loadedAgentRegistry(context: context, marketplaces: skills.marketplaces)
-      }
+    if let agentRegistry {
+      return try await mount(
+        registry: agentRegistry, context: context, skills: skills, runTools: runTools,
+        runCallJoins: runCallJoins)
+    }
+    let registry = try await loadedAgentRegistry(
+      context: context, marketplaces: skills.marketplaces)
+    do {
+      return try await mount(
+        registry: registry, context: context, skills: skills, runTools: runTools,
+        runCallJoins: runCallJoins)
+    } catch {
+      await registry.stopWatching()
+      throw error
+    }
+  }
+
+  /// Builds the environment, the runner and the `agents` tool over a loaded
+  /// agent registry (``compose(context:skills:agentRegistry:runTools:runCallJoins:)``).
+  ///
+  /// - Parameters:
+  ///   - registry: The loaded agent registry of the session.
+  ///   - context: The session whose configuration, profile, working
+  ///     directory and settle period the mount reads.
+  ///   - skills: The skills source of the session.
+  ///   - runTools: The tools that a run can get, by name.
+  ///   - runCallJoins: The join table of the session.
+  /// - Returns: The mount.
+  /// - Throws: Whatever `AgentEnvironment.make` or `AgentsTool.make(context:)`
+  ///   throws. The mount does not stop `registry`.
+  private static func mount(
+    registry: AgentRegistry, context: CatalogContext, skills: SkillsSource,
+    runTools: FoundationModelsAgents::ToolCatalog, runCallJoins: RunCallJoinTable
+  ) async throws -> AgentsMount {
     let announcer = SubagentAnnouncer(holds: runCallJoins.holds)
     let made = try await AgentEnvironment.make(
       profile: context.profile,
