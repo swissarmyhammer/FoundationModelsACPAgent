@@ -15,8 +15,15 @@ comments:
     - RED: "Time limit was exceeded: 60.000 seconds" and "Expectation failed: exited". GREEN: FailedRegistryBuildTests, MCPCompositionTests, ShellStoreSharingTests and FailedSessionSurfaceTests gave 39 passes. Full root `swift test --skip-build` after "Build complete!": 2758 tests in 294 suites passed, 0 failures (1 known issue, from an earlier test).
     - next: /review.
   timestamp: 2026-11-21T18:50:37.516250+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m7zqa76bvt3j524306gp901k
+  text: |-
+    ### review — clean
+    - evidence: `review sha fa96f69~1..fa96f69` (HEAD~1..HEAD); 4 files reviewed; 0 findings (0 confirmed, 1 refuted). The card has no earlier review findings.
+    - next: none. The task is in done.
+  timestamp: 2026-11-21T18:53:47.595181+00:00
+position_column: done
+position_ordinal: ffffffbf80
 title: A failed registry build leaves the MCP servers of the session connected
 ---
 Found on 2026-11-21 during ^2zm9hbk.
