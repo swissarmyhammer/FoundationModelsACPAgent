@@ -126,16 +126,31 @@ import Testing
     return ids
   }
 
-  /// Copies the folder at `source` to `destination`, which must not exist.
+  /// Copies the folder at `source` to `destination`, which must not exist, with no item whose
+  /// name starts with a dot.
+  ///
+  /// The copy runs while the session writes its recording. An atomic write of a file (for
+  /// example `index.md`) makes a temporary dot file and then renames it over the file. A copy of
+  /// the whole folder can list that temporary file and then not find it. A file with no dot
+  /// always exists, because the rename replaces it in one step. Thus the copy skips each dot
+  /// item, and gives the same result each time.
   ///
   /// - Parameters:
   ///   - source: The folder to copy.
   ///   - destination: The new folder.
   /// - Throws: Whatever the copy throws.
   private static func copyFolder(_ source: URL, to destination: URL) throws {
-    try FileManager.default.createDirectory(
-      at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try FileManager.default.copyItem(at: source, to: destination)
+    try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+    let items = try FileManager.default.contentsOfDirectory(
+      at: source, includingPropertiesForKeys: [.isDirectoryKey])
+    for item in items where !item.lastPathComponent.hasPrefix(".") {
+      let target = destination.appendingPathComponent(item.lastPathComponent)
+      if (try item.resourceValues(forKeys: [.isDirectoryKey])).isDirectory == true {
+        try copyFolder(item, to: target)
+      } else {
+        try FileManager.default.copyItem(at: item, to: target)
+      }
+    }
   }
 
   // MARK: - The proofs
