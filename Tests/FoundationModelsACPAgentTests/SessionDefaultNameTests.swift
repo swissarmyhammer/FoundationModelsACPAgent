@@ -9,10 +9,11 @@ import ULID
 
 @testable import FoundationModelsACPAgent
 
-/// The default name of a new root session (D199 (b), task ^r9prwh9). The
-/// agent gives Router the agent of the session when it makes the session:
-/// the catalog id and the name of the agent. Router makes the default name
-/// from the name of the agent, else from the id.
+/// The default name of a new root session (user decision of 2026-11-23,
+/// which replaces D199 (b)): the last folder name of its working folder,
+/// as it is written (`SessionName.default(folder:usedNames:)`). The agent
+/// of the session does not change the name, so each test here has another
+/// agent and gets the same rule.
 ///
 /// Each test opens its sessions with `session/new` on a stub agent over
 /// throwaway folders, and reads the name from the Router session directory.
@@ -23,14 +24,16 @@ import ULID
   /// The `name` of the default agent: the root `AGENT.md` of the user layer.
   private static let defaultAgentName = "Default Helper"
 
-  /// The default name that ``defaultAgentName`` gives.
-  private static let defaultAgentSlug = "default-helper"
-
   /// The name that the host gives the agent.
   private static let hostAgentName = "Testudo"
 
-  /// The default name that ``hostAgentName`` gives.
-  private static let hostAgentSlug = "testudo"
+  /// The default name of the first session in `cwd`.
+  ///
+  /// - Parameter cwd: The working directory of the session.
+  /// - Returns: The last folder name of `cwd`.
+  private static func folderName(of cwd: URL) -> String {
+    SessionName.default(folder: cwd, usedNames: [])
+  }
 
   /// Opens one new session in `cwd` and gives its name.
   ///
@@ -60,18 +63,19 @@ import ULID
       label: "\(label)-\(test)", userDirectory: userDirectory)
   }
 
-  /// A new session of the default agent gets the name of that agent.
-  @Test func aSessionOfTheDefaultAgentGetsTheNameOfTheAgent() async throws {
+  /// A new session of a named default agent gets the last folder name of
+  /// its working folder, not the name of the agent.
+  @Test func aSessionOfTheDefaultAgentGetsTheNameOfItsFolder() async throws {
     let agent = try await Self.makeAgentWithNamedDefaultAgent(test: "first")
     let cwd = makeResolvedDirectory(label: "\(Self.label)-first-repo")
 
     let name = try await Self.nameOfNewSession(on: agent, in: cwd)
 
-    #expect(name == Self.defaultAgentSlug)
+    #expect(name == Self.folderName(of: cwd))
   }
 
-  /// A second new session of the same agent in the same folder gets the
-  /// name of the agent with the number 2.
+  /// A second new session in the same folder gets the name of the folder
+  /// with the number 2.
   @Test func aSecondSessionOfTheAgentInTheSameFolderGetsTheNextNumber() async throws {
     let agent = try await Self.makeAgentWithNamedDefaultAgent(test: "second")
     let cwd = makeResolvedDirectory(label: "\(Self.label)-second-repo")
@@ -79,24 +83,24 @@ import ULID
 
     let name = try await Self.nameOfNewSession(on: agent, in: cwd)
 
-    #expect(name == "\(Self.defaultAgentSlug)-2")
+    #expect(name == "\(Self.folderName(of: cwd))-2")
   }
 
-  /// A session of the `AGENT.md` of its working directory gets the `name`
-  /// of that file.
-  @Test func aSessionOfAnAgentMdGetsItsName() async throws {
+  /// A session of the `AGENT.md` of its working directory gets the last
+  /// folder name, not the `name` of that file.
+  @Test func aSessionOfAnAgentMdGetsTheNameOfItsFolder() async throws {
     let agent = try await AgentClientHarness.makeInitializedAgent(label: "\(Self.label)-folder")
     let cwd = makeResolvedDirectory(label: "\(Self.label)-folder-repo")
     try AgentFolderFixture.writeAgent(named: AgentFolderFixture.sampleAgentName, in: cwd)
 
     let name = try await Self.nameOfNewSession(on: agent, in: cwd)
 
-    #expect(name == AgentFolderFixture.sampleAgentSlug)
+    #expect(name == Self.folderName(of: cwd))
   }
 
-  /// A session of the builtin default agent gets the name that the host
-  /// gives the agent.
-  @Test func aSessionOfTheBuiltinAgentGetsTheNameOfTheHost() async throws {
+  /// A session of the builtin default agent with a host name gets the
+  /// last folder name, not the name that the host gives the agent.
+  @Test func aSessionOfTheBuiltinAgentWithAHostNameGetsTheNameOfItsFolder() async throws {
     let composed = try await composeStubAgent(
       name: Self.label, label: "\(Self.label)-host", agentName: Self.hostAgentName)
     _ = try await composed.agent.initialize(AgentClientHarness.makeInitializeRequest())
@@ -105,17 +109,17 @@ import ULID
     let name = try await Self.nameOfNewSession(on: composed.agent, in: cwd)
     await composed.closeOpenSessions()
 
-    #expect(name == Self.hostAgentSlug)
+    #expect(name == Self.folderName(of: cwd))
   }
 
-  /// A session of the builtin default agent with no host name gets the id
-  /// of the default agent, not the fallback name of `SessionName`.
-  @Test func aSessionOfTheBuiltinAgentWithNoHostNameGetsTheDefaultID() async throws {
+  /// A session of the builtin default agent with no host name gets the
+  /// last folder name, not the id of the default agent.
+  @Test func aSessionOfTheBuiltinAgentWithNoHostNameGetsTheNameOfItsFolder() async throws {
     let agent = try await AgentClientHarness.makeInitializedAgent(label: "\(Self.label)-floor")
     let cwd = makeResolvedDirectory(label: "\(Self.label)-floor-repo")
 
     let name = try await Self.nameOfNewSession(on: agent, in: cwd)
 
-    #expect(name == AgentCatalog.defaultAgentID)
+    #expect(name == Self.folderName(of: cwd))
   }
 }

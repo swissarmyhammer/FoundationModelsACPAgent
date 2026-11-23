@@ -25,8 +25,12 @@ struct RecordedSessionFolder: Sendable {
   ///
   /// - Parameter directory: A recording root, or the folder of a session.
   /// - Returns: The folders, each folder before the folders inside it.
+  /// A record that does not read is not in the list: `recordedSessions(in:)` passes over it
+  /// and logs it (FoundationModelsRouter a6830069). ``unlistedRecordIds(under:listed:)`` gives
+  /// those sessions.
+  ///
   /// - Throws: The error of `RouterSessionDirectory.recordedSessions(in:)`: the listing of a
-  ///   folder that exists, or the read of an `index.md` that does not decode.
+  ///   folder that exists.
   static func all(under directory: URL) throws -> [RecordedSessionFolder] {
     try RouterSessionDirectory.recordedSessions(in: directory).flatMap { record in
       let folder = RecordedSessionFolder(
@@ -35,6 +39,36 @@ struct RecordedSessionFolder: Sendable {
           record.sessionId.ulidString, isDirectory: true))
       return [folder] + (try all(under: folder.directory))
     }
+  }
+
+  /// The name of the record file of a session folder, as Router writes it.
+  private static let recordFileName = "index.md"
+
+  /// The id of each session folder under `directory`, at any depth, that holds a record
+  /// (`index.md`) and that `listed` does not hold: a session whose record does not read.
+  ///
+  /// The walk skips each dotfile and each dot folder by name, as Router does.
+  ///
+  /// - Parameters:
+  ///   - directory: A recording root.
+  ///   - listed: The sessions that ``all(under:)`` gave.
+  /// - Returns: The ids of the sessions whose record does not read.
+  static func unlistedRecordIds(under directory: URL, listed: Set<SessionId>) -> Set<SessionId> {
+    guard let enumerator = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: nil)
+    else { return [] }
+    var ids: Set<SessionId> = []
+    for case let url as URL in enumerator {
+      if url.lastPathComponent.hasPrefix(".") {
+        enumerator.skipDescendants()
+        continue
+      }
+      guard url.lastPathComponent == recordFileName,
+        let id = ULID(ulidString: url.deletingLastPathComponent().lastPathComponent)
+      else { continue }
+      let session = SessionId(rawValue: id.description)
+      if !listed.contains(session) { ids.insert(session) }
+    }
+    return ids
   }
 }
 
@@ -104,13 +138,18 @@ extension TranscriptSearchApplier {
         }
         return (entry.session, content)
       }, uniquingKeysWith: { first, _ in first })
+    // A session whose history file does not read, or whose record does not read, keeps its
+    // items (D207).
     let unreadable = Set(
       reads.compactMap { entry -> SessionId? in
         guard case .unreadable = entry.read else {
           return nil
         }
         return entry.session
-      })
+      }
+    ).union(
+      RecordedSessionFolder.unlistedRecordIds(
+        under: folder.recordingRoot, listed: Set(recorded.map(\.sessionId))))
     let folderKey = AgentHome.projectKey(of: folder.folder)
     let removed = await index.indexedSessions().filter { session, metadata in
       AgentHome.projectKey(of: metadata.folder) == folderKey && contents[session] == nil

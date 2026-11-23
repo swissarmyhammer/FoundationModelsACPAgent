@@ -181,8 +181,7 @@ import Testing
   }
 
   /// Router gives a recorded root session with no title its default name
-  /// when it reads the session. The session has no agent name, so the name
-  /// is the fallback name of `SessionName`.
+  /// when it reads the session: the last folder name of its working folder.
   @Test("a recorded session with no title lists with its default name")
   func sessionWithNoTitleListsWithItsDefaultName() async throws {
     let fixture = try await Self.makeFixture()
@@ -192,7 +191,8 @@ import Testing
     let records = try fixture.store.sessions(inProject: fixture.workingDirectory)
 
     #expect(records.map(\.sessionId) == [id])
-    #expect(records.first?.facts.title == SessionName.default(agentName: "", usedNames: []))
+    #expect(
+      records.first?.facts.title == SessionName.default(folder: fixture.workingDirectory, usedNames: []))
     #expect(records.first?.additionalDirectories == [])
     #expect(
       records.first?.workingDirectory.standardizedFileURL.path

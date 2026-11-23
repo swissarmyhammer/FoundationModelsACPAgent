@@ -408,8 +408,7 @@ import Testing
     let record = try RecordedSessionIndexFile.slice(
       ofSession: response.sessionId.rawValue, under: Self.projectTranscriptsRoot(of: cwd),
       as: RecordActivitySlice.self)
-    #expect(
-      record.title == SessionName.default(agentName: AgentCatalog.defaultAgentID, usedNames: []))
+    #expect(record.title == SessionName.default(folder: cwd, usedNames: []))
     #expect(record.firstActivityAt == nil)
   }
 

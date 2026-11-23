@@ -3,6 +3,7 @@ import FoundationModels
 import FoundationModelsACP
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsACPClient
+import FoundationModelsExtras
 import FoundationModelsRouter
 import Testing
 import ULID
@@ -1406,10 +1407,12 @@ import ULID
         == [.value(defaultName)])
   }
 
-  /// The `session_info_update` of a new session has the name of the agent
-  /// of the session: the `name` of the `AGENT.md` of its working directory.
+  /// The `session_info_update` of a new session has the last folder name
+  /// of its working directory, also when the folder holds an `AGENT.md`
+  /// with another name: the agent does not change the name (user decision
+  /// of 2026-11-23).
   @Test
-  func aNewSessionSendsTheNameOfItsAgentBeforeTheFirstPrompt() async throws {
+  func aNewSessionSendsTheNameOfItsFolderBeforeTheFirstPrompt() async throws {
     let cwd = makeResolvedDirectory(label: "PromptExecutionTests-agent-name")
     try AgentFolderFixture.writeAgent(named: AgentFolderFixture.sampleAgentName, in: cwd)
     let fixture = try await ScriptedPromptFixture.make(
@@ -1420,7 +1423,7 @@ import ULID
 
     #expect(
       Self.sessionInfoTitles(in: Self.updatesBeforeFirstPrompt(in: updates))
-        == [.value(AgentFolderFixture.sampleAgentSlug)])
+        == [.value(SessionName.default(folder: cwd, usedNames: []))])
   }
 
   /// The first prompt does not change the name that the session has.

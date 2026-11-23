@@ -34,16 +34,23 @@ import Testing
   /// The prompt text of the second session.
   private static let secondPrompt = "the second session"
 
-  /// The default name of the first session in a folder. The session has the
-  /// builtin default agent, and the host of the fixture gives no name, so
-  /// the name comes from the id of the default agent.
-  private static let firstName = SessionName.default(
-    agentName: AgentCatalog.defaultAgentID, usedNames: [])
+  /// The default name of the first session in `cwd`: the last folder name
+  /// of `cwd`. The agent does not change it.
+  ///
+  /// - Parameter cwd: The working folder of the session.
+  /// - Returns: The name.
+  private static func firstName(in cwd: URL) -> String {
+    SessionName.default(folder: cwd, usedNames: [])
+  }
 
-  /// The default name of the second session in the same folder: the first
-  /// session uses the base name.
-  private static let secondName = SessionName.default(
-    agentName: AgentCatalog.defaultAgentID, usedNames: [firstName])
+  /// The default name of the second session in `cwd`: the first session
+  /// uses the base name.
+  ///
+  /// - Parameter cwd: The working folder of the session.
+  /// - Returns: The name.
+  private static func secondName(in cwd: URL) -> String {
+    SessionName.default(folder: cwd, usedNames: [firstName(in: cwd)])
+  }
 
   /// The script of each prompt: one text, then the end of the pass.
   private static let script: [ScriptedPassStep] = [.textDelta("done"), .endPass]
@@ -70,12 +77,14 @@ import Testing
     let root = try Self.recordingRoot(of: fixture.cwd)
     let first = try Self.frontmatter(ofSession: fixture.sessionId, under: root)
     let other = try Self.frontmatter(ofSession: second, under: root)
-    #expect(first["title"] == .string(Self.firstName))
+    #expect(first["title"] == .string(Self.firstName(in: fixture.cwd)))
     #expect(Self.paths(in: first["additionalDirectories"]) == [extraOne.standardizedFileURL.path])
-    #expect(other["title"] == .string(Self.secondName))
+    #expect(other["title"] == .string(Self.secondName(in: fixture.cwd)))
     #expect(Self.paths(in: other["additionalDirectories"]) == [extraTwo.standardizedFileURL.path])
     #expect(Set(listed.sessions.map(\.sessionId)) == [fixture.sessionId, second])
-    #expect(Set(listed.sessions.compactMap(\.title)) == [Self.firstName, Self.secondName])
+    #expect(
+      Set(listed.sessions.compactMap(\.title))
+        == [Self.firstName(in: fixture.cwd), Self.secondName(in: fixture.cwd)])
     #expect(
       !FileManager.default.fileExists(
         atPath: root.appendingPathComponent(Self.sharedListingFileName).path))
@@ -136,7 +145,8 @@ import Testing
     let entries = try FileManager.default.contentsOfDirectory(atPath: root.path)
     #expect(entries == [kept.rawValue])
     #expect(
-      try Self.frontmatter(ofSession: kept, under: root)["title"] == .string(Self.secondName))
+      try Self.frontmatter(ofSession: kept, under: root)["title"]
+        == .string(Self.secondName(in: fixture.cwd)))
   }
 
   // MARK: - Helpers
