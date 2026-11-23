@@ -13,10 +13,10 @@ import ULID
 
 @testable import FoundationModelsACPAgent
 
-/// The list and the import of the sessions of other agents (D209 (d), (e)):
-/// ``AgentSessionImporter`` lists the typed Claude Code and Codex sessions that the index of
-/// external sessions (``ExternalSessionIndex``, D212) read from fixture roots in a temporary
-/// folder, the newest first and the sessions of the preferred folder first.
+/// The list and the continue of the sessions of other agents (D209 (d), (e), D212): as the host
+/// of the external sessions, ``AgentSessionImporter`` lists the typed Claude Code and Codex
+/// sessions that the index of external sessions (``ExternalSessionIndex``) read from fixture
+/// roots in a temporary folder, the newest first, and continues one of them with a copy.
 ///
 /// The list never waits for the index, thus each test of the list waits until the index is
 /// idle before it lists. The index of these tests has no watch, so a change of a file reaches
@@ -59,12 +59,6 @@ import ULID
 
   /// The most sessions of a page that holds each fixture session.
   private static let wideLimit = 50
-
-  /// The date of the earlier of two imports of a source.
-  private static let earlierImportDate = Date(timeIntervalSince1970: 1)
-
-  /// The date of the later of two imports of a source, after ``earlierImportDate``.
-  private static let laterImportDate = earlierImportDate.addingTimeInterval(1)
 
   /// The modification date of a file whose bytes change with no change of size or date: the
   /// start of 1970, a whole second, which the file system keeps with no loss.
@@ -122,21 +116,34 @@ import ULID
     }
   }
 
-  /// A request for each agent and each folder.
+  /// A query of the typed sessions of each agent and each folder.
   ///
   /// - Parameters:
-  ///   - preferredFolder: The folder whose sessions come first, or `nil`.
-  ///   - agent: The source agent, or `nil` for each agent.
+  ///   - source: The source agent, or `nil` for each agent.
   ///   - folder: The folder of the sessions, or `nil` for each folder.
   ///   - limit: The most sessions of the page.
   ///   - cursor: The cursor of the page, or `nil`.
+  /// - Returns: The query.
+  private static func query(
+    source: String? = nil, folder: URL? = nil, limit: Int = wideLimit, cursor: String? = nil
+  ) -> ExternalSessionQuery {
+    ExternalSessionQuery(source: source, folder: folder, limit: limit, cursor: cursor)
+  }
+
+  /// The continue of a session of a source agent.
+  ///
+  /// - Parameters:
+  ///   - agent: The source agent.
+  ///   - sourceID: The id or the path of the source session.
+  ///   - folder: The folder of the new session, or `nil` for the folder of the source.
+  ///   - name: The name of the new session, or `nil`.
   /// - Returns: The request.
-  private static func request(
-    preferredFolder: URL? = nil, agent: String? = nil, folder: URL? = nil,
-    limit: Int = wideLimit, cursor: String? = nil
-  ) -> ImportableSessionsRequest {
-    ImportableSessionsRequest(
-      agent: agent, folder: folder, preferredFolder: preferredFolder, limit: limit, cursor: cursor)
+  private static func continueRequest(
+    of agent: ImportSourceAgent, _ sourceID: String, folder: URL? = nil, name: String? = nil
+  ) -> ExternalSessionContinueRequest {
+    ExternalSessionContinueRequest(
+      session: ExternalSessionID(source: agent.rawValue, sourceID: sourceID), folder: folder,
+      name: name)
   }
 
   /// An importer over roots, with an empty directory, after the index read the roots.
@@ -171,7 +178,7 @@ import ULID
     _ importer: AgentSessionImporter, clock: ManualExternalSessionClock
   ) async throws {
     clock.advance(by: ExternalSessionIndex.findInterval)
-    _ = try await importer.importable(request())
+    _ = try await importer.externalSessions(query())
     await importer.index.waitUntilIdle()
   }
 
@@ -179,13 +186,13 @@ import ULID
   ///
   /// - Parameters:
   ///   - importer: The importer.
-  ///   - request: The request.
+  ///   - query: The query.
   /// - Returns: The source ids, in the order of the page.
   /// - Throws: The error of the importer.
   private static func sourceIDs(
-    of importer: AgentSessionImporter, _ request: ImportableSessionsRequest = request()
+    of importer: AgentSessionImporter, _ query: ExternalSessionQuery = query()
   ) async throws -> [String] {
-    try await importer.importable(request).sessions.map(\.sourceID)
+    try await importer.externalSessions(query).sessions.map(\.sourceID)
   }
 
   /// The title of the Claude Code session in the first page of an importer.
@@ -195,7 +202,7 @@ import ULID
   /// - Throws: The error of the importer, or a failed requirement when the page has no Claude
   ///   Code session.
   private static func claudeTitle(of importer: AgentSessionImporter) async throws -> String? {
-    let page = try await importer.importable(request())
+    let page = try await importer.externalSessions(query())
     return try #require(page.sessions.first { $0.sourceID == claudeID }).title
   }
 
@@ -242,29 +249,9 @@ import ULID
     let modified: Date?
   }
 
-  /// Imports the Claude Code session into a directory, as an earlier import did.
-  ///
-  /// - Parameters:
-  ///   - directory: The directory.
-  ///   - date: The date of the import.
-  /// - Returns: The earlier import that the importer must list.
-  /// - Throws: The error of the directory.
-  private static func recordImport(in directory: InMemorySessionDirectory, at date: Date)
-    async throws -> SessionPreviousImport
-  {
-    let summary = try await directory.importSession(
-      SessionImportRequest(
-        workingDirectory: claudeFolder, title: firstTitle,
-        provenance: SessionImportProvenance(
-          agent: ImportSourceAgent.claudeCode.rawValue, sourceID: claudeID, sourcePath: "",
-          importedAt: date)),
-      transcript: Transcript())
-    return SessionPreviousImport(session: summary.id, importedAt: date)
-  }
-
   // MARK: - The order of the list
 
-  @Test("importable lists the sessions of both agents, the newest first")
+  @Test("the list gives the sessions of both agents, the newest first")
   func theListIsTheNewestFirst() async throws {
     let roots = try Roots.make()
 
@@ -276,7 +263,7 @@ import ULID
   /// iCloud Drive sets the macOS hidden flag on each item under a dot folder,
   /// such as `.claude` and `.codex`. The scan skips dotfiles by name, so it
   /// still finds each session.
-  @Test("importable lists the sessions whose files have the macOS hidden flag")
+  @Test("the list gives the sessions whose files have the macOS hidden flag")
   func filesWithTheHiddenFlagAreListed() async throws {
     let roots = try Roots.make()
     for root in [roots.claude, roots.codex] {
@@ -302,17 +289,7 @@ import ULID
     }
   }
 
-  @Test("the sessions of the preferred folder come first")
-  func thePreferredFolderComesFirst() async throws {
-    let roots = try Roots.make()
-
-    let ids = try await Self.sourceIDs(
-      of: await Self.importer(roots.all), Self.request(preferredFolder: Self.claudeFolder))
-
-    #expect(ids == [Self.claudeID, Self.codexID])
-  }
-
-  @Test("importable lists the archived sessions of Codex")
+  @Test("the list gives the archived sessions of Codex")
   func theArchivedCodexSessionsAreListed() async throws {
     let roots = try Roots.make()
     try roots.addArchivedCodexSession()
@@ -324,7 +301,7 @@ import ULID
 
   // MARK: - The filters and the pages
 
-  @Test("importable lists no automated session")
+  @Test("the list gives no automated session")
   func theListHasNoAutomatedSession() async throws {
     let roots = try Roots.make()
     try ImportSessionFiles.writeClaudeCode(
@@ -336,21 +313,12 @@ import ULID
     #expect(ids == [Self.codexID, Self.claudeID])
   }
 
-  @Test("a row of importable has no count of the turns")
-  func aRowHasNoCountOfTheTurns() async throws {
-    let roots = try Roots.make()
-
-    let page = try await Self.importer(roots.all).importable(Self.request())
-
-    #expect(page.sessions.map(\.turnCount) == [0, 0])
-  }
-
   @Test("an agent filter lists only the sessions of that agent")
   func theAgentFilterListsOneAgent() async throws {
     let roots = try Roots.make()
 
     let ids = try await Self.sourceIDs(
-      of: await Self.importer(roots.all), Self.request(agent: ImportSourceAgent.claudeCode.rawValue))
+      of: await Self.importer(roots.all), Self.query(source: ImportSourceAgent.claudeCode.rawValue))
 
     #expect(ids == [Self.claudeID])
   }
@@ -360,7 +328,7 @@ import ULID
     let roots = try Roots.make()
 
     let ids = try await Self.sourceIDs(
-      of: await Self.importer(roots.all), Self.request(folder: Self.codexFolder))
+      of: await Self.importer(roots.all), Self.query(folder: Self.codexFolder))
 
     #expect(ids == [Self.codexID])
   }
@@ -369,8 +337,8 @@ import ULID
   func anUnknownAgentThrows() async throws {
     let roots = try Roots.make()
 
-    await #expect(throws: AgentSessionImportError.unknownAgent("gemini")) {
-      try await Self.importer(roots.all).importable(Self.request(agent: "gemini"))
+    await #expect(throws: ExternalSessionIndexError.unknownSource("gemini")) {
+      try await Self.importer(roots.all).externalSessions(Self.query(source: "gemini"))
     }
   }
 
@@ -378,10 +346,10 @@ import ULID
   func theCursorGivesTheNextPage() async throws {
     let roots = try Roots.make()
     let importer = await Self.importer(roots.all)
-    let first = try await importer.importable(Self.request(limit: 1))
+    let first = try await importer.externalSessions(Self.query(limit: 1))
 
     let second = try await Self.sourceIDs(
-      of: importer, Self.request(limit: 1, cursor: first.nextCursor))
+      of: importer, Self.query(limit: 1, cursor: first.nextCursor))
 
     #expect(first.sessions.map(\.sourceID) + second == [Self.codexID, Self.claudeID])
   }
@@ -390,7 +358,7 @@ import ULID
   func theLastPageGivesNoCursor() async throws {
     let roots = try Roots.make()
 
-    let page = try await Self.importer(roots.all).importable(Self.request())
+    let page = try await Self.importer(roots.all).externalSessions(Self.query())
 
     #expect(page.nextCursor == nil)
   }
@@ -401,7 +369,7 @@ import ULID
   func aSourceWithNoRootIsUnreadable() async throws {
     let roots = try Roots.make()
 
-    let page = try await Self.importer([.claudeCode: roots.claude]).importable(Self.request())
+    let page = try await Self.importer([.claudeCode: roots.claude]).externalSessions(Self.query())
 
     #expect(page.unreadableSources == [ImportSourceAgent.codex.rawValue])
   }
@@ -413,7 +381,7 @@ import ULID
     let base = roots.claude.deletingLastPathComponent()
     let before = try Self.fileStates(under: base)
 
-    _ = try await Self.importer(roots.all).importable(Self.request())
+    _ = try await Self.importer(roots.all).externalSessions(Self.query())
 
     #expect(try Self.fileStates(under: base) == before)
   }
@@ -513,21 +481,21 @@ import ULID
     await importer.replaceRoots([.claudeCode: roots.claude])
 
     #expect(
-      try await importer.importable(Self.request()).unreadableSources
+      try await importer.externalSessions(Self.query()).unreadableSources
         == [ImportSourceAgent.codex.rawValue])
   }
 
-  @Test("an import from a root that the host takes away gives sourceUnreadable")
-  func anImportFromARootTakenAwayIsUnreadable() async throws {
+  @Test("a continue from a root that the host takes away gives sourceUnreadable")
+  func aContinueFromARootTakenAwayIsUnreadable() async throws {
     let roots = try Roots.make()
     let importer = await Self.importer(roots.all)
-    let order = SessionImportOrder(
-      agent: ImportSourceAgent.codex.rawValue, source: Self.codexID, folder: nil, name: nil)
 
     await importer.replaceRoots([.claudeCode: roots.claude])
 
-    await #expect(throws: SessionImportError.sourceUnreadable(agent: ImportSourceAgent.codex.rawValue)) {
-      try await importer.importSession(order)
+    await #expect(
+      throws: ExternalSessionError.sourceUnreadable(source: ImportSourceAgent.codex.rawValue)
+    ) {
+      try await importer.continueExternalSession(Self.continueRequest(of: .codex, Self.codexID))
     }
   }
 
@@ -613,58 +581,52 @@ import ULID
     #expect(PathKind.of(folder) == .missing)
   }
 
-  // MARK: - The earlier imports
+  // MARK: - The checks of a continue
 
-  @Test("previousImports lists the earlier copies of a source")
-  func previousImportsListsTheEarlierCopies() async throws {
+  @Test("a continue from a source with no root gives sourceUnreadable")
+  func aContinueWithNoRootIsUnreadable() async throws {
     let roots = try Roots.make()
-    let directory = InMemorySessionDirectory(
-      launcher: InMemorySessionDirectory.Launcher(
-        agentIDs: ["default"], defaultWorkingDirectory: Self.claudeFolder))
-    let earlier = try await Self.recordImport(in: directory, at: Self.earlierImportDate)
-    let later = try await Self.recordImport(in: directory, at: Self.laterImportDate)
 
-    let page = try await Self.importer(roots.all, directory: directory).importable(Self.request())
-
-    #expect(page.sessions.first { $0.sourceID == Self.claudeID }?.previousImports == [earlier, later])
-  }
-
-  // MARK: - The checks of an import
-
-  @Test("an import from a source with no root gives sourceUnreadable")
-  func anImportWithNoRootIsUnreadable() async throws {
-    let roots = try Roots.make()
-    let order = SessionImportOrder(
-      agent: ImportSourceAgent.codex.rawValue, source: Self.codexID, folder: nil, name: nil)
-
-    await #expect(throws: SessionImportError.sourceUnreadable(agent: ImportSourceAgent.codex.rawValue)) {
-      try await Self.importer([.claudeCode: roots.claude]).importSession(order)
+    await #expect(
+      throws: ExternalSessionError.sourceUnreadable(source: ImportSourceAgent.codex.rawValue)
+    ) {
+      try await Self.importer([.claudeCode: roots.claude]).continueExternalSession(
+        Self.continueRequest(of: .codex, Self.codexID))
     }
   }
 
-  @Test("an import into a folder that does not exist gives folderUnavailable")
-  func anImportIntoAMissingFolderIsUnavailable() async throws {
+  @Test("a continue into a folder that does not exist gives folderUnavailable")
+  func aContinueIntoAMissingFolderIsUnavailable() async throws {
     let roots = try Roots.make()
     let missing = roots.claude.deletingLastPathComponent().appendingPathComponent(
       "missing", isDirectory: true)
-    let order = SessionImportOrder(
-      agent: ImportSourceAgent.claudeCode.rawValue, source: Self.claudeID, folder: missing,
-      name: nil)
 
-    await #expect(throws: SessionImportError.folderUnavailable(missing)) {
-      try await Self.importer(roots.all).importSession(order)
+    await #expect(throws: ExternalSessionError.folderUnavailable(missing)) {
+      try await Self.importer(roots.all).continueExternalSession(
+        Self.continueRequest(of: .claudeCode, Self.claudeID, folder: missing))
     }
   }
 
-  // MARK: - The write of an import
+  @Test("a continue of an unknown source agent gives unknownSession")
+  func aContinueOfAnUnknownAgentIsUnknown() async throws {
+    let roots = try Roots.make()
+    let session = ExternalSessionID(source: "gemini", sourceID: Self.claudeID)
 
-  @Test("an import makes a new session with the provenance of the source")
+    await #expect(throws: ExternalSessionError.unknownSession(session)) {
+      try await Self.importer(roots.all).continueExternalSession(
+        ExternalSessionContinueRequest(session: session))
+    }
+  }
+
+  // MARK: - The write of a continue
+
+  @Test("a continue makes a new session with the provenance of the source")
   func anImportHasTheProvenanceOfTheSource() async throws {
     let fixture = try await ImportFixture.make()
 
-    let result = try await fixture.importer.importSession(fixture.order())
+    let result = try await fixture.importer.continueExternalSession(fixture.request())
 
-    let provenance = try #require(try await fixture.directory.summary(of: result.session)?.importedFrom)
+    let provenance = try #require(try await fixture.directory.summary(of: result.id)?.importedFrom)
     #expect(
       provenance
         == SessionImportProvenance(
@@ -673,34 +635,34 @@ import ULID
           sourceLastDate: try ImportFixture.lastRecordDate(), importedAt: provenance.importedAt))
   }
 
-  @Test("an import from a source with no title has no source title in its provenance")
+  @Test("a continue of a source with no title has no source title in its provenance")
   func anImportFromASourceWithNoTitleHasNoSourceTitle() async throws {
     let fixture = try await ImportFixture.make(title: nil)
 
-    let result = try await fixture.importer.importSession(fixture.order())
+    let result = try await fixture.importer.continueExternalSession(fixture.request())
 
-    let provenance = try #require(try await fixture.directory.summary(of: result.session)?.importedFrom)
+    let provenance = try #require(try await fixture.directory.summary(of: result.id)?.importedFrom)
     #expect(provenance.sourceTitle == nil)
   }
 
-  @Test("an import with no folder works in the folder of the source session")
+  @Test("a continue with no folder works in the folder of the source session")
   func anImportWithNoFolderWorksInTheSourceFolder() async throws {
     let fixture = try await ImportFixture.make()
 
-    let result = try await fixture.importer.importSession(fixture.order())
+    let result = try await fixture.importer.continueExternalSession(fixture.request())
 
     #expect(
-      try await fixture.directory.summary(of: result.session)?.workingDirectory.canonicalPath
+      try await fixture.directory.summary(of: result.id)?.workingDirectory.canonicalPath
         == fixture.folder.canonicalPath)
   }
 
-  @Test("the transcript of an import holds the prompt and the answer of the source")
+  @Test("the transcript of a continue holds the prompt and the answer of the source")
   func theTranscriptHoldsThePromptAndTheAnswer() async throws {
     let fixture = try await ImportFixture.make()
 
-    let result = try await fixture.importer.importSession(fixture.order())
+    let result = try await fixture.importer.continueExternalSession(fixture.request())
 
-    let transcript = try #require(fixture.directory.importedTranscript(of: result.session))
+    let transcript = try #require(fixture.directory.importedTranscript(of: result.id))
     #expect(
       ImportedTranscriptReading.texts(of: transcript) == [
         "prompt: \(ImportSessionFiles.claudeCodeQuestion)",
@@ -709,102 +671,95 @@ import ULID
       ])
   }
 
-  @Test("an import writes the updates of the source as the history of the new session")
+  @Test("a continue writes the updates of the source as the history of the new session")
   func anImportWritesTheHistory() async throws {
     let fixture = try await ImportFixture.make()
     let updates = try ClaudeCodeSessionReader(sourceID: Self.claudeID)
       .read(from: FileByteSource(forReadingFrom: fixture.file)).updates
 
-    let result = try await fixture.importer.importSession(fixture.order())
+    let result = try await fixture.importer.continueExternalSession(fixture.request())
 
     #expect(
-      fixture.store.history(of: result.session)?.transcriptUpdates
+      fixture.store.history(of: result.id)?.transcriptUpdates
         == SessionMergeEngine(replaying: updates).transcriptUpdates)
   }
 
-  @Test("the result of an import names the new session")
-  func theResultNamesTheNewSession() async throws {
+  @Test("the summary of a continue names the new session of the directory")
+  func theSummaryNamesTheNewSession() async throws {
     let fixture = try await ImportFixture.make()
 
-    let result = try await fixture.importer.importSession(fixture.order())
+    let result = try await fixture.importer.continueExternalSession(fixture.request())
 
-    #expect(try await fixture.directory.summary(of: result.session)?.title == result.name)
+    #expect(try await fixture.directory.summary(of: result.id)?.title == result.title)
   }
 
-  @Test("the name of the order is the name of the new session")
-  func theNameOfTheOrderIsTheName() async throws {
+  @Test("the name of the continue is the name of the new session")
+  func theNameOfTheContinueIsTheName() async throws {
     let fixture = try await ImportFixture.make()
 
-    let result = try await fixture.importer.importSession(fixture.order(name: Self.longerTitle))
+    let result = try await fixture.importer.continueExternalSession(
+      fixture.request(name: Self.longerTitle))
 
-    #expect(result.name == Self.longerTitle)
+    #expect(result.title == Self.longerTitle)
   }
 
-  @Test("an import with no name takes the title of the source")
-  func anImportWithNoNameTakesTheTitle() async throws {
+  @Test("a continue with no name takes the title of the source")
+  func aContinueWithNoNameTakesTheTitle() async throws {
     let fixture = try await ImportFixture.make()
 
-    let result = try await fixture.importer.importSession(fixture.order())
+    let result = try await fixture.importer.continueExternalSession(fixture.request())
 
-    #expect(result.name == Self.firstTitle)
+    #expect(result.title == Self.firstTitle)
   }
 
   @Test("a source with no title gives the name claude-code-import")
   func aSourceWithNoTitleGivesTheAgentImportName() async throws {
     let fixture = try await ImportFixture.make(title: nil)
 
-    let result = try await fixture.importer.importSession(fixture.order())
+    let result = try await fixture.importer.continueExternalSession(fixture.request())
 
-    #expect(result.name == "claude-code-import")
+    #expect(result.title == "claude-code-import")
   }
 
-  @Test("a second import of the same source makes a second session with a new name")
-  func aSecondImportMakesASecondSession() async throws {
+  @Test("a second continue of the same source makes a second session with a new name")
+  func aSecondContinueMakesASecondSession() async throws {
     let fixture = try await ImportFixture.make()
 
-    let first = try await fixture.importer.importSession(fixture.order())
-    let second = try await fixture.importer.importSession(fixture.order())
+    let first = try await fixture.importer.continueExternalSession(fixture.request())
+    let second = try await fixture.importer.continueExternalSession(fixture.request())
 
-    #expect(first.session != second.session && first.name != second.name)
+    #expect(first.id != second.id && first.title != second.title)
   }
 
-  @Test("after two imports of a source, previousImports has two entries")
-  func twoImportsGiveTwoPreviousImports() async throws {
-    let fixture = try await ImportFixture.make()
-    _ = try await fixture.importer.importSession(fixture.order())
-    _ = try await fixture.importer.importSession(fixture.order())
-
-    let page = try await fixture.importer.importable(Self.request())
-
-    #expect(page.sessions.first { $0.sourceID == Self.claudeID }?.previousImports.count == 2)
-  }
-
-  @Test("an import of a source by the path of its file imports that file")
-  func anImportByPathImportsTheFile() async throws {
+  @Test("a continue of a source by the path of its file copies that file")
+  func aContinueByPathCopiesTheFile() async throws {
     let fixture = try await ImportFixture.make()
 
-    let result = try await fixture.importer.importSession(fixture.order(source: fixture.file.path))
+    let result = try await fixture.importer.continueExternalSession(
+      fixture.request(source: fixture.file.path))
 
     #expect(
-      try await fixture.directory.summary(of: result.session)?.importedFrom?.sourceID == Self.claudeID)
+      try await fixture.directory.summary(of: result.id)?.importedFrom?.sourceID == Self.claudeID)
   }
 
-  @Test("an import of a source that the root does not hold gives unknownSource")
+  @Test("a continue of a source that the root does not hold gives unknownSession")
   func anUnknownSourceThrows() async throws {
     let fixture = try await ImportFixture.make()
+    let unknown = ExternalSessionID(
+      source: ImportSourceAgent.claudeCode.rawValue, sourceID: "no-such-session")
 
-    await #expect(throws: AgentSessionImportError.unknownSource("no-such-session")) {
-      try await fixture.importer.importSession(fixture.order(source: "no-such-session"))
+    await #expect(throws: ExternalSessionError.unknownSession(unknown)) {
+      try await fixture.importer.continueExternalSession(fixture.request(source: "no-such-session"))
     }
   }
 
-  @Test("an import into a folder that does not exist makes no session")
-  func anImportIntoAMissingFolderMakesNoSession() async throws {
+  @Test("a continue into a folder that does not exist makes no session")
+  func aContinueIntoAMissingFolderMakesNoSession() async throws {
     let fixture = try await ImportFixture.make()
     let missing = fixture.folder.appendingPathComponent("missing", isDirectory: true)
 
-    await #expect(throws: SessionImportError.folderUnavailable(missing)) {
-      try await fixture.importer.importSession(fixture.order(folder: missing))
+    await #expect(throws: ExternalSessionError.folderUnavailable(missing)) {
+      try await fixture.importer.continueExternalSession(fixture.request(folder: missing))
     }
 
     #expect(
@@ -813,12 +768,12 @@ import ULID
       ).isEmpty)
   }
 
-  @Test("an import does not change the bytes or the date of the source file")
-  func anImportLeavesTheSourceUnchanged() async throws {
+  @Test("a continue does not change the bytes or the date of the source file")
+  func aContinueLeavesTheSourceUnchanged() async throws {
     let fixture = try await ImportFixture.make()
     let before = try Self.fileStates(under: fixture.claude)
 
-    _ = try await fixture.importer.importSession(fixture.order())
+    _ = try await fixture.importer.continueExternalSession(fixture.request())
 
     #expect(try Self.fileStates(under: fixture.claude) == before)
   }
@@ -828,18 +783,18 @@ import ULID
     let fixture = try await ImportFixture.make(store: RecordingHistoryStore(failsWrite: true))
 
     await #expect(throws: RecordingHistoryStore.WriteFailure.self) {
-      try await fixture.importer.importSession(fixture.order())
+      try await fixture.importer.continueExternalSession(fixture.request())
     }
 
     #expect(fixture.store.removedSessions.count == 1)
   }
 
-  @Test("a failed write of the history fails the import")
-  func aFailedHistoryWriteFailsTheImport() async throws {
+  @Test("a failed write of the history fails the continue")
+  func aFailedHistoryWriteFailsTheContinue() async throws {
     let fixture = try await ImportFixture.make(store: RecordingHistoryStore(failsWrite: true))
 
     await #expect(throws: RecordingHistoryStore.WriteFailure.self) {
-      try await fixture.importer.importSession(fixture.order())
+      try await fixture.importer.continueExternalSession(fixture.request())
     }
   }
 }
@@ -847,7 +802,8 @@ import ULID
 // MARK: - The fixtures of an import
 
 /// A Claude Code root whose session works in a folder that exists, a directory that imports,
-/// and a store that records the histories of the new sessions.
+/// and a store that records the histories of the new sessions. The tests of the write copy the
+/// session with `continueExternalSession(_:)`.
 private struct ImportFixture {
   /// The directory label of the fixture.
   private static let label = "AgentSessionImporterTests-import"
@@ -915,18 +871,19 @@ private struct ImportFixture {
       importer: importer)
   }
 
-  /// The order that imports the source session.
+  /// The continue of the source session.
   ///
   /// - Parameters:
   ///   - source: The id or the path of the source session. The id by default.
   ///   - folder: The folder of the new session, or `nil` for the folder of the source.
   ///   - name: The name of the new session, or `nil`.
-  /// - Returns: The order.
-  func order(source: String = claudeID, folder: URL? = nil, name: String? = nil)
-    -> SessionImportOrder
+  /// - Returns: The request.
+  func request(source: String = claudeID, folder: URL? = nil, name: String? = nil)
+    -> ExternalSessionContinueRequest
   {
-    SessionImportOrder(
-      agent: ImportSourceAgent.claudeCode.rawValue, source: source, folder: folder, name: name)
+    ExternalSessionContinueRequest(
+      session: ExternalSessionID(source: ImportSourceAgent.claudeCode.rawValue, sourceID: source),
+      folder: folder, name: name)
   }
 }
 

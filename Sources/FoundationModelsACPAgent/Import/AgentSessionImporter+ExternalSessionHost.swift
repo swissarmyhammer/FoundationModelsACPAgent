@@ -6,7 +6,8 @@ import FoundationModelsMultitool
 
 /// The importer is the host of the external sessions of the `sessions` endpoint and tool
 /// (D212, sections 4.5, 5.3 and 5.4): the query and the changes read the index, the updates read
-/// one file as a stream, and the continue is the copy of ``AgentSessionImporter/importSession(_:)``.
+/// one file as a stream, and the continue is the copy of
+/// ``AgentSessionImporter/copySession(of:folder:name:)``.
 extension AgentSessionImporter: ExternalSessionHost {
   /// The number of bytes of each read of the stream of a read-only view: 1 MB (section 5.3).
   static let updateBlockSize = 1_048_576
@@ -42,14 +43,9 @@ extension AgentSessionImporter: ExternalSessionHost {
   func continueExternalSession(_ request: ExternalSessionContinueRequest) async throws
     -> SessionSummary
   {
-    let order = SessionImportOrder(
-      agent: request.session.source, source: request.session.sourceID, folder: request.folder,
-      name: request.name)
     do {
       try Task.checkCancellation()
-      return try await copySession(order).summary
-    } catch let error as SessionImportError {
-      throw Self.externalError(of: error, session: request.session)
+      return try await copySession(of: request.session, folder: request.folder, name: request.name)
     } catch let error as AgentSessionImportError {
       throw Self.externalError(of: error, session: request.session)
     }
@@ -115,28 +111,24 @@ extension AgentSessionImporter: ExternalSessionHost {
 
   // MARK: - The errors
 
-  /// The error of the external sessions for an error of the copy.
-  private static func externalError(
-    of error: SessionImportError, session: ExternalSessionID
-  ) -> any Error {
-    switch error {
-    case .sourceUnreadable:
-      ExternalSessionError.sourceUnreadable(source: session.source)
-    case .folderUnavailable(let folder):
-      ExternalSessionError.folderUnavailable(folder)
-    @unknown default:
-      error
-    }
-  }
-
-  /// The error of the external sessions for an error of the importer.
+  /// The error of the external sessions for an error of the copy. An error with no case of
+  /// ``ExternalSessionError`` stays as it is.
+  ///
+  /// - Parameters:
+  ///   - error: The error of the copy.
+  ///   - session: The external session of the continue.
+  /// - Returns: The error to throw.
   private static func externalError(
     of error: AgentSessionImportError, session: ExternalSessionID
   ) -> any Error {
     switch error {
     case .unknownAgent, .unknownSource:
       ExternalSessionError.unknownSession(session)
-    case .invalidCursor, .noFolder:
+    case .sourceUnreadable:
+      ExternalSessionError.sourceUnreadable(source: session.source)
+    case .folderUnavailable(let folder):
+      ExternalSessionError.folderUnavailable(folder)
+    case .noFolder:
       error
     }
   }

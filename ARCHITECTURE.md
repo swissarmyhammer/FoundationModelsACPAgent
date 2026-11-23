@@ -218,16 +218,17 @@ the host saves it and gives the link. This package does not know where the host 
 
 ## The import of a session of another agent
 
-An import (D209) copies a session of Claude Code or Codex into a new session of this agent. The
-scan is in `Sources/FoundationModelsACPAgent/Import/`. The readers of the session files are in
-the `ACPImport` target of FoundationModelsACP, and the protocol is the `SessionImporter` of
-Multitool.
+An import (D209, D212) copies a session of Claude Code or Codex into a new session of this
+agent: the continue of an external session. The scan is in
+`Sources/FoundationModelsACPAgent/Import/`. The readers of the session files are in the
+`ACPImport` target of FoundationModelsACP, and the protocol is the `ExternalSessionHost` of
+Extras.
 
 - **The roots.** The host gives the folder of each source agent that it can read as
   `importRoots: [ImportSourceAgent: URL]` to the initializer of `RoutedACPAgent` (or to
   `ComposedAgent.compose`). The `acp-agent` CLI gives `~/.claude` (or `CLAUDE_CONFIG_DIR`) and
-  `~/.codex`. A source with no root is in the `unreadableSources` of each page, and an import
-  from it gives `SessionImportError.sourceUnreadable`. The host replaces all the roots of the
+  `~/.codex`. A source with no root is in the `unreadableSources` of each page, and a continue
+  of a session of it gives `ExternalSessionError.sourceUnreadable`. The host replaces all the roots of the
   running agent with `setImportRoots(_:)` of `RoutedACPAgent` or `ComposedAgent`
   (`AgentSessionImporter.replaceRoots(_:)`): a sandboxed app gets the access to a root after
   the launch. A root that changed or is gone loses its entries and its index file.
@@ -255,18 +256,19 @@ Multitool.
   with a folder takes the project key from the `realpath` of the folder, as Claude Code does.
   The shutdown of the agent stops the index (`stop()`): no new find, read, watch or timer
   starts, and the index writes the entries that it did not write yet.
-- **The list.** `AgentSessionImporter` (a struct) reads the index for `importable(_:)`: the
-  typed sessions in the state `read`, the newest first, with the sessions of the preferred
-  folder first. It never reads a session file and never waits for the index.
-- **The earlier imports.** `previousImports` of a row comes from the `importedFrom` of the
-  sessions of the session directory, by agent and source id. It is information only (Q85).
+- **The host.** `AgentSessionImporter` (a struct) is the `ExternalSessionHost` of the agent
+  (`AgentSessionImporter+ExternalSessionHost.swift`): the query and the changes read the index,
+  the updates read one file as a stream, and `continueExternalSession(_:)` is the copy. The
+  query never reads a session file and never waits for the index.
 - **The wiring.** The agent keeps one importer (`RoutedACPAgent.sessionImporter`) and gives it
-  to the `sessions` tool of each session through `CatalogContext.sessionImporter`. The tool
+  to the `sessions` tool of each session through `CatalogContext.externalSessionHost`. The tool
   gives it to the `sessions` endpoint of the directory, beside the exporter, the searcher and
   the sharer.
-- **The import.** `importSession` checks the agent (`SessionImportError.sourceUnreadable`) and
-  the folder of the new session (`SessionImportError.folderUnavailable`), and finds the source
-  in the index by its id or its path (a miss runs a find of the root first). It reads that one
+- **The copy.** `copySession(of:folder:name:)` checks the agent and the folder of the new
+  session, and finds the source in the index by its id or its path (a miss runs a find of the
+  root first). `continueExternalSession(_:)` changes each `AgentSessionImportError` that has a
+  case of `ExternalSessionError` to that case: `sourceUnreadable`, `folderUnavailable` and
+  `unknownSession`. It reads that one
   file whole with the
   `ACPImport` reader, and makes the model transcript of its updates (`ImportedTranscript`: a
   prompt for each user message, one response for each turn, a tool call as a short text, no

@@ -152,12 +152,6 @@ public struct CatalogContext: Sendable {
   /// `SHARING_UNAVAILABLE`.
   public let sessionSharer: (any SessionSharer)?
 
-  /// The importer of the sessions of other agents (D209), or `nil` for a catalog with no
-  /// importer. The `sessions` tool gives it to the `list imports` and `import session`
-  /// operations and to the `sessions` endpoint. With no importer, they give
-  /// `IMPORT_UNAVAILABLE`.
-  public let sessionImporter: (any SessionImporter)?
-
   /// The host of the external sessions of other agents (D212), or `nil` for a catalog with no
   /// host. The `sessions` tool gives it to the `list external sessions`, `read external session`
   /// and `continue external session` operations and to the external session fields of the
@@ -229,8 +223,6 @@ public struct CatalogContext: Sendable {
   ///     sessions, or `nil` (the default) for none (``transcriptSearcher``).
   ///   - sessionSharer: The sharer of the sessions, or `nil` (the default) for none
   ///     (``sessionSharer``).
-  ///   - sessionImporter: The importer of the sessions of other agents, or `nil` (the default)
-  ///     for none (``sessionImporter``).
   ///   - modelsEndpoint: The `models` endpoint of the agent, or `nil` (the
   ///     default) for no `models` tool (``modelsEndpoint``).
   ///   - mcpServerRegistry: The MCP server registry of the agent, or `nil`
@@ -260,7 +252,6 @@ public struct CatalogContext: Sendable {
     transcriptExporter: (any SessionTranscriptExporter)? = nil,
     transcriptSearcher: (any SessionTranscriptSearcher)? = nil,
     sessionSharer: (any SessionSharer)? = nil,
-    sessionImporter: (any SessionImporter)? = nil,
     externalSessionHost: (any ExternalSessionHost)? = nil,
     modelsEndpoint: ModelsGraph? = nil,
     mcpServerRegistry: MCPServerRegistry? = nil,
@@ -276,7 +267,6 @@ public struct CatalogContext: Sendable {
     self.transcriptExporter = transcriptExporter
     self.transcriptSearcher = transcriptSearcher
     self.sessionSharer = sessionSharer
-    self.sessionImporter = sessionImporter
     self.externalSessionHost = externalSessionHost
     self.agentRunHost = agentRunHost
     self.snapshotStore = snapshotStore

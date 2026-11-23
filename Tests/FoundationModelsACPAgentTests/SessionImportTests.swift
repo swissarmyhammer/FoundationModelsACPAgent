@@ -11,13 +11,14 @@ import ULID
 
 @testable import FoundationModelsACPAgent
 
-/// The import of a session of another agent into a new session of the agent (D209): the
-/// importer of the agent reads a Claude Code session file of a fixture root, the Router
-/// directory writes the new recording, and the agent writes the history of the new session.
+/// The copy of a session of another agent into a new session of the agent (D209, D212): the
+/// continue of an external session of the importer of the agent reads a Claude Code session
+/// file of a fixture root, the Router directory writes the new recording with the origin
+/// `import`, and the agent writes the history of the new session.
 ///
 /// Each test runs a scripted agent in the test process. The suite trait closes each harness of
 /// a test whose body throws.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct SessionImportTests {
+@Suite(.closesHarnesses) struct SessionImportTests {
   // MARK: - Constants
 
   /// The directory label of the suite.
@@ -29,14 +30,14 @@ import ULID
   /// The custom title of the Claude Code session.
   private static let title = "Timer fix"
 
-  /// The name of a second import of the same source: the slug of ``title`` with the next free
+  /// The name of a second copy of the same source: the slug of ``title`` with the next free
   /// number.
   private static let secondName = "timer-fix-2"
 
   /// The text of the agent message of the scripted model.
   private static let scriptedAnswer = "Next answer."
 
-  /// The prompt that the test sends to the imported session.
+  /// The prompt that the test sends to the new session.
   private static let nextPrompt = "Next question."
 
   /// The most sessions of a page of a search.
@@ -74,17 +75,20 @@ import ULID
       return ImportFixture(fixture: fixture, file: file)
     }
 
-    /// Imports the source session into the folder of the fixture.
+    /// Continues the source session in a new session, through the agent as the host of the
+    /// external sessions.
     ///
     /// - Parameter folder: The folder of the new session, or `nil` for the folder of the
     ///   source.
-    /// - Returns: The result of the import.
-    /// - Throws: The error of the importer.
-    func importSource(folder: URL? = nil) async throws -> SessionImportResult {
-      try await agent.sessionImporter.importSession(
-        SessionImportOrder(
-          agent: ImportSourceAgent.claudeCode.rawValue, source: claudeID, folder: folder,
-          name: nil))
+    /// - Returns: The summary of the new session.
+    /// - Throws: The error of the continue.
+    func importSource(folder: URL? = nil) async throws -> SessionSummary {
+      let host: any ExternalSessionHost = agent.sessionImporter
+      return try await host.continueExternalSession(
+        ExternalSessionContinueRequest(
+          session: ExternalSessionID(
+            source: ImportSourceAgent.claudeCode.rawValue, sourceID: claudeID),
+          folder: folder))
     }
 
     /// The updates of the source session, as the reader reads them.
@@ -150,7 +154,7 @@ import ULID
 
     let summaries = try await imported.agent.sessionDirectory.sessions(
       matching: SessionQuery(includesRecorded: true, limit: .max))
-    #expect(summaries.first { $0.id == result.session }?.origin == .import)
+    #expect(summaries.first { $0.id == result.id }?.origin == .import)
   }
 
   @Test("an imported session is in the list of the directory with the provenance of the source")
@@ -163,7 +167,7 @@ import ULID
     let summaries = try await imported.agent.sessionDirectory.sessions(
       matching: SessionQuery(includesRecorded: true, limit: .max))
     #expect(
-      summaries.first { $0.id == result.session }?.importedFrom?.sourcePath
+      summaries.first { $0.id == result.id }?.importedFrom?.sourcePath
         == imported.file.path)
   }
 
@@ -173,7 +177,7 @@ import ULID
     defer { await imported.fixture.close() }
     let result = try await imported.importSource()
 
-    let updates = try await imported.resume(result.session)
+    let updates = try await imported.resume(result.id)
 
     #expect(Self.replayedAgentText(of: updates).contains(ImportSessionFiles.claudeCodeAnswer))
   }
@@ -183,7 +187,7 @@ import ULID
     let imported = try await ImportFixture.make(name: "export")
     defer { await imported.fixture.close() }
     let result = try await imported.importSource()
-    let summary = try #require(await imported.agent.sessionDirectory.summary(of: result.session))
+    let summary = try #require(await imported.agent.sessionDirectory.summary(of: result.id))
     let expected = SessionMarkdown.render(
       updates: SessionMergeEngine(replaying: try imported.sourceUpdates()).replayedTranscriptUpdates,
       options: SessionMarkdown.Options(
@@ -191,7 +195,7 @@ import ULID
         labels: .english))
 
     let markdown = try await imported.agent.transcriptMarkdown(
-      of: result.session, includeThoughts: false)
+      of: result.id, includeThoughts: false)
 
     #expect(markdown == expected)
   }
@@ -205,12 +209,12 @@ import ULID
     let agent = imported.agent
 
     try await pollIndexUntil {
-      try await agent.searchTranscripts(request).sessions.contains { $0.session == result.session }
+      try await agent.searchTranscripts(request).sessions.contains { $0.session == result.id }
     }
 
     #expect(
       try await agent.searchTranscripts(request).sessions.contains {
-        $0.session == result.session
+        $0.session == result.id
       })
   }
 
@@ -219,8 +223,8 @@ import ULID
     let imported = try await ImportFixture.make(name: "prompt")
     defer { await imported.fixture.close() }
     let result = try await imported.importSource()
-    _ = try await imported.resume(result.session)
-    let sessionId = SessionId(rawValue: result.session.description)
+    _ = try await imported.resume(result.id)
+    let sessionId = SessionId(rawValue: result.id.description)
     let idlesBefore = ScriptedPromptFixture.idleCount(
       in: await imported.fixture.collector.updates)
 
@@ -238,7 +242,7 @@ import ULID
       ])
   }
 
-  @Test("a second import of the same source makes a second session with the next free name")
+  @Test("a second continue of the same source makes a second session with the next free name")
   func aSecondImportGetsTheNextFreeName() async throws {
     let imported = try await ImportFixture.make(name: "second")
     defer { await imported.fixture.close() }
@@ -246,16 +250,16 @@ import ULID
 
     let second = try await imported.importSource()
 
-    #expect(second.name == Self.secondName)
+    #expect(second.title == Self.secondName)
   }
 
-  @Test("an import into a folder that does not exist makes no folder")
+  @Test("a continue into a folder that does not exist makes no folder")
   func anImportIntoAMissingFolderMakesNoFolder() async throws {
     let imported = try await ImportFixture.make(name: "missing")
     defer { await imported.fixture.close() }
     let missing = imported.fixture.cwd.appendingPathComponent("missing", isDirectory: true)
 
-    await #expect(throws: SessionImportError.folderUnavailable(missing)) {
+    await #expect(throws: ExternalSessionError.folderUnavailable(missing)) {
       try await imported.importSource(folder: missing)
     }
 

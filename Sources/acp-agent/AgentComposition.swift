@@ -204,7 +204,7 @@ enum AgentComposition {
   /// (task ^4avf24e).
   ///
   /// The CLI gives the import roots of ``importRoots(environment:homeDirectory:)``
-  /// over the real home folder, so `list imports` lists the Claude Code and
+  /// over the real home folder, so `list external sessions` lists the Claude Code and
   /// Codex sessions of the user (D209).
   ///
   /// The CLI always composes in the `open` tool mode (ACPA-19b): it runs

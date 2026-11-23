@@ -784,33 +784,33 @@ started, and updates the share.
 
 ### The import of a session of another agent
 
-The `sessions` tool has the operations `list imports` and `import session`
-(D209). The agent lists the Claude Code and Codex sessions that the host can
-read with an `AgentSessionImporter`. A host gives the folder of each source
+The `sessions` tool has the operations `list external sessions`,
+`read external session` and `continue external session` (D209, D212). The
+agent lists the Claude Code and Codex sessions that the host can read with an
+`AgentSessionImporter`, the host of the external sessions. A host gives the folder of each source
 agent as `importRoots` to `ComposedAgent.compose(importRoots:)` (or to the
 initializer of `RoutedACPAgent`): `~/.claude` and `~/.codex`, or the folders
 that an app in the App Sandbox holds a bookmark for. A source with no folder
-shows in the list as a source with no access, and an import from it fails with
-the code `NO_SOURCE_ACCESS`. The host can replace all the folders while the
+shows in the list as a source with no access, and a continue of a session of
+it fails with the code `NO_SOURCE_ACCESS`. The host can replace all the folders while the
 agent runs with `ComposedAgent.setImportRoots(_:)` (or
 `RoutedACPAgent.setImportRoots(_:)`): an app in the App Sandbox calls it when
 the user gives the access to `~/.claude` or `~/.codex` after the launch. The
-next list or import reads the new folders, with no restart. The `acp-agent`
+next list or continue reads the new folders, with no restart. The `acp-agent`
 CLI gives the folders of the real home folder, and the folder of
 `CLAUDE_CONFIG_DIR` when it is set to an absolute path. When `CLAUDE_CONFIG_DIR` is not an absolute path,
 the CLI writes a warning to stderr and uses `~/.claude`.
 
-The importer reads the folders only in a call. It runs no child process,
-watches nothing, and changes no file of a folder. It keeps the metadata of each
-session file in memory by path, size and modification date, so a second list
-reads only the changed files. Each row shows the earlier imports of its source
-(the sessions whose `importedFrom` names that source). This is information
-only: each import makes a new session.
+The index of the external sessions runs no child process and changes no file
+of a folder. It keeps the metadata of each session file by path, size and
+modification date, so a later read reads only the changed files. Each continue
+makes a new session, also for a source that was continued before.
 
-`import session` makes a new root session of this agent from a source session.
-The folder of the new session is the folder of the order, else the folder of the
-source session. The folder must exist, and the host must be able to read it. The
-name is the name of the order, else the title of the source, else
+`continue external session` makes a new root session of this agent from a
+source session. The folder of the new session is the folder of the call, else
+the folder of the source session. The folder must exist, and the host must be
+able to read it. The name is the name of the call, else the title of the
+source, else
 `<agent>-import` (for example `claude-code-import`). When a session of the folder
 has that name, the session directory adds the next free number. The new session
 has the origin `import`, and `importedFrom` holds the source agent, the source

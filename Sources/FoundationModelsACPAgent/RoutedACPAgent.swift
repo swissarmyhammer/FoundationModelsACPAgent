@@ -74,8 +74,8 @@ public actor RoutedACPAgent: Agent {
 
   /// The importer of the sessions of other agents (D209), over the index of the external
   /// sessions of the import roots of the host (D212). The `sessions` tool of each session gets
-  /// it (``CatalogContext/sessionImporter``). A source agent with no root is in the
-  /// `unreadableSources` of each page of the importer.
+  /// it as the host of the external sessions (``CatalogContext/externalSessionHost``). A source
+  /// agent with no root is in the `unreadableSources` of each page of the external sessions.
   nonisolated let sessionImporter: AgentSessionImporter
 
   /// Replaces all the import roots of the host (D209). The index of the external sessions
@@ -84,8 +84,9 @@ public actor RoutedACPAgent: Agent {
   /// is gone loses its entries and its index file (D212).
   ///
   /// - Parameter roots: The folder of each source agent whose sessions the host can read now.
-  ///   A source agent with no folder is in the `unreadableSources` of `list imports`, and an
-  ///   import from it gives `SessionImportError.sourceUnreadable`.
+  ///   A source agent with no folder is in the `unreadableSources` of
+  ///   `list external sessions`, and a continue of a session of it gives
+  ///   `ExternalSessionError.sourceUnreadable`.
   public nonisolated func setImportRoots(_ roots: [ImportSourceAgent: URL]) async {
     await sessionImporter.replaceRoots(roots)
   }
@@ -580,9 +581,9 @@ public actor RoutedACPAgent: Agent {
   ///   - importRoots: The folder of each source agent whose sessions the host can read (D209):
   ///     `~/.claude` for Claude Code and `~/.codex` for Codex, or the folders that an app in
   ///     the App Sandbox holds a bookmark for. None by default: each source is then in the
-  ///     `unreadableSources` of `list imports`. The index of the external sessions only reads
-  ///     these folders, and keeps its index files in ``AgentHome/externalSessionIndexDirectory``
-  ///     (``sessionImporter``).
+  ///     `unreadableSources` of `list external sessions`. The index of the external sessions
+  ///     only reads these folders, and keeps its index files in
+  ///     ``AgentHome/externalSessionIndexDirectory`` (``sessionImporter``).
   ///   - fallbackProfileName: The profile of each session load where no
   ///     layer sets `profile`, or where the name is unknown
   ///     (``SettingsStore/fallbackProfileName``), or `nil` (the default)
