@@ -284,22 +284,38 @@ actor AgentSessionImporter: SessionImporter {
     }
   }
 
-  /// Each regular file under a folder, at each depth, with no hidden file.
+  /// Each regular file under a folder, at each depth, with no dotfile and
+  /// nothing in a dot folder.
+  ///
+  /// The walk skips by name, not with `.skipsHiddenFiles`. That option also
+  /// drops each item with the macOS hidden flag, and iCloud Drive sets that
+  /// flag on each item under a dot folder: an import root such as
+  /// `~/.claude/projects` in a synced home gave no file. FoundationModelsRouter
+  /// 2e74f703 fixed the same defect in its transcript discovery.
   ///
   /// - Parameter folder: The folder.
   /// - Returns: The files, or no file when the folder does not exist.
   private static func files(under folder: URL) -> [URL] {
-    guard PathKind.of(folder) == .directory else { return [] }
-    let enumerator = FileManager.default.enumerator(
-      at: folder, includingPropertiesForKeys: ImportFileStamp.resourceKeys + [.isRegularFileKey],
-      options: [.skipsHiddenFiles, .skipsPackageDescendants]
-    ) { url, error in
-      logSkippedFile(
-        url, "The importer cannot read a file of an import root. It skips the file.",
-        error: error)
-      return true
+    guard PathKind.of(folder) == .directory,
+      let enumerator = FileManager.default.enumerator(
+        at: folder, includingPropertiesForKeys: ImportFileStamp.resourceKeys + [.isRegularFileKey],
+        options: [.skipsPackageDescendants],
+        errorHandler: { url, error in
+          logSkippedFile(
+            url, "The importer cannot read a file of an import root. It skips the file.",
+            error: error)
+          return true
+        })
+    else { return [] }
+    var files: [URL] = []
+    for case let url as URL in enumerator {
+      if url.lastPathComponent.hasPrefix(".") {
+        enumerator.skipDescendants()
+      } else if isRegularFile(url) {
+        files.append(url)
+      }
     }
-    return (enumerator?.allObjects ?? []).compactMap { $0 as? URL }.filter(isRegularFile)
+    return files
   }
 
   /// The stamp of a session file. A file with no stamp gives a warning.

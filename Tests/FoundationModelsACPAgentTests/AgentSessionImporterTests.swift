@@ -242,6 +242,35 @@ import ULID
     #expect(ids == [Self.codexID, Self.claudeID])
   }
 
+  /// iCloud Drive sets the macOS hidden flag on each item under a dot folder,
+  /// such as `.claude` and `.codex`. The scan skips dotfiles by name, so it
+  /// still finds each session.
+  @Test("importable lists the sessions whose files have the macOS hidden flag")
+  func filesWithTheHiddenFlagAreListed() async throws {
+    let roots = try Roots.make()
+    for root in [roots.claude, roots.codex] {
+      try Self.setHiddenFlag(onEachItemUnder: root)
+    }
+
+    let ids = try await Self.sourceIDs(of: Self.importer(roots.all))
+
+    #expect(ids == [Self.codexID, Self.claudeID])
+  }
+
+  /// Sets the macOS hidden flag on each item under `root`, at each depth.
+  ///
+  /// - Parameter root: An import root.
+  /// - Throws: The error of a write of the flag.
+  private static func setHiddenFlag(onEachItemUnder root: URL) throws {
+    var values = URLResourceValues()
+    values.isHidden = true
+    let items = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)
+    while var item = items?.nextObject() as? URL {
+      try item.setResourceValues(values)
+      #expect(try item.resourceValues(forKeys: [.isHiddenKey]).isHidden == true)
+    }
+  }
+
   @Test("the sessions of the preferred folder come first")
   func thePreferredFolderComesFirst() async throws {
     let roots = try Roots.make()
