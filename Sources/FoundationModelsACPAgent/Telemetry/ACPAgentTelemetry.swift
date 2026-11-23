@@ -221,6 +221,10 @@ enum ACPAgentTelemetry {
     /// The id of a recorded transcript entry.
     static let entryId = "transcript.entry_id"
 
+    /// The number of entries of a retained history, for example of a history that a resume
+    /// rebuilt from the transcript.
+    static let entryCount = "transcript.entry_count"
+
     /// The case of a Router session event, without its payload, because
     /// a payload can hold content.
     static let eventKind = "event.kind"

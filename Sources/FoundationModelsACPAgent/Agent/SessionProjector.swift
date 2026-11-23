@@ -170,7 +170,8 @@ actor SessionProjector {
     stateLedger: SessionStateLedger? = nil,
     liftMailDeliveryPause: @escaping @Sendable () async -> Void = {},
     mailTurnEnded: @escaping @Sendable () async -> Void = {},
-    recordDelivery: @escaping @Sendable (SessionUpdate) async -> Void = { _ in }
+    recordDelivery: @escaping @Sendable (SessionUpdate) async -> Void = { _ in },
+    entryRecorded: (@Sendable () async -> Void)? = nil
   ) {
     self.relay = relay
     self.runCallJoins = runCallJoins
@@ -207,6 +208,7 @@ actor SessionProjector {
         liftMailDeliveryPause: liftMailDeliveryPause,
         mailTurnEnded: mailTurnEnded,
         recordDelivery: recordDelivery)
+      state.translator.entryRecorded = entryRecorded
       if let relay {
         let endElicitation: ElicitationEndHandler = { end in await relay.end(end) }
         state.translator.endElicitation = endElicitation

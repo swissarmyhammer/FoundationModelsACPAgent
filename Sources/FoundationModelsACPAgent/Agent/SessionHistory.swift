@@ -8,20 +8,24 @@ import Synchronization
 //
 // `session/resume` replays the "retained history" of the session.
 // A message that the agent keeps and replays must keep the id that the client saw live.
-// The Router journal cannot give those ids.
-// Router takes the prompt as a plain string and makes its own segment ids.
-// The agent makes the live id of each agent message before Router records the entry.
-// After a compaction the Router journal also holds a summary in place of the messages that it folded.
+// The Router journal cannot give all of those ids.
+// The agent makes the live id of each agent message and thought before Router records the entry.
 // Thus the agent keeps its own history: one `SessionMergeEngine` for each session, in the session entry.
 // Each `session/update` that the agent sends for the session goes into it.
 // A compaction changes only the model context, never this history.
-// The agent writes the history to a file beside the transcript.
+// The agent writes the history to a file beside the transcript, at the end of each recorded entry.
 // So a new process can replay the same messages with the same ids.
 // The Router journal serves the restore of the model context.
-// It also serves one part of the replay: the plans of the session (task ^jwx92y8).
+// It also serves two parts of the replay.
+// One part is the plans of the session (task ^jwx92y8).
 // A plan has its own id.
 // Router writes each plan event to disk at once.
 // So a resume merges the recorded plans into the history.
+// The other part is the history of a session whose file is missing or does not decode.
+// A resume then rebuilds the history from the journal (``RecordedHistoryRebuild``).
+// The journal keeps each entry that a compaction folded, so the rebuild gives each message.
+// Only the ids of the agent messages and of the thoughts are new.
+// A command that records nothing in Router (an action command) is not in the journal.
 
 /// The file that keeps the retained history of one session, in the
 /// transcript directory of the session (`<recording root>/<sessionId>/`).
@@ -60,6 +64,30 @@ enum SessionHistoryFile {
     let data = try JSONEncoder().encode(contents)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     try data.write(to: url(in: directory), options: .atomic)
+  }
+
+  /// The name of a file that did not decode, after ``keepAside(in:)`` moved it.
+  static let unreadableFileName = fileName + ".unreadable"
+
+  /// Moves the file in `directory` to a new name, so a new file can take its place and no byte of
+  /// the old file is lost. The new name is ``unreadableFileName``. When a file has that name
+  /// already, the new name adds a number: `session-history.json.unreadable.1`, then `.2`, and so
+  /// on.
+  ///
+  /// - Parameter directory: The transcript directory of the session.
+  /// - Returns: The URL of the moved file.
+  /// - Throws: Whatever the move throws.
+  @discardableResult
+  static func keepAside(in directory: URL) throws -> URL {
+    var target = directory.appendingPathComponent(unreadableFileName, isDirectory: false)
+    var number = 0
+    while FileManager.default.fileExists(atPath: target.path) {
+      number += 1
+      target = directory.appendingPathComponent(
+        "\(unreadableFileName).\(number)", isDirectory: false)
+    }
+    try FileManager.default.moveItem(at: url(in: directory), to: target)
+    return target
   }
 
   /// Whether `directory` holds the file.
@@ -566,8 +594,15 @@ extension RoutedACPAgent {
   /// After a write, the history goes to the transcript search index, off the turn
   /// (``TranscriptSearchUpdates/indexHistory(_:of:)``).
   ///
-  /// - Parameter sessionId: The session whose history to write.
-  func writeHistory(of sessionId: SessionId) {
+  /// The end of each transcript entry that Router recorded writes the file too, with no index
+  /// of the search (``ACPEventTranslator/entryRecorded``). Thus a stop of the process during a
+  /// turn keeps each update of the turn up to the last recorded entry.
+  ///
+  /// - Parameters:
+  ///   - sessionId: The session whose history to write.
+  ///   - indexesSearch: True when the written history also goes to the search index. The write
+  ///     at the end of an entry gives false, so the search indexes each turn one time.
+  func writeHistory(of sessionId: SessionId, indexesSearch: Bool = true) {
     guard let entry = sessions[sessionId], !entry.isReplayOnly, !entry.history.entries.isEmpty
     else {
       return
@@ -575,7 +610,9 @@ extension RoutedACPAgent {
     let history = entry.history
     do {
       try SessionHistoryFile.write(history, in: entry.transcriptDirectory)
-      transcriptSearchUpdates.indexHistory(history, of: sessionId)
+      if indexesSearch {
+        transcriptSearchUpdates.indexHistory(history, of: sessionId)
+      }
     } catch {
       ACPAgentTelemetry.logger(.session).error(
         "The retained history of a session was not written.",
@@ -586,32 +623,100 @@ extension RoutedACPAgent {
   /// The retained history of a session that `session/resume` restores.
   /// It is the history in the table when this process ran the session.
   /// Else it is the history in the file of an earlier process.
-  /// Else it is an empty history.
-  /// The Router journal is never a source of a message.
-  /// Its messages have no ACP ids.
-  /// After a compaction it holds a summary in place of the messages that it folded.
-  /// Its plans are a source, and
+  /// Else it is the history that the Router journal of the session gives
+  /// (``rebuiltHistory(directory:sessionId:)``). Thus a resume never lacks the history that the
+  /// journal holds: the file is missing after a stop of the process before the first write, and
+  /// for a session that an earlier build recorded.
+  /// The journal keeps each entry that a compaction folded. A compaction adds a `.prompt` entry
+  /// that holds the summary, and the rebuild makes the compaction entry of it, not a message. So
+  /// the rebuild gives each user message and each agent message of the transcript, and the
+  /// summary does not take their place.
+  /// The journal does not hold the live ids of the agent messages and of the thoughts, so a rebuilt
+  /// history gives them new ids.
+  /// The plans of the journal are a source of each history, and
   /// ``resumedHistory(kept:directory:rootId:sessionId:)`` adds them.
-  /// A file that does not read is logged, and the history starts empty.
+  /// A file that does not read is logged and kept aside (``SessionHistoryFile/keepAside(in:)``),
+  /// and the journal gives the history.
   ///
   /// - Parameters:
   ///   - kept: The history in the table, or `nil`.
   ///   - directory: The transcript directory of the session.
-  ///   - sessionId: The session, for the log.
+  ///   - sessionId: The session. Its raw value is the recorded id of the session.
   /// - Returns: The retained history.
   func retainedHistory(
     kept: SessionMergeEngine?, directory: URL, sessionId: SessionId
-  ) -> SessionMergeEngine {
+  ) async -> SessionMergeEngine {
     if let kept {
       return kept
     }
     do {
-      return try SessionHistoryFile.read(from: directory) ?? SessionMergeEngine()
+      if let read = try SessionHistoryFile.read(from: directory) {
+        return read
+      }
     } catch {
       ACPAgentTelemetry.logger(.sessionResume).error(
-        "The retained history of a session did not read. The resume replays no message.",
+        "The retained history of a session did not read. The resume rebuilds it from the transcript.",
         metadata: ACPAgentTelemetry.errorMetadata(error, sessionId: sessionId))
-      return SessionMergeEngine()
+      do {
+        try SessionHistoryFile.keepAside(in: directory)
+      } catch {
+        ACPAgentTelemetry.logger(.sessionResume).error(
+          "The unreadable history file of a session did not move aside. The resume does not write a rebuilt history.",
+          metadata: ACPAgentTelemetry.errorMetadata(error, sessionId: sessionId))
+        return await RecordedHistoryRebuild.history(
+          from: recordedEvents(in: directory, sessionId: sessionId), sessionId: sessionId)
+      }
+    }
+    return await rebuiltHistory(directory: directory, sessionId: sessionId)
+  }
+
+  /// The history that the Router journal of a session gives (``RecordedHistoryRebuild``). A
+  /// history with an entry goes to the history file of the session in one atomic write, so the
+  /// next resume reads the file. The rebuild is logged.
+  ///
+  /// - Parameters:
+  ///   - directory: The transcript directory of the session.
+  ///   - sessionId: The session. Its raw value is the recorded id of the session.
+  /// - Returns: The rebuilt history. It is empty when the journal holds no entry of the session.
+  private func rebuiltHistory(directory: URL, sessionId: SessionId) async -> SessionMergeEngine {
+    let events = recordedEvents(in: directory, sessionId: sessionId)
+    let history = await RecordedHistoryRebuild.history(from: events, sessionId: sessionId)
+    guard !history.entries.isEmpty else {
+      return history
+    }
+    var metadata = ACPAgentTelemetry.sessionMetadata(sessionId)
+    metadata[ACPAgentTelemetry.LogMetadataKey.entryCount] = "\(history.entries.count)"
+    ACPAgentTelemetry.logger(.sessionResume).info(
+      "The retained history of a session was rebuilt from the transcript.", metadata: metadata)
+    do {
+      try SessionHistoryFile.write(history, in: directory)
+    } catch {
+      ACPAgentTelemetry.logger(.sessionResume).error(
+        "The rebuilt history of a session was not written.",
+        metadata: ACPAgentTelemetry.errorMetadata(error, sessionId: sessionId))
+    }
+    return history
+  }
+
+  /// The recorded events of one session in its transcript directory, in journal order. The read
+  /// keeps only the events of the session itself, not the events of its forks.
+  /// A journal that does not read is logged, and the read gives no event.
+  ///
+  /// - Parameters:
+  ///   - directory: The transcript directory of the session.
+  ///   - sessionId: The session. Its raw value is the recorded id of the session.
+  /// - Returns: The events.
+  private func recordedEvents(in directory: URL, sessionId: SessionId) -> [TranscriptEvent] {
+    guard let rootId = ULID(ulidString: sessionId.rawValue) else {
+      return []
+    }
+    do {
+      return try TranscriptEvent.merged(under: directory).filter { $0.sessionId == rootId }
+    } catch {
+      ACPAgentTelemetry.logger(.sessionResume).error(
+        "The Router journal of a session did not read. The resume rebuilds no history.",
+        metadata: ACPAgentTelemetry.errorMetadata(error, sessionId: sessionId))
+      return []
     }
   }
 
@@ -619,10 +724,10 @@ extension RoutedACPAgent {
   /// It is the retained history (``retainedHistory(kept:directory:sessionId:)``).
   /// It also holds each plan that the Router journal of the session recorded (task ^jwx92y8).
   ///
-  /// The plans are the one part of the history that the Router journal gives.
   /// Router writes each plan event to disk at once.
-  /// But the agent writes the history file only at the end of a prompt and at `session/close`.
-  /// So a process that stopped during a prompt can leave a plan in the journal.
+  /// But the agent writes the history file only at the end of each recorded entry, of a prompt
+  /// and at `session/close`. So a process that stopped during a prompt can leave a plan in the
+  /// journal.
   /// The history file may not hold that plan.
   /// The history merges each recorded plan in post order, as the live projection did
   /// (``ACPEventTranslator/planUpdate(for:)``).
@@ -637,8 +742,8 @@ extension RoutedACPAgent {
   /// - Returns: The history to replay.
   func resumedHistory(
     kept: SessionMergeEngine?, directory: URL, rootId: ULID, sessionId: SessionId
-  ) -> SessionMergeEngine {
-    var history = retainedHistory(kept: kept, directory: directory, sessionId: sessionId)
+  ) async -> SessionMergeEngine {
+    var history = await retainedHistory(kept: kept, directory: directory, sessionId: sessionId)
     for plan in recordedPlans(of: rootId, in: directory, sessionId: sessionId) {
       history.apply(.planUpdate(ACPEventTranslator.planUpdate(for: plan)))
     }

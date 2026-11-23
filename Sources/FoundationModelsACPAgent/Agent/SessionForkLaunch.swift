@@ -271,12 +271,17 @@ extension RoutedACPAgent {
   {
     let sourceId = SessionId(rawValue: source.description)
     let kept = await fork.transcript.toolCallIds
-    let sourceHistory =
+    let tableHistory =
       try await sourceHistoryHoldingCallingRound(of: sourceId, keeping: kept)
       ?? sessions[sourceId]?.history
-      ?? retainedHistory(
+    let sourceHistory: SessionMergeEngine
+    if let tableHistory {
+      sourceHistory = tableHistory
+    } else {
+      sourceHistory = await retainedHistory(
         kept: nil, directory: fork.recordingDirectory.deletingLastPathComponent(),
         sessionId: sourceId)
+    }
     guard let end = sourceHistory.forkEnd(keepingToolCalls: kept) else {
       return SessionMergeEngine()
     }

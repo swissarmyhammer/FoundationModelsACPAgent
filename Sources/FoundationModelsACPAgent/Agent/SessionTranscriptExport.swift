@@ -189,6 +189,6 @@ extension RoutedACPAgent {
     guard let recorded = try SessionHistoryFile.read(from: directory) else {
       return nil
     }
-    return resumedHistory(kept: recorded, directory: directory, rootId: id, sessionId: sessionId)
+    return await resumedHistory(kept: recorded, directory: directory, rootId: id, sessionId: sessionId)
   }
 }

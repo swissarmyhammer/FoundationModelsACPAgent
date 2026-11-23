@@ -361,12 +361,11 @@ import Testing
   }
 
   /// A session that has no retained history (an earlier build recorded
-  /// it: a Router journal and no history file) replays no message. The
-  /// Router journal serves only the restore of the model context: its
-  /// messages have no ACP ids, and after a compaction it holds a summary
-  /// in place of the messages that it folded.
+  /// it: a Router journal and no history file) replays the messages of its
+  /// Router journal (``RecordedHistoryRebuild``): the user message, the
+  /// thought and the agent message, in the order of the journal.
   @Test
-  func aSessionWithNoRetainedHistoryReplaysNoMessage() async throws {
+  func aSessionWithNoRetainedHistoryReplaysTheMessagesOfItsJournal() async throws {
     let resume = try await ResumeSessionFixture.make(label: "SessionResumeTests-no-history")
     let recordedId = try await resume.recordSessionOutsideTheAgent(prompts: ["first question"])
     let recorded = try ResumeSessionFixture.recordedEvents(
@@ -381,7 +380,15 @@ import Testing
     let replayUpdates = Array(await resume.fixture.collector.updates.dropFirst(countBefore))
       .map(\.update)
 
-    #expect(ReplayedMessage.replayed(in: replayUpdates).isEmpty)
+    let replayed = ReplayedMessage.replayed(in: replayUpdates)
+    let kinds: [ReplayedMessage.Kind] = replayed.map(\.kind)
+    let texts: [String] = replayed.map(\.text)
+    #expect(kinds == [.user, .thought, .agent], "the replay holds \(replayed)")
+    #expect(
+      texts == [
+        "first question", ResumeStubBackend.reasoningPrefix + "first question",
+        ResumeStubBackend.replyPrefix + "first question",
+      ])
     await resume.fixture.close()
   }
 

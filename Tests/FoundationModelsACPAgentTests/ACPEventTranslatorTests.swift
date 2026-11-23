@@ -270,8 +270,9 @@ import Testing
         id: Self.sdkToolCallId, name: Self.scriptedToolName,
         argumentsJSON: Self.scriptedArgumentsJSON),
       .toolStatus(id: Self.sdkToolCallId, status: .running, summary: nil, output: nil),
+      // Router gives the text of the output segments as the summary.
       .toolStatus(
-        id: Self.sdkToolCallId, status: .completed, summary: "done",
+        id: Self.sdkToolCallId, status: .completed, summary: "file text",
         output: [.text(id: "segment-1", content: "file text")]),
     ])
     let calls = toolCallUpdates(in: updates)
@@ -291,7 +292,8 @@ import Testing
     #expect(creation.rawInput == .value(.object(["path": .string("notes.txt")])))
     #expect(running.status == .value(.inProgress))
     #expect(completion.status == .value(.completed))
-    #expect(texts(in: completion.content) == ["done", "file text"])
+    // The tool output is in the content one time.
+    #expect(texts(in: completion.content) == ["file text"])
   }
 
   /// The creating update of an SDK tool call names the tool for a program

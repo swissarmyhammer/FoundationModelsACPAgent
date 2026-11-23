@@ -290,7 +290,7 @@ extension RoutedACPAgent {
       rootId, sessionId: sessionId, composition: composition, userPresence: userPresence,
       hookLineage: hookLineage, claimingRuns: claims)
     SnapshotSessionKeys.shared.record(hookLineage.sessionKey, for: sessionId)
-    let history = resumedHistory(
+    let history = await resumedHistory(
       kept: keptHistory, directory: restored.session.recordingDirectory,
       rootId: rootId, sessionId: sessionId)
 

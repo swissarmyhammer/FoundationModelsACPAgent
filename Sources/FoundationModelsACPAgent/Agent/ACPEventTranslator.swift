@@ -140,6 +140,12 @@ struct ACPEventTranslator {
   /// (task ^az53ay4).
   var completeElicitation: ElicitationCompletionHandler?
 
+  /// The work at the end of each transcript entry that Router recorded, or `nil` for a
+  /// synthetic translation. The ``SessionProjector`` supplies the write of the retained history,
+  /// so a stop of the process during a turn keeps each entry that Router has on disk. The sink
+  /// records each update before its send returns, so the write holds each update of the entry.
+  var entryRecorded: (@Sendable () async -> Void)?
+
   /// The SDK tool-call id of each run that Router joined, keyed by the
   /// completion token of the run (tasks ^e1yq4gh and ^9xk3xf4). The session
   /// owns the table, and its ``TerminalStream`` reads the same table, so the
@@ -405,6 +411,7 @@ struct ACPEventTranslator {
         "The prompt recorded a tool invocation.", metadata: runMetadata(record.correlationID))
     case .entryRecorded(let id, let kind):
       closeMessage(recordedEntryId: id, kind: kind)
+      await entryRecorded?()
     case .compactionStarted(let start):
       await compactionReporter.reportStart(start)
     case .compaction(let result):
@@ -1534,9 +1541,14 @@ struct ACPEventTranslator {
     .content(Content(content: .text(TextContent(text: text))))
   }
 
-  /// The content replace of a `toolStatus` event: the summary first,
-  /// then one item per output segment. `nil` on both sides leaves
-  /// the content unchanged.
+  /// The content replace of a `toolStatus` event: one item per output
+  /// segment, or the summary when the event has no output segment.
+  /// `nil` on both sides leaves the content unchanged.
+  ///
+  /// The summary of Router is the text of the output segments
+  /// (`flattenedText`), so the content holds it only when no segment
+  /// gives the output. A summary beside the segments stored each tool
+  /// output two times in the history.
   ///
   /// - Parameters:
   ///   - summary: Router's one-line result summary, or `nil`.
@@ -1546,14 +1558,10 @@ struct ACPEventTranslator {
     summary: String?, output: [SegmentPayload]?
   ) -> PatchField<[ToolCallContent]> {
     guard summary != nil || output != nil else { return .unchanged }
-    var items: [ToolCallContent] = []
-    if let summary {
-      items.append(textItem(summary))
+    guard let output, !output.isEmpty else {
+      return .value(summary.map { [textItem($0)] } ?? [])
     }
-    for payload in output ?? [] {
-      items.append(contentItem(for: payload))
-    }
-    return .value(items)
+    return .value(output.map(contentItem(for:)))
   }
 
   /// One content item for one output segment. Text carries through;

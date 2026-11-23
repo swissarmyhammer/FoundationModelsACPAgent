@@ -112,7 +112,7 @@ extension RoutedACPAgent {
     }
     let parent = SessionId(rawValue: caller.description)
     do {
-      let history = retainedHistory(
+      let history = await retainedHistory(
         kept: nil, directory: session.recordingDirectory, sessionId: sessionId)
       try await registerNestedSession(session, parent: parent, history: history)
     } catch {
