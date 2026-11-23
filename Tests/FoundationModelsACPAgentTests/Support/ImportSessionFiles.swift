@@ -42,7 +42,8 @@ enum ImportSessionFiles {
   static let claudeCodeLastRecordTimestamp = "2026-11-01T10:00:04.000Z"
 
   /// The bytes of a Claude Code session file: one user record, the records of an answer when
-  /// `withAnswer` is true, and a custom title record when a title is given.
+  /// `withAnswer` is true, and a custom title record when a title is given. The user record has
+  /// an `entrypoint` when one is given.
   ///
   /// The answer is a thought, a tool call of `Bash` with its result, and an agent message
   /// (``claudeCodeAnswer``).
@@ -52,12 +53,16 @@ enum ImportSessionFiles {
   ///   - folder: The working folder of the session.
   ///   - title: The custom title, or `nil` for no title record.
   ///   - withAnswer: True to add the records of the answer.
+  ///   - entrypoint: The `entrypoint` of the user record, for example `sdk-cli` for an
+  ///     automated session, or `nil` for none.
   /// - Returns: The bytes of the file.
-  static func claudeCode(id: String, folder: URL, title: String? = nil, withAnswer: Bool = false)
-    -> Data
-  {
+  static func claudeCode(
+    id: String, folder: URL, title: String? = nil, withAnswer: Bool = false,
+    entrypoint: String? = nil
+  ) -> Data {
+    let entrypointMember = entrypoint.map { #""entrypoint":"\#($0)","# } ?? ""
     let user = """
-      {"type":"user","uuid":"u-1","sessionId":"\(id)","timestamp":"2026-11-01T10:00:01.000Z","cwd":"\(folder.path)","message":{"role":"user","content":"\(claudeCodeQuestion)"}}
+      {"type":"user","uuid":"u-1","sessionId":"\(id)","timestamp":"2026-11-01T10:00:01.000Z","cwd":"\(folder.path)",\(entrypointMember)"message":{"role":"user","content":"\(claudeCodeQuestion)"}}
       """
     let answer = withAnswer ? claudeCodeAnswerRecords(id: id) : []
     let titleLine = title.map {
@@ -108,16 +113,20 @@ enum ImportSessionFiles {
   ///   - folder: The working folder of the session.
   ///   - title: The custom title, or `nil` for no title record.
   ///   - withAnswer: True to add the records of an answer
-  ///     (``claudeCode(id:folder:title:withAnswer:)``).
+  ///     (``claudeCode(id:folder:title:withAnswer:entrypoint:)``).
+  ///   - entrypoint: The `entrypoint` of the user record, or `nil` for none.
   ///   - root: The Claude Code root (`~/.claude`).
   /// - Returns: The file.
   /// - Throws: The error of the write.
   @discardableResult
   static func writeClaudeCode(
-    id: String, folder: URL, title: String? = nil, withAnswer: Bool = false, in root: URL
+    id: String, folder: URL, title: String? = nil, withAnswer: Bool = false,
+    entrypoint: String? = nil, in root: URL
   ) throws -> URL {
     let file = claudeCodeFile(of: id, folder: folder, in: root)
-    try write(claudeCode(id: id, folder: folder, title: title, withAnswer: withAnswer), to: file)
+    try write(
+      claudeCode(id: id, folder: folder, title: title, withAnswer: withAnswer, entrypoint: entrypoint),
+      to: file)
     return file
   }
 

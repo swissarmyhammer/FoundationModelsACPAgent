@@ -17,7 +17,9 @@ import Testing
 ///
 /// Each tool test runs a scripted agent in the test process. The script calls `list imports` of
 /// the `sessions` tool. The other tests compose the agent over the stub model, and call its
-/// importer. The suite trait closes each harness of a test whose body throws.
+/// importer. The list never waits for the index of external sessions (D212), thus each test
+/// waits until the index is idle before it lists. The suite trait closes each harness of a test
+/// whose body throws.
 @Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct SessionImportWiringTests {
   // MARK: - Constants
 
@@ -106,6 +108,7 @@ import Testing
   /// - Returns: The output text.
   /// - Throws: The error of the prompt.
   private static func runListImports(on fixture: ScriptedPromptFixture) async throws -> String {
+    await fixture.harness.agent.sessionImporter.index.waitUntilIdle()
     let run = try await ScriptedPromptFixture.runPrompt(on: fixture, text: importMarker)
     return try ToolOutputText.of(run.updates, in: fixture.sessionId)
   }
@@ -149,6 +152,7 @@ import Testing
     let composed = try await Self.composeWithNoRoots(name: "composed-set-roots")
 
     await composed.setImportRoots([.claudeCode: try Self.makeClaudeRoot()])
+    await composed.agent.sessionImporter.index.waitUntilIdle()
 
     let page = try await Self.firstImportPage(of: composed.agent)
     #expect(page.sessions.map(\.sourceID) == [Self.claudeID])

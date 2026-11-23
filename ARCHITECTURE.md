@@ -230,15 +230,34 @@ Multitool.
   from it gives `SessionImportError.sourceUnreadable`. The host replaces all the roots of the
   running agent with `setImportRoots(_:)` of `RoutedACPAgent` or `ComposedAgent`
   (`AgentSessionImporter.replaceRoots(_:)`): a sandboxed app gets the access to a root after
-  the launch, and the next call reads the new roots. The importer forgets the kept scans of a
-  root that changed or is gone.
-- **The scan.** `AgentSessionImporter` (an actor) lists the session files of each root
-  (`ImportSourceLayout`: `projects/*/*.jsonl` for Claude Code, `sessions/**/rollout-*.jsonl` and
-  `archived_sessions/` for Codex) and reads their metadata with the `ACPImport` readers. It
-  keeps the scan of each file by path, size and modification date (`ImportFileStamp`), so a
-  second call reads only the changed files. The rows are the newest first, with the rows of the
-  preferred folder first. The importer reads the roots only in a call: no child process, no
-  watch, no write to a root.
+  the launch. A root that changed or is gone loses its entries and its index file.
+- **The index (D212).** `ExternalSessionIndex` (an actor) keeps one small entry for each
+  session file (`ExternalSessionSummary` of Extras), with no count of the turns. Step A finds
+  the files with directory reads (`ImportSourceLayout`: `projects/*/*.jsonl` for Claude Code,
+  `sessions/**/rollout-*.jsonl` and `archived_sessions/` for Codex) and opens no file. Step B
+  reads the metadata windows of each file with the bounded reader of `ACPImport`
+  (`metadata(from:)` over `FileByteSource`, at most 384 KB of a file, never the full file).
+  Four worker tasks at the utility priority take the files from a read queue with two levels
+  (`ExternalSessionReadQueue`): the project folder that a client asks for now, then each other
+  file, each level the newest first. The actor does no file I/O in its own isolation, so a
+  query never waits for a read or for the build. All the file I/O goes through the seam
+  `ExternalSessionFileSystem` (`LocalExternalSessionFileSystem` in the agent, a fake in the
+  tests).
+- **The index file and the watch.** The index writes `external-sessions/<source>.jsonl` in
+  `AgentHome.local` (`AgentHome.externalSessionIndexDirectory`) after each 500 new entries and
+  at the end of a build, with an atomic replace, and loads it when a root starts. The first
+  line has a format number; a different number or bad bytes cause a new build, with no error.
+  One FSEvents stream for each root (latency 2 s) gives the changed files. A changed file is
+  read at most one time in 30 s, a grown file whose head the index knows gets a read of its
+  tail only, and a file that is gone loses its entry. A root with no stream gets a find when a
+  client asks, at most one time in 30 s. The index gives the query (`externalSessions(_:)`)
+  and the change stream (`externalSessionChanges(folder:)`) of `ExternalSessionHost`. A query
+  with a folder takes the project key from the `realpath` of the folder, as Claude Code does.
+  The shutdown of the agent stops the index (`stop()`): no new find, read, watch or timer
+  starts, and the index writes the entries that it did not write yet.
+- **The list.** `AgentSessionImporter` (a struct) reads the index for `importable(_:)`: the
+  typed sessions in the state `read`, the newest first, with the sessions of the preferred
+  folder first. It never reads a session file and never waits for the index.
 - **The earlier imports.** `previousImports` of a row comes from the `importedFrom` of the
   sessions of the session directory, by agent and source id. It is information only (Q85).
 - **The wiring.** The agent keeps one importer (`RoutedACPAgent.sessionImporter`) and gives it
@@ -247,7 +266,8 @@ Multitool.
   the sharer.
 - **The import.** `importSession` checks the agent (`SessionImportError.sourceUnreadable`) and
   the folder of the new session (`SessionImportError.folderUnavailable`), and finds the source
-  file among the scanned files by its id or its path. It reads the file whole with the
+  in the index by its id or its path (a miss runs a find of the root first). It reads that one
+  file whole with the
   `ACPImport` reader, and makes the model transcript of its updates (`ImportedTranscript`: a
   prompt for each user message, one response for each turn, a tool call as a short text, no
   thought). It gives the transcript to `RouterSessionDirectory.importSession(_:transcript:)`,

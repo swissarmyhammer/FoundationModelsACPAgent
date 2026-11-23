@@ -72,14 +72,16 @@ public actor RoutedACPAgent: Agent {
   /// (``CatalogContext/sessionSharer``).
   nonisolated let sessionShareHost: SessionShareHost?
 
-  /// The importer of the sessions of other agents (D209), over the import roots of the host.
-  /// The `sessions` tool of each session gets it (``CatalogContext/sessionImporter``). A source
-  /// agent with no root is in the `unreadableSources` of each page of the importer.
+  /// The importer of the sessions of other agents (D209), over the index of the external
+  /// sessions of the import roots of the host (D212). The `sessions` tool of each session gets
+  /// it (``CatalogContext/sessionImporter``). A source agent with no root is in the
+  /// `unreadableSources` of each page of the importer.
   nonisolated let sessionImporter: AgentSessionImporter
 
-  /// Replaces all the import roots of the host (D209). The next `list imports` or
-  /// `import session` reads the new roots, with no restart of the agent: a sandboxed app calls
-  /// it when the user gives the access to `~/.claude` or `~/.codex` after the launch.
+  /// Replaces all the import roots of the host (D209). The index of the external sessions
+  /// starts a build of each new root, with no restart of the agent: a sandboxed app calls it
+  /// when the user gives the access to `~/.claude` or `~/.codex` after the launch. A root that
+  /// is gone loses its entries and its index file (D212).
   ///
   /// - Parameter roots: The folder of each source agent whose sessions the host can read now.
   ///   A source agent with no folder is in the `unreadableSources` of `list imports`, and an
@@ -578,7 +580,8 @@ public actor RoutedACPAgent: Agent {
   ///   - importRoots: The folder of each source agent whose sessions the host can read (D209):
   ///     `~/.claude` for Claude Code and `~/.codex` for Codex, or the folders that an app in
   ///     the App Sandbox holds a bookmark for. None by default: each source is then in the
-  ///     `unreadableSources` of `list imports`. The importer only reads these folders
+  ///     `unreadableSources` of `list imports`. The index of the external sessions only reads
+  ///     these folders, and keeps its index files in ``AgentHome/externalSessionIndexDirectory``
   ///     (``sessionImporter``).
   ///   - fallbackProfileName: The profile of each session load where no
   ///     layer sets `profile`, or where the name is unknown
@@ -685,8 +688,12 @@ public actor RoutedACPAgent: Agent {
       summaryReader: Self.directorySummaryReader(router.sessionDirectory))
     // The importer writes the history of each new session with the writer of a fork, and gives
     // it to the search index (D209). Thus it is made after the search updates.
+    // The index of the external sessions starts its build in its own tasks; the init reads
+    // nothing (D212).
+    let externalSessionIndex = ExternalSessionIndex(indexFolder: home.externalSessionIndexDirectory)
+    await externalSessionIndex.replaceRoots(importRoots)
     self.sessionImporter = AgentSessionImporter(
-      roots: importRoots, directory: router.sessionDirectory,
+      index: externalSessionIndex, directory: router.sessionDirectory,
       historyStore: AgentImportedHistoryStore(
         name: settingsFolders.name, searchUpdates: transcriptSearchUpdates))
     modelsEndpoint = ModelsGraph(

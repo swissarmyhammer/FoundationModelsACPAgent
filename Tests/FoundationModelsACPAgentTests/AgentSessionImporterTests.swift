@@ -13,10 +13,15 @@ import ULID
 
 @testable import FoundationModelsACPAgent
 
-/// The scan of the import roots of the host (D209 (d), (e)): ``AgentSessionImporter`` lists the
-/// Claude Code and Codex sessions of fixture roots in a temporary folder, the newest first and
-/// the sessions of the preferred folder first, and keeps the metadata of each file in memory.
-@Suite struct AgentSessionImporterTests {
+/// The list and the import of the sessions of other agents (D209 (d), (e)):
+/// ``AgentSessionImporter`` lists the typed Claude Code and Codex sessions that the index of
+/// external sessions (``ExternalSessionIndex``, D212) read from fixture roots in a temporary
+/// folder, the newest first and the sessions of the preferred folder first.
+///
+/// The list never waits for the index, thus each test of the list waits until the index is
+/// idle before it lists. The index of these tests has no watch, so a change of a file reaches
+/// the index through a find that a list starts, at most one time in 30 s of the manual clock.
+@Suite(.removesTemporaryFolders) struct AgentSessionImporterTests {
   // MARK: - Constants
 
   /// The directory label of the suite.
@@ -27,6 +32,12 @@ import ULID
 
   /// The source id of the Codex session: the id of its `session_meta` record.
   private static let codexID = "0199aaaa-0000-7000-8000-00000000c0de"
+
+  /// The source id of the automated Claude Code session.
+  private static let automatedID = "5a1e0000-0000-4000-8000-0000000000a7"
+
+  /// The `entrypoint` of a session that a program started.
+  private static let automatedEntrypoint = "sdk-cli"
 
   /// The source id of the archived Codex session.
   private static let archivedCodexID = "0199bbbb-0000-7000-8000-00000000c0de"
@@ -91,7 +102,7 @@ import ULID
     /// - Returns: The roots.
     /// - Throws: The error of a write.
     static func make() throws -> Roots {
-      let base = makeResolvedDirectory(label: label)
+      let base = TemporaryFolders.make(label: label)
       let roots = Roots(
         claude: base.appendingPathComponent(".claude", isDirectory: true),
         codex: base.appendingPathComponent(".codex", isDirectory: true))
@@ -128,20 +139,40 @@ import ULID
       agent: agent, folder: folder, preferredFolder: preferredFolder, limit: limit, cursor: cursor)
   }
 
-  /// An importer over roots, with an empty directory.
+  /// An importer over roots, with an empty directory, after the index read the roots.
   ///
   /// - Parameters:
   ///   - roots: The import roots.
   ///   - directory: The session directory. A new empty directory by default.
-  ///   - historyStore: The store of the histories of the new sessions. A new recording store
-  ///     by default.
+  ///   - clock: The clock of the index. A new manual clock by default.
   /// - Returns: The importer.
   private static func importer(
     _ roots: [ImportSourceAgent: URL],
     directory: any SessionDirectory = InMemorySessionDirectory(),
-    historyStore: any ImportedHistoryStore = RecordingHistoryStore()
-  ) -> AgentSessionImporter {
-    AgentSessionImporter(roots: roots, directory: directory, historyStore: historyStore)
+    clock: ManualExternalSessionClock = ManualExternalSessionClock()
+  ) async -> AgentSessionImporter {
+    let importer = AgentSessionImporter(
+      index: ExternalSessionIndex(
+        fileSystem: UnwatchedLocalFileSystem(), indexFolder: nil, clock: clock),
+      directory: directory, historyStore: RecordingHistoryStore())
+    await importer.replaceRoots(roots)
+    await importer.index.waitUntilIdle()
+    return importer
+  }
+
+  /// Lists one time, so the index starts a find of each root after 30 s of the clock, and
+  /// waits until the index read the changes.
+  ///
+  /// - Parameters:
+  ///   - importer: The importer.
+  ///   - clock: The clock of its index.
+  /// - Throws: The error of the importer.
+  private static func listAfterTheFindInterval(
+    _ importer: AgentSessionImporter, clock: ManualExternalSessionClock
+  ) async throws {
+    clock.advance(by: ExternalSessionIndex.findInterval)
+    _ = try await importer.importable(request())
+    await importer.index.waitUntilIdle()
   }
 
   /// The source ids of the first page of an importer.
@@ -237,7 +268,7 @@ import ULID
   func theListIsTheNewestFirst() async throws {
     let roots = try Roots.make()
 
-    let ids = try await Self.sourceIDs(of: Self.importer(roots.all))
+    let ids = try await Self.sourceIDs(of: await Self.importer(roots.all))
 
     #expect(ids == [Self.codexID, Self.claudeID])
   }
@@ -252,7 +283,7 @@ import ULID
       try Self.setHiddenFlag(onEachItemUnder: root)
     }
 
-    let ids = try await Self.sourceIDs(of: Self.importer(roots.all))
+    let ids = try await Self.sourceIDs(of: await Self.importer(roots.all))
 
     #expect(ids == [Self.codexID, Self.claudeID])
   }
@@ -276,7 +307,7 @@ import ULID
     let roots = try Roots.make()
 
     let ids = try await Self.sourceIDs(
-      of: Self.importer(roots.all), Self.request(preferredFolder: Self.claudeFolder))
+      of: await Self.importer(roots.all), Self.request(preferredFolder: Self.claudeFolder))
 
     #expect(ids == [Self.claudeID, Self.codexID])
   }
@@ -286,19 +317,40 @@ import ULID
     let roots = try Roots.make()
     try roots.addArchivedCodexSession()
 
-    let ids = try await Self.sourceIDs(of: Self.importer(roots.all))
+    let ids = try await Self.sourceIDs(of: await Self.importer(roots.all))
 
     #expect(ids == [Self.archivedCodexID, Self.codexID, Self.claudeID])
   }
 
   // MARK: - The filters and the pages
 
+  @Test("importable lists no automated session")
+  func theListHasNoAutomatedSession() async throws {
+    let roots = try Roots.make()
+    try ImportSessionFiles.writeClaudeCode(
+      id: Self.automatedID, folder: Self.claudeFolder, entrypoint: Self.automatedEntrypoint,
+      in: roots.claude)
+
+    let ids = try await Self.sourceIDs(of: await Self.importer(roots.all))
+
+    #expect(ids == [Self.codexID, Self.claudeID])
+  }
+
+  @Test("a row of importable has no count of the turns")
+  func aRowHasNoCountOfTheTurns() async throws {
+    let roots = try Roots.make()
+
+    let page = try await Self.importer(roots.all).importable(Self.request())
+
+    #expect(page.sessions.map(\.turnCount) == [0, 0])
+  }
+
   @Test("an agent filter lists only the sessions of that agent")
   func theAgentFilterListsOneAgent() async throws {
     let roots = try Roots.make()
 
     let ids = try await Self.sourceIDs(
-      of: Self.importer(roots.all), Self.request(agent: ImportSourceAgent.claudeCode.rawValue))
+      of: await Self.importer(roots.all), Self.request(agent: ImportSourceAgent.claudeCode.rawValue))
 
     #expect(ids == [Self.claudeID])
   }
@@ -308,7 +360,7 @@ import ULID
     let roots = try Roots.make()
 
     let ids = try await Self.sourceIDs(
-      of: Self.importer(roots.all), Self.request(folder: Self.codexFolder))
+      of: await Self.importer(roots.all), Self.request(folder: Self.codexFolder))
 
     #expect(ids == [Self.codexID])
   }
@@ -325,7 +377,7 @@ import ULID
   @Test("the cursor of the first page gives the next sessions")
   func theCursorGivesTheNextPage() async throws {
     let roots = try Roots.make()
-    let importer = Self.importer(roots.all)
+    let importer = await Self.importer(roots.all)
     let first = try await importer.importable(Self.request(limit: 1))
 
     let second = try await Self.sourceIDs(
@@ -371,9 +423,10 @@ import ULID
   @Test("a changed file is read again")
   func aChangedFileIsReadAgain() async throws {
     let roots = try Roots.make()
-    let importer = Self.importer(roots.all)
-    _ = try await importer.importable(Self.request())
+    let clock = ManualExternalSessionClock()
+    let importer = await Self.importer(roots.all, clock: clock)
     try Self.claudeFile(title: Self.longerTitle).write(to: roots.claudeSession)
+    try await Self.listAfterTheFindInterval(importer, clock: clock)
 
     let title = try await Self.claudeTitle(of: importer)
 
@@ -385,12 +438,13 @@ import ULID
     let roots = try Roots.make()
     try Self.write(
       Self.claudeFile(title: Self.firstTitle), to: roots.claudeSession, modified: Self.fixedDate)
-    let importer = Self.importer(roots.all)
-    _ = try await importer.importable(Self.request())
-    // The same size and the same date: the importer keeps the metadata of the first read.
+    let clock = ManualExternalSessionClock()
+    let importer = await Self.importer(roots.all, clock: clock)
+    // The same size and the same date: the index keeps the metadata of the first read.
     try Self.write(
       Self.claudeFile(title: Self.sameLengthTitle), to: roots.claudeSession,
       modified: Self.fixedDate)
+    try await Self.listAfterTheFindInterval(importer, clock: clock)
 
     let title = try await Self.claudeTitle(of: importer)
 
@@ -417,7 +471,7 @@ import ULID
     func roots(keepingCodexRoot codexRoot: URL) -> [ImportSourceAgent: URL] {
       switch self {
       case .moved:
-        [.claudeCode: makeResolvedDirectory(label: label), .codex: codexRoot]
+        [.claudeCode: TemporaryFolders.make(label: label), .codex: codexRoot]
       case .removed:
         [.codex: codexRoot]
       }
@@ -435,8 +489,7 @@ import ULID
   {
     let roots = try Roots.make()
     try write(claudeFile(title: firstTitle), to: roots.claudeSession, modified: fixedDate)
-    let importer = importer(roots.all)
-    _ = try await importer.importable(request())
+    let importer = await importer(roots.all)
     try write(claudeFile(title: sameLengthTitle), to: roots.claudeSession, modified: fixedDate)
     return (roots, importer)
   }
@@ -444,9 +497,10 @@ import ULID
   @Test("a root that the host gives after the start is in the next page")
   func aRootGivenLaterIsInTheNextPage() async throws {
     let roots = try Roots.make()
-    let importer = Self.importer([:])
+    let importer = await Self.importer([:])
 
     await importer.replaceRoots([.claudeCode: roots.claude])
+    await importer.index.waitUntilIdle()
 
     #expect(try await Self.sourceIDs(of: importer) == [Self.claudeID])
   }
@@ -454,8 +508,7 @@ import ULID
   @Test("a root that the host takes away is in unreadableSources")
   func aRootTakenAwayIsUnreadable() async throws {
     let roots = try Roots.make()
-    let importer = Self.importer(roots.all)
-    _ = try await importer.importable(Self.request())
+    let importer = await Self.importer(roots.all)
 
     await importer.replaceRoots([.claudeCode: roots.claude])
 
@@ -467,7 +520,7 @@ import ULID
   @Test("an import from a root that the host takes away gives sourceUnreadable")
   func anImportFromARootTakenAwayIsUnreadable() async throws {
     let roots = try Roots.make()
-    let importer = Self.importer(roots.all)
+    let importer = await Self.importer(roots.all)
     let order = SessionImportOrder(
       agent: ImportSourceAgent.codex.rawValue, source: Self.codexID, folder: nil, name: nil)
 
@@ -484,6 +537,7 @@ import ULID
 
     await importer.replaceRoots(change.roots(keepingCodexRoot: roots.codex))
     await importer.replaceRoots(roots.all)
+    await importer.index.waitUntilIdle()
 
     #expect(try await Self.claudeTitle(of: importer) == Self.sameLengthTitle)
   }
@@ -493,46 +547,70 @@ import ULID
     let (roots, importer) = try await Self.scannedRootsWithAChangeTheStampHides()
 
     await importer.replaceRoots(roots.all)
+    await importer.index.waitUntilIdle()
 
     #expect(try await Self.claudeTitle(of: importer) == Self.firstTitle)
   }
 
   // MARK: - The skipped files
 
-  /// A read of the scan that skips a file it cannot read, and logs a warning with its path.
+  /// A read of the index that skips an item it cannot read, and logs a warning with its path.
   enum SkippingRead: String, CaseIterable, Sendable, CustomTestStringConvertible {
-    /// The read of the size and the date of a file.
+    /// The read of the size and the date of an item.
     case stamp
 
-    /// The read of the kind of a file.
-    case kind
+    /// The directory read of a folder of a root.
+    case folder
 
     /// The name of the read in the test results.
     var testDescription: String { rawValue }
 
-    /// Does the read on a file.
+    /// Does the read on an item.
     ///
-    /// - Parameter file: The file.
-    func run(on file: URL) {
+    /// - Parameter item: The item: a file that is gone for the stamp, and a root whose
+    ///   `projects` folder is a file for the directory read.
+    /// - Returns: The path that the warning must name.
+    /// - Throws: The error of the write of the root.
+    func run(on item: URL) throws -> String {
       switch self {
-      case .stamp: _ = AgentSessionImporter.stamp(of: file)
-      case .kind: _ = AgentSessionImporter.isRegularFile(file)
+      case .stamp:
+        _ = LocalExternalSessionFileSystem.item(of: item)
+        return item.path
+      case .folder:
+        let projects = item.appendingPathComponent("projects", isDirectory: true)
+        try ImportSessionFiles.write(Data(), to: projects)
+        _ = ExternalSessionScan.find(
+          .claudeCode, under: item, scope: .root, fileSystem: LocalExternalSessionFileSystem())
+        return projects.path
       }
     }
   }
 
-  @Test("a file that a read of the scan cannot read gives a warning with its path",
+  @Test("an item that a read of the index cannot read gives a warning with its path",
     arguments: SkippingRead.allCases)
-  func aFileThatAReadCannotReadGivesAWarning(_ read: SkippingRead) async throws {
-    let missing = makeResolvedDirectory(label: Self.label).appendingPathComponent("gone.jsonl")
+  func anItemThatAReadCannotReadGivesAWarning(_ read: SkippingRead) async throws {
+    let item = TemporaryFolders.make(label: Self.label).appendingPathComponent("gone.jsonl")
 
-    let records = try await TelemetryCapture.run(forbidding: []) { context in
-      read.run(on: missing)
-      return context.logRecords
+    let (records, path) = try await TelemetryCapture.run(forbidding: []) { context in
+      let path = try read.run(on: item)
+      return (context.logRecords, path)
     }
 
-    #expect(
-      records.contains { $0.level == .warning && $0.metadata["path"] == .string(missing.path) })
+    #expect(records.contains { $0.level == .warning && $0.metadata["path"] == .string(path) })
+  }
+
+  @Test("the trait of the suite removes the folders that a test made")
+  func theTraitRemovesTheFolders() async throws {
+    let made = Mutex<URL?>(nil)
+
+    try await RemovesTemporaryFoldersTrait().provideScope(
+      for: try #require(Test.current), testCase: nil
+    ) {
+      made.withLock { $0 = TemporaryFolders.make(label: Self.label) }
+    }
+
+    let folder = try #require(made.withLock { $0 })
+    #expect(PathKind.of(folder) == .missing)
   }
 
   // MARK: - The earlier imports
@@ -582,7 +660,7 @@ import ULID
 
   @Test("an import makes a new session with the provenance of the source")
   func anImportHasTheProvenanceOfTheSource() async throws {
-    let fixture = try ImportFixture.make()
+    let fixture = try await ImportFixture.make()
 
     let result = try await fixture.importer.importSession(fixture.order())
 
@@ -597,7 +675,7 @@ import ULID
 
   @Test("an import from a source with no title has no source title in its provenance")
   func anImportFromASourceWithNoTitleHasNoSourceTitle() async throws {
-    let fixture = try ImportFixture.make(title: nil)
+    let fixture = try await ImportFixture.make(title: nil)
 
     let result = try await fixture.importer.importSession(fixture.order())
 
@@ -607,7 +685,7 @@ import ULID
 
   @Test("an import with no folder works in the folder of the source session")
   func anImportWithNoFolderWorksInTheSourceFolder() async throws {
-    let fixture = try ImportFixture.make()
+    let fixture = try await ImportFixture.make()
 
     let result = try await fixture.importer.importSession(fixture.order())
 
@@ -618,7 +696,7 @@ import ULID
 
   @Test("the transcript of an import holds the prompt and the answer of the source")
   func theTranscriptHoldsThePromptAndTheAnswer() async throws {
-    let fixture = try ImportFixture.make()
+    let fixture = try await ImportFixture.make()
 
     let result = try await fixture.importer.importSession(fixture.order())
 
@@ -633,7 +711,7 @@ import ULID
 
   @Test("an import writes the updates of the source as the history of the new session")
   func anImportWritesTheHistory() async throws {
-    let fixture = try ImportFixture.make()
+    let fixture = try await ImportFixture.make()
     let updates = try ClaudeCodeSessionReader(sourceID: Self.claudeID)
       .read(Data(contentsOf: fixture.file)).updates
 
@@ -646,7 +724,7 @@ import ULID
 
   @Test("the result of an import names the new session")
   func theResultNamesTheNewSession() async throws {
-    let fixture = try ImportFixture.make()
+    let fixture = try await ImportFixture.make()
 
     let result = try await fixture.importer.importSession(fixture.order())
 
@@ -655,7 +733,7 @@ import ULID
 
   @Test("the name of the order is the name of the new session")
   func theNameOfTheOrderIsTheName() async throws {
-    let fixture = try ImportFixture.make()
+    let fixture = try await ImportFixture.make()
 
     let result = try await fixture.importer.importSession(fixture.order(name: Self.longerTitle))
 
@@ -664,7 +742,7 @@ import ULID
 
   @Test("an import with no name takes the title of the source")
   func anImportWithNoNameTakesTheTitle() async throws {
-    let fixture = try ImportFixture.make()
+    let fixture = try await ImportFixture.make()
 
     let result = try await fixture.importer.importSession(fixture.order())
 
@@ -673,7 +751,7 @@ import ULID
 
   @Test("a source with no title gives the name claude-code-import")
   func aSourceWithNoTitleGivesTheAgentImportName() async throws {
-    let fixture = try ImportFixture.make(title: nil)
+    let fixture = try await ImportFixture.make(title: nil)
 
     let result = try await fixture.importer.importSession(fixture.order())
 
@@ -682,7 +760,7 @@ import ULID
 
   @Test("a second import of the same source makes a second session with a new name")
   func aSecondImportMakesASecondSession() async throws {
-    let fixture = try ImportFixture.make()
+    let fixture = try await ImportFixture.make()
 
     let first = try await fixture.importer.importSession(fixture.order())
     let second = try await fixture.importer.importSession(fixture.order())
@@ -692,7 +770,7 @@ import ULID
 
   @Test("after two imports of a source, previousImports has two entries")
   func twoImportsGiveTwoPreviousImports() async throws {
-    let fixture = try ImportFixture.make()
+    let fixture = try await ImportFixture.make()
     _ = try await fixture.importer.importSession(fixture.order())
     _ = try await fixture.importer.importSession(fixture.order())
 
@@ -703,7 +781,7 @@ import ULID
 
   @Test("an import of a source by the path of its file imports that file")
   func anImportByPathImportsTheFile() async throws {
-    let fixture = try ImportFixture.make()
+    let fixture = try await ImportFixture.make()
 
     let result = try await fixture.importer.importSession(fixture.order(source: fixture.file.path))
 
@@ -713,7 +791,7 @@ import ULID
 
   @Test("an import of a source that the root does not hold gives unknownSource")
   func anUnknownSourceThrows() async throws {
-    let fixture = try ImportFixture.make()
+    let fixture = try await ImportFixture.make()
 
     await #expect(throws: AgentSessionImportError.unknownSource("no-such-session")) {
       try await fixture.importer.importSession(fixture.order(source: "no-such-session"))
@@ -722,7 +800,7 @@ import ULID
 
   @Test("an import into a folder that does not exist makes no session")
   func anImportIntoAMissingFolderMakesNoSession() async throws {
-    let fixture = try ImportFixture.make()
+    let fixture = try await ImportFixture.make()
     let missing = fixture.folder.appendingPathComponent("missing", isDirectory: true)
 
     await #expect(throws: SessionImportError.folderUnavailable(missing)) {
@@ -737,7 +815,7 @@ import ULID
 
   @Test("an import does not change the bytes or the date of the source file")
   func anImportLeavesTheSourceUnchanged() async throws {
-    let fixture = try ImportFixture.make()
+    let fixture = try await ImportFixture.make()
     let before = try Self.fileStates(under: fixture.claude)
 
     _ = try await fixture.importer.importSession(fixture.order())
@@ -747,7 +825,7 @@ import ULID
 
   @Test("a failed write of the history removes the folder of the new session")
   func aFailedHistoryWriteRemovesTheFolder() async throws {
-    let fixture = try ImportFixture.make(store: RecordingHistoryStore(failsWrite: true))
+    let fixture = try await ImportFixture.make(store: RecordingHistoryStore(failsWrite: true))
 
     await #expect(throws: RecordingHistoryStore.WriteFailure.self) {
       try await fixture.importer.importSession(fixture.order())
@@ -758,7 +836,7 @@ import ULID
 
   @Test("a failed write of the history fails the import")
   func aFailedHistoryWriteFailsTheImport() async throws {
-    let fixture = try ImportFixture.make(store: RecordingHistoryStore(failsWrite: true))
+    let fixture = try await ImportFixture.make(store: RecordingHistoryStore(failsWrite: true))
 
     await #expect(throws: RecordingHistoryStore.WriteFailure.self) {
       try await fixture.importer.importSession(fixture.order())
@@ -817,8 +895,8 @@ private struct ImportFixture {
   /// - Throws: The error of a write.
   static func make(
     title: String? = sourceTitle, store: RecordingHistoryStore = RecordingHistoryStore()
-  ) throws -> ImportFixture {
-    let base = makeResolvedDirectory(label: label)
+  ) async throws -> ImportFixture {
+    let base = TemporaryFolders.make(label: label)
     let folder = base.appendingPathComponent("work", isDirectory: true)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     let claude = base.appendingPathComponent(".claude", isDirectory: true)
@@ -827,10 +905,14 @@ private struct ImportFixture {
     let directory = InMemorySessionDirectory(
       launcher: InMemorySessionDirectory.Launcher(
         agentIDs: ["default"], defaultWorkingDirectory: folder))
+    let importer = AgentSessionImporter(
+      index: ExternalSessionIndex(
+        fileSystem: UnwatchedLocalFileSystem(), indexFolder: nil, clock: ManualExternalSessionClock()),
+      directory: directory, historyStore: store)
+    await importer.replaceRoots([.claudeCode: claude])
     return ImportFixture(
       folder: folder, claude: claude, file: file, directory: directory, store: store,
-      importer: AgentSessionImporter(
-        roots: [.claudeCode: claude], directory: directory, historyStore: store))
+      importer: importer)
   }
 
   /// The order that imports the source session.
@@ -845,6 +927,100 @@ private struct ImportFixture {
   {
     SessionImportOrder(
       agent: ImportSourceAgent.claudeCode.rawValue, source: source, folder: folder, name: name)
+  }
+}
+
+// MARK: - The temporary folders of a test
+
+/// The temporary folders that one test of the suite made. The
+/// ``RemovesTemporaryFoldersTrait`` removes them at the end of the test, so a run of the suite
+/// leaves no folder in `/private/tmp`.
+final class TemporaryFolders: Sendable {
+  /// The folders of the test that runs now, or `nil` outside a test with the trait.
+  @TaskLocal static var current: TemporaryFolders?
+
+  /// The folders, in the order of their make.
+  private let folders = Mutex<[URL]>([])
+
+  /// Makes a new temporary folder, and keeps it for the removal at the end of the test.
+  ///
+  /// - Parameter label: The prefix of the name of the folder.
+  /// - Returns: The folder.
+  static func make(label: String) -> URL {
+    let folder = makeResolvedDirectory(label: label)
+    current?.folders.withLock { $0.append(folder) }
+    return folder
+  }
+
+  /// Removes each kept folder.
+  func removeAll() {
+    for folder in folders.withLock({ $0 }) {
+      try? FileManager.default.removeItem(at: folder)
+    }
+  }
+}
+
+/// A trait that removes the temporary folders of each test case at its end, also when the test
+/// throws.
+struct RemovesTemporaryFoldersTrait: SuiteTrait, TestTrait, TestScoping {
+  /// The trait applies to each test of the suite.
+  var isRecursive: Bool { true }
+
+  /// Gives a scope to each test case only: a folder belongs to the one test that made it.
+  func scopeProvider(for test: Test, testCase: Test.Case?) -> Self? {
+    testCase == nil ? nil : self
+  }
+
+  /// Runs the test with a new ``TemporaryFolders``, and removes its folders at the end.
+  func provideScope(
+    for test: Test, testCase: Test.Case?, performing function: @Sendable () async throws -> Void
+  ) async throws {
+    let folders = TemporaryFolders()
+    defer { folders.removeAll() }
+    try await TemporaryFolders.$current.withValue(folders) {
+      try await function()
+    }
+  }
+}
+
+extension Trait where Self == RemovesTemporaryFoldersTrait {
+  /// Removes the temporary folders of each test at its end.
+  static var removesTemporaryFolders: Self { Self() }
+}
+
+/// The disk of the Mac with no watch: a change of a file reaches the index only through a find.
+struct UnwatchedLocalFileSystem: ExternalSessionFileSystem {
+  /// The disk.
+  private let local = LocalExternalSessionFileSystem()
+
+  func items(in folder: URL) throws -> [ExternalSessionDirectoryItem] {
+    try local.items(in: folder)
+  }
+
+  func item(at url: URL) -> ExternalSessionDirectoryItem? {
+    local.item(at: url)
+  }
+
+  func openForReading(_ file: URL) throws -> any SessionByteSource {
+    try local.openForReading(file)
+  }
+
+  func contents(of file: URL) -> Data? {
+    local.contents(of: file)
+  }
+
+  func replaceContents(of file: URL, with data: Data) throws {
+    try local.replaceContents(of: file, with: data)
+  }
+
+  func removeItem(at file: URL) {
+    local.removeItem(at: file)
+  }
+
+  func watch(
+    _ folders: [URL], latency: Duration, onChange: @escaping @Sendable ([URL]) -> Void
+  ) -> (any ExternalSessionWatch)? {
+    nil
   }
 }
 

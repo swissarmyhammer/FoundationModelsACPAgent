@@ -84,6 +84,9 @@ public struct AgentHome: Sendable, Equatable {
   /// The folder of the transcript search index of a client app in the session search folder.
   static let clientSessionSearchFolderName = "client"
 
+  /// The name of the folder of the index files of the external sessions, in ``local``.
+  static let externalSessionsFolderName = "external-sessions"
+
   /// The environment key of the base directory of the user configuration
   /// files, in the XDG Base Directory specification.
   static let configHomeEnvironmentKey = "XDG_CONFIG_HOME"
@@ -162,6 +165,14 @@ public struct AgentHome: Sendable, Equatable {
   public var serverSessionSearchDirectory: URL {
     sessionSearchDirectory.appendingPathComponent(
       Self.serverSessionSearchFolderName, isDirectory: true)
+  }
+
+  /// The folder of the index files of the external sessions of this server (D212, section
+  /// 4.1): `external-sessions` in ``local``. ``ExternalSessionIndex`` keeps one file there for
+  /// each source agent, `<source>.jsonl`. The folder is the state of this machine, thus it
+  /// never syncs.
+  public var externalSessionIndexDirectory: URL {
+    local.appendingPathComponent(Self.externalSessionsFolderName, isDirectory: true)
   }
 
   /// The folder of the transcript search index of a client app (D207, Q66):

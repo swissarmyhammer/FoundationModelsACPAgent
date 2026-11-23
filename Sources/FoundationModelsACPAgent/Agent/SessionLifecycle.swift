@@ -212,7 +212,9 @@ extension RoutedACPAgent {
   ///
   /// After the close, the shutdown waits until the transcript search index applied each change
   /// that it got (the history of each closed session too), and until the index wrote its
-  /// catalog to its folder. Thus the next start of the agent finds the last turn (D207).
+  /// catalog to its folder. Thus the next start of the agent finds the last turn (D207). Then
+  /// the index of the external sessions stops its watches and its reads, and writes its last
+  /// index file (D212).
   ///
   /// The call is for `acp-agent acp` and `acp-agent run` when the process ends: on the end of
   /// the input, on `SIGTERM`, and after a prompt of the command line. With no live session it
@@ -223,6 +225,7 @@ extension RoutedACPAgent {
     await settingsStore.stopWatching()
     await transcriptSearchUpdates.waitUntilApplied()
     await transcriptSearchIndex.waitForSaves()
+    await sessionImporter.index.stop()
   }
 
   /// Closes each open session that has no owner now, as `session/close`

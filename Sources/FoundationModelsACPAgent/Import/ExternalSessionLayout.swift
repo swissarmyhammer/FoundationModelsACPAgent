@@ -1,8 +1,8 @@
 import ACPImport
 import Foundation
 
-/// Where the session files of one source agent are in its root, and how to read their metadata
-/// (D209 (d)). The importer reads only these files, and never writes to a root.
+/// Where the session files of one source agent are in its root (D209 (d)). The index reads only
+/// these files, and never writes to a root.
 struct ImportSourceLayout: Sendable {
   /// The folders of the session files, relative to the root.
   let folders: [String]
@@ -15,21 +15,30 @@ struct ImportSourceLayout: Sendable {
   /// The start of the name of a session file, or an empty text for each name.
   let namePrefix: String
 
+  /// True when the session files of the layout are in project folders, one for each working
+  /// folder (Claude Code): `<folder>/<project>/<file>`.
+  let hasProjectFolders: Bool
+
+  /// The place of the project folder in the path components of a file, relative to the root.
+  static let projectComponentIndex = 1
+
   /// The extension of each session file.
   static let fileExtension = "jsonl"
 
   /// The depth of a Claude Code session file under `projects`: `<project>/<id>.jsonl`.
   static let claudeCodeFileDepth = 2
 
-  /// True when `file`, at `depth` under its folder, is a session file of this layout.
+  /// True when a file is a session file of this layout.
   ///
-  /// - Parameters:
-  ///   - file: The file.
-  ///   - depth: The number of path components from the folder to the file.
+  /// - Parameter components: The path components of the file, relative to the root. The first
+  ///   component is the folder of the layout.
   /// - Returns: True for a session file.
-  func holds(_ file: URL, atDepth depth: Int) -> Bool {
-    file.pathExtension == Self.fileExtension && file.lastPathComponent.hasPrefix(namePrefix)
-      && (fileDepth.map { $0 == depth } ?? true)
+  func holds(_ components: [String]) -> Bool {
+    guard let folder = components.first, let name = components.last, folders.contains(folder)
+    else { return false }
+    let depth = components.count - 1
+    return (name as NSString).pathExtension == Self.fileExtension && name.hasPrefix(namePrefix)
+      && !components.contains { $0.hasPrefix(".") } && (fileDepth.map { $0 == depth } ?? (depth > 0))
   }
 }
 
@@ -39,31 +48,85 @@ extension ImportSourceAgent {
     switch self {
     case .claudeCode:
       ImportSourceLayout(
-        folders: ["projects"], fileDepth: ImportSourceLayout.claudeCodeFileDepth, namePrefix: "")
+        folders: ["projects"], fileDepth: ImportSourceLayout.claudeCodeFileDepth, namePrefix: "",
+        hasProjectFolders: true)
     case .codex:
       ImportSourceLayout(
-        folders: ["sessions", "archived_sessions"], fileDepth: nil, namePrefix: "rollout-")
+        folders: ["sessions", "archived_sessions"], fileDepth: nil, namePrefix: "rollout-",
+        hasProjectFolders: false)
     }
   }
 
-  /// Reads the metadata of one session file of the agent, with the reader of `ACPImport`.
+  /// The number of characters of a UUID in its text form.
+  private static let uuidTextLength = 36
+
+  /// The id of a session from the name of its file, before a read of the file: the name with
+  /// no extension for Claude Code, and the UUID at the end of the name for Codex
+  /// (`rollout-<time>-<id>.jsonl`). A Codex name with no UUID at its end gives the name with
+  /// no extension.
   ///
-  /// - Parameters:
-  ///   - data: The bytes of the file.
-  ///   - file: The file. A Claude Code session has the name of its file as its id.
-  /// - Returns: The metadata.
-  /// - Throws: `ImportReadError` when the file is not a session of the agent.
-  func metadata(of data: Data, in file: URL) throws -> ImportedSessionMetadata {
+  /// - Parameter name: The name of the file.
+  /// - Returns: The id.
+  func sourceID(ofFileNamed name: String) -> String {
+    let stem = (name as NSString).deletingPathExtension
     switch self {
     case .claudeCode:
-      try Self.claudeCodeReader(for: file).metadata(data)
+      return stem
     case .codex:
-      try CodexSessionReader().metadata(data)
+      let suffix = String(stem.suffix(Self.uuidTextLength))
+      return UUID(uuidString: suffix) == nil ? stem : suffix
+    }
+  }
+
+  /// The project key of a session file: the name of its project folder, or `nil` for a layout
+  /// with no project folders (Codex).
+  ///
+  /// - Parameter components: The path components of the file, relative to the root.
+  /// - Returns: The project key, or `nil`.
+  func projectKey(ofFile components: [String]) -> String? {
+    guard layout.hasProjectFolders, components.count == ImportSourceLayout.claudeCodeFileDepth + 1
+    else { return nil }
+    return components[ImportSourceLayout.projectComponentIndex]
+  }
+
+  /// The project key of a working folder: the name that Claude Code gives the project folder
+  /// of the folder. Each character that is not an ASCII letter or digit becomes `-` (D209 (b)).
+  /// The rule loses information, thus a query also compares the `cwd` of each session. The
+  /// rule does not resolve symbolic links: a query gives the resolved folder
+  /// (``ExternalSessionFolderMatch``).
+  ///
+  /// - Parameter folder: The working folder.
+  /// - Returns: The project key.
+  static func projectKey(of folder: URL) -> String {
+    String(
+      folder.standardizedFileURL.path.unicodeScalars.map { scalar in
+        scalar.isASCII && CharacterSet.alphanumerics.contains(scalar) ? Character(scalar) : "-"
+      })
+  }
+
+  /// Reads the metadata of one session file with the bounded reader of `ACPImport`: at most
+  /// 384 KB of the file, never the full file.
+  ///
+  /// - Parameters:
+  ///   - source: The bytes of the file.
+  ///   - name: The name of the file. A Claude Code session has the name of its file as its id.
+  /// - Returns: The metadata.
+  /// - Throws: `ImportReadError` when the file is not a session of the agent, and the error of
+  ///   a read.
+  func metadata(from source: some SessionByteSource, fileNamed name: String) throws
+    -> SessionFileMetadata
+  {
+    switch self {
+    case .claudeCode:
+      try ClaudeCodeSessionReader(sourceID: sourceID(ofFileNamed: name)).metadata(from: source)
+    case .codex:
+      try CodexSessionReader().metadata(from: source)
     }
   }
 
   /// Reads one session file of the agent whole, with the reader of `ACPImport`: its metadata,
-  /// its updates and the count of the records that the reader did not read.
+  /// its updates and the count of the records that the reader did not read. Only the copy of
+  /// a session reads a full file.
   ///
   /// - Parameters:
   ///   - data: The bytes of the file.
@@ -73,70 +136,10 @@ extension ImportSourceAgent {
   func session(of data: Data, in file: URL) throws -> ImportedSession {
     switch self {
     case .claudeCode:
-      try Self.claudeCodeReader(for: file).read(data)
+      try ClaudeCodeSessionReader(sourceID: sourceID(ofFileNamed: file.lastPathComponent))
+        .read(data)
     case .codex:
       try CodexSessionReader().read(data)
     }
   }
-
-  /// The Claude Code reader of a session file: the session has the name of its file as its id.
-  ///
-  /// - Parameter file: The session file.
-  /// - Returns: The reader.
-  private static func claudeCodeReader(for file: URL) -> ClaudeCodeSessionReader {
-    ClaudeCodeSessionReader(sourceID: file.deletingPathExtension().lastPathComponent)
-  }
-}
-
-/// The size and the modification date of a session file. The importer reads a file again only
-/// when its stamp changes.
-struct ImportFileStamp: Sendable, Equatable {
-  /// The resource keys that a stamp reads.
-  static let resourceKeys: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey]
-
-  /// The size of the file, in bytes.
-  ///
-  /// The synthesized `Equatable` conformance reads it; periphery sees no reader.
-  // periphery:ignore
-  let size: Int
-
-  /// The modification date of the file.
-  ///
-  /// The synthesized `Equatable` conformance reads it; periphery sees no reader.
-  // periphery:ignore
-  let modified: Date
-
-  /// Makes the stamp of a file, from the resource values of its enumeration.
-  ///
-  /// - Parameter file: The file.
-  /// - Returns: The stamp, or `nil` when the file system gives no size or no date.
-  static func makeStamp(of file: URL) -> ImportFileStamp? {
-    let values = try? file.resourceValues(forKeys: Set(resourceKeys))
-    guard let size = values?.fileSize, let modified = values?.contentModificationDate else {
-      return nil
-    }
-    return ImportFileStamp(size: size, modified: modified)
-  }
-}
-
-/// The result of the read of one session file: its stamp, and its metadata, or `nil` when the
-/// file is not a session that the reader can list.
-struct ImportFileScan: Sendable {
-  /// The stamp of the file at the read.
-  let stamp: ImportFileStamp
-
-  /// The metadata of the file, or `nil` when the reader refused the file.
-  let metadata: ImportedSessionMetadata?
-}
-
-/// The metadata of one session, with its file.
-struct LocatedSessionMetadata: Sendable {
-  /// The session file.
-  let file: URL
-
-  /// The metadata of the session.
-  let metadata: ImportedSessionMetadata
-
-  /// The working folder of the session, or `nil` when the file does not give it.
-  var cwd: URL? { metadata.cwd }
 }
