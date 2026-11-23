@@ -127,6 +127,9 @@ extension RecordedHistoryRebuild {
     /// - Returns: The updates and the live events of the event. Both are empty for an event that
     ///   gives nothing.
     mutating func read(_ event: TranscriptEvent) -> RecordedEntry {
+      if let exchange = event.commandExchange {
+        return Self.commandExchange(exchange, date: EventFields(of: event)?.ts)
+      }
       guard event.kind == .promptStarted || event.mirrorsTranscriptEntry,
         let fields = EventFields(of: event)
       else {
@@ -180,6 +183,35 @@ extension RecordedHistoryRebuild {
         ]
       default:
         return RecordedEntry()
+      }
+      return recorded
+    }
+
+    /// The user message and the reply of a command of the agent that ran with no model call,
+    /// for example `/compact` (FoundationModelsRouter `commandExchange`). The user message keeps
+    /// the id that the client saw. The reply gets a new message id, as each rebuilt agent
+    /// message does.
+    ///
+    /// - Parameters:
+    ///   - exchange: The user message, its id and the reply.
+    ///   - date: The time of the record.
+    /// - Returns: The user message, and the reply when it has text.
+    private static func commandExchange(
+      _ exchange: (prompt: String, messageID: String, reply: String), date: Date?
+    ) -> RecordedEntry {
+      var recorded = RecordedEntry(date: date)
+      recorded.updates = [
+        .userMessage(
+          UserMessage(
+            messageId: MessageId(rawValue: exchange.messageID),
+            content: .value([.text(TextContent(text: exchange.prompt))])))
+      ]
+      if !exchange.reply.isEmpty {
+        recorded.updates.append(
+          .agentMessageChunk(
+            ContentChunk(
+              content: .text(TextContent(text: exchange.reply)),
+              messageId: ACPEventTranslator.makeMessageId())))
       }
       return recorded
     }

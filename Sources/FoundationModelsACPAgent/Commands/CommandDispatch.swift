@@ -17,6 +17,13 @@ struct ParsedCommand: Sendable {
   /// into a prompt-style or `.rendered` prompt; an `.action` command
   /// refuses them, because it makes no model call.
   let attachments: [ContentBlock]
+
+  /// The text of the command as the user typed it, with no attachment: the prefix, the name and
+  /// the arguments.
+  var text: String {
+    let command = CommandDispatch.commandPrefix + name
+    return arguments.isEmpty ? command : command + " " + arguments
+  }
 }
 
 /// The dispatch mechanics of the prompt owner: the
@@ -113,6 +120,11 @@ struct ActionCommandExecution: Sendable {
   /// The invocation the action runs with.
   let invocation: SlashCommand.Invocation
 
+  /// Records the exchange in the Router journal after the action: the reply is the text of the
+  /// action (``RoutedSession/recordCommandExchange(prompt:messageID:reply:)``). A rebuild of the
+  /// history from the journal then has the user message and the reply of the command.
+  var recordExchange: @Sendable (_ reply: String) async -> Void = { _ in }
+
   /// Runs the prompt: `running`, the streamed chunks, and one `idle` with
   /// the stop reason. The `user_message` echo went out before this work.
   /// A stream error is classified the same way a model prompt's error
@@ -121,8 +133,10 @@ struct ActionCommandExecution: Sendable {
     await promptState.promptDidStart()
     let messageId = ACPEventTranslator.makeMessageId()
     var stop = PromptStop.completed
+    var reply = ""
     do {
       for try await text in action(invocation) {
+        reply += text
         await send(
           .agentMessageChunk(
             ContentChunk(content: .text(TextContent(text: text)), messageId: messageId)))
@@ -130,6 +144,7 @@ struct ActionCommandExecution: Sendable {
     } catch {
       stop = PromptExecution.classify(error)
     }
+    await recordExchange(reply)
     if await promptState.cancelRequested {
       stop = .cancelled
     }
@@ -266,12 +281,20 @@ extension RoutedACPAgent {
     }
     AgentMetrics.recordCommand(kind: kind, outcome: .ok)
     switch work {
-    case .action(let execution):
+    case .action(let action):
+      var execution = action
       let sessionId = params.sessionId
       let messageId = insertUserMessage(params, through: connection)
       let owner = execution.promptState
+      let session = entry.session
+      let prompt = command.text
+      execution.recordExchange = { reply in
+        await session.recordCommandExchange(
+          prompt: prompt, messageID: messageId.rawValue, reply: reply)
+      }
+      let recordingExecution = execution
       connection.afterRespondingInCurrentInstrumentationContext {
-        await execution.run()
+        await recordingExecution.run()
         await self.promptFinished(owner, sessionId: sessionId)
       }
       return (PromptResponse(messageId: messageId), owner)

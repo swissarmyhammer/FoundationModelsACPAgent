@@ -36,6 +36,9 @@ import Testing
   /// The bytes of a history file that does not decode.
   private static let badBytes = Data("{ this is not a history".utf8)
 
+  /// An action command of the agent: it runs with no model call.
+  private static let statusCommand = "/status"
+
   /// A tool that gives back its label.
   struct NoteTool: Tool {
     let name = "note"
@@ -279,6 +282,24 @@ import Testing
         #expect(
           ReplayedMessage.replayed(in: written.replayUpdates(from: .start))
             == ReplayedMessage.replayed(in: replay))
+      })
+  }
+
+  /// A command of the agent that runs with no model call, such as `/status`, is in the rebuilt
+  /// history too: its user message with the id of its prompt response, and its reply. Router
+  /// records the exchange in the journal (`commandExchange`).
+  @Test func anActionCommandReplaysFromTheTranscript() async throws {
+    try await Self.resumeAfterDamage(
+      prompts: [Self.firstPrompt, Self.statusCommand],
+      damage: { file in try FileManager.default.removeItem(at: file) },
+      read: { _, replay, responses, _ in
+        let messages = ReplayedMessage.replayed(in: replay)
+        let kinds: [ReplayedMessage.Kind] = messages.map(\.kind)
+        #expect(kinds == [.user, .thought, .agent, .user, .agent], "the replay holds \(messages)")
+        let command = messages.dropFirst(3).first
+        #expect(command?.text == Self.statusCommand)
+        #expect(command?.id == responses[1].messageId.rawValue)
+        #expect(messages.last?.text.isEmpty == false)
       })
   }
 

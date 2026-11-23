@@ -78,7 +78,7 @@ import Testing
     switch kind {
     case .session, .instructions, .prompt, .toolCalls, .toolOutput, .response, .reasoning,
       .embedding, .divergence, .modelChanged, .generationCall, .repeatedPartRemoval, .watchStop,
-      .mail, .toolCallStarted, .promptStarted, .toolCall, .unknown:
+      .mail, .toolCallStarted, .promptStarted, .commandExchange, .toolCall, .unknown:
       return allKindNames.contains(kind.rawValue)
     }
   }
@@ -87,7 +87,8 @@ import Testing
   private static let allKindNames = [
     "session", "instructions", "prompt", "toolCalls", "toolOutput", "response", "reasoning",
     "embedding", "divergence", "modelChanged", "generationCall", "repeatedPartRemoval",
-    "watchStop", "mail", "toolCallStarted", "promptStarted", "toolCall", "unknown",
+    "watchStop", "mail", "toolCallStarted", "promptStarted", "commandExchange", "toolCall",
+    "unknown",
   ]
 
   @Test("the list of kind names holds every kind", arguments: allKindNames)

@@ -295,6 +295,16 @@ actor CloseCountingRoutedSession: RoutedSession {
     await wrapped.openElicitationIds()
   }
 
+  /// Sends the call to the real session.
+  ///
+  /// - Parameters:
+  ///   - prompt: The text of the user message.
+  ///   - messageID: The id of the user message.
+  ///   - reply: The text of the reply.
+  func recordCommandExchange(prompt: String, messageID: String, reply: String) async {
+    await wrapped.recordCommandExchange(prompt: prompt, messageID: messageID, reply: reply)
+  }
+
   // MARK: The synchronous calls, which the code under test does not use
 
   /// Stops the test: this double cannot send a synchronous call to the
