@@ -504,11 +504,12 @@ import ULID
     #expect(final.messageId == draft.messageId)
   }
 
-  /// Tool events project to `tool_call_update` sends in stream order
-  /// and do not disturb the text stream: the two text chunks
-  /// still share one message id, and the prompt still ends with one
-  /// `idle`.
-  @Test func toolEventsProjectInOrderWithoutBreakingTheTextStream() async throws {
+  /// Tool events project to `tool_call_update` sends in stream order,
+  /// and the prompt still ends with one `idle`. The tool call ends the
+  /// message before it, so the text after the call is a new message
+  /// (user decision of 2026-11-23: the messages show in the order of the
+  /// model).
+  @Test func toolEventsProjectInOrderAndTheTextAfterACallIsANewMessage() async throws {
     let (execution, recorder) = makeSinkedExecution()
     let reason = await execution.drive(
       events: makeEventStream([
@@ -530,7 +531,8 @@ import ULID
       if case .agentMessageChunk(let chunk) = update { return chunk.messageId }
       return nil
     }
-    #expect(Set(chunkIds).count == 1)
+    #expect(chunkIds.count == 2)
+    #expect(Set(chunkIds).count == 2)
   }
 
   /// The prompt reports its usage one time, before the idle terminator:

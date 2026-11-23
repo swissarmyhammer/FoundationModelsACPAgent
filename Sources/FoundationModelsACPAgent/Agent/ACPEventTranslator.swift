@@ -190,10 +190,12 @@ struct ACPEventTranslator {
   var tally = PromptTally()
 
   /// The one agent message id of the current message, made at the
-  /// first text delta (a new id starts a new message).
+  /// first text delta (a new id starts a new message). A tool call and a
+  /// reasoning delta close the message.
   private var agentMessageId: MessageId?
 
-  /// The one agent thought id of the current reasoning message.
+  /// The one agent thought id of the current reasoning message. A tool
+  /// call and a text delta close the thought.
   private var thoughtMessageId: MessageId?
 
   /// The wire ids of the tool calls that have a title on the client (task
@@ -350,6 +352,9 @@ struct ACPEventTranslator {
     case .textDelta(let text):
       tally.sawOutput = true
       streamedTextInAnswer = true
+      // The text of a message comes after the thought before it: the
+      // thought is closed, and the next thought gets a new id.
+      thoughtMessageId = nil
       let messageId = agentMessageId ?? Self.makeMessageId()
       agentMessageId = messageId
       await send(
@@ -364,6 +369,9 @@ struct ACPEventTranslator {
       await send(.agentMessage(AgentMessage(messageId: messageId, content: .value([]))))
     case .reasoningDelta(let text):
       tally.sawOutput = true
+      // A thought comes after the message before it: the message is
+      // closed, and the next text gets a new message id.
+      agentMessageId = nil
       let messageId = thoughtMessageId ?? Self.makeMessageId()
       thoughtMessageId = messageId
       await send(
@@ -371,6 +379,11 @@ struct ACPEventTranslator {
           ContentChunk(content: .text(TextContent(text: text)), messageId: messageId)))
     case .toolCall(let id, let name, let argumentsJSON):
       tally.sawOutput = true
+      // Router streams in the order of the model (FoundationModelsRouter
+      // 1173a869): the thought and the message before a tool call end at
+      // the call. A thought or a message after it is a new one.
+      thoughtMessageId = nil
+      agentMessageId = nil
       await projectToolCall(id: id, name: name, argumentsJSON: argumentsJSON)
       await keepMessageText(ofCall: id, tool: name, argumentsJSON: argumentsJSON)
     case .toolStatus(let id, let status, let summary, let output):

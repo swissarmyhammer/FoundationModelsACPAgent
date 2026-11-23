@@ -497,6 +497,75 @@ import Testing
     #expect(Set(ids).count == 2)
   }
 
+  // MARK: - The model order
+
+  /// One step of the updates that ``theThoughtAndTheMessageEndAtEachBoundaryOfTheModelOrder()``
+  /// checks: a thought chunk or a message chunk with its message id, or a
+  /// tool call.
+  private enum OrderStep: Equatable {
+    case thought(MessageId)
+    case toolCall
+    case message(MessageId)
+  }
+
+  /// The thought chunks, the tool calls and the message chunks of
+  /// `updates`, in order. The updates of one tool call in a row are one
+  /// step.
+  private static func orderSteps(in updates: [SessionUpdate]) -> [OrderStep] {
+    var steps: [OrderStep] = []
+    for update in updates {
+      let step: OrderStep
+      switch update {
+      case .agentThoughtChunk(let chunk): step = .thought(chunk.messageId)
+      case .toolCallUpdate: step = .toolCall
+      case .agentMessageChunk(let chunk): step = .message(chunk.messageId)
+      default: continue
+      }
+      if step == .toolCall, steps.last == .toolCall { continue }
+      steps.append(step)
+    }
+    return steps
+  }
+
+  /// Router streams in the order of the model (FoundationModelsRouter
+  /// 1173a869): a thought, a tool call, a thought, then the answer, with no
+  /// recorded entry between them. The tool call closes the first thought,
+  /// so the second thought is a new thought, and the answer is a message of
+  /// its own.
+  @Test func theThoughtAndTheMessageEndAtEachBoundaryOfTheModelOrder() async throws {
+    let updates = await SyntheticPrompt.sentUpdates([
+      .reasoningDelta("first thought"),
+      .toolCall(id: "call-1", name: "read_file", argumentsJSON: "{}"),
+      .reasoningDelta("second thought"),
+      .textDelta("the answer"),
+    ])
+    let steps = Self.orderSteps(in: updates)
+
+    guard steps.count == 4, case .thought(let first) = steps[0], case .thought(let second) = steps[2],
+      case .message(let message) = steps[3]
+    else {
+      Issue.record("unexpected order: \(steps)")
+      return
+    }
+    #expect(steps[1] == .toolCall)
+    #expect(first != second)
+    #expect(Set([first, second, message]).count == 3)
+  }
+
+  /// A thought between two text deltas closes the message: the text after
+  /// the thought is a new message.
+  @Test func aThoughtBetweenTwoTextsStartsANewMessage() async throws {
+    let updates = await SyntheticPrompt.sentUpdates([
+      .textDelta("narration"),
+      .reasoningDelta("a thought"),
+      .textDelta("the answer"),
+    ])
+    let ids = Self.chunkMessageIds(in: updates)
+
+    #expect(ids.count == 2)
+    #expect(Set(ids).count == 2)
+  }
+
   // MARK: - The delivery-only and log-only events
 
   /// A `toolInvocation` record, a priming failure, and a stall report
