@@ -27,6 +27,9 @@ struct ExternalSessionRoot: Sendable {
   /// The number of entries of each project key.
   private var projectCounts: [String: Int] = [:]
 
+  /// The number of entries in the state `found` (not read yet) of each project key.
+  private var projectFoundCounts: [String: Int] = [:]
+
   /// The time of the last read of each file, by its path.
   var lastRead: [String: ContinuousClock.Instant] = [:]
 
@@ -123,6 +126,7 @@ struct ExternalSessionRoot: Sendable {
     entries = [:]
     foundCount = 0
     projectCounts = [:]
+    projectFoundCounts = [:]
     for entry in newEntries.values {
       set(entry)
     }
@@ -153,7 +157,18 @@ struct ExternalSessionRoot: Sendable {
   private mutating func count(_ entry: ExternalSessionIndexEntry?, by step: Int) {
     guard let summary = entry?.summary else { return }
     if summary.state == .found { foundCount += step }
-    if let projectKey = summary.projectKey { projectCounts[projectKey, default: 0] += step }
+    if let projectKey = summary.projectKey {
+      projectCounts[projectKey, default: 0] += step
+      if summary.state == .found { projectFoundCounts[projectKey, default: 0] += step }
+    }
+  }
+
+  /// The number of entries of a project key, and the number of them in the state `found`.
+  ///
+  /// - Parameter projectKey: The project key.
+  /// - Returns: The counts.
+  func counts(ofProject projectKey: String) -> (entries: Int, found: Int) {
+    (projectCounts[projectKey] ?? 0, projectFoundCounts[projectKey] ?? 0)
   }
 }
 

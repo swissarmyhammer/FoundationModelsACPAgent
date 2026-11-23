@@ -157,17 +157,12 @@ enum ExternalSessionIndexError: Error, Equatable, CustomStringConvertible {
   /// The query names a source agent that the index does not know.
   case unknownSource(String)
 
-  /// The cursor of the query is not a cursor of the index.
-  case invalidCursor(String)
-
   /// The text of the error.
   var description: String {
     switch self {
     case .unknownSource(let source):
       let known = ImportSourceAgent.allCases.map(\.rawValue).joined(separator: ", ")
       return "the source \(source) is not a source of external sessions. The sources are: \(known)"
-    case .invalidCursor(let cursor):
-      return "the cursor \(cursor) is not the cursor of a page. Use the cursor of the last page"
     }
   }
 }

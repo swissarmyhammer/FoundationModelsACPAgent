@@ -874,6 +874,46 @@ extension ExternalSessionIndex {
       isComplete: notRead == 0 && roots.values.allSatisfy(\.isFound))
   }
 
+  /// The progress of the index for the files of one folder: the files of the project folder of
+  /// the folder, or, for a source with no project folders, the files whose `cwd` is the folder.
+  /// It is complete when the index read each such file, and no find that can add a file of
+  /// the folder runs or is still to come.
+  ///
+  /// - Parameter match: The folder.
+  /// - Returns: The progress of the folder.
+  func folderIndexState(of match: ExternalSessionFolderMatch?) -> ExternalSessionIndexState? {
+    match.map(folderIndexState(of:))
+  }
+
+  /// The progress of the index for the files of one folder (``folderIndexState(of:)``).
+  ///
+  /// - Parameter match: The folder.
+  /// - Returns: The progress of the folder.
+  func folderIndexState(of match: ExternalSessionFolderMatch) -> ExternalSessionIndexState {
+    var found = 0
+    var notRead = 0
+    var isComplete = true
+    for (agent, root) in roots {
+      if agent.layout.hasProjectFolders {
+        for key in match.projectKeys {
+          let counts = root.counts(ofProject: key)
+          found += counts.entries
+          notRead += counts.found
+          if root.isFinding(project: key) || (!root.isFound && counts.entries == 0) {
+            isComplete = false
+          }
+        }
+      } else {
+        let entries = root.entries.values.filter(match.matches)
+        found += entries.count
+        notRead += entries.filter { $0.summary.state == .found }.count
+        if !root.isFound { isComplete = false }
+      }
+    }
+    return ExternalSessionIndexState(
+      filesFound: found, filesRead: found - notRead, isComplete: isComplete && notRead == 0)
+  }
+
   /// One page of the external sessions, the newest first (`ExternalSessionHost`).
   ///
   /// The page holds the entries in the state `read` that the index has now. A query with a
@@ -884,8 +924,9 @@ extension ExternalSessionIndex {
   ///
   /// - Parameter query: The filter and the page.
   /// - Returns: The page.
-  /// - Throws: ``ExternalSessionIndexError`` for an unknown source and for a cursor that is not
-  ///   a cursor of the index, and `CancellationError` when the task is cancelled.
+  /// - Throws: ``ExternalSessionIndexError/unknownSource(_:)`` for an unknown source,
+  ///   `ExternalSessionError.invalidCursor(_:)` for a cursor that is not a cursor of the index,
+  ///   and `CancellationError` when the task is cancelled.
   nonisolated func externalSessions(_ query: ExternalSessionQuery) async throws
     -> ExternalSessionPage
   {
@@ -930,11 +971,12 @@ extension ExternalSessionIndex {
     let rows = try rows(of: agents, match: match, automated: query.automated)
     guard let page = ExternalSessionPaging.page(of: rows, limit: query.limit, cursor: query.cursor)
     else {
-      throw ExternalSessionIndexError.invalidCursor(query.cursor ?? "")
+      throw ExternalSessionError.invalidCursor(query.cursor ?? "")
     }
     return ExternalSessionPage(
       sessions: page.rows.map(\.summary), indexState: indexState, nextCursor: page.nextCursor,
-      unreadableSources: agents.filter { roots[$0] == nil }.map(\.rawValue))
+      unreadableSources: agents.filter { roots[$0] == nil }.map(\.rawValue),
+      folderIndexState: match.map(folderIndexState(of:)))
   }
 
   /// The rows of some source agents in the state `read`, the newest first. Each query comes
@@ -1047,7 +1089,8 @@ extension ExternalSessionIndex {
   ///
   /// The first element holds no session and the progress of the index now. Each next element
   /// holds the sessions that a read added or changed, the sessions whose files are gone, and
-  /// the progress. A stream of a folder holds only the sessions of that folder, and keeps the
+  /// the progress. A stream of a folder also gives the progress of that folder
+  /// (``folderIndexState(of:)``) in each element. A stream of a folder holds only the sessions of that folder, and keeps the
   /// files of the folder at level 1 of the read queue until it ends.
   ///
   /// - Parameter folder: The working folder to follow, or `nil` for each folder.
@@ -1058,9 +1101,14 @@ extension ExternalSessionIndex {
     let (stream, output) = AsyncStream.makeStream(
       of: ExternalSessionChange.self, bufferingPolicy: .bufferingNewest(feed.bufferLimit))
     let relay: @Sendable () async -> Void = {
-      output.yield(ExternalSessionChange(changed: [], indexState: await self.indexState))
+      output.yield(
+        ExternalSessionChange(
+          changed: [], indexState: await self.indexState,
+          folderIndexState: await self.folderIndexState(of: match)))
       for await event in events {
-        if let change = event.change(for: match) { output.yield(change) }
+        guard var change = event.change(for: match) else { continue }
+        change.folderIndexState = await self.folderIndexState(of: match)
+        output.yield(change)
       }
     }
     let task = Task {
