@@ -158,6 +158,12 @@ public struct CatalogContext: Sendable {
   /// `IMPORT_UNAVAILABLE`.
   public let sessionImporter: (any SessionImporter)?
 
+  /// The host of the external sessions of other agents (D212), or `nil` for a catalog with no
+  /// host. The `sessions` tool gives it to the `list external sessions`, `read external session`
+  /// and `continue external session` operations and to the external session fields of the
+  /// `sessions` endpoint. With no host, they give `EXTERNAL_SESSIONS_UNAVAILABLE`.
+  public let externalSessionHost: (any ExternalSessionHost)?
+
   /// The `models` endpoint of the agent (``RoutedACPAgent/modelsEndpoint``),
   /// or `nil` for a catalog that has no agent. With an endpoint, the session
   /// gets a top-level `models` tool over it.
@@ -255,6 +261,7 @@ public struct CatalogContext: Sendable {
     transcriptSearcher: (any SessionTranscriptSearcher)? = nil,
     sessionSharer: (any SessionSharer)? = nil,
     sessionImporter: (any SessionImporter)? = nil,
+    externalSessionHost: (any ExternalSessionHost)? = nil,
     modelsEndpoint: ModelsGraph? = nil,
     mcpServerRegistry: MCPServerRegistry? = nil,
     marketplaceMount: MarketplaceMount? = nil,
@@ -270,6 +277,7 @@ public struct CatalogContext: Sendable {
     self.transcriptSearcher = transcriptSearcher
     self.sessionSharer = sessionSharer
     self.sessionImporter = sessionImporter
+    self.externalSessionHost = externalSessionHost
     self.agentRunHost = agentRunHost
     self.snapshotStore = snapshotStore
     self.settingsEndpoint = settingsEndpoint

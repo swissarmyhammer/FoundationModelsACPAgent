@@ -92,7 +92,7 @@ import ULID
     /// - Returns: The updates.
     /// - Throws: The error of the read.
     func sourceUpdates() throws -> [SessionUpdate] {
-      try ClaudeCodeSessionReader(sourceID: claudeID).read(Data(contentsOf: file)).updates
+      try ClaudeCodeSessionReader(sourceID: claudeID).read(from: FileByteSource(forReadingFrom: file)).updates
     }
 
     /// Resumes a session with the replay from the start.

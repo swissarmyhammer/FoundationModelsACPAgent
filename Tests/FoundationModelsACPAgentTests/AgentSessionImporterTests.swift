@@ -713,7 +713,7 @@ import ULID
   func anImportWritesTheHistory() async throws {
     let fixture = try await ImportFixture.make()
     let updates = try ClaudeCodeSessionReader(sourceID: Self.claudeID)
-      .read(Data(contentsOf: fixture.file)).updates
+      .read(from: FileByteSource(forReadingFrom: fixture.file)).updates
 
     let result = try await fixture.importer.importSession(fixture.order())
 

@@ -124,22 +124,46 @@ extension ImportSourceAgent {
     }
   }
 
-  /// Reads one session file of the agent whole, with the reader of `ACPImport`: its metadata,
-  /// its updates and the count of the records that the reader did not read. Only the copy of
-  /// a session reads a full file.
+  /// Reads one session file of the agent in full, one block at a time, with the reader of
+  /// `ACPImport`: its metadata, its updates and the count of the records that the reader did
+  /// not read. Only the copy of a session reads a full file. The memory never holds the bytes
+  /// of the whole file.
   ///
   /// - Parameters:
-  ///   - data: The bytes of the file.
-  ///   - file: The file. A Claude Code session has the name of its file as its id.
+  ///   - source: The bytes of the file.
+  ///   - name: The name of the file. A Claude Code session has the name of its file as its id.
   /// - Returns: The session.
-  /// - Throws: `ImportReadError` when the file is not a session of the agent.
-  func session(of data: Data, in file: URL) throws -> ImportedSession {
+  /// - Throws: `ImportReadError` when the file is not a session of the agent, a
+  ///   `CancellationError` when the task is cancelled, and the error of a read.
+  func session(from source: some SessionByteSource, fileNamed name: String) throws
+    -> ImportedSession
+  {
     switch self {
     case .claudeCode:
-      try ClaudeCodeSessionReader(sourceID: sourceID(ofFileNamed: file.lastPathComponent))
-        .read(data)
+      try ClaudeCodeSessionReader(sourceID: sourceID(ofFileNamed: name)).read(from: source)
     case .codex:
-      try CodexSessionReader().read(data)
+      try CodexSessionReader().read(from: source)
+    }
+  }
+
+  /// The updates of one session file of the agent in batches, for a read-only view (D212,
+  /// section 5.3). The reader reads one block at a time when the consumer asks for the next
+  /// batch, so the first batches come while the read continues.
+  ///
+  /// - Parameters:
+  ///   - source: The bytes of the file.
+  ///   - name: The name of the file. A Claude Code session has the name of its file as its id.
+  ///   - blockSize: The number of bytes of each read.
+  /// - Returns: The batches.
+  func updates(
+    from source: some SessionByteSource, fileNamed name: String, blockSize: Int
+  ) -> SessionUpdateBatches {
+    switch self {
+    case .claudeCode:
+      ClaudeCodeSessionReader(sourceID: sourceID(ofFileNamed: name))
+        .updates(from: source, blockSize: blockSize)
+    case .codex:
+      CodexSessionReader().updates(from: source, blockSize: blockSize)
     }
   }
 }

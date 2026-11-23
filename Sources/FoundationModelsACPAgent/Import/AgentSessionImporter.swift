@@ -150,6 +150,22 @@ struct AgentSessionImporter: SessionImporter {
   ///   of a source with no folder, and the error of the read, of the directory or of the
   ///   history store.
   func importSession(_ order: SessionImportOrder) async throws -> SessionImportResult {
+    let copy = try await copySession(order)
+    return SessionImportResult(
+      session: copy.summary.id, name: copy.summary.title ?? copy.title,
+      skippedRecordCount: copy.skippedRecordCount)
+  }
+
+  /// The copy of ``importSession(_:)`` and of `continueExternalSession(_:)`: makes the new
+  /// session from its source, and gives its summary.
+  ///
+  /// - Parameter order: The source session, and the folder and the name of the new session.
+  /// - Returns: The summary of the new session, the name of the request, and the number of
+  ///   records of the source that the reader did not read.
+  /// - Throws: The errors of ``importSession(_:)``.
+  func copySession(_ order: SessionImportOrder) async throws -> (
+    summary: SessionSummary, title: String, skippedRecordCount: Int
+  ) {
     let agent = try Self.agent(named: order.agent)
     guard await index.sources.contains(agent) else {
       throw SessionImportError.sourceUnreadable(agent: order.agent)
@@ -160,7 +176,7 @@ struct AgentSessionImporter: SessionImporter {
     }
     let folder = try Self.folder(of: order, source: source)
     let imported = try agent.session(
-      of: Data(contentsOf: source.file, options: .mappedIfSafe), in: source.file)
+      from: FileByteSource(forReadingFrom: source.file), fileNamed: source.file.lastPathComponent)
     let request = Self.request(for: order, source: source, imported: imported, folder: folder)
     let summary = try await directory.importSession(
       request, transcript: ImportedTranscript.make(from: imported.updates))
@@ -168,9 +184,7 @@ struct AgentSessionImporter: SessionImporter {
     ACPAgentTelemetry.logger(.session).info(
       "The importer made a new session from a session of another agent.",
       metadata: ACPAgentTelemetry.sessionMetadata(SessionId(rawValue: summary.id.description)))
-    return SessionImportResult(
-      session: summary.id, name: summary.title ?? request.title,
-      skippedRecordCount: imported.skippedRecordCount)
+    return (summary, request.title, imported.skippedRecordCount)
   }
 
   /// Writes the updates of the source as the retained history of the new session. When the
