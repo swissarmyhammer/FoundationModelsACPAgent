@@ -47,19 +47,26 @@ struct RecordedSessionFolder: Sendable {
   /// The id of each session folder under `directory`, at any depth, that holds a record
   /// (`index.md`) and that `listed` does not hold: a session whose record does not read.
   ///
-  /// The walk skips each dotfile and each dot folder by name, as Router does.
+  /// The walk skips each dotfile and each dot folder by name, as Router does. It calls
+  /// `skipDescendants()` only for a dot folder: for a file, that call skips the rest of the last
+  /// folder that the walk went into, so a dotfile hid a session folder (FoundationModelsRouter
+  /// cf177a48).
   ///
   /// - Parameters:
   ///   - directory: A recording root.
   ///   - listed: The sessions that ``all(under:)`` gave.
   /// - Returns: The ids of the sessions whose record does not read.
   static func unlistedRecordIds(under directory: URL, listed: Set<SessionId>) -> Set<SessionId> {
-    guard let enumerator = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: nil)
+    guard
+      let enumerator = FileManager.default.enumerator(
+        at: directory, includingPropertiesForKeys: [.isDirectoryKey])
     else { return [] }
     var ids: Set<SessionId> = []
     for case let url as URL in enumerator {
       if url.lastPathComponent.hasPrefix(".") {
-        enumerator.skipDescendants()
+        if (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
+          enumerator.skipDescendants()
+        }
         continue
       }
       guard url.lastPathComponent == recordFileName,
