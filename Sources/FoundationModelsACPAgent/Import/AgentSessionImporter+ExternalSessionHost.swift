@@ -35,6 +35,23 @@ extension AgentSessionImporter: ExternalSessionHost {
     return stream
   }
 
+  /// The summary of one external session, as a row of a page gives it, with the fields of
+  /// ``decorated(_:)``. The call reads no file and does not wait for the index.
+  ///
+  /// - Throws: ``ExternalSessionError/sourceUnreadable(source:)`` for an unknown source or a
+  ///   source with no root, and `CancellationError` when the task is cancelled.
+  func externalSession(_ session: ExternalSessionID) async throws -> ExternalSessionSummary? {
+    try Task.checkCancellation()
+    guard let agent = ImportSourceAgent(rawValue: session.source), await index.sources.contains(agent)
+    else {
+      throw ExternalSessionError.sourceUnreadable(source: session.source)
+    }
+    guard let summary = await index.readSummary(matching: session.sourceID, of: agent) else {
+      return nil
+    }
+    return await decorated([summary]).first
+  }
+
   func externalSessionCounts(source: String?, folder: URL?) async throws -> ExternalSessionCounts {
     try await index.externalSessionCounts(source: source, folder: folder)
   }

@@ -338,4 +338,38 @@ import Testing
 
     #expect(changed?.fileURL != nil)
   }
+
+  @Test("the lookup of one session gives the row of the page, with its file URL and its copies")
+  func theLookupGivesTheRowOfThePage() async throws {
+    let fixture = try await Self.fixture(name: "lookup")
+    defer { await fixture.close() }
+    let importer = fixture.harness.agent.sessionImporter
+    let host: any ExternalSessionHost = importer
+    _ = try await host.continueExternalSession(
+      ExternalSessionContinueRequest(session: Self.session, folder: makeResolvedDirectory(label: "\(Self.label)-lookup-folder")))
+
+    let row = try await host.externalSessions(ExternalSessionQuery(limit: 10)).sessions.first
+    let summary = try await importer.externalSession(Self.session)
+
+    #expect(summary != nil)
+    #expect(summary == row)
+    #expect(summary?.fileURL != nil)
+    #expect(summary?.continuedSessions.count == 1)
+  }
+
+  @Test("the lookup of an unknown session gives nil, and of a source with no access an error")
+  func theLookupOfAnUnknownSession() async throws {
+    let fixture = try await Self.fixture(name: "lookup-unknown")
+    defer { await fixture.close() }
+    let importer = fixture.harness.agent.sessionImporter
+    let codex = ExternalSessionID(source: ImportSourceAgent.codex.rawValue, sourceID: Self.claudeID)
+
+    let unknown = try await importer.externalSession(
+      ExternalSessionID(source: ImportSourceAgent.claudeCode.rawValue, sourceID: "none"))
+
+    #expect(unknown == nil)
+    await #expect(throws: ExternalSessionError.sourceUnreadable(source: codex.source)) {
+      _ = try await importer.externalSession(codex)
+    }
+  }
 }

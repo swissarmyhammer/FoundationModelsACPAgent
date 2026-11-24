@@ -1257,6 +1257,20 @@ extension ExternalSessionIndex {
     return await located(path, of: agent)
   }
 
+  /// The summary of one session in the state `read`, as a row of a page gives it. The call
+  /// reads only the memory of the index: it starts no find and reads no file.
+  ///
+  /// - Parameters:
+  ///   - source: The id of the session, or the path of its file.
+  ///   - agent: The source agent.
+  /// - Returns: The summary, or `nil` when the index has no such session in the state `read`.
+  func readSummary(matching source: String, of agent: ImportSourceAgent) -> ExternalSessionSummary? {
+    guard let path = path(matching: source, of: agent),
+      let summary = roots[agent]?.entries[path]?.summary, summary.state == .read
+    else { return nil }
+    return summary
+  }
+
   /// The path of the entry whose id or file path is `source`.
   private func path(matching source: String, of agent: ImportSourceAgent) -> String? {
     guard let root = roots[agent] else { return nil }
