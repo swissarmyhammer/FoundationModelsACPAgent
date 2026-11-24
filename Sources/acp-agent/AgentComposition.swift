@@ -1,6 +1,7 @@
 import ACPImport
 import Foundation
 import FoundationModelsACPAgent
+import FoundationModelsACPAgentKanban
 import FoundationModelsKanban
 import FoundationModelsRouter
 import Logging
@@ -237,7 +238,7 @@ enum AgentComposition {
     environment: [String: String],
     reporting progress: ResolutionProgress? = nil
   ) async throws -> ComposedAgent {
-    try await ComposedAgent.compose(
+    let composed = try await ComposedAgent.compose(
       name: DotfolderName(dotfolderName),
       workingDirectory: workingDirectory,
       home: try home(environment: environment),
@@ -251,6 +252,9 @@ enum AgentComposition {
       importRoots: importRoots(
         environment: environment,
         homeDirectory: FileManager.default.homeDirectoryForCurrentUser))
+    // The boards of the content catalog (D214) read the folders through the shared host.
+    composed.useBoardContentSource(KanbanBoardContentSource())
+    return composed
   }
 
   /// The factory of the `kanban` tool of each session. It asks the shared

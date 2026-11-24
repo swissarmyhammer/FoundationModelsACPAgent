@@ -179,7 +179,7 @@ import Testing
 
   /// Makes a stub agent with the executable factory of the `kanban` tool,
   /// or with none.
-  fileprivate static func makeAgent(label: String) async throws -> RoutedACPAgent {
+  static func makeAgent(label: String) async throws -> RoutedACPAgent {
     try await makeStubAgent(
       name: AgentClientHarness.dotfolderName,
       cacheDirectory: makeResolvedDirectory(label: "SessionToolFactoryTests-\(label)-cache"))
@@ -192,7 +192,7 @@ private struct FactoryFailure: Error {}
 /// One agent with the executable factory of the `kanban` tool, one
 /// `userDevice` connection that claimed a person, and some sessions in one
 /// folder.
-private struct KanbanFixture {
+struct KanbanFixture {
   /// The connection that claimed a person.
   let device: AgentClientHarness
 
@@ -201,6 +201,9 @@ private struct KanbanFixture {
 
   /// The sessions, all in one folder.
   let sessions: [SessionId]
+
+  /// The working folder of each session.
+  let folder: URL
 
   /// The name of the agent.
   var agentName: String { AgentClientHarness.dotfolderName }
@@ -218,7 +221,7 @@ private struct KanbanFixture {
     _ = try await device.connection.initialize(claiming)
     let folder = makeResolvedDirectory(label: "SessionToolFactoryTests-\(label)-folder")
     let ids = try await openSessions(count, on: device, in: folder)
-    return KanbanFixture(device: device, agent: agent, sessions: ids)
+    return KanbanFixture(device: device, agent: agent, sessions: ids, folder: folder)
   }
 
   /// Opens `count` sessions in one folder, one after the other.

@@ -113,6 +113,12 @@ private let codeContextDependencyName = "FoundationModelsCodeContext"
 /// library gives a seam (`SessionToolFactory`), and the executable fills it.
 private let kanbanDependencyName = "FoundationModelsKanban"
 
+/// The adapter of the boards part of the content catalog (D214, part 3) over
+/// `KanbanHost`: `KanbanBoardContentSource`. A product of its own, so that
+/// the `acp-agent` executable and a host app (Testudo) give one adapter to
+/// `useBoardContentSource(_:)`, and the library stays free of Kanban.
+private let kanbanAdapterTargetName = "\(packageName)Kanban"
+
 /// The ranker package: the selection tier and the text-embedding protocol
 /// under `searchTools` and the code context. The tool catalog builds the
 /// `searchTools` selection tier itself — a `SelectionConfig` over guided
@@ -438,6 +444,8 @@ let package = Package(
     ],
     products: [
         .library(name: packageName, targets: [packageName]),
+        // The boards adapter over `KanbanHost` — see `kanbanAdapterTargetName`.
+        .library(name: kanbanAdapterTargetName, targets: [kanbanAdapterTargetName]),
         // The agent CLI, published so `swift run acp-agent` and the
         // tier-3 spawn name one binary — see `agentExecutableName`.
         .executable(name: agentExecutableName, targets: [agentLauncherTargetName]),
@@ -503,10 +511,20 @@ let package = Package(
         // and links no telemetry exporter — see `telemetryAPIProducts`. It
         // links Extras for `SpanIdentity`, the W3C `traceparent` format the
         // tracer of `acp --telemetry-file` injects and extracts.
+        // The boards adapter over `KanbanHost` — see `kanbanAdapterTargetName`.
+        .target(
+            name: kanbanAdapterTargetName,
+            dependencies: [
+                .target(name: packageName),
+                makeFamilyProduct(name: kanbanDependencyName),
+            ],
+            path: "Sources/\(kanbanAdapterTargetName)"
+        ),
         .target(
             name: agentExecutableName,
             dependencies: [
                 .target(name: packageName),
+                .target(name: kanbanAdapterTargetName),
                 makeFamilyProduct(name: wireDependencyName),
                 makeFamilyProduct(name: routerDependencyName),
                 makeFamilyProduct(name: extrasDependencyName),
@@ -592,6 +610,7 @@ let package = Package(
                 .target(name: packageName),
                 .target(name: testSupportTargetName),
                 .target(name: agentExecutableName),
+                .target(name: kanbanAdapterTargetName),
                 makeFamilyProduct(name: clientDependencyName),
                 makeFamilyProduct(name: kanbanDependencyName),
                 argumentParserProduct,

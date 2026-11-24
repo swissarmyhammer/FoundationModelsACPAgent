@@ -23,6 +23,10 @@ public struct ContentCatalog: Sendable {
 
   /// The setting `spotlight.enabled` of each known folder (part 6).
   public let folderSettings: SpotlightFolderSettings
+
+  /// The boards and the tasks of each known folder (part 3), through the source that the host
+  /// gives (``RoutedACPAgent/useBoardContentSource(_:)``).
+  public let boards: BoardContentCatalog
 }
 
 /// One change of a part of the content catalog. A change stream holds the newest changes that
@@ -55,6 +59,9 @@ extension RoutedACPAgent {
       library: LibraryContentCatalog(
         settingsFolders: settingsFolders, store: settingsStore, directory: sessionDirectory,
         readableFolder: transcriptSearchIndex.readableFolder, watches: libraryWatches),
-      folderSettings: SpotlightFolderSettings(store: settingsStore))
+      folderSettings: SpotlightFolderSettings(store: settingsStore),
+      boards: BoardContentCatalog(
+        directory: sessionDirectory, readableFolder: transcriptSearchIndex.readableFolder,
+        source: boardContentSource.source, given: boardContentSource.given))
   }
 }

@@ -103,6 +103,9 @@ public actor RoutedACPAgent: Agent {
       "A subscriber of the content catalog is slow. It lost its oldest removal of a session.")
   }
 
+  /// The source of the boards that the host gave (``useBoardContentSource(_:)``).
+  nonisolated let boardContentSource = BoardContentSourceHolder()
+
   /// The watches of the library domains that the host read, for the library part of the
   /// content catalog (``LibraryContentCatalog``).
   nonisolated let libraryWatches = LibraryWatches()

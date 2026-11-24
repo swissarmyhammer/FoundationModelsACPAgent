@@ -317,6 +317,14 @@ public struct ComposedAgent: Sendable {
     agent.contentCatalog
   }
 
+  /// Gives the source of the boards of the folders to the content catalog (D214)
+  /// (``RoutedACPAgent/useBoardContentSource(_:)`` of ``agent``).
+  ///
+  /// - Parameter source: The source, or `nil`.
+  public func useBoardContentSource(_ source: (any BoardContentSource)?) {
+    agent.useBoardContentSource(source)
+  }
+
   /// Replaces all the import roots of the host (D209) on ``agent``
   /// (``RoutedACPAgent/setImportRoots(_:)``). The next `list external sessions` or
   /// `continue external session` reads the new roots, with no new composition: Testudo calls it
