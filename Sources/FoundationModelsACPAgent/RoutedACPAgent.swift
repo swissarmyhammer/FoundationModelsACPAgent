@@ -103,6 +103,10 @@ public actor RoutedACPAgent: Agent {
       "A subscriber of the content catalog is slow. It lost its oldest removal of a session.")
   }
 
+  /// The watches of the library domains that the host read, for the library part of the
+  /// content catalog (``LibraryContentCatalog``).
+  nonisolated let libraryWatches = LibraryWatches()
+
   /// The subscribers of the turn ends of the sessions of this server (``turnEnds()``).
   nonisolated let turnEndFeed = SubscriberFeed<SessionId> {
     ACPAgentTelemetry.logger(.session).warning(

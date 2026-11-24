@@ -17,6 +17,10 @@ public struct ContentCatalog: Sendable {
   /// The typed sessions of other agents (part 5), for each source with a root.
   public let externalSessions: ExternalSessionContentCatalog
 
+  /// The agents, the skills and the MCP servers of the user level and of each known folder
+  /// (part 4). Rules have no records until a reader of rules exists (D63).
+  public let library: LibraryContentCatalog
+
   /// The setting `spotlight.enabled` of each known folder (part 6).
   public let folderSettings: SpotlightFolderSettings
 }
@@ -48,6 +52,9 @@ extension RoutedACPAgent {
         removals: contentRemovalFeed),
       turns: transcriptSearchChanges,
       externalSessions: ExternalSessionContentCatalog(index: sessionImporter.index),
+      library: LibraryContentCatalog(
+        settingsFolders: settingsFolders, store: settingsStore, directory: sessionDirectory,
+        readableFolder: transcriptSearchIndex.readableFolder, watches: libraryWatches),
       folderSettings: SpotlightFolderSettings(store: settingsStore))
   }
 }
