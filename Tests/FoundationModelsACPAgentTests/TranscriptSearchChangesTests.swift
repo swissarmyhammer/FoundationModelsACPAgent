@@ -339,4 +339,61 @@ import Testing
 
     #expect(changes == [.removed(session: Self.sessionId)])
   }
+  // MARK: - The stamps
+
+  /// The stamp of a session stays the same for the same chunks, also after a rename, and
+  /// changes when its chunks change. A removed session has no stamp (D214).
+  @Test func theStampOfASessionChangesOnlyWithItsChunks() async throws {
+    let index = await Self.makeIndex(label: "stamps")
+    let changes = TranscriptSearchChanges(index: index)
+    #expect(await changes.stamps().isEmpty)
+
+    await index.index(session: Self.sessionId, chunks: Self.chunks, metadata: Self.metadata)
+    let first = try #require(await changes.stamps()[Self.sessionId])
+    await index.update(session: Self.sessionId, metadata: Self.renamedMetadata)
+    let renamed = await changes.stamps()[Self.sessionId]
+    await index.index(
+      session: Self.sessionId, chunks: Array(Self.chunks.prefix(3)), metadata: Self.metadata)
+    let shorter = await changes.stamps()[Self.sessionId]
+    await index.remove(session: Self.sessionId)
+
+    #expect(renamed == first)
+    #expect(shorter != nil)
+    #expect(shorter != first)
+    #expect(await changes.stamps()[Self.sessionId] == nil)
+  }
+
+  /// The stamp of the last chunk changes when its text grows, as the text of a turn that runs.
+  @Test func theStampChangesWhenTheTextOfAChunkGrows() async throws {
+    let index = await Self.makeIndex(label: "stamps-grow")
+    let changes = TranscriptSearchChanges(index: index)
+
+    await index.index(session: Self.sessionId, chunks: Self.promptChunks("Map"), metadata: Self.metadata)
+    let short = await changes.stamps()[Self.sessionId]
+    await index.index(
+      session: Self.sessionId, chunks: Self.promptChunks("Map of the zoo"), metadata: Self.metadata)
+    let long = await changes.stamps()[Self.sessionId]
+
+    #expect(short != nil)
+    #expect(short != long)
+  }
+
+  /// A new index of the same folder (the next launch) gives the same stamp for the same chunks,
+  /// so the host keeps its items.
+  @Test func theStampIsTheSameAfterAReload() async throws {
+    let folder = makeResolvedDirectory(label: "\(Self.label)-stamps-reload")
+    let first = TranscriptSearchIndex(
+      folder: folder, embedder: nil, modelID: nil, readableFolder: { _ in true })
+    await first.load()
+    await first.index(session: Self.sessionId, chunks: Self.chunks, metadata: Self.metadata)
+    let before = await TranscriptSearchChanges(index: first).stamps()
+    await first.waitForSaves()
+
+    let second = TranscriptSearchIndex(
+      folder: folder, embedder: nil, modelID: nil, readableFolder: { _ in true })
+    let after = await TranscriptSearchChanges(index: second).stamps()
+
+    #expect(before[Self.sessionId] != nil)
+    #expect(after == before)
+  }
 }

@@ -35,6 +35,15 @@ public struct TranscriptSearchChanges: Sendable {
     await index.turns(of: session)
   }
 
+  /// The stamp of the turns of each session (``TranscriptSearchIndex/turnStamps()``, D214). The
+  /// host compares each stamp with the stamp that it keeps, and reads ``turns(of:)`` only for a
+  /// session whose stamp changed. A session with no stamp is not in the index.
+  ///
+  /// - Returns: The stamp of each session.
+  public func stamps() async -> [SessionId: ContentStamp] {
+    await index.turnStamps()
+  }
+
   /// The turns of each session that the index holds. See ``TranscriptSearchIndex/allTurns()``.
   ///
   /// - Returns: The turns.

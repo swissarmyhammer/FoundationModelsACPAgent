@@ -352,6 +352,24 @@ public actor TranscriptSearchIndex {
     return sessions[session]?.turns ?? []
   }
 
+  /// The stamp of the turns of each session that the index holds (D214): a hash of the turn, the
+  /// place, the kind, the date and the size in bytes of each chunk. The stamp does not read the
+  /// text of a chunk, only its size, thus a host can compare the stamps of all sessions at a low
+  /// cost. The facts of a session (its name, its tags, its recap) are not in the stamp.
+  ///
+  /// - Returns: The stamp of each session.
+  public func turnStamps() async -> [SessionId: ContentStamp] {
+    await load()
+    return sessions.mapValues { held in
+      ContentStamp.hashing(
+        held.chunkItems.compactMap { item -> String? in
+          guard case .chunk(let chunk) = item.content else { return nil }
+          let date = chunk.date.map { "\(Int64(($0.timeIntervalSince1970 * 1000).rounded()))" } ?? "-"
+          return "\(chunk.turn):\(chunk.ordinal):\(chunk.kind.rawValue):\(date):\(chunk.text.utf8.count)"
+        })
+    }
+  }
+
   /// The turns of each session that the index holds, for a new index of the host (for
   /// example a new Spotlight index): the sessions in the order of their ids, and the turns of
   /// each session in their order.
