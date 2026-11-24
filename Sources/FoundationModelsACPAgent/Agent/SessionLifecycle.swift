@@ -105,6 +105,7 @@ extension RoutedACPAgent {
       deleting: params.sessionId, folderName: rootId.ulidString, under: roots)
     removeSessionTree(ulidString: rootId.ulidString, from: roots)
     transcriptSearchUpdates.remove(searchSessions)
+    contentRemovalFeed.publish(searchSessions.compactMap { ULID(ulidString: $0.rawValue) }.sorted())
     SnapshotSessionKeys.shared.forget(params.sessionId)
     if let sessionKey {
       await removeSnapshotTimeline(

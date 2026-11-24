@@ -311,6 +311,12 @@ public struct ComposedAgent: Sendable {
     agent.transcriptSearchChanges
   }
 
+  /// The content catalog of the server for the Spotlight items of the host (D214)
+  /// (``RoutedACPAgent/contentCatalog`` of ``agent``). The host only reads through it.
+  public var contentCatalog: ContentCatalog {
+    agent.contentCatalog
+  }
+
   /// Replaces all the import roots of the host (D209) on ``agent``
   /// (``RoutedACPAgent/setImportRoots(_:)``). The next `list external sessions` or
   /// `continue external session` reads the new roots, with no new composition: Testudo calls it

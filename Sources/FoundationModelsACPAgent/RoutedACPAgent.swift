@@ -96,6 +96,13 @@ public actor RoutedACPAgent: Agent {
     await sessionImporter.replaceRoots(roots)
   }
 
+  /// The sessions that `session/delete` removed, for the sessions part of the content catalog
+  /// (``SessionContentCatalog/changes()``).
+  nonisolated let contentRemovalFeed = SubscriberFeed<ULID> {
+    ACPAgentTelemetry.logger(.session).warning(
+      "A subscriber of the content catalog is slow. It lost its oldest removal of a session.")
+  }
+
   /// The subscribers of the turn ends of the sessions of this server (``turnEnds()``).
   nonisolated let turnEndFeed = SubscriberFeed<SessionId> {
     ACPAgentTelemetry.logger(.session).warning(
