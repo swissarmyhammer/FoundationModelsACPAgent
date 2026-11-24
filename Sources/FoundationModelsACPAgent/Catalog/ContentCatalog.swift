@@ -13,6 +13,9 @@ public struct ContentCatalog: Sendable {
 
   /// The turns of each session (part 2): its stamps, its turns and its change stream.
   public let turns: TranscriptSearchChanges
+
+  /// The typed sessions of other agents (part 5), for each source with a root.
+  public let externalSessions: ExternalSessionContentCatalog
 }
 
 /// One change of a part of the content catalog. A change stream holds the newest changes that
@@ -40,6 +43,7 @@ extension RoutedACPAgent {
       sessions: SessionContentCatalog(
         directory: sessionDirectory, readableFolder: transcriptSearchIndex.readableFolder,
         removals: contentRemovalFeed),
-      turns: transcriptSearchChanges)
+      turns: transcriptSearchChanges,
+      externalSessions: ExternalSessionContentCatalog(index: sessionImporter.index))
   }
 }

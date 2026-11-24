@@ -179,7 +179,7 @@ actor ExternalSessionIndex {
     guard !isStopped, let root = roots[agent] else { return false }
     removeRoot(agent)
     startRoot(agent, url: root.url, prefixes: root.prefixes)
-    publish()
+    publish(removedSources: [agent])
     resumeIdleWaiters()
     return true
   }
@@ -189,13 +189,15 @@ actor ExternalSessionIndex {
     _ newRoots: [ImportSourceAgent: URL], prefixes: [ImportSourceAgent: [String]]
   ) {
     guard !isStopped else { return }
+    var removedSources: Set<ImportSourceAgent> = []
     for (agent, root) in roots where newRoots[agent] != root.url {
       removeRoot(agent)
+      removedSources.insert(agent)
     }
     for (agent, url) in newRoots where roots[agent] == nil {
       startRoot(agent, url: url, prefixes: prefixes[agent] ?? [])
     }
-    publish()
+    publish(removedSources: removedSources)
     resumeIdleWaiters()
   }
 
@@ -1216,13 +1218,23 @@ extension ExternalSessionIndex {
     return stream
   }
 
+  /// Makes a new stream of the events of the index, with the automated entries: the source of
+  /// the external sessions part of the content catalog (``ExternalSessionContentCatalog``).
+  ///
+  /// - Returns: The stream of the events after this call.
+  nonisolated func indexEvents() -> AsyncStream<ExternalSessionIndexEvent> {
+    feed.subscribe()
+  }
+
   /// Publishes one change to the subscribers.
   ///
   /// - Parameters:
   ///   - changed: The entries that a read added or changed.
   ///   - removed: The entries whose files are gone.
+  ///   - removedSources: The sources whose root the change removed.
   private func publish(
-    changed: [ExternalSessionIndexEntry] = [], removed: [ExternalSessionIndexEntry] = []
+    changed: [ExternalSessionIndexEntry] = [], removed: [ExternalSessionIndexEntry] = [],
+    removedSources: Set<ImportSourceAgent> = []
   ) {
     let state = indexState
     let completesBuild = state.isComplete && !wasComplete
@@ -1231,7 +1243,7 @@ extension ExternalSessionIndex {
       ExternalSessionIndexEvent(
         changed: changed.filter { $0.summary.state == .read },
         removed: removed.filter { $0.summary.state == .read }, indexState: state,
-        completesBuild: completesBuild)
+        completesBuild: completesBuild, removedSources: removedSources)
     ])
   }
 

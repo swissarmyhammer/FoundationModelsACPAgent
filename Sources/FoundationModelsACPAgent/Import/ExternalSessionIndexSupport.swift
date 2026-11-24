@@ -135,6 +135,10 @@ struct ExternalSessionIndexEvent: Sendable {
   /// True when the change completed the build: the index read each file that it found.
   let completesBuild: Bool
 
+  /// The sources whose root the change removed with each of its entries: a Remove Access, a new
+  /// root of the source, or a rebuild.
+  var removedSources: Set<ImportSourceAgent> = []
+
   /// The change for a subscriber of one folder, or of each folder.
   ///
   /// - Parameter match: The folder of the subscriber, or `nil` for each folder.
