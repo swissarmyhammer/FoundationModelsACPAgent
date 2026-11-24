@@ -177,4 +177,53 @@ import Testing
         ExternalSessionContinueRequest(session: unknown, folder: makeResolvedDirectory(label: Self.label)))
     }
   }
+
+  @Test("a rebuild of the index of a source reads the session again and gives the same row")
+  func theRebuildGivesTheSameRow() async throws {
+    let fixture = try await Self.fixture(name: "rebuild")
+    defer { await fixture.close() }
+    let host: any ExternalSessionHost = fixture.harness.agent.sessionImporter
+    let query = ExternalSessionQuery(limit: 10)
+    let before = try await host.externalSessions(query)
+
+    try await host.rebuildExternalSessionIndex(source: ImportSourceAgent.claudeCode.rawValue)
+    await fixture.harness.agent.sessionImporter.index.waitUntilIdle()
+    let after = try await host.externalSessions(query)
+
+    #expect(after.sessions.map(\.id) == [Self.session])
+    #expect(after.sessions == before.sessions)
+  }
+
+  @Test("a rebuild of a source with no access gives sourceUnreadable")
+  func theRebuildOfASourceWithNoAccessGivesTheError() async throws {
+    let fixture = try await Self.fixture(name: "rebuild-no-access")
+    defer { await fixture.close() }
+    let host: any ExternalSessionHost = fixture.harness.agent.sessionImporter
+    let codex = ImportSourceAgent.codex.rawValue
+
+    await #expect(throws: ExternalSessionError.sourceUnreadable(source: codex)) {
+      try await host.rebuildExternalSessionIndex(source: codex)
+    }
+    await #expect(throws: ExternalSessionError.sourceUnreadable(source: "none")) {
+      try await host.rebuildExternalSessionIndex(source: "none")
+    }
+  }
+
+  @Test("the counts of the host count the typed session of the root and of its folder")
+  func theCountsCountTheTypedSession() async throws {
+    let fixture = try await Self.fixture(name: "counts")
+    defer { await fixture.close() }
+    let host: any ExternalSessionHost = fixture.harness.agent.sessionImporter
+
+    let root = try await host.externalSessionCounts(source: nil, folder: nil)
+    let folder = try await host.externalSessionCounts(source: nil, folder: Self.claudeFolder)
+    let other = try await host.externalSessionCounts(
+      source: nil, folder: URL(fileURLWithPath: "/work/other", isDirectory: true))
+
+    #expect(root.typedCount == 1)
+    #expect(root.automatedCount == 0)
+    #expect(root.indexState.isComplete)
+    #expect(folder.typedCount == 1)
+    #expect(other.typedCount == 0)
+  }
 }

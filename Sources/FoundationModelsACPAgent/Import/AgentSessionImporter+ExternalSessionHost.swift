@@ -20,6 +20,22 @@ extension AgentSessionImporter: ExternalSessionHost {
     index.externalSessionChanges(folder: folder)
   }
 
+  func externalSessionCounts(source: String?, folder: URL?) async throws -> ExternalSessionCounts {
+    try await index.externalSessionCounts(source: source, folder: folder)
+  }
+
+  /// Builds the index of one source again (``ExternalSessionIndex/rebuild(_:)``). The call
+  /// returns when the new find starts.
+  ///
+  /// - Throws: ``ExternalSessionError/sourceUnreadable(source:)`` for an unknown source or a
+  ///   source with no root, and `CancellationError` when the task is cancelled.
+  func rebuildExternalSessionIndex(source: String) async throws {
+    try Task.checkCancellation()
+    guard let agent = ImportSourceAgent(rawValue: source), await index.rebuild(agent) else {
+      throw ExternalSessionError.sourceUnreadable(source: source)
+    }
+  }
+
   /// The history of one external session, in batches. The read runs in a task of the stream: the
   /// end of the iteration, or the cancel of the task that reads the stream, cancels the read
   /// before its next block.

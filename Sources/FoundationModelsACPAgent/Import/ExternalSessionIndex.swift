@@ -164,6 +164,23 @@ actor ExternalSessionIndex {
   /// The source agents of the roots now.
   var sources: Set<ImportSourceAgent> { Set(roots.keys) }
 
+  /// Builds the index of one source again (D212 5.6, Rebuild Index): the root loses its
+  /// entries, its reads and its index file, as for a removed root, and then starts again at the
+  /// same URL, with a new find of each file and a full read of each file. The subscribers get
+  /// the old rows as removed, and the new rows as the reads end.
+  ///
+  /// - Parameter agent: The source agent.
+  /// - Returns: `false` when the index has no root of the source agent, or is stopped.
+  @discardableResult
+  func rebuild(_ agent: ImportSourceAgent) -> Bool {
+    guard !isStopped, let root = roots[agent] else { return false }
+    removeRoot(agent)
+    startRoot(agent, url: root.url, prefixes: root.prefixes)
+    publish()
+    resumeIdleWaiters()
+    return true
+  }
+
   /// Replaces all the roots, with the path prefixes of each new root.
   private func applyRoots(
     _ newRoots: [ImportSourceAgent: URL], prefixes: [ImportSourceAgent: [String]]
@@ -890,10 +907,22 @@ extension ExternalSessionIndex {
   /// - Parameter match: The folder.
   /// - Returns: The progress of the folder.
   func folderIndexState(of match: ExternalSessionFolderMatch) -> ExternalSessionIndexState {
+    folderIndexState(of: match, agents: nil)
+  }
+
+  /// The progress of the index for the files of one folder, for some source agents.
+  ///
+  /// - Parameters:
+  ///   - match: The folder.
+  ///   - agents: The source agents, or `nil` for each source agent.
+  /// - Returns: The progress of the folder.
+  private func folderIndexState(
+    of match: ExternalSessionFolderMatch, agents: Set<ImportSourceAgent>?
+  ) -> ExternalSessionIndexState {
     var found = 0
     var notRead = 0
     var isComplete = true
-    for (agent, root) in roots {
+    for (agent, root) in roots where agents?.contains(agent) ?? true {
       if agent.layout.hasProjectFolders {
         for key in match.projectKeys {
           let counts = root.counts(ofProject: key)
@@ -950,6 +979,56 @@ extension ExternalSessionIndex {
   ) async throws -> [LocatedExternalSession] {
     let match = folder.map(ExternalSessionFolderMatch.init(folder:))
     return try await rows(of: agents, match: match, automated: automated)
+  }
+
+  /// The counts of the typed and of the automated sessions that the index has now, with no
+  /// paging (`ExternalSessionHost`). The counts hold only the entries in the state `read`, as
+  /// a page does. A count of each folder reads the totals of each root; a count of one folder
+  /// checks each entry in memory with the same match as a page of that folder. The call reads
+  /// no file and changes no level of the read queue. It starts a find of a root with no watch
+  /// or a partial watch, as a page does.
+  ///
+  /// - Parameters:
+  ///   - source: The source agent, or `nil` for each source agent.
+  ///   - folder: The working folder, or `nil` for each folder.
+  /// - Returns: The counts, and the progress of the index for the same scope.
+  /// - Throws: ``ExternalSessionIndexError/unknownSource(_:)`` for an unknown source, and
+  ///   `CancellationError` when the task is cancelled.
+  nonisolated func externalSessionCounts(source: String?, folder: URL?) async throws
+    -> ExternalSessionCounts
+  {
+    try Task.checkCancellation()
+    let agents = try source.map { [try Self.agent(named: $0)] } ?? ImportSourceAgent.allCases
+    let match = folder.map(ExternalSessionFolderMatch.init(folder:))
+    return await counts(of: agents, match: match)
+  }
+
+  /// The counts of some source agents (``externalSessionCounts(source:folder:)``).
+  private func counts(
+    of agents: [ImportSourceAgent], match: ExternalSessionFolderMatch?
+  ) -> ExternalSessionCounts {
+    requestFinds(of: agents)
+    let scoped = agents.compactMap { roots[$0] }
+    guard let match else {
+      let found = scoped.reduce(0) { $0 + $1.entries.count }
+      let notRead = scoped.reduce(0) { $0 + $1.foundCount }
+      return ExternalSessionCounts(
+        typedCount: scoped.reduce(0) { $0 + $1.typedCount },
+        automatedCount: scoped.reduce(0) { $0 + $1.automatedCount },
+        indexState: ExternalSessionIndexState(
+          filesFound: found, filesRead: found - notRead,
+          isComplete: notRead == 0 && scoped.allSatisfy(\.isFound)))
+    }
+    var typed = 0
+    var automated = 0
+    for root in scoped {
+      for entry in root.entries.values where entry.summary.state == .read && match.matches(entry) {
+        if entry.summary.isAutomated { automated += 1 } else { typed += 1 }
+      }
+    }
+    return ExternalSessionCounts(
+      typedCount: typed, automatedCount: automated,
+      indexState: folderIndexState(of: match, agents: Set(agents)))
   }
 
   /// The typed sessions of each root in the state `read`, for the search items of the

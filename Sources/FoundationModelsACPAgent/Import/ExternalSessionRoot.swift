@@ -24,6 +24,12 @@ struct ExternalSessionRoot: Sendable {
   /// The number of entries in the state `found`.
   private(set) var foundCount = 0
 
+  /// The number of entries in the state `read` of typed sessions.
+  private(set) var typedCount = 0
+
+  /// The number of entries in the state `read` of automated sessions.
+  private(set) var automatedCount = 0
+
   /// The number of entries of each project key.
   private var projectCounts: [String: Int] = [:]
 
@@ -125,6 +131,8 @@ struct ExternalSessionRoot: Sendable {
   mutating func replaceEntries(_ newEntries: [String: ExternalSessionIndexEntry]) {
     entries = [:]
     foundCount = 0
+    typedCount = 0
+    automatedCount = 0
     projectCounts = [:]
     projectFoundCounts = [:]
     for entry in newEntries.values {
@@ -157,6 +165,9 @@ struct ExternalSessionRoot: Sendable {
   private mutating func count(_ entry: ExternalSessionIndexEntry?, by step: Int) {
     guard let summary = entry?.summary else { return }
     if summary.state == .found { foundCount += step }
+    if summary.state == .read {
+      if summary.isAutomated { automatedCount += step } else { typedCount += step }
+    }
     if let projectKey = summary.projectKey {
       projectCounts[projectKey, default: 0] += step
       if summary.state == .found { projectFoundCounts[projectKey, default: 0] += step }
