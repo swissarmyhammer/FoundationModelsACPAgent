@@ -69,9 +69,11 @@ extension RoutedACPAgent {
   }
 
   /// Starts the updates of the transcript search index: the read of the events of the session
-  /// directory, and the reconcile at launch, in the background with a low priority. The
-  /// reconcile reads the working folders of the project store, and the recording root of each
-  /// one from its settings.
+  /// directory, the reconcile at launch, and the follow of the index of the external sessions,
+  /// in the background with a low priority. The reconcile reads the working folders of the
+  /// project store, and the recording root of each one from its settings. The follow keeps one
+  /// external item for each typed session that the index of the external sessions has read
+  /// (D212, design section 5.2).
   ///
   /// - Parameter directory: The session directory of the agent.
   nonisolated func startTranscriptSearchUpdates(reading directory: RouterSessionDirectory) {
@@ -87,5 +89,9 @@ extension RoutedACPAgent {
       recordingRoot: { folder in
         try await LoadedSessionContext.load(workingDirectory: folder, from: store).transcriptRoot
       })
+    let externalIndex = sessionImporter.index
+    transcriptSearchUpdates.followExternalSessions(
+      externalIndex.externalSessionChanges(folder: nil),
+      rows: { await externalIndex.typedReadSessions() })
   }
 }

@@ -31,6 +31,10 @@ import FoundationModelsMetadataRegistry
 /// FoundationModelsACP) and the facts of the session. Each change gives the searcher only the
 /// items that changed (`update(upserting:removing:)`): the new and changed items of the
 /// session, and the ids of its items that are gone. The registry embeds only the new texts.
+///
+/// The index of the agent also holds one external item for each typed session of another agent
+/// that the index of the external sessions has read (D212, design section 5.2): see
+/// `TranscriptSearchIndex+External.swift`. An external item is not in the sessions of the index.
 public actor TranscriptSearchIndex {
   /// The content of one session that the host gives to the index: the chunks of its transcript
   /// and its facts.
@@ -139,7 +143,7 @@ public actor TranscriptSearchIndex {
   private nonisolated let feed = TranscriptSearchChangeFeed()
 
   /// The searcher of the transcript search items.
-  private typealias Searcher = MetadataSearcher<TranscriptSearchItem>
+  typealias Searcher = MetadataSearcher<TranscriptSearchItem>
 
   /// The state of the load of the stored catalog.
   private enum LoadState {
@@ -163,6 +167,10 @@ public actor TranscriptSearchIndex {
 
   /// The items of each indexed session, by session id.
   private(set) var sessions: [SessionId: IndexedSession] = [:]
+
+  /// The external item of each typed session of another agent, by item id
+  /// (`external:<source>/<id>`).
+  var externalItems: [String: TranscriptSearchItem] = [:]
 
   /// The chunk items of ``sessions``, newest first, for a query with only tokens. Each change of
   /// the chunk items of ``sessions`` changes it in the same step.
@@ -375,16 +383,18 @@ public actor TranscriptSearchIndex {
     }
   }
 
-  /// The items of the catalog that the index holds now, in the order of the session ids. Read
-  /// it only after the load.
+  /// The items of the catalog that the index holds now, in the order of the session ids, then
+  /// the external items in the order of their ids. Read it only after the load.
   private var heldCatalog: [TranscriptSearchItem] {
     sortedSessionIDs.flatMap { sessions[$0]?.items ?? [] }
+      + externalItems.keys.sorted().compactMap { externalItems[$0] }
   }
 
   /// The number of items that the index holds now: the session item and the chunk items of each
-  /// session. It is the count of ``heldCatalog``, with no build of the catalog.
+  /// session, and the external items. It is the count of ``heldCatalog``, with no build of the
+  /// catalog.
   private var heldItemCount: Int {
-    sessions.values.reduce(0) { $0 + $1.chunkItems.count + 1 }
+    sessions.values.reduce(externalItems.count) { $0 + $1.chunkItems.count + 1 }
   }
 
   /// The ids of the indexed sessions, in their order.
@@ -437,7 +447,7 @@ public actor TranscriptSearchIndex {
   /// for the same load.
   ///
   /// - Returns: The searcher.
-  private func loadedSearcher() async -> Searcher {
+  func loadedSearcher() async -> Searcher {
     if case .loading(let load) = loadState {
       return await load.value
     }
@@ -446,9 +456,9 @@ public actor TranscriptSearchIndex {
     return await load.value
   }
 
-  /// Makes the searcher over the stored catalog of the folder, makes the list of sessions from
-  /// the stored items, and removes the stray ids from the searcher. Only ``loadedSearcher()``
-  /// calls it, one time.
+  /// Makes the searcher over the stored catalog of the folder, makes the list of sessions and
+  /// the external items from the stored items, and removes the stray ids from the searcher.
+  /// Only ``loadedSearcher()`` calls it, one time.
   ///
   /// - Returns: The searcher.
   private func openStoredCatalog() async -> Searcher {
@@ -461,7 +471,10 @@ public actor TranscriptSearchIndex {
         TranscriptSearchDiagnostics.log(diagnostic)
         onDiagnostic?(diagnostic)
       })
-    let restored = Self.restoredSessions(from: await searcher.items())
+    let storedItems = await searcher.items()
+    let restored = Self.restoredSessions(from: storedItems.filter { !$0.isExternal })
+    externalItems = Dictionary(
+      storedItems.filter(\.isExternal).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     sessions = restored.sessions
     dateIndex = TranscriptSearchDateIndex(sessions: restored.sessions)
     await write(to: searcher, upserting: [], removing: restored.strayIDs)
@@ -479,7 +492,7 @@ public actor TranscriptSearchIndex {
   ///   - searcher: The searcher after the load.
   ///   - upserting: The new and the changed items.
   ///   - removing: The ids of the items that are gone.
-  private func write(to searcher: Searcher, upserting: [TranscriptSearchItem], removing: [String])
+  func write(to searcher: Searcher, upserting: [TranscriptSearchItem], removing: [String])
     async
   {
     guard !upserting.isEmpty || !removing.isEmpty else {

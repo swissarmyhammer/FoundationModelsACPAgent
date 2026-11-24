@@ -952,6 +952,17 @@ extension ExternalSessionIndex {
     return try await rows(of: agents, match: match, automated: automated)
   }
 
+  /// The typed sessions of each root in the state `read`, for the search items of the
+  /// transcript search (D212, design section 5.2). The call reads only the memory of the index:
+  /// it starts no find, changes no level of the read queue, and reads no file.
+  ///
+  /// - Returns: The sessions, in no order.
+  func typedReadSessions() -> [ExternalSessionSummary] {
+    roots.values.flatMap { root in
+      root.entries.values.lazy.map(\.summary).filter { $0.state == .read && !$0.isAutomated }
+    }
+  }
+
   /// The source agent of a name.
   ///
   /// - Parameter name: The name, for example `claude-code`.

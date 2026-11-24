@@ -19,6 +19,9 @@ import Synchronization
 /// - **A delete.** The agent gives each session of the deleted folder, and the object removes
 ///   their items.
 /// - **The reconcile at launch** (``startReconcile(folders:recordingRoot:)``).
+/// - **The external sessions** (D212, design section 5.2). The object follows the changes of the
+///   index of the external sessions (``followExternalSessions(_:rows:onApplied:)``) and keeps
+///   one external item for each typed session that the index has read.
 ///
 /// One task applies the changes in the order that they came. Thus a later turn of a session
 /// never comes before an earlier one, and a reconcile, which reads the files when its turn
@@ -38,6 +41,10 @@ final class TranscriptSearchUpdates: Sendable {
 
   /// Gives the working folders of the project store.
   typealias FolderReader = @Sendable () throws -> [URL]
+
+  /// Gives the typed sessions in the state `read` that the index of the external sessions holds
+  /// now. It reads only the memory of that index.
+  typealias ExternalSessionReader = @Sendable () async -> [ExternalSessionSummary]
 
   /// One change of the index, in the queue of the task that applies the changes.
   enum Change: Sendable {
@@ -83,6 +90,11 @@ final class TranscriptSearchUpdates: Sendable {
   /// ``startReconcile(folders:recordingRoot:)``. ``waitUntilApplied()`` waits until the task put
   /// each folder in the queue.
   private let launchReconcile = Mutex<Task<Void, Never>?>(nil)
+
+  /// The task that follows the changes of the index of the external sessions, or `nil` before
+  /// ``followExternalSessions(_:rows:onApplied:)`` and after
+  /// ``stopFollowingExternalSessions()``.
+  private let externalFollow = Mutex<Task<Void, Never>?>(nil)
 
   /// Makes the object. It starts the task that applies the changes.
   ///
@@ -198,6 +210,53 @@ final class TranscriptSearchUpdates: Sendable {
     case .stateChanged, .messageQueued, .messageDelivered:
       return
     }
+  }
+
+  /// Starts to follow the changes of the index of the external sessions: the external items of
+  /// the index of the transcript search follow the typed sessions that the index has read.
+  ///
+  /// An element with changed or removed sessions changes only those items: a changed session
+  /// gets a new item, and a removed session (also each session of a removed root) loses its
+  /// item. An element with no session, as the first element of the stream and the progress
+  /// after a load of an index file, makes the items again from `rows`, the sessions that the
+  /// index holds now. The first element comes after the subscription, so a change after the
+  /// read of `rows` comes after it in the stream, and no change is lost. No item reads a
+  /// session file.
+  ///
+  /// - Parameters:
+  ///   - changes: The changes of the index of the external sessions for each folder
+  ///     (`externalSessionChanges(folder: nil)`).
+  ///   - rows: Gives the typed sessions that the index holds now.
+  ///   - onApplied: Called after the index applied each element, or `nil`. A test waits on it.
+  func followExternalSessions(
+    _ changes: AsyncStream<ExternalSessionChange>, rows: @escaping ExternalSessionReader,
+    onApplied: (@Sendable () -> Void)? = nil
+  ) {
+    let index = index
+    let follow = Task(priority: .utility) {
+      for await change in changes {
+        if change.changed.isEmpty && change.removed.isEmpty {
+          await index.replaceExternalSessions(with: await rows())
+        } else {
+          await index.updateExternalSessions(changed: change.changed, removed: change.removed)
+        }
+        onApplied?()
+      }
+    }
+    tasks.withLock { $0.append(follow) }
+    externalFollow.withLock { $0 = follow }
+  }
+
+  /// Stops to follow the changes of the index of the external sessions, and returns when the
+  /// task that follows them ended. The cancellation ends the stream of the changes. The shutdown
+  /// of the agent calls it before it waits for the saves of the index.
+  func stopFollowingExternalSessions() async {
+    let follow = externalFollow.withLock { held in
+      defer { held = nil }
+      return held
+    }
+    follow?.cancel()
+    await follow?.value
   }
 
   /// Starts the reconcile at launch in a task with a low priority

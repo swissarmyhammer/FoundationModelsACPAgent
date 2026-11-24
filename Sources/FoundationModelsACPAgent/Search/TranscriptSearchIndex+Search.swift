@@ -40,6 +40,43 @@ extension TranscriptSearchIndex {
     _ request: TranscriptIndexSearchRequest,
     visibleSessions: [SessionId: TranscriptSearchVisibleSession]
   ) async throws -> TranscriptIndexSearchPage {
+    let matches = try await rankedMatches(of: request)
+    return try search(request, visibleSessions: visibleSessions, matches: matches)
+  }
+
+  /// The matches of the registry for the ranking text of a request, after the check of its
+  /// cursor. A request with no ranking text does not call the registry and has no match.
+  ///
+  /// - Parameter request: The request.
+  /// - Returns: The matches, the highest fused score first.
+  /// - Throws: ``TranscriptSearchError/invalidCursor`` for a cursor that a search did not give,
+  ///   or an error of the searcher.
+  private func rankedMatches(of request: TranscriptIndexSearchRequest) async throws
+    -> [Match<TranscriptSearchItem>]
+  {
+    _ = try TranscriptSearchCursor.offset(of: request.cursor)
+    let rankingText = request.query.rankingText
+    guard !rankingText.isEmpty else {
+      await load()
+      return []
+    }
+    return try await matches(for: rankingText)
+  }
+
+  /// One page of the sessions that match a request, with the matches of the registry for its
+  /// ranking text (``rankedMatches(of:)``).
+  ///
+  /// - Parameters:
+  ///   - request: The request.
+  ///   - visibleSessions: The sessions that the session directory shows now.
+  ///   - matches: The matches of the registry, or none for a request with no ranking text.
+  /// - Returns: The page.
+  /// - Throws: ``TranscriptSearchError/invalidCursor`` for a cursor that a search did not give.
+  private func search(
+    _ request: TranscriptIndexSearchRequest,
+    visibleSessions: [SessionId: TranscriptSearchVisibleSession],
+    matches: [Match<TranscriptSearchItem>]
+  ) throws -> TranscriptIndexSearchPage {
     let offset = try TranscriptSearchCursor.offset(of: request.cursor)
     let filter = TranscriptSearchFilter(request: request, visibleSessions: visibleSessions)
     let rankingText = request.query.rankingText
@@ -51,7 +88,8 @@ extension TranscriptSearchIndex {
       wanted: isSessionRequest ? 1 : Self.wantedSessions(offset: offset, limit: limit),
       keptHits: keptHits, countsHits: !rankingText.isEmpty, preferredFolder: request.preferredFolder
     )
-    let sessions = try await collectSessions(of: rankingText, filter: filter, into: &collector)
+    let sessions = collectSessions(
+      of: rankingText, matches: matches, filter: filter, into: &collector)
     let withHits = { (session: TranscriptSearchSession) in
       self.withHits(session, rankingText: rankingText, filter: filter, keptHits: keptHits)
     }
@@ -85,18 +123,32 @@ extension TranscriptSearchIndex {
   ///   - request: The request of Multitool.
   ///   - visibleSessions: The sessions that the session directory shows now, with their folder
   ///     and their archive state. An item of another session does not pass.
+  /// The first page of a request with no session filter (no ``SessionSearchRequest/sessions``
+  /// and no ``SessionSearchRequest/session``) also gives the sessions of other agents whose
+  /// external items match (``externalResults(of:filter:queryTerms:)``), in
+  /// ``FoundationModelsMultitool/SessionSearchPage/externalSessions``. A later page and a
+  /// request with a session filter give none, and a query with no ranking text gives none,
+  /// because only the registry matches the index fields.
+  ///
   /// - Returns: The page, with the ULID of each session.
   /// - Throws: ``TranscriptSearchError/invalidCursor`` for a cursor that a search did not give,
   ///   or an error of the searcher.
   public func search(
     _ request: SessionSearchRequest, visibleSessions: [SessionId: TranscriptSearchVisibleSession]
   ) async throws -> SessionSearchPage {
-    let page = try await search(
-      TranscriptIndexSearchRequest(request),
-      visibleSessions: visibleSessions.filter { ULID(ulidString: $0.key.rawValue) != nil })
+    let indexRequest = TranscriptIndexSearchRequest(request)
+    let ulidSessions = visibleSessions.filter { ULID(ulidString: $0.key.rawValue) != nil }
+    let matches = try await rankedMatches(of: indexRequest)
+    let page = try search(indexRequest, visibleSessions: ulidSessions, matches: matches)
+    let givesExternal = request.cursor == nil && request.sessions == nil && request.session == nil
+    let externalSessions =
+      givesExternal
+      ? Self.externalResults(
+        of: matches, filter: TranscriptSearchFilter(request: indexRequest, visibleSessions: [:]),
+        queryTerms: Set(Tokenizer.tokenize(text: request.query.rankingText))) : []
     return SessionSearchPage(
       sessions: page.sessions.compactMap(Self.multitoolResult(of:)), nextCursor: page.nextCursor,
-      unavailableFolders: page.unavailableFolders)
+      unavailableFolders: page.unavailableFolders, externalSessions: externalSessions)
   }
 
   /// The result of Multitool of a session whose id is a ULID.
@@ -139,20 +191,21 @@ extension TranscriptSearchIndex {
   ///
   /// - Parameters:
   ///   - rankingText: The ranking text of the query.
+  ///   - matches: The matches of the registry for the ranking text.
   ///   - filter: The filters.
   ///   - collector: The collector of the sessions.
   /// - Returns: The sessions: of the matches of the registry, with their hits, or of the chunk
   ///   items newest first for an empty ranking text, with only their first hit
   ///   (``listedHits(of:filter:keptHits:)`` gives the others).
-  /// - Throws: An error of the searcher.
   private func collectSessions(
-    of rankingText: String, filter: TranscriptSearchFilter,
-    into collector: inout TranscriptSearchSessionCollector
-  ) async throws -> [TranscriptSearchSession] {
+    of rankingText: String, matches: [Match<TranscriptSearchItem>],
+    filter: TranscriptSearchFilter, into collector: inout TranscriptSearchSessionCollector
+  ) -> [TranscriptSearchSession] {
     guard rankingText.isEmpty else {
-      for match in try await matches(for: rankingText) {
-        guard let slot = collector.slot(of: match.item.sessionId), collector.wants(slot: slot),
-          filter.admitsFacts(of: match.item), filter.admitsText(of: match.item)
+      for match in matches {
+        guard !match.item.isExternal, let slot = collector.slot(of: match.item.sessionId),
+          collector.wants(slot: slot), filter.admitsFacts(of: match.item),
+          filter.admitsText(of: match.item)
         else {
           continue
         }
@@ -160,7 +213,6 @@ extension TranscriptSearchIndex {
       }
       return collector.sessions
     }
-    await load()
     for entry in dateIndex.entries {
       guard let slot = collector.slot(of: entry.sessionId), collector.wants(slot: slot),
         filter.admits(kind: entry.kind, date: entry.date),

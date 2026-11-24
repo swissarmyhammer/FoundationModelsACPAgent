@@ -1,6 +1,8 @@
 import Foundation
 import FoundationModelsACP
+import FoundationModelsExtras
 import FoundationModelsMetadataRegistry
+import FoundationModelsMultitool
 
 /// One item of the catalog of the transcript search (D207 (b) (1)): a chunk of the transcript of
 /// a session, or a session itself.
@@ -16,6 +18,11 @@ import FoundationModelsMetadataRegistry
 /// - A **session item** holds the facts of one session (``TranscriptSessionMetadata``). Its id is
 ///   `<session id>/`. Its block is the name, the slug, the tags, the folder, the agent name, the
 ///   recap and the last summary, one on each line.
+/// - An **external item** holds one typed session of another agent, such as Claude Code or Codex,
+///   as the index of the external sessions gives it (D212, design section 5.2). Its id is
+///   `external:<source>/<id>`. Its block is the index fields: the title, the first prompt, the
+///   last prompt, the folder and the branch, one on each line. The item holds no text of a turn,
+///   and no item reads a session file.
 ///
 /// The ids are unique for each session id string, also for a session id that holds a "/"
 /// (^8qsp7hb). A chunk item id ends with a digit of its ordinal, and a session item id ends with
@@ -24,7 +31,9 @@ import FoundationModelsMetadataRegistry
 /// id: two chunk items with the same id have the same session and the same ordinal. A session
 /// item id without its last "/" is its session id. The id of the old form, in which the id of a
 /// session item was the session id, gave the session item of `a/1` the id of the chunk item 1 of
-/// `a`.
+/// `a`. The id of an external item starts with `external:`, and its session id is its id: no
+/// session of the session directory has such an id, so an external item never passes the
+/// session filters of a search, and it is never a session result.
 public struct TranscriptSearchItem: SearchableMetadata, Codable, Hashable {
   /// What an item holds.
   public enum Content: Hashable, Sendable {
@@ -33,7 +42,35 @@ public struct TranscriptSearchItem: SearchableMetadata, Codable, Hashable {
 
     /// The facts of the session.
     case session(TranscriptSessionMetadata)
+
+    /// A typed session of another agent, as the index of the external sessions gives it.
+    case external(ExternalSessionSummary)
+
+    /// Hashes the content. `ExternalSessionSummary` is not `Hashable`, so an external content
+    /// hashes the source and the id of its session and its index fields. Two equal contents
+    /// have equal hashes, because the equality compares each fact of the summary.
+    ///
+    /// - Parameter hasher: The hasher.
+    public func hash(into hasher: inout Hasher) {
+      switch self {
+      case .chunk(let chunk):
+        hasher.combine(0)
+        hasher.combine(chunk)
+      case .session(let metadata):
+        hasher.combine(1)
+        hasher.combine(metadata)
+      case .external(let summary):
+        hasher.combine(2)
+        hasher.combine(summary.id)
+        for field in TranscriptSearchItem.externalFields(of: summary) {
+          hasher.combine(field.text)
+        }
+      }
+    }
   }
+
+  /// The text at the start of the id of an external item.
+  static let externalIDPrefix = "external:"
 
   /// The text after the session id in the id of an item: before the ordinal of the chunk in the
   /// id of a chunk item, and at the end of the id of a session item.
@@ -74,8 +111,26 @@ public struct TranscriptSearchItem: SearchableMetadata, Codable, Hashable {
     content = .session(metadata)
   }
 
+  /// Makes the external item of a session of another agent.
+  ///
+  /// - Parameter summary: The session, as the index of the external sessions gives it.
+  public init(external summary: ExternalSessionSummary) {
+    id = Self.externalID(of: summary.id)
+    sessionId = SessionId(rawValue: id)
+    content = .external(summary)
+  }
+
+  /// The id of the external item of a session of another agent: `external:<source>/<id>`.
+  ///
+  /// - Parameter session: The source and the id of the session.
+  /// - Returns: The id.
+  static func externalID(of session: ExternalSessionID) -> String {
+    "\(externalIDPrefix)\(session.source)\(sessionIDTerminator)\(session.sourceID)"
+  }
+
   /// Renders the item to the text of its search surface: the text of a chunk, with the title of
-  /// a tool call as its first line, or the facts of a session, one on each line.
+  /// a tool call as its first line, the facts of a session, one on each line, or the index
+  /// fields of a session of another agent, one on each line.
   ///
   /// - Returns: The block.
   public func renderBlock() -> String {
@@ -84,7 +139,27 @@ public struct TranscriptSearchItem: SearchableMetadata, Codable, Hashable {
       return Self.block(of: chunk)
     case .session(let metadata):
       return metadata.blockLines.joined(separator: Self.lineSeparator)
+    case .external(let summary):
+      return Self.externalFields(of: summary).map(\.text).joined(separator: Self.lineSeparator)
     }
+  }
+
+  /// The index fields of a session of another agent, in the order of the lines of its block:
+  /// the title, the first prompt, the last prompt, the folder and the branch. A field that the
+  /// session does not have is an empty text, so each field always has the same line.
+  ///
+  /// - Parameter summary: The session.
+  /// - Returns: The name of each field, as ``ExternalSessionSearchResult/field`` gives it, with
+  ///   its text.
+  static func externalFields(of summary: ExternalSessionSummary) -> [(name: String, text: String)]
+  {
+    [
+      (ExternalSessionSearchResult.titleField, summary.title ?? ""),
+      (ExternalSessionSearchResult.firstPromptField, summary.firstPrompt ?? ""),
+      (ExternalSessionSearchResult.lastPromptField, summary.lastPrompt ?? ""),
+      (ExternalSessionSearchResult.folderField, summary.cwd?.path ?? ""),
+      (ExternalSessionSearchResult.branchField, summary.gitBranch ?? ""),
+    ]
   }
 
   /// The block of a chunk: its text, with the title of a tool call as its first line. The first
@@ -112,15 +187,21 @@ public struct TranscriptSearchItem: SearchableMetadata, Codable, Hashable {
     case chunk
     /// The facts of a session item.
     case session
+    /// The session of another agent of an external item.
+    case external
   }
 
   /// Decodes an item from the form that ``encode(to:)`` writes.
   ///
   /// - Parameter decoder: The decoder.
-  /// - Throws: `DecodingError` when the form has no chunk and no facts, or when a chunk does not
-  ///   read.
+  /// - Throws: `DecodingError` when the form has no chunk, no facts and no external session, or
+  ///   when a chunk does not read.
   public init(from decoder: any Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
+    if let summary = try container.decodeIfPresent(ExternalSessionSummary.self, forKey: .external) {
+      self.init(external: summary)
+      return
+    }
     let session = try container.decode(SessionId.self, forKey: .sessionId)
     if let chunk = try container.decodeIfPresent(CodedChunk.self, forKey: .chunk) {
       self.init(chunk: try chunk.chunk(codingPath: container.codingPath), session: session)
@@ -148,6 +229,8 @@ public struct TranscriptSearchItem: SearchableMetadata, Codable, Hashable {
       try container.encode(CodedChunk(chunk), forKey: .chunk)
     case .session(let metadata):
       try container.encode(metadata, forKey: .session)
+    case .external(let summary):
+      try container.encode(summary, forKey: .external)
     }
   }
 }

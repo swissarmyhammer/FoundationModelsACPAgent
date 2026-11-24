@@ -15,7 +15,9 @@ import FoundationModelsRouter
 /// The phrases and the exclusions compare the tokens of `Tokenizer.tokenize(text:)` of the
 /// ranker: a phrase passes when its tokens are in the tokens of the block one after the other. A
 /// session item passes the session filters, and it does not pass a `from:`, `after:` or
-/// `before:` token.
+/// `before:` token. An external item (a session of another agent) does not pass a `from:` token,
+/// and the date of its last record goes to the `after:` and `before:` tokens. It has no archive
+/// state, so it passes with and without `is:archived`.
 struct TranscriptSearchFilter: Sendable {
   /// The sessions that the session directory shows, by session id.
   let visibleSessions: [SessionId: TranscriptSearchVisibleSession]
@@ -82,6 +84,8 @@ struct TranscriptSearchFilter: Sendable {
       admits(kind: TranscriptSearchCandidate.kind(of: chunk.kind), date: chunk.date)
     case .session:
       admits(kind: .session, date: nil)
+    case .external(let summary):
+      admits(kind: .session, date: summary.displayDate)
     }
   }
 

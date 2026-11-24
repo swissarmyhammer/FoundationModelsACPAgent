@@ -44,7 +44,9 @@ struct TranscriptSearchCandidate: Sendable {
   /// with the wire id of the entry that holds the snippet. A match with only the cosine signal
   /// gives the start of the first entry of the chunk and no range. A session item gives a hit of
   /// the kind `session` with the recap of the session, or its name when it has no recap. A
-  /// session item holds no entry, so the entry id of its hit is empty.
+  /// session item holds no entry, so the entry id of its hit is empty. An external item is never
+  /// the hit of a session result, because its id is the id of no session of the directory. Its
+  /// hit is of the kind `session`, with the display text of the session of the other agent.
   ///
   /// - Parameter queryTerms: The terms of the ranking text of the query, as
   ///   `Tokenizer.tokenize(text:)` gives them.
@@ -57,6 +59,11 @@ struct TranscriptSearchCandidate: Sendable {
       let snippet = snippet(of: metadata.recap ?? metadata.name, from: 0, queryTerms: queryTerms)
       return SessionSearchHit(
         entryID: "", kind: .session, author: nil, date: nil, snippet: snippet.text,
+        ranges: snippet.ranges, terms: snippet.terms)
+    case .external(let summary):
+      let snippet = snippet(of: summary.displayText ?? "", from: 0, queryTerms: queryTerms)
+      return SessionSearchHit(
+        entryID: "", kind: .session, author: nil, date: summary.lastDate, snippet: snippet.text,
         ranges: snippet.ranges, terms: snippet.terms)
     }
   }
