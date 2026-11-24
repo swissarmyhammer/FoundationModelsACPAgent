@@ -1,0 +1,29 @@
+# The agent configuration of the inkling8 runs: one trial (13447) then 4 tasks; same as inkling24 except the profile.
+# Model: user-layer profile inkling8 (bench/inkling8.profile.yaml): araysuter/Inkling-2-Mini-MLX-8bit + DSpark MTP drafter mlx-community/Inkling-2-Mini-oQ4e-mtp, fp16 KV.
+# Build: frozen bench/bin/inkling-mtp-18ad4a1 (ACPAgent 042b3cbf, Router 18ad4a19, Extras 159f0808, mlx-swift-lm stable d1c2ea1f). Skills main. Live score on.
+profile: inkling8
+tools:
+  files:
+    readOnly: false
+    allowSymlinks: false
+    recordsChanges: false
+  shell:
+    storeDirectory: null
+  skills:
+    marketplaces:
+      - url: https://github.com/swissarmyhammer/skills.git
+        ref: main
+  agents:
+    enabled: true
+  codeContext:
+    autoInstall: true
+    semanticSearch: false
+  web:
+    enabled: true
+  git:
+    enabled: true
+  environment:
+    enabled: true
+  kanban:
+    enabled: true
+  mcp: []

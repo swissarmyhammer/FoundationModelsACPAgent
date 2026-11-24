@@ -1,0 +1,29 @@
+# The agent configuration of the inkling24 run: the 24 mtp24 ids, --timeout 9000, kanban on. Compare with hint24 (Qwen 27B 4bit + MTP, 24/24) and q8kv8 (Qwen 27B 8bit + MTP-8bit + kv8, 21/24; 23/24 with miss3).
+# Model: user-layer profile inkling24 (bench/inkling24.profile.yaml): mlx-community/Inkling-2-Mini-4bit + DSpark MTP drafter mlx-community/Inkling-2-Mini-oQ4e-mtp for standard and flash, fp16 KV. Decision h2o-lightning-4b Q4_K_M at 16384, embedding embeddinggemma-300m (from bundled large).
+# Build: ACPAgent 042b3cbf, Router 18ad4a19, Extras 159f0808, mlx-swift-lm stable d1c2ea1f (MTP on all paths, guided fix, block 3 default, reducible summarizer). Skills main. Live score on.
+profile: inkling24
+tools:
+  files:
+    readOnly: false
+    allowSymlinks: false
+    recordsChanges: false
+  shell:
+    storeDirectory: null
+  skills:
+    marketplaces:
+      - url: https://github.com/swissarmyhammer/skills.git
+        ref: main
+  agents:
+    enabled: true
+  codeContext:
+    autoInstall: true
+    semanticSearch: false
+  web:
+    enabled: true
+  git:
+    enabled: true
+  environment:
+    enabled: true
+  kanban:
+    enabled: true
+  mcp: []

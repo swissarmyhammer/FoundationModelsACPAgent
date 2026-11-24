@@ -1,0 +1,29 @@
+# The agent configuration of the inklingplain24 run: the inkling24 setup with no drafter (plain decode), the baseline for the MTP run. 24 mtp24 ids, --timeout 9000.
+# Model: user-layer profile inklingplain24: mlx-community/Inkling-2-Mini-4bit for standard and flash, fp16 KV, no drafter.
+# Build: frozen copy bench/bin/inkling-plain-af9b3cb (ACPAgent 042b3cbf, Router af9b3cbc, Extras 5e43c365, mlx stable 2dafc7c4). Skills main. Live score on.
+profile: inklingplain24
+tools:
+  files:
+    readOnly: false
+    allowSymlinks: false
+    recordsChanges: false
+  shell:
+    storeDirectory: null
+  skills:
+    marketplaces:
+      - url: https://github.com/swissarmyhammer/skills.git
+        ref: main
+  agents:
+    enabled: true
+  codeContext:
+    autoInstall: true
+    semanticSearch: false
+  web:
+    enabled: true
+  git:
+    enabled: true
+  environment:
+    enabled: true
+  kanban:
+    enabled: true
+  mcp: []

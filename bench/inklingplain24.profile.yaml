@@ -1,0 +1,5 @@
+description: Inkling 2 Mini 4-bit with no drafter, the plain-decode baseline of the inkling24 bench.
+standard:
+  - mlx-community/Inkling-2-Mini-4bit
+flash:
+  - mlx-community/Inkling-2-Mini-4bit

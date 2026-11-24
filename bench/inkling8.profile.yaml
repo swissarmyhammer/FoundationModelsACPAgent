@@ -1,0 +1,9 @@
+# The profile of the inkling8 bench: Inkling 2 Mini real 8-bit (araysuter, affine 8-bit g32, vision unquantized, 30 GB) with the DSpark MTP head of the oQ4e-mtp checkpoint.
+# Decision and embedding come from bundled large.
+description: Inkling 2 Mini 8-bit with the oQ4e DSpark MTP drafter, for the inkling8 bench.
+standard:
+  - repo: araysuter/Inkling-2-Mini-MLX-8bit
+    drafter: mlx-community/Inkling-2-Mini-oQ4e-mtp
+flash:
+  - repo: araysuter/Inkling-2-Mini-MLX-8bit
+    drafter: mlx-community/Inkling-2-Mini-oQ4e-mtp

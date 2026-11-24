@@ -1,0 +1,10 @@
+# The profile of the inkling24 bench: Inkling 2 Mini 4-bit with the DSpark MTP head of the oQ4e-mtp checkpoint.
+# The fork loads the HF layout target (Inkling-2-Mini-4bit) and only mtp.safetensors from the oQ4e-mtp repo.
+# Decision and embedding come from bundled large.
+description: Inkling 2 Mini 4-bit with its DSpark MTP drafter, for the inkling24 bench.
+standard:
+  - repo: mlx-community/Inkling-2-Mini-4bit
+    drafter: mlx-community/Inkling-2-Mini-oQ4e-mtp
+flash:
+  - repo: mlx-community/Inkling-2-Mini-4bit
+    drafter: mlx-community/Inkling-2-Mini-oQ4e-mtp
