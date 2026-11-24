@@ -41,6 +41,11 @@ extension RoutedACPAgent {
   /// the agent (``transcriptSearchIndex``) over the sessions that the session directory shows
   /// now, live and recorded, with their folder and their archive state.
   ///
+  /// Each session of another agent on the page has the decoration of the list of the external
+  /// sessions (``AgentSessionImporter/decorated(_:)``): the URL of its file in its root and its
+  /// copies. The index stores no decoration, because a copy changes it after the index stores
+  /// the item.
+  ///
   /// - Parameter request: The request.
   /// - Returns: The page.
   /// - Throws: The error of the session directory or of the search.
@@ -52,6 +57,11 @@ extension RoutedACPAgent {
       visible[SessionId(rawValue: summary.id.description)] = TranscriptSearchVisibleSession(
         folder: summary.workingDirectory, isArchived: summary.state == .archived)
     }
-    return try await transcriptSearchIndex.search(request, visibleSessions: visibleSessions)
+    var page = try await transcriptSearchIndex.search(request, visibleSessions: visibleSessions)
+    let decorated = await sessionImporter.decorated(page.externalSessions.map(\.session))
+    for (index, session) in decorated.enumerated() {
+      page.externalSessions[index].session = session
+    }
+    return page
   }
 }

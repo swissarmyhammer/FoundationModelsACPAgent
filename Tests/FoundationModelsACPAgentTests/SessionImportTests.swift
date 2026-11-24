@@ -237,6 +237,27 @@ import ULID
       })
   }
 
+  @Test("a search row of an external session gives its file and, after a continue, its copy")
+  func theSearchRowOfTheSourceGivesItsFileAndItsCopy() async throws {
+    let imported = try await ImportFixture.make(name: "searchrow")
+    defer { await imported.fixture.close() }
+    let request = try Self.answerWordRequest()
+    let agent = imported.agent
+    try await pollIndexUntil {
+      try await !agent.searchTranscripts(request).externalSessions.isEmpty
+    }
+
+    let before = try #require(
+      try await agent.searchTranscripts(request).externalSessions.first?.session)
+    let result = try await imported.importSource()
+    let after = try #require(
+      try await agent.searchTranscripts(request).externalSessions.first?.session)
+
+    #expect(before.fileURL?.path == imported.file.resolvingSymlinksInPath().path)
+    #expect(before.continuedSessions.isEmpty)
+    #expect(after.continuedSessions.map(\.sessionID) == [result.id])
+  }
+
   @Test("the first prompt of an imported session goes to the model after the imported turn")
   func theFirstPromptFollowsTheImportedTurn() async throws {
     let imported = try await ImportFixture.make(name: "prompt")
