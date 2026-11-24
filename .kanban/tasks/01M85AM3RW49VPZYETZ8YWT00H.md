@@ -1,9 +1,14 @@
 ---
 depends_on:
 - 01M85AM3RV159APW2SFVPCQHC7
-position_column: todo
+position_column: done
 position_ordinal: '82'
 title: 'D212 5.6: rebuild the index of external sessions (endpoint mutation and tool operation)'
+comments:
+- actor: claude-code
+  id: 01m85am3rw49vpzyetz8ywdone
+  text: 'Done. ACPAgent 24a6c76: ExternalSessionIndex.rebuild(_:) and the host call rebuildExternalSessionIndex(source:). Multitool 6da9737e: the mutation rebuildExternalSessionIndex(input: {source}) and the tool operation rebuild external session index. Extras 3742dff: the host call.'
+  timestamp: 2026-11-24T01:11:31.953065+00:00
 ---
 Request from TestudoApp (testudoapp-9a, 2026-11-23). Design: section 5.6 and 5.7 (the command Rebuild Index of <source> Sessions).
 
