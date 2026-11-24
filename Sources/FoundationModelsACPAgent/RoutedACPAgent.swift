@@ -78,6 +78,11 @@ public actor RoutedACPAgent: Agent {
   /// agent with no root is in the `unreadableSources` of each page of the external sessions.
   nonisolated let sessionImporter: AgentSessionImporter
 
+  /// The host of the external sessions of the import roots (D212): the host that the `sessions`
+  /// tool of each session gets. A host app, or the real-disk test of the index in the
+  /// IntegrationTests package, reads the index through it.
+  public nonisolated var externalSessionHost: any ExternalSessionHost { sessionImporter }
+
   /// Replaces all the import roots of the host (D209). The index of the external sessions
   /// starts a build of each new root, with no restart of the agent: a sandboxed app calls it
   /// when the user gives the access to `~/.claude` or `~/.codex` after the launch. A root that

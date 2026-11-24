@@ -1,7 +1,7 @@
 ---
 depends_on:
 - 01M84SECTWZ5B0VPAYAH051P1B
-position_column: todo
+position_column: done
 position_ordinal: '80'
 title: 'D212: the real-disk test of ExternalSessionIndex in IntegrationTests (5,000 generated files)'
 ---
@@ -14,3 +14,8 @@ Work:
 - Generate 5,000 files in a temporary folder under the scratch path of the test (remove them at the end; the disk filled on 2026-10-17 from leaked test folders).
 - Measure the time of the first row of a folder query with a clock, and the peak memory with task_info (phys_footprint) before and after the build.
 - No time-limit trait, no sleep, no retry.
+## Result
+- The public way in: `RoutedACPAgent.externalSessionHost`.
+- The test: IntegrationTests `ExternalSessionRealDiskTests` (5,000 files in 50 project folders, 50 files of 1 MB, in a temporary folder that the test removes).
+- One run: the first row of a folder in 0.11 s, the full build in 0.47 s, and the peak memory increase 28 MB.
+- The root unit suite: 2850 tests pass, with 1 known issue.
