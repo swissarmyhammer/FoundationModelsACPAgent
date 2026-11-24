@@ -83,7 +83,7 @@ import Testing
   private static func makeProfile(
     script: [ScriptedPassStep], recorder: PromptRecorder? = nil
   ) async throws -> LanguageModelProfile {
-    let directory = FileManager.default.temporaryDirectory
+    let directory = TestRunFolder.temporary
       .appendingPathComponent("RoutedSelectionModelTests-\(UUID().uuidString)", isDirectory: true)
     return try await makeStubProfile(
       cacheDirectory: directory,

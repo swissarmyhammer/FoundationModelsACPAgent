@@ -66,7 +66,7 @@ import Testing
   ///
   /// - Returns: The URL.
   private static func absentFileURL() -> URL {
-    FileManager.default.temporaryDirectory
+    TestRunFolder.temporary
       .appendingPathComponent(
         "BuiltinConfigurationFileTests-\(UUID().uuidString)", isDirectory: true
       )

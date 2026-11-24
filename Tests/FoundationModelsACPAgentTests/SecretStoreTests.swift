@@ -87,7 +87,7 @@ import Testing
   /// search list of a lookup or a delete. No Keychain file is made: opening
   /// a `SecKeychain` for a path reads no file.
   @Test func theQueryOfAFileKeychainStoreCarriesThatKeychain() throws {
-    let folder = FileManager.default.temporaryDirectory
+    let folder = TestRunFolder.temporary
       .appendingPathComponent("secret-store-tests-\(UUID().uuidString)", isDirectory: true)
     let given = KeychainSecretStore.Keychain.file(
       folder.appendingPathComponent("given.keychain-db"))

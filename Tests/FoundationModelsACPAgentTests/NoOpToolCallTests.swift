@@ -197,7 +197,7 @@ struct NoOpSessionFixture {
   /// - Returns: The fixture.
   /// - Throws: Whatever the directory or the profile throws.
   static func make(label: String) async throws -> NoOpSessionFixture {
-    let directory = FileManager.default.temporaryDirectory
+    let directory = TestRunFolder.temporary
       .appendingPathComponent("\(label)-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let profile = try await makeStubProfile(

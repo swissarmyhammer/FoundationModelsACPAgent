@@ -218,7 +218,7 @@ import Testing
 
   /// The path of a gate file that does not exist, in a new folder.
   private static func gatePath() throws -> String {
-    let folder = FileManager.default.temporaryDirectory
+    let folder = TestRunFolder.temporary
       .appendingPathComponent("ScriptedStubModelTests-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     return folder.appendingPathComponent("gate").path

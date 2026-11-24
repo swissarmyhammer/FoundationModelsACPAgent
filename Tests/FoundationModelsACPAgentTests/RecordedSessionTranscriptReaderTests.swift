@@ -46,7 +46,7 @@ import Testing
   /// - Returns: The fixture. The caller cleans it up.
   /// - Throws: Whatever the directory creation or the profile throws.
   private static func makeFixture() async throws -> ReaderFixture {
-    let base = FileManager.default.temporaryDirectory
+    let base = TestRunFolder.temporary
       .appendingPathComponent(
         "RecordedSessionTranscriptReaderTests-\(UUID().uuidString)", isDirectory: true)
     let project = base.appendingPathComponent("project", isDirectory: true)

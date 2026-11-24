@@ -300,7 +300,7 @@ final class PathRecordingTool: Tool, Sendable {
   /// The filesystem-truth helper reads the file from disk. A test
   /// checks a written file there, never a `tool_call_update` claim.
   @Test func filesystemTruthHelperReadsTheFileFromDisk() throws {
-    let directory = FileManager.default.temporaryDirectory
+    let directory = TestRunFolder.temporary
       .appendingPathComponent("HarnessSmokeTests-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }

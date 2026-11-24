@@ -39,7 +39,7 @@ import Testing
 
   @Test("the first row of a folder comes in less than 1 s, and the build adds less than 100 MB")
   func theRealDiskIndexIsFastAndSmall() async throws {
-    let base = FileManager.default.temporaryDirectory.appendingPathComponent(
+    let base = TestRunFolder.temporary.appendingPathComponent(
       "ExternalSessionRealDiskTests-\(UUID().uuidString)", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: base) }
     let root = base.appendingPathComponent(".claude", isDirectory: true)

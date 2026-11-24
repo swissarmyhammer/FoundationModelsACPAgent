@@ -117,7 +117,7 @@ import Testing
   /// - Returns: The created directory.
   /// - Throws: Whatever directory creation throws.
   private static func makeTemporaryDirectory(label: String) throws -> URL {
-    let directory = FileManager.default.temporaryDirectory
+    let directory = TestRunFolder.temporary
       .appendingPathComponent("ToolCatalogTests-\(label)-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     return directory

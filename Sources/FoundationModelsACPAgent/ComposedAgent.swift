@@ -592,15 +592,15 @@ public struct ComposedAgent: Sendable {
     try makeThrowawayDirectory(prefix: recordingsDirectoryPrefix)
   }
 
-  /// Makes a fresh directory under the temporary directory, named
-  /// `prefix` and a new UUID.
+  /// Makes a fresh directory in the throwaway folder of this process
+  /// (``ProcessThrowawayFolder/current``), named `prefix` and a new UUID.
   ///
   /// - Parameter prefix: The name prefix, which says what the directory
   ///   is for.
   /// - Returns: The created directory.
   /// - Throws: The directory-creation error.
   private static func makeThrowawayDirectory(prefix: String) throws -> URL {
-    let directory = FileManager.default.temporaryDirectory
+    let directory = try ProcessThrowawayFolder.current()
       .appendingPathComponent(prefix + UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     return directory

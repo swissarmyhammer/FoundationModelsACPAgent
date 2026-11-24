@@ -404,7 +404,7 @@ enum RoutedPrompt {
     label: String, runClock: (any RunClock)? = nil, reportsBackground: Bool = false,
     observe: @escaping @Sendable (SessionUpdate) -> Void = { _ in }
   ) async throws -> [SessionUpdate] {
-    let directory = FileManager.default.temporaryDirectory
+    let directory = TestRunFolder.temporary
       .appendingPathComponent("\(label)-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }

@@ -117,7 +117,7 @@ import Testing
 
     /// Makes the fixture in a new temporary directory.
     static func make() async throws -> Fixture {
-      let directory = FileManager.default.temporaryDirectory
+      let directory = TestRunFolder.temporary
         .appendingPathComponent(
           "SessionTranscriptToolTests-\(UUID().uuidString)", isDirectory: true)
       try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

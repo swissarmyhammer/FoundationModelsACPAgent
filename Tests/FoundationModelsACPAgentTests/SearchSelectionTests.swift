@@ -56,7 +56,7 @@ import Testing
   /// of the profile, and the search answers with the selection of that
   /// slot.
   @Test func theTierSelectsThroughTheFlashSlotOfTheProfile() async throws {
-    let directory = FileManager.default.temporaryDirectory
+    let directory = TestRunFolder.temporary
       .appendingPathComponent("SearchSelectionTests-\(UUID().uuidString)", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: directory) }
     let profile = try await makeStubProfile(

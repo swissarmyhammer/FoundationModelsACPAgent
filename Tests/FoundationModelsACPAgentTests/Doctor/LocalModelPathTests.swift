@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsExtras
 import FoundationModelsRouter
 import Testing
@@ -17,7 +18,7 @@ struct LocalModelPathTests {
   /// - Parameter names: The top-level names of the model.
   /// - Returns: The folder.
   private static func makeModelFolder(holding names: [String]) throws -> URL {
-    let folder = URL.temporaryDirectory.appending(path: "local-model-\(UUID().uuidString)")
+    let folder = TestRunFolder.temporary.appending(path: "local-model-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     for name in names {
       let entry = folder.appending(path: name)
@@ -108,7 +109,7 @@ struct LocalModelPathTests {
   }
 
   @Test func aMissingFolderIsOneErrorWithAFix() async throws {
-    let missing = URL.temporaryDirectory.appending(path: "no-such-\(UUID().uuidString)")
+    let missing = TestRunFolder.temporary.appending(path: "no-such-\(UUID().uuidString)")
 
     let checks = await Self.findings(embedding: ModelRef(repo: missing.path))
 

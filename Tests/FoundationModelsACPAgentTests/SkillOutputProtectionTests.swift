@@ -139,7 +139,7 @@ import Testing
   /// `session/new` and the model-slot switch use, so the test proves the
   /// wiring of the agent and not only the rule.
   @Test func aCompactionKeepsEveryLoadedSkillAndFoldsTheOtherOutputs() async throws {
-    let directory = FileManager.default.temporaryDirectory
+    let directory = TestRunFolder.temporary
       .appendingPathComponent("SkillOutputProtectionTests-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }

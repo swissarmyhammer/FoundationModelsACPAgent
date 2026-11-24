@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsExtras
 import FoundationModelsRouter
 import Testing
@@ -39,7 +40,7 @@ import Testing
 
   /// Reads the events of the lines through Router, from a folder.
   private static func events(of lines: [String]) throws -> [TranscriptEvent] {
-    let folder = FileManager.default.temporaryDirectory
+    let folder = TestRunFolder.temporary
       .appendingPathComponent("TranscriptEntryMappingTests-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: folder) }

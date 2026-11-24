@@ -12,6 +12,7 @@
 // Keychain and its folder.
 
 import Foundation
+import FoundationModelsACPAgentTestSupport
 
 /// A Keychain file in a temporary folder of its own, for one test.
 struct TemporaryKeychain {
@@ -40,7 +41,7 @@ struct TemporaryKeychain {
   /// - Throws: The folder error, or the error of a `security` step (see
   ///   ``runSecurity(_:)``). The folder is removed when a step fails.
   static func make() async throws -> TemporaryKeychain {
-    let folder = FileManager.default.temporaryDirectory
+    let folder = TestRunFolder.temporary
       .appendingPathComponent(folderPrefix + UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     let keychain = TemporaryKeychain(folder: folder, file: folder.appendingPathComponent(fileName))

@@ -49,7 +49,7 @@ import Testing
     let skillsDirectory: URL
 
     init() {
-      root = FileManager.default.temporaryDirectory
+      root = TestRunFolder.temporary
         .appendingPathComponent(
           "InstructionsAssemblerTests-\(UUID().uuidString)", isDirectory: true)
       workingDirectory = root.appendingPathComponent("workspace", isDirectory: true)

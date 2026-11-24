@@ -32,7 +32,7 @@ import Testing
     let projectDirectory: URL
 
     init() {
-      root = FileManager.default.temporaryDirectory
+      root = TestRunFolder.temporary
         .appendingPathComponent(
           "ConfigurationLoaderTests-\(UUID().uuidString)", isDirectory: true)
       workingDirectory = root.appendingPathComponent("workspace", isDirectory: true)

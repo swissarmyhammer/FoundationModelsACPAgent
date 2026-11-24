@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModelsACPAgentTestSupport
 import FoundationModelsACP
 import FoundationModelsRouter
 import Testing
@@ -12,7 +13,7 @@ import Testing
   /// the rest of a folder at a dotfile loses at least one child. A dot folder is still not
   /// searched.
   @Test func aDotfileDoesNotHideASessionFolder() throws {
-    let root = FileManager.default.temporaryDirectory
+    let root = TestRunFolder.temporary
       .appendingPathComponent("RecordedSessionFolderTests-\(UUID().uuidString)", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: root) }
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
