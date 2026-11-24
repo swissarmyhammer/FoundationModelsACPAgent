@@ -23,6 +23,8 @@ import Synchronization
 // So a resume merges the recorded plans into the history.
 // The other part is the history of a session whose file is missing or does not decode.
 // A resume then rebuilds the history from the journal (``RecordedHistoryRebuild``).
+// A file that the resume reads is completed with the journal (``RecordedHistoryMerge``): the turns
+// that it lacks, and the order of the model for a file of an earlier build.
 // The journal keeps each entry that a compaction folded, so the rebuild gives each message.
 // Only the ids of the agent messages and of the thoughts are new.
 // A command that records nothing in Router (an action command) is not in the journal.
@@ -48,6 +50,24 @@ enum SessionHistoryFile {
     /// Whether the history holds the records of the mail delivery (``MailDeliveryRecord``).
     /// This build writes `true`. A file of an earlier build has no member.
     let recordsMailDelivery: Bool?
+
+    /// Whether the transcript holds each thought in the order of the model: thought, tool call,
+    /// thought, message. This build writes `true`. A file of an earlier build has no member,
+    /// and can hold the thoughts of a turn after its answer (``RecordedHistoryMerge``).
+    let recordsModelOrder: Bool?
+  }
+
+  /// The history in a file, with the facts of the build that wrote it.
+  struct Read {
+    /// The retained history.
+    let history: SessionMergeEngine
+
+    /// True when the file holds the records of the mail delivery: the id of each user message
+    /// of a user mail is the id of the mail.
+    let recordsMailDelivery: Bool
+
+    /// True when the transcript of the file is in the order of the model.
+    let recordsModelOrder: Bool
   }
 
   /// Writes `history` to the file in `directory`, and replaces the file that is there.
@@ -60,7 +80,8 @@ enum SessionHistoryFile {
   /// - Throws: Whatever the encode, the directory or the write throws.
   static func write(_ history: SessionMergeEngine, in directory: URL) throws {
     let contents = Contents(
-      updates: history.transcriptUpdates + history.stateUpdates, recordsMailDelivery: true)
+      updates: history.transcriptUpdates + history.stateUpdates, recordsMailDelivery: true,
+      recordsModelOrder: true)
     let data = try JSONEncoder().encode(contents)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     try data.write(to: url(in: directory), options: .atomic)
@@ -109,16 +130,26 @@ enum SessionHistoryFile {
   ///   file. A session that an earlier build recorded has no file.
   /// - Throws: Whatever the read or the decode throws.
   static func read(from directory: URL) throws -> SessionMergeEngine? {
+    try readFile(from: directory)?.history
+  }
+
+  /// Reads the history in the file in `directory`, with the facts of the build that wrote it.
+  ///
+  /// - Parameter directory: The transcript directory of the session.
+  /// - Returns: The history and the facts, or `nil` when the directory holds no file.
+  /// - Throws: Whatever the read or the decode throws.
+  static func readFile(from directory: URL) throws -> Read? {
     let file = url(in: directory)
     guard FileManager.default.fileExists(atPath: file.path) else {
       return nil
     }
     let contents = try JSONDecoder().decode(Contents.self, from: Data(contentsOf: file))
     let history = SessionMergeEngine(replaying: contents.updates)
-    guard contents.recordsMailDelivery == true else {
-      return history.withEarlierBuildDeliveryRecords()
-    }
-    return history
+    let recordsMailDelivery = contents.recordsMailDelivery == true
+    return Read(
+      history: recordsMailDelivery ? history : history.withEarlierBuildDeliveryRecords(),
+      recordsMailDelivery: recordsMailDelivery,
+      recordsModelOrder: contents.recordsModelOrder == true)
   }
 
   /// The URL of the file in `directory`.
@@ -622,7 +653,9 @@ extension RoutedACPAgent {
 
   /// The retained history of a session that `session/resume` restores.
   /// It is the history in the table when this process ran the session.
-  /// Else it is the history in the file of an earlier process.
+  /// Else it is the history in the file of an earlier process, completed with the Router journal
+  /// (``completedHistory(_:directory:sessionId:writes:)``): the turns that the file lacks, and
+  /// the order of the model for a file of an earlier build.
   /// Else it is the history that the Router journal of the session gives
   /// (``rebuiltHistory(directory:sessionId:)``). Thus a resume never lacks the history that the
   /// journal holds: the file is missing after a stop of the process before the first write, and
@@ -650,8 +683,8 @@ extension RoutedACPAgent {
       return kept
     }
     do {
-      if let read = try SessionHistoryFile.read(from: directory) {
-        return read
+      if let read = try SessionHistoryFile.readFile(from: directory) {
+        return await completedHistory(read, directory: directory, sessionId: sessionId)
       }
     } catch {
       ACPAgentTelemetry.logger(.sessionResume).error(
@@ -663,11 +696,60 @@ extension RoutedACPAgent {
         ACPAgentTelemetry.logger(.sessionResume).error(
           "The unreadable history file of a session did not move aside. The resume does not write a rebuilt history.",
           metadata: ACPAgentTelemetry.errorMetadata(error, sessionId: sessionId))
-        return await RecordedHistoryRebuild.history(
-          from: recordedEvents(in: directory, sessionId: sessionId), sessionId: sessionId)
+        return await RecordedHistoryRebuild.rebuilt(
+          from: recordedEvents(in: directory, sessionId: sessionId), sessionId: sessionId,
+          readsUnmailedPrompts: await isCopiedExternalSession(sessionId)
+        ).history
       }
     }
     return await rebuiltHistory(directory: directory, sessionId: sessionId)
+  }
+
+  /// The history of a history file, completed with the Router journal of the session
+  /// (``RecordedHistoryMerge``): the turns of the journal after the last turn of the file, and,
+  /// for a file of an earlier build, the order of the model. A history that changed goes to the
+  /// file, so the next read gives it.
+  ///
+  /// - Parameters:
+  ///   - read: The history in the file, with the facts of its build.
+  ///   - directory: The transcript directory of the session.
+  ///   - sessionId: The session. Its raw value is the recorded id of the session.
+  ///   - writes: False when the completed history does not go to the file (an export).
+  /// - Returns: The completed history.
+  func completedHistory(
+    _ read: SessionHistoryFile.Read, directory: URL, sessionId: SessionId, writes: Bool = true
+  ) async -> SessionMergeEngine {
+    let rebuilt = await RecordedHistoryRebuild.rebuilt(
+      from: recordedEvents(in: directory, sessionId: sessionId), sessionId: sessionId)
+    let completed = RecordedHistoryMerge.merged(read, with: rebuilt)
+    guard writes, completed != read.history || !read.recordsModelOrder else {
+      return completed
+    }
+    var metadata = ACPAgentTelemetry.sessionMetadata(sessionId)
+    metadata[ACPAgentTelemetry.LogMetadataKey.entryCount] = "\(completed.entries.count)"
+    ACPAgentTelemetry.logger(.sessionResume).info(
+      "The retained history of a session was completed from the transcript.", metadata: metadata)
+    do {
+      try SessionHistoryFile.write(completed, in: directory)
+    } catch {
+      ACPAgentTelemetry.logger(.sessionResume).error(
+        "The completed history of a session was not written.",
+        metadata: ACPAgentTelemetry.errorMetadata(error, sessionId: sessionId))
+    }
+    return completed
+  }
+
+  /// Whether a session is a copy of an external session: its origin is `import`.
+  ///
+  /// - Parameter sessionId: The session.
+  /// - Returns: True for a copy. A session that the directory does not know is no copy.
+  private func isCopiedExternalSession(_ sessionId: SessionId) async -> Bool {
+    guard let id = ULID(ulidString: sessionId.rawValue),
+      let summary = try? await sessionDirectory.summary(of: id)
+    else {
+      return false
+    }
+    return summary.origin == .import
   }
 
   /// The history that the Router journal of a session gives (``RecordedHistoryRebuild``). A
@@ -680,7 +762,10 @@ extension RoutedACPAgent {
   /// - Returns: The rebuilt history. It is empty when the journal holds no entry of the session.
   private func rebuiltHistory(directory: URL, sessionId: SessionId) async -> SessionMergeEngine {
     let events = recordedEvents(in: directory, sessionId: sessionId)
-    let history = await RecordedHistoryRebuild.history(from: events, sessionId: sessionId)
+    let history = await RecordedHistoryRebuild.rebuilt(
+      from: events, sessionId: sessionId,
+      readsUnmailedPrompts: await isCopiedExternalSession(sessionId)
+    ).history
     guard !history.entries.isEmpty else {
       return history
     }

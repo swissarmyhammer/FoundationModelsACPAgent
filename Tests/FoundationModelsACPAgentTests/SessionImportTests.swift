@@ -182,6 +182,25 @@ import ULID
     #expect(Self.replayedAgentText(of: updates).contains(ImportSessionFiles.claudeCodeAnswer))
   }
 
+  @Test("session/resume of an imported session with no history file replays each user message")
+  func theResumeWithNoHistoryFileReplaysTheUserMessages() async throws {
+    let imported = try await ImportFixture.make(name: "nofile")
+    defer { await imported.fixture.close() }
+    let result = try await imported.importSource()
+    let file = try ResumeSessionFixture.projectRecordingRoot(of: imported.fixture.cwd)
+      .appendingPathComponent(result.id.description, isDirectory: true)
+      .appendingPathComponent(SessionHistoryFile.fileName, isDirectory: false)
+    try FileManager.default.removeItem(at: file)
+
+    let updates = try await imported.resume(result.id)
+
+    let messages = ReplayedMessage.replayed(in: updates)
+    #expect(
+      messages.filter { $0.kind == .user }.map(\.text) == [ImportSessionFiles.claudeCodeQuestion],
+      "the replay holds \(messages)")
+    #expect(Self.replayedAgentText(of: updates).contains(ImportSessionFiles.claudeCodeAnswer))
+  }
+
   @Test("the export of an imported session is the Markdown of the source")
   func theExportIsTheMarkdownOfTheSource() async throws {
     let imported = try await ImportFixture.make(name: "export")

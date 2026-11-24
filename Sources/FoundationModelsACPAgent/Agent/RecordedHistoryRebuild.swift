@@ -24,7 +24,15 @@ import Synchronization
 ///   completed compaction entry, with the id of the compaction and its summary, as the live
 ///   report of the compaction did (``CompactionReporter``). It gives no message, and each
 ///   message before it stays.
-/// - A `.reasoning` entry gives a thought, and a `.response` entry gives an agent message.
+/// - A `.reasoning` entry gives a thought, and a `.response` entry gives an agent message. The
+///   journal records the entries of one round in the order of the SDK: the response, then the
+///   reasoning (FoundationModelsRouter 1173a869). The model thinks before it answers, so the
+///   rebuild gives each `.reasoning` entry that follows a `.response` entry before that response.
+///   The journal does not change, so the prompt of a restore does not change.
+/// - In a copied external session (`readsUnmailedPrompts`), a `.prompt`
+///   entry with no mail record and no compaction gives one user message: the import wrote the
+///   prompt (``ImportedTranscript``). The id of the message is the id of the entry, so each
+///   rebuild gives the same id.
 /// - A `.toolCalls` entry gives one tool call for each call in it.
 /// - A `.toolOutput` entry gives the `completed` status of the call that it answers, with its
 ///   output. An output that holds the events of a run (`OperationEventSegment`) is a record of the
@@ -61,17 +69,31 @@ enum RecordedHistoryRebuild {
   static func history(from events: [TranscriptEvent], sessionId: SessionId) async
     -> SessionMergeEngine
   {
+    await rebuilt(from: events, sessionId: sessionId).history
+  }
+
+  /// The rebuilt history of one session, with the ids of its user messages that a user mail
+  /// gave.
+  ///
+  /// - Parameters:
+  ///   - events: The recorded events of the session, in journal order. An event of another
+  ///     session (a fork) must not be in it.
+  ///   - sessionId: The session, for the translator and the logs.
+  ///   - readsUnmailedPrompts: True for a copied external session: each `.prompt` entry with no
+  ///     mail record and no compaction gives a user message.
+  /// - Returns: The history and the ids.
+  static func rebuilt(
+    from events: [TranscriptEvent], sessionId: SessionId, readsUnmailedPrompts: Bool = false
+  ) async -> Rebuilt {
     let clock = Mutex(Date())
     let history = RetainedHistory(now: { clock.withLock { $0 } })
     var translator = ACPEventTranslator(
       sessionId: sessionId, parentSessionId: nil, send: { history.apply($0) }, modelName: "",
       runCallJoins: RunCallJoinTable())
-    var reader = EntryReader()
-    for event in events {
-      let recorded = reader.read(event)
-      guard !recorded.updates.isEmpty || !recorded.events.isEmpty else {
-        continue
-      }
+    var reader = EntryReader(readsUnmailedPrompts: readsUnmailedPrompts)
+    // The responses that wait for the reasoning entries after them in their round.
+    var heldResponses: [RecordedEntry] = []
+    func give(_ recorded: RecordedEntry) async {
       if let date = recorded.date {
         clock.withLock { $0 = date }
       }
@@ -82,11 +104,44 @@ enum RecordedHistoryRebuild {
         await translator.project(sessionEvent)
       }
     }
-    let rebuilt = history.snapshot
-    guard !rebuilt.entries.isEmpty else {
-      return rebuilt
+    for event in events {
+      let recorded = reader.read(event)
+      guard !recorded.updates.isEmpty || !recorded.events.isEmpty else {
+        continue
+      }
+      switch event.kind {
+      case .response:
+        heldResponses.append(recorded)
+      case .reasoning where !heldResponses.isEmpty:
+        await give(recorded)
+      default:
+        for held in heldResponses {
+          await give(held)
+        }
+        heldResponses = []
+        await give(recorded)
+      }
     }
-    return rebuilt.withEarlierBuildDeliveryRecords()
+    for held in heldResponses {
+      await give(held)
+    }
+    let snapshot = history.snapshot
+    let mailMessageIds = Set(reader.deliveredMail.map { MessageId(rawValue: $0.description) })
+    guard !snapshot.entries.isEmpty else {
+      return Rebuilt(history: snapshot, mailMessageIds: mailMessageIds)
+    }
+    return Rebuilt(
+      history: snapshot.withEarlierBuildDeliveryRecords(), mailMessageIds: mailMessageIds)
+  }
+
+  /// The rebuilt history of one session.
+  struct Rebuilt {
+    /// The history, with a record of the delivery of each user mail.
+    let history: SessionMergeEngine
+
+    /// The id of each user message that a user mail gave. A user message of a copied prompt or
+    /// of a command exchange is not in it.
+    let mailMessageIds: Set<MessageId>
   }
 }
 
@@ -110,7 +165,18 @@ extension RecordedHistoryRebuild {
   /// submission, and the calls that an output answered.
   struct EntryReader {
     /// The id of each user mail that gave a user message.
-    private var deliveredMail: Set<MailID> = []
+    private(set) var deliveredMail: Set<MailID> = []
+
+    /// True when a `.prompt` entry with no mail record and no compaction gives a user message:
+    /// the prompt of a copied external session.
+    let readsUnmailedPrompts: Bool
+
+    /// Makes a reader.
+    ///
+    /// - Parameter readsUnmailedPrompts: True for a copied external session.
+    init(readsUnmailedPrompts: Bool = false) {
+      self.readsUnmailedPrompts = readsUnmailedPrompts
+    }
 
     /// The id of each recorded entry that the reader read.
     private var readEntryIds: Set<String> = []
@@ -150,6 +216,10 @@ extension RecordedHistoryRebuild {
         recorded.updates = userMessages(in: event)
         if let compaction = Self.compaction(in: event, entryId: fields.entry?.entryId) {
           recorded.events = [.compaction(compaction)]
+        } else if event.kind == .prompt, readsUnmailedPrompts, let entryId = fields.entry?.entryId,
+          let copied = Self.copiedPrompt(event, entryId: entryId)
+        {
+          recorded.updates = [copied]
         }
       case .reasoning:
         let text = Self.text(of: event)
@@ -233,6 +303,26 @@ extension RecordedHistoryRebuild {
       return messages
     }
 
+    /// The user message of the `.prompt` entry of a copied external session: the text of its
+    /// text segments, with the id of the entry.
+    ///
+    /// - Parameters:
+    ///   - event: A `.prompt` entry with no compaction.
+    ///   - entryId: The id of the entry.
+    /// - Returns: The message, or `nil` when the entry holds a mail record or no text.
+    private static func copiedPrompt(_ event: TranscriptEvent, entryId: String) -> SessionUpdate? {
+      let segments = event.entry?.segments ?? []
+      let holdsMail = segments.contains { segment in
+        guard case .structure(_, let schemaName, _) = segment else { return false }
+        return schemaName == RecordedHistoryRebuild.mailRecordSchemaName
+      }
+      let text = text(of: event)
+      guard !holdsMail, !text.isEmpty else { return nil }
+      return .userMessage(
+        UserMessage(
+          messageId: MessageId(rawValue: entryId), content: .value([.text(TextContent(text: text))])))
+    }
+
     /// The id of the call that a `.toolOutput` entry answers. It is the rule of Router: the id of
     /// the entry when a call of the submission has it, else the oldest call of the submission that
     /// no output answered, else the id of the entry.
@@ -246,7 +336,7 @@ extension RecordedHistoryRebuild {
 
     /// The text of the text segments of the entry of `event`, joined.
     ///
-    /// - Parameter event: A `.reasoning` or `.response` entry.
+    /// - Parameter event: A `.reasoning`, `.response` or `.prompt` entry.
     /// - Returns: The text, empty when the entry has no text segment.
     private static func text(of event: TranscriptEvent) -> String {
       (event.entry?.segments ?? []).compactMap { segment -> String? in

@@ -164,7 +164,8 @@ extension RoutedACPAgent {
   ///
   /// It is the history in the table when this process holds the session. Else it is the history
   /// that a cold `session/resume` restores: the history file in the transcript directory of the
-  /// session, with the plans that the Router journal recorded
+  /// session, completed with the Router journal (``completedHistory(_:directory:sessionId:writes:)``),
+  /// with the plans that the Router journal recorded
   /// (``resumedHistory(kept:directory:rootId:sessionId:)``).
   ///
   /// - Parameters:
@@ -186,9 +187,11 @@ extension RoutedACPAgent {
     let context = try await loadSessionContext(workingDirectory: summary.workingDirectory)
     let directory = context.transcriptRoot.appendingPathComponent(
       id.description, isDirectory: true)
-    guard let recorded = try SessionHistoryFile.read(from: directory) else {
+    guard let read = try SessionHistoryFile.readFile(from: directory) else {
       return nil
     }
+    let recorded = await completedHistory(
+      read, directory: directory, sessionId: sessionId, writes: false)
     return await resumedHistory(kept: recorded, directory: directory, rootId: id, sessionId: sessionId)
   }
 }

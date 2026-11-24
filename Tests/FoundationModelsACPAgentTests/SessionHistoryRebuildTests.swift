@@ -321,6 +321,210 @@ import Testing
       })
   }
 
+  /// (d) A history file of a build before ACPAgent 5f5af47a holds the thoughts of a turn after
+  /// its tool call and its answer, and records no order of the model. The resume replays each
+  /// thought in the order of the journal: thought, tool call, message (Testudo ^ras4xe9). Each
+  /// thought keeps its id, and the resume writes the file again in the order of the model.
+  @Test func anOldFormatFileReplaysEachThoughtBeforeItsToolCallAndItsAnswer() async throws {
+    var thoughtIds: [String] = []
+    try await Self.resumeAfterDamage(
+      prompts: [Self.firstPrompt, Self.secondPrompt],
+      damage: { file in
+        try Self.writeOldFormat(of: file)
+        let damaged = try #require(try SessionHistoryFile.read(from: file.deletingLastPathComponent()))
+        let replayed = damaged.replayUpdates(from: .start)
+        #expect(
+          Self.kinds(of: replayed)
+            == [.user, .toolCall, .agent, .thought, .user, .toolCall, .agent, .thought])
+        thoughtIds = ReplayedMessage.replayed(in: replayed).filter { $0.kind == .thought }.map(\.id)
+      },
+      read: { resumed, replay, _, _ in
+        #expect(
+          Self.kinds(of: replay)
+            == [.user, .thought, .toolCall, .agent, .user, .thought, .toolCall, .agent])
+        let ids: [String] = ReplayedMessage.replayed(in: replay).filter { $0.kind == .thought }
+          .map(\.id)
+        #expect(ids == thoughtIds)
+        let written = try #require(try SessionHistoryFile.readFile(from: resumed.directory))
+        #expect(written.recordsModelOrder)
+        #expect(Self.kinds(of: written.history.replayUpdates(from: .start)) == Self.kinds(of: replay))
+      })
+  }
+
+  /// (e) A history file that holds fewer turns than the Router journal (a build before ACPAgent
+  /// 44850640 wrote the file only at the end of a turn) replays each turn of the journal: the
+  /// turn that the file lacks comes after the turns of the file (Testudo ^fgbds9q).
+  @Test func aFileWithFewerTurnsReplaysEachTurnOfTheTranscript() async throws {
+    try await Self.resumeAfterDamage(
+      prompts: [Self.firstPrompt, Self.secondPrompt],
+      damage: { file in
+        let directory = file.deletingLastPathComponent()
+        let full = try #require(try SessionHistoryFile.read(from: directory))
+        let users = full.entries.indices.filter {
+          if case .userMessage = full.entries[$0].kind { return true }
+          return false
+        }
+        let cut = try #require(users.dropFirst().first)
+        try SessionHistoryFile.write(
+          SessionMergeEngine(replaying: full.transcriptUpdates.prefix(cut) + full.stateUpdates),
+          in: directory)
+      },
+      read: { resumed, replay, responses, _ in
+        let messages = ReplayedMessage.replayed(in: replay)
+        let kinds: [ReplayedMessage.Kind] = messages.map(\.kind)
+        #expect(kinds == [.user, .thought, .agent, .user, .thought, .agent], "the replay holds \(messages)")
+        let texts: [String] = messages.map(\.text)
+        #expect(
+          texts == [
+            Self.firstPrompt, Self.thoughtText, Self.answerText, Self.secondPrompt,
+            Self.thoughtText, Self.answerText,
+          ])
+        let userIds: [String] = messages.filter { $0.kind == .user }.map(\.id)
+        #expect(userIds == responses.map(\.messageId.rawValue))
+        let written = try #require(try SessionHistoryFile.read(from: resumed.directory))
+        #expect(
+          ReplayedMessage.replayed(in: written.replayUpdates(from: .start))
+            == ReplayedMessage.replayed(in: replay))
+      })
+  }
+
+  /// Writes the history file `file` again as a build before ACPAgent 5f5af47a wrote it: with no
+  /// `recordsModelOrder` member, and with each thought of a turn after the agent message of the
+  /// turn.
+  ///
+  /// - Parameter file: The history file.
+  /// - Throws: The error of the read or of the write.
+  private static func writeOldFormat(of file: URL) throws {
+    var contents = try #require(
+      try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+    contents.removeValue(forKey: "recordsModelOrder")
+    var updates = try #require(contents["updates"] as? [[String: Any]])
+    var index = 0
+    while index < updates.count {
+      guard updates[index]["sessionUpdate"] as? String == "agent_thought",
+        let message = updates[index...].firstIndex(where: {
+          $0["sessionUpdate"] as? String == "agent_message"
+        })
+      else {
+        index += 1
+        continue
+      }
+      let thought = updates.remove(at: index)
+      updates.insert(thought, at: message)
+      index = message + 1
+    }
+    contents["updates"] = updates
+    try JSONSerialization.data(withJSONObject: contents).write(to: file, options: .atomic)
+  }
+
+  /// A `.prompt` entry with no mail record (the prompt of a copied external session) gives a
+  /// user message with the id of the entry, when the rebuild reads such prompts. Else it gives no
+  /// message (Testudo ^fgbds9q).
+  @Test func aCopiedPromptGivesAUserMessageWithTheIdOfItsEntry() async throws {
+    var journal = JournalBuilder()
+    journal.add(
+      .prompt(Transcript.Prompt(segments: [.text(Transcript.TextSegment(content: "Fix the test."))])))
+    journal.add(
+      .response(
+        Transcript.Response(segments: [.text(Transcript.TextSegment(content: "It passes."))])))
+    let sessionId = SessionId(rawValue: journal.sessionId.description)
+    let entryId = try #require(journal.events.first?.entry?.entryId)
+
+    let copied = await RecordedHistoryRebuild.rebuilt(
+      from: journal.events, sessionId: sessionId, readsUnmailedPrompts: true)
+    let live = await RecordedHistoryRebuild.rebuilt(from: journal.events, sessionId: sessionId)
+
+    let messages = ReplayedMessage.replayed(in: copied.history.replayUpdates(from: .start))
+    let kinds: [ReplayedMessage.Kind] = messages.map(\.kind)
+    #expect(kinds == [.user, .agent])
+    #expect(messages.first?.id == entryId)
+    #expect(messages.first?.text == "Fix the test.")
+    #expect(copied.mailMessageIds.isEmpty)
+    let liveKinds: [ReplayedMessage.Kind] =
+      ReplayedMessage.replayed(in: live.history.replayUpdates(from: .start)).map(\.kind)
+    #expect(liveKinds == [.agent])
+  }
+
+  /// The shape of the journal of the "jensen" session (Testudo ^ras4xe9): a user mail, then four
+  /// steps of an empty response, a reasoning entry, a tool call and its output, then the answer
+  /// and the last reasoning entry after it. A thought shows where it starts: before the text and
+  /// the tool calls of its step. The rebuild gives this order, and an old-format file with each
+  /// thought after the answer takes it too, with the same ids.
+  @Test func theJournalOfTheJensenShapeReplaysEachThoughtWhereItStarts() async throws {
+    let mail = MailID()
+    var journal = JournalBuilder()
+    journal.add(
+      .prompt(Transcript.Prompt(segments: [.text(Transcript.TextSegment(content: "Tell me."))])),
+      adding: [JournalBuilder.delivery(of: "Tell me.", mail: mail)])
+    func reasoning(_ text: String) -> Transcript.Entry {
+      .reasoning(
+        Transcript.Reasoning(
+          id: UUID().uuidString, segments: [.text(Transcript.TextSegment(content: text))],
+          signature: nil))
+    }
+    var expected = ["user:\(mail.description)"]
+    for step in 1...4 {
+      journal.add(.response(Transcript.Response(segments: [])))
+      journal.add(reasoning("Thought \(step)."))
+      journal.add(
+        .toolCalls(
+          Transcript.ToolCalls([
+            Transcript.ToolCall(
+              id: "call-\(step)", toolName: "note",
+              arguments: try GeneratedContent(json: #"{"label":"a"}"#))
+          ])))
+      journal.add(
+        .toolOutput(
+          Transcript.ToolOutput(
+            id: "call-\(step)", toolName: "note",
+            segments: [.text(Transcript.TextSegment(content: "out \(step)"))])))
+      expected += ["thought:Thought \(step).", "tool:call-\(step)"]
+    }
+    journal.add(
+      .response(
+        Transcript.Response(segments: [.text(Transcript.TextSegment(content: "The answer."))])))
+    journal.add(reasoning("Thought 5."))
+    expected += ["thought:Thought 5.", "agent:The answer."]
+    func order(of history: SessionMergeEngine) -> [String] {
+      history.replayUpdates(from: .start).compactMap { update in
+        switch update {
+        case .userMessage(let message): "user:\(message.messageId.rawValue)"
+        case .agentThought, .agentMessage:
+          ReplayedMessage.replayed(in: [update]).first.map {
+            "\($0.kind == .thought ? "thought" : "agent"):\($0.text)"
+          }
+        case .toolCallUpdate(let call): "tool:\(call.toolCallId.rawValue)"
+        default: nil
+        }
+      }
+    }
+
+    let rebuilt = await RecordedHistoryRebuild.rebuilt(
+      from: journal.events, sessionId: SessionId(rawValue: journal.sessionId.description))
+    #expect(order(of: rebuilt.history) == expected)
+
+    let updates = rebuilt.history.transcriptUpdates
+    let isThought: (SessionUpdate) -> Bool = {
+      if case .agentThought = $0 { return true }
+      return false
+    }
+    let isAnswer: (SessionUpdate) -> Bool = {
+      if case .agentMessage = $0 { return true }
+      return false
+    }
+    var oldFormat = updates.filter { !isThought($0) }
+    let movedAnswer = try #require(oldFormat.firstIndex(where: isAnswer))
+    oldFormat.insert(contentsOf: updates.filter(isThought), at: movedAnswer + 1)
+    let file = SessionMergeEngine(replaying: oldFormat + rebuilt.history.stateUpdates)
+    #expect(order(of: file) != expected)
+
+    let merged = RecordedHistoryMerge.merged(
+      SessionHistoryFile.Read(history: file, recordsMailDelivery: true, recordsModelOrder: false),
+      with: rebuilt)
+    #expect(order(of: merged) == expected)
+    #expect(Set(merged.entries.map(\.id)) == Set(file.entries.map(\.id)))
+  }
+
   // MARK: - The rebuild of a journal
 
   /// The events of one journal, as Router writes them, for the rebuild proofs.
@@ -378,8 +582,9 @@ import Testing
     }
   }
 
-  /// (c) The rebuild keeps the order of the journal, also when a `.response` entry comes before
-  /// the `.reasoning` entry of its pass, as a live MLX model records them. The summary entry of a
+  /// (c) The rebuild keeps the order of the journal, but a `.reasoning` entry that follows a
+  /// `.response` entry of its round (the order that a live MLX model records) comes before the
+  /// response: the model thinks before it answers (Testudo ^ras4xe9). The summary entry of a
   /// compaction gives the compaction entry and no message. A `promptStarted` marker with no
   /// `.prompt` entry (a stop of the process during the turn) gives its user message, one time.
   @Test func theRebuildKeepsTheJournalOrderAndTheMessagesAroundACompaction() async throws {
@@ -443,12 +648,12 @@ import Testing
     }
     #expect(
       order == [
-        "user:\(firstMail.description)", "agent", "thought", "tool:\(callId)",
+        "user:\(firstMail.description)", "thought", "agent", "tool:\(callId)",
         "compaction:\(checkpointId)", "user:\(secondMail.description)", "thought",
       ])
     let texts: [String] = ReplayedMessage.replayed(in: replay).map(\.text)
     #expect(
-      texts == ["Question one", "Answer one.", "Thought one.", "Question two", "Thought two."])
+      texts == ["Question one", "Thought one.", "Answer one.", "Question two", "Thought two."])
     let call = Self.toolCallUpdates(of: callId, in: replay)
     #expect(call.count == 1)
     #expect(call.first?.status == .value(.completed))
