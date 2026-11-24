@@ -525,6 +525,52 @@ import Testing
     #expect(Set(merged.entries.map(\.id)) == Set(file.entries.map(\.id)))
   }
 
+  /// A call whose output is the pending envelope of its run stays open in the rebuild, as it does
+  /// live: the `toolCallStarted` marker of the call joins the token of the run to the id of the
+  /// call. A shutdown during the run can record that output before the stop (Testudo ^e664zq),
+  /// and the replay of a resume must then still give the open call.
+  @Test func aCallWhoseOutputIsThePendingEnvelopeOfItsRunStaysOpen() async throws {
+    let mail = MailID()
+    let callId = "call-1"
+    let token = ULID.generate().description
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = .withoutEscapingSlashes
+    let next = try #require(
+      String(
+        data: try encoder.encode(
+          PendingRunEnvelope.defaultCollectInstruction(forCompletionToken: token)),
+        encoding: .utf8))
+    let envelope = #"{"pending":true,"completionToken":"\#(token)","next":\#(next)}"#
+    #expect(PendingRunEnvelope.isRendered(text: envelope))
+    var journal = JournalBuilder()
+    journal.add(
+      .prompt(Transcript.Prompt(segments: [.text(Transcript.TextSegment(content: "Run it."))])),
+      adding: [JournalBuilder.delivery(of: "Run it.", mail: mail)])
+    journal.add(
+      kind: .toolCallStarted, text: nil,
+      entry: TranscriptEntryPayload(
+        entryId: "started-call-\(callId)",
+        toolCalls: [
+          ToolCallPayload(id: callId, toolName: "agent", argumentsJSON: "{}", correlationID: token)
+        ]))
+    journal.add(
+      .toolCalls(
+        Transcript.ToolCalls([
+          Transcript.ToolCall(id: callId, toolName: "agent", arguments: try GeneratedContent(json: "{}"))
+        ])))
+    journal.add(
+      .toolOutput(
+        Transcript.ToolOutput(
+          id: callId, toolName: "agent", segments: [.text(Transcript.TextSegment(content: envelope))])))
+
+    let rebuilt = await RecordedHistoryRebuild.rebuilt(
+      from: journal.events, sessionId: SessionId(rawValue: journal.sessionId.description))
+
+    let calls = Self.toolCallUpdates(of: callId, in: rebuilt.history.replayUpdates(from: .start))
+    #expect(calls.count == 1)
+    #expect(calls.first?.status == .value(.inProgress))
+  }
+
   // MARK: - The rebuild of a journal
 
   /// The events of one journal, as Router writes them, for the rebuild proofs.

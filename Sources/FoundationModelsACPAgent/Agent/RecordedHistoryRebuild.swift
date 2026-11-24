@@ -34,8 +34,10 @@ import Synchronization
 ///   prompt (``ImportedTranscript``). The id of the message is the id of the entry, so each
 ///   rebuild gives the same id.
 /// - A `.toolCalls` entry gives one tool call for each call in it.
+/// - A `toolCallStarted` marker joins the token of the run of its call to the id of the call.
 /// - A `.toolOutput` entry gives the `completed` status of the call that it answers, with its
-///   output. An output that holds the events of a run (`OperationEventSegment`) is a record of the
+///   output. An output that is the pending envelope of the run of the call keeps the call
+///   `in_progress`, as live: the run goes on in the background. An output that holds the events of a run (`OperationEventSegment`) is a record of the
 ///   run, not the output of a call, and gives nothing.
 /// - Each other kind gives nothing.
 ///
@@ -87,9 +89,10 @@ enum RecordedHistoryRebuild {
   ) async -> Rebuilt {
     let clock = Mutex(Date())
     let history = RetainedHistory(now: { clock.withLock { $0 } })
+    let runCallJoins = RunCallJoinTable()
     var translator = ACPEventTranslator(
       sessionId: sessionId, parentSessionId: nil, send: { history.apply($0) }, modelName: "",
-      runCallJoins: RunCallJoinTable())
+      runCallJoins: runCallJoins)
     var reader = EntryReader(readsUnmailedPrompts: readsUnmailedPrompts)
     // The responses that wait for the reasoning entries after them in their round.
     var heldResponses: [RecordedEntry] = []
@@ -105,6 +108,12 @@ enum RecordedHistoryRebuild {
       }
     }
     for event in events {
+      // The marker of a started call joins the token of its run to the id of the call, as the
+      // live session does. Thus a call whose output is the pending envelope of its run stays
+      // open (``ACPEventTranslator`` keeps it `in_progress`).
+      for (callId, token) in Self.runJoins(in: event) {
+        runCallJoins.record(toolCallID: callId, for: RunToken(token))
+      }
       let recorded = reader.read(event)
       guard !recorded.updates.isEmpty || !recorded.events.isEmpty else {
         continue
@@ -132,6 +141,19 @@ enum RecordedHistoryRebuild {
     }
     return Rebuilt(
       history: snapshot.withEarlierBuildDeliveryRecords(), mailMessageIds: mailMessageIds)
+  }
+
+  /// The joins of the runs that the `toolCallStarted` marker `event` records: the id of each
+  /// started call, with the token of its run.
+  ///
+  /// - Parameter event: A recorded event.
+  /// - Returns: The joins, or none for another kind of event or a call with no token.
+  private static func runJoins(in event: TranscriptEvent) -> [(callId: String, token: String)] {
+    guard event.kind == .toolCallStarted, let calls = EventFields(of: event)?.entry?.toolCalls
+    else {
+      return []
+    }
+    return calls.compactMap { call in call.correlationID.map { (callId: call.id, token: $0) } }
   }
 
   /// The rebuilt history of one session.
@@ -470,6 +492,9 @@ extension RecordedHistoryRebuild {
 
       /// The arguments of the call, as JSON text.
       let argumentsJSON: String
+
+      /// The token of the run of the call, in a `toolCallStarted` marker, or `nil`.
+      let correlationID: String?
     }
 
     /// The instant that the recorder stamped on the event, or `nil`.

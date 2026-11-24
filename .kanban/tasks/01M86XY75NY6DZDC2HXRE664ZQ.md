@@ -1,7 +1,7 @@
 ---
 assignees:
 - claude-code
-position_column: todo
+position_column: done
 position_ordinal: '80'
 title: 'RedriveInterruptedRunsTests: theReplayOpensTheOriginalCallWhenNoHistoryWasWritten fails when it runs alone'
 ---
@@ -16,3 +16,14 @@ Data: the journal of the root is session, promptStarted, mail, toolCallStarted, 
 ## Work
 
 Find why the result depends on the other tests (a shared state, or an order of the tasks). Make the test deterministic, with no longer waits and no retries. Fix the code if the defect is in the code.
+## Result
+
+The cause is in the rebuild, not in the test. The shutdown of the chain stops at a random point:
+
+- Sometimes Router records the output of the agent call of the root before the stop. That output is the pending envelope of the run.
+- Live, the `toolCallStarted` marker joins the token of the run to the call, so the translator keeps the call `in_progress`.
+- `RecordedHistoryRebuild` used an empty join table. So the envelope did not match the call, and the call became `completed`. The replay then had no open call.
+
+Fix: the rebuild reads the `correlationID` of each `toolCallStarted` marker and records the join, as the live session does.
+
+New test: `aCallWhoseOutputIsThePendingEnvelopeOfItsRunStaysOpen`. It fails without the fix. The redrive test is not changed.
