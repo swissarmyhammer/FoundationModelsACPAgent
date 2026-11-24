@@ -1,7 +1,7 @@
 ---
 assignees:
 - claude-code
-position_column: todo
+position_column: done
 position_ordinal: '80'
 title: 'Search rows of external sessions: give the file and the continued sessions'
 ---
@@ -18,3 +18,6 @@ The transcript search index stores the external summaries with no decoration. Th
 ## Test
 
 A search that matches an external session gives its file in the root. After a continue, the same search gives the copy in `continuedSessions`.
+## Result
+
+ACPAgent 846e353. `searchTranscripts` decorates the external rows of the page with `AgentSessionImporter.decorated(_:)`. Test: `theSearchRowOfTheSourceGivesItsFileAndItsCopy`. It failed before the fix.

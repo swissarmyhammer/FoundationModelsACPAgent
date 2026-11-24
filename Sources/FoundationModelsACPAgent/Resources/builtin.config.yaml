@@ -62,11 +62,30 @@ sessions:
   # false at the user level, or at the session level of a folder for the
   # sessions of that folder only.
   recap: true
-  # When true, the app writes the turns of the sessions to Core Spotlight
-  # (D207). When false, the app removes all its items from Spotlight. The
-  # agent does not act on this key. Set it at the user level only: the
-  # settings tool and the settings endpoint refuse it at the session level.
-  spotlight: true
+
+# The Core Spotlight items of the app (D214). The app writes and removes the
+# items; the agent does not act on these keys. The app uses the user level of
+# each key, and the session level of enabled only.
+spotlight:
+  # When false at the user level, the app writes no item. When false at the
+  # session level of a folder, the app writes no item of that folder.
+  enabled: true
+  # An item for each session.
+  sessions: true
+  # An item for each archived session too.
+  archivedSessions: false
+  # An item for each automated session too.
+  automatedSessions: false
+  # An item for each board and each task.
+  tasks: true
+  # An item for each agent, skill, rule and MCP server.
+  library: true
+  # An item for each typed session of another agent.
+  externalSessions: true
+  # An item for each setting.
+  settings: true
+  # An item for each command.
+  commands: true
 
 tools:
   # The files tools: read, write, search and edit the files of the session.

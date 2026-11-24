@@ -72,7 +72,7 @@ public struct SettingsTool: GraphQLEndpointTool, OperationDescribing {
     reference. Select a model profile with the key path ["profile"] and the name of a profile, \
     such as "large" or "small"; the models tool lists the profiles, and a change applies at the next \
     launch. The key path ["sessions", "recap"] takes true or false: \(SessionsConfiguration.recapDescription) \
-    The key path ["sessions", "spotlight"] takes true or false: \(SessionsConfiguration.spotlightDescription) \
+    \(SpotlightConfiguration.help) \
     \(StatusLineConfiguration.help)
     """
 

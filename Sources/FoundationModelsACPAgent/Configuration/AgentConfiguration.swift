@@ -62,12 +62,17 @@ public struct AgentConfiguration: Codable, Equatable, Sendable {
   public var statusline = StatusLineConfiguration()
 
   /// The settings of the sessions (``SessionsConfiguration``): the session
-  /// recap of D206 and the Spotlight setting of D207.
+  /// recap of D206.
   public var sessions = SessionsConfiguration()
+
+  /// The switches of the Spotlight items of the app (``SpotlightConfiguration``, D214). The
+  /// agent does not read them.
+  public var spotlight = SpotlightConfiguration()
 
   /// The YAML spelling of each top-level section.
   public enum CodingKeys: String, CodingKey, CaseIterable {
     case profile, tools, compaction, repetition, theme, keymap, fonts, statusline, sessions
+    case spotlight
   }
 
   /// The top-level sections that the configuration had before D187:
@@ -101,6 +106,8 @@ public struct AgentConfiguration: Codable, Equatable, Sendable {
       ?? statusline
     sessions =
       try container.decodeIfPresent(SessionsConfiguration.self, forKey: .sessions) ?? sessions
+    spotlight =
+      try container.decodeIfPresent(SpotlightConfiguration.self, forKey: .spotlight) ?? spotlight
   }
 }
 
@@ -139,6 +146,7 @@ extension AgentConfiguration {
     CodingKeys.fonts.stringValue: .checked(FontsConfiguration.knownKeys),
     CodingKeys.statusline.stringValue: .checked(StatusLineConfiguration.topKeys),
     CodingKeys.sessions.stringValue: .checked(SessionsConfiguration.knownKeys),
+    CodingKeys.spotlight.stringValue: .checked(SpotlightConfiguration.knownKeys),
   ]
 }
 

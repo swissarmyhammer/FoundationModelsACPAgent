@@ -12,11 +12,8 @@ import FoundationModelsExtras
 /// folder. ``SettingsStore/isSessionRecapOnNow(for:)`` gives it with no hop
 /// to the store, as the recap policy of the Router session directory.
 ///
-/// The `spotlight` key turns the Core Spotlight items of the sessions on
-/// and off (D207 (i), Q73). The app writes and removes these items; the
-/// agent does not act on the key. Only the user level can set it, because
-/// it applies to all the sessions of the app, not to one folder
-/// (``SettingsGraphError/userLevelOnly(keyPath:)``).
+/// The switches of the Spotlight items are in their own section
+/// (``SpotlightConfiguration``, D214).
 public struct SessionsConfiguration: Codable, Equatable, Sendable, KeyCheckedSection {
   /// The default of ``recap``: the recap is on.
   public static let defaultRecap = true
@@ -25,24 +22,9 @@ public struct SessionsConfiguration: Codable, Equatable, Sendable, KeyCheckedSec
   public static let recapDescription =
     "Write a one-sentence recap of each session with the flash model (D206)."
 
-  /// The default of ``spotlight``: the Spotlight items are on.
-  public static let defaultSpotlight = true
-
-  /// The description of the `sessions.spotlight` key, for the `settings`
-  /// tool.
-  public static let spotlightDescription =
-    "The app writes the turns of the sessions to Spotlight; set it at the USER level only (D207)."
-
-  /// The key path of `sessions.spotlight`, from the root of `config.yaml`.
-  static let spotlightKeyPath = [sectionKey, CodingKeys.spotlight.stringValue]
-
   /// When true, the agent writes a one-sentence recap of each session with
   /// the `flash` model of the profile.
   public var recap = SessionsConfiguration.defaultRecap
-
-  /// When true, the app writes the turns of the sessions to Core Spotlight.
-  /// The agent does not act on it.
-  public var spotlight = SessionsConfiguration.defaultSpotlight
 
   /// The key of the section in the root of `config.yaml`.
   static let sectionKey = AgentConfiguration.CodingKeys.sessions.stringValue
@@ -65,21 +47,18 @@ public struct SessionsConfiguration: Codable, Equatable, Sendable, KeyCheckedSec
   /// The YAML spelling of each key.
   public enum CodingKeys: String, CodingKey, CaseIterable {
     case recap
-    case spotlight
   }
 
-  /// The default: the recap and the Spotlight items are on.
+  /// The default: the recap is on.
   public init() {}
 
   /// Decodes each present key and keeps the default for each absent one.
   ///
   /// - Parameter decoder: The decoder of the section.
-  /// - Throws: `DecodingError` when `recap` or `spotlight` is not a
-  ///   Boolean.
+  /// - Throws: `DecodingError` when `recap` is not a Boolean.
   public init(from decoder: any Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     recap = try container.decodeIfPresent(Bool.self, forKey: .recap) ?? recap
-    spotlight = try container.decodeIfPresent(Bool.self, forKey: .spotlight) ?? spotlight
   }
 }
 
