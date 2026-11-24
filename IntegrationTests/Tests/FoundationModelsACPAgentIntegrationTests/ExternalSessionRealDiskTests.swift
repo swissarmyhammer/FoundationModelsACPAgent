@@ -7,7 +7,11 @@ import Testing
 
 /// The index of the external sessions on the real disk (D212, section 7): a Claude Code root of
 /// 5,000 generated session files in a temporary folder. The first row of a folder comes in less
-/// than 1 s, and the build of the index adds less than 100 MB to the peak memory of the process.
+/// than 1 s, and the build of the index adds less than 100 MB to the memory of the process.
+///
+/// The memory is the physical footprint of the process, read at each change that the build sends
+/// and at its end. The test does not read the peak of the process: the other suites of the
+/// process (real models) set that peak before this test runs.
 ///
 /// The unit suites test the index on a fake file system. This suite reads real files, through
 /// the public host of the agent (``RoutedACPAgent/externalSessionHost``).
@@ -30,7 +34,7 @@ import Testing
   /// The time limit of the first row of a folder (section 7).
   private static let firstRowLimit = Duration.seconds(1)
 
-  /// The limit of the increase of the peak memory (section 7): 100 MB.
+  /// The limit of the increase of the memory (section 7): 100 MB.
   private static let memoryLimit: UInt64 = 100 * 1_048_576
 
   @Test("the first row of a folder comes in less than 1 s, and the build adds less than 100 MB")
@@ -44,7 +48,8 @@ import Testing
     let host = agent.externalSessionHost
     let folder = Self.folder(of: 0)
 
-    let memoryBefore = Self.footprint().current
+    let memoryBefore = Self.footprint()
+    var memoryHigh = memoryBefore
     var folderChanges = host.externalSessionChanges(folder: folder).makeAsyncIterator()
     var allChanges = host.externalSessionChanges(folder: nil).makeAsyncIterator()
     _ = await folderChanges.next()
@@ -54,22 +59,24 @@ import Testing
     await agent.setImportRoots([.claudeCode: root])
     var firstRow: ExternalSessionSummary?
     while firstRow == nil, let change = await folderChanges.next() {
+      memoryHigh = max(memoryHigh, Self.footprint())
       firstRow = change.changed.first
     }
     let firstRowTime = clock.now - start
     var isComplete = false
     while !isComplete, let change = await allChanges.next() {
+      memoryHigh = max(memoryHigh, Self.footprint())
       isComplete = change.indexState.isComplete
     }
     let buildTime = clock.now - start
-    let memoryPeak = Self.footprint().peak
+    memoryHigh = max(memoryHigh, Self.footprint())
     let page = try await host.externalSessions(
       ExternalSessionQuery(automated: true, limit: Self.fileCount))
-    let increase = memoryPeak > memoryBefore ? memoryPeak - memoryBefore : 0
+    let increase = memoryHigh - memoryBefore
 
     print(
       "ExternalSessionRealDiskTests: first row \(firstRowTime), build \(buildTime), "
-        + "peak memory increase \(increase / 1_048_576) MB")
+        + "memory increase \(increase / 1_048_576) MB")
     #expect(firstRow?.cwd?.standardizedFileURL.path == folder.path)
     #expect(page.sessions.count == Self.fileCount)
     #expect(firstRowTime < Self.firstRowLimit)
@@ -129,10 +136,10 @@ import Testing
 
   // MARK: - The memory
 
-  /// The physical footprint of the process now, and its peak.
+  /// The physical footprint of the process now.
   ///
-  /// - Returns: The footprint and the peak, in bytes.
-  private static func footprint() -> (current: UInt64, peak: UInt64) {
+  /// - Returns: The footprint, in bytes, or 0 when the read fails.
+  private static func footprint() -> UInt64 {
     var info = task_vm_info_data_t()
     var count = mach_msg_type_number_t(
       MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
@@ -141,7 +148,7 @@ import Testing
         task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
       }
     }
-    guard result == KERN_SUCCESS else { return (0, 0) }
-    return (info.phys_footprint, UInt64(max(info.ledger_phys_footprint_peak, 0)))
+    guard result == KERN_SUCCESS else { return 0 }
+    return info.phys_footprint
   }
 }
