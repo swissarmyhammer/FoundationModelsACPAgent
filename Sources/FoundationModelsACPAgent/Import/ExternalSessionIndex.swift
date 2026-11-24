@@ -164,6 +164,9 @@ actor ExternalSessionIndex {
   /// The source agents of the roots now.
   var sources: Set<ImportSourceAgent> { Set(roots.keys) }
 
+  /// The root of each source agent now.
+  var rootURLs: [ImportSourceAgent: URL] { roots.mapValues(\.url) }
+
   /// Builds the index of one source again (D212 5.6, Rebuild Index): the root loses its
   /// entries, its reads and its index file, as for a removed root, and then starts again at the
   /// same URL, with a new find of each file and a full read of each file. The subscribers get

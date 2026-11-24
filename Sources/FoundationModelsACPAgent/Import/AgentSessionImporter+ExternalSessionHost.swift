@@ -13,11 +13,26 @@ extension AgentSessionImporter: ExternalSessionHost {
   static let updateBlockSize = 1_048_576
 
   func externalSessions(_ query: ExternalSessionQuery) async throws -> ExternalSessionPage {
-    try await index.externalSessions(query)
+    var page = try await index.externalSessions(query)
+    page.sessions = await decorated(page.sessions)
+    return page
   }
 
+  /// The changes of the index, with the fields of ``decorated(_:)`` on each changed session.
+  /// The end of the iteration stops the stream of the index.
   func externalSessionChanges(folder: URL?) -> AsyncStream<ExternalSessionChange> {
-    index.externalSessionChanges(folder: folder)
+    let changes = index.externalSessionChanges(folder: folder)
+    let (stream, continuation) = AsyncStream.makeStream(of: ExternalSessionChange.self)
+    let relay = Task {
+      for await change in changes {
+        var change = change
+        change.changed = await decorated(change.changed)
+        continuation.yield(change)
+      }
+      continuation.finish()
+    }
+    continuation.onTermination = { _ in relay.cancel() }
+    return stream
   }
 
   func externalSessionCounts(source: String?, folder: URL?) async throws -> ExternalSessionCounts {
@@ -65,6 +80,45 @@ extension AgentSessionImporter: ExternalSessionHost {
     } catch let error as AgentSessionImportError {
       throw Self.externalError(of: error, session: request.session)
     }
+  }
+
+  // MARK: - The fields of the host
+
+  /// The summaries with the fields that the index does not keep: the earlier copies of each
+  /// session (``ExternalSessionContinuations``), and the absolute file URL
+  /// (``fileURL(of:roots:)``).
+  ///
+  /// - Parameter summaries: The summaries of the index.
+  /// - Returns: The summaries with the fields.
+  func decorated(_ summaries: [ExternalSessionSummary]) async -> [ExternalSessionSummary] {
+    guard !summaries.isEmpty else { return summaries }
+    let roots = await index.rootURLs.mapValues {
+      URL(fileURLWithPath: $0.canonicalPath, isDirectory: true)
+    }
+    let copies = await continuations.continuations(of: summaries.map(\.id))
+    return summaries.map { summary in
+      var summary = summary
+      summary.continuedSessions = copies[summary.id] ?? []
+      summary.fileURL = Self.fileURL(of: summary, roots: roots)
+      return summary
+    }
+  }
+
+  /// The absolute URL of the file of a session: the root, with its symbolic links resolved,
+  /// plus the path of the session. A path that leaves the root (for example with `..`) gives
+  /// no URL, so a client never gets a file outside the grant of the root.
+  ///
+  /// - Parameters:
+  ///   - summary: The summary.
+  ///   - roots: The resolved root of each source agent.
+  /// - Returns: The file URL, or `nil` for a source with no root or a path outside the root.
+  static func fileURL(of summary: ExternalSessionSummary, roots: [ImportSourceAgent: URL]) -> URL? {
+    guard let agent = ImportSourceAgent(rawValue: summary.source), let root = roots[agent] else {
+      return nil
+    }
+    let file = root.appendingPathComponent(summary.path).standardizedFileURL
+    guard file.path.hasPrefix(root.standardizedFileURL.path + "/") else { return nil }
+    return file
   }
 
   // MARK: - The stream

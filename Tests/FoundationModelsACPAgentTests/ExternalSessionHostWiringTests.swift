@@ -60,6 +60,17 @@ import Testing
   /// - Returns: The fixture, with its index idle.
   /// - Throws: The error of the fixture.
   private static func fixture(name: String) async throws -> ScriptedPromptFixture {
+    try await fixture(name: name, root: try makeClaudeRoot())
+  }
+
+  /// Makes an agent as ``fixture(name:)`` does, over a given Claude Code root.
+  ///
+  /// - Parameters:
+  ///   - name: The label of the test.
+  ///   - root: The Claude Code root.
+  /// - Returns: The fixture, with its index idle.
+  /// - Throws: The error of the fixture.
+  private static func fixture(name: String, root: URL) async throws -> ScriptedPromptFixture {
     let readArguments =
       #"{"op":"read external session","source":"claude-code","id":"\#(claudeID)"}"#
     let fixture = try await ScriptedPromptFixture.make(
@@ -76,7 +87,7 @@ import Testing
         .endPass,
       ],
       label: "\(label)-\(name)",
-      importRoots: [.claudeCode: try makeClaudeRoot()])
+      importRoots: [.claudeCode: root])
     await fixture.harness.agent.sessionImporter.index.waitUntilIdle()
     return fixture
   }
@@ -225,5 +236,106 @@ import Testing
     #expect(root.indexState.isComplete)
     #expect(folder.typedCount == 1)
     #expect(other.typedCount == 0)
+  }
+
+  @Test("a session with no copy has no earlier copy, and each continue adds one, the oldest first")
+  func eachContinueAddsAnEarlierCopy() async throws {
+    let fixture = try await Self.fixture(name: "copies")
+    defer { await fixture.close() }
+    let host: any ExternalSessionHost = fixture.harness.agent.sessionImporter
+    let query = ExternalSessionQuery(limit: 10)
+    let folder = makeResolvedDirectory(label: "\(Self.label)-copies-folder")
+
+    let before = try await host.externalSessions(query)
+    let first = try await host.continueExternalSession(
+      ExternalSessionContinueRequest(session: Self.session, folder: folder, name: "First"))
+    let second = try await host.continueExternalSession(
+      ExternalSessionContinueRequest(session: Self.session, folder: folder, name: "Second"))
+    let after = try await host.externalSessions(query)
+
+    #expect(before.sessions.first?.continuedSessions == [])
+    #expect(
+      after.sessions.first?.continuedSessions
+        == [
+          ExternalSessionContinuation(sessionID: first.id, createdAt: first.createdAt),
+          ExternalSessionContinuation(sessionID: second.id, createdAt: second.createdAt),
+        ])
+  }
+
+  @Test("a new importer reads the earlier copies from the directory")
+  func aNewImporterReadsTheEarlierCopies() async throws {
+    let fixture = try await Self.fixture(name: "copies-read")
+    defer { await fixture.close() }
+    let importer = fixture.harness.agent.sessionImporter
+    let copy = try await importer.continueExternalSession(
+      ExternalSessionContinueRequest(
+        session: Self.session, folder: makeResolvedDirectory(label: "\(Self.label)-copies-read-folder")))
+
+    let fresh = ExternalSessionContinuations(directory: fixture.harness.agent.sessionDirectory)
+    let copies = await fresh.continuations(of: [Self.session])
+
+    #expect(copies[Self.session] == [ExternalSessionContinuation(sessionID: copy.id, createdAt: copy.createdAt)])
+  }
+
+  @Test("the file URL of a session is the root plus the path of the session")
+  func theFileURLIsTheRootPlusThePath() async throws {
+    let fixture = try await Self.fixture(name: "file-url")
+    defer { await fixture.close() }
+    let host: any ExternalSessionHost = fixture.harness.agent.sessionImporter
+    let roots = await fixture.harness.agent.sessionImporter.index.rootURLs
+
+    let summary = try #require(try await host.externalSessions(ExternalSessionQuery(limit: 10)).sessions.first)
+    let root = try #require(roots[.claudeCode])
+
+    #expect(summary.fileURL?.path == root.canonicalPath + "/" + summary.path)
+    #expect(FileManager.default.fileExists(atPath: try #require(summary.fileURL).path))
+  }
+
+  @Test("the file URL of a session of a root with a symbolic link is in the resolved root")
+  func theFileURLOfALinkedRootIsInTheResolvedRoot() async throws {
+    let real = try Self.makeClaudeRoot()
+    let link = makeResolvedDirectory(label: "\(Self.label)-link").appendingPathComponent(".claude")
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+    let fixture = try await Self.fixture(name: "file-url-link", root: link)
+    defer { await fixture.close() }
+    let host: any ExternalSessionHost = fixture.harness.agent.sessionImporter
+
+    let summary = try #require(try await host.externalSessions(ExternalSessionQuery(limit: 10)).sessions.first)
+
+    #expect(summary.fileURL?.path == real.canonicalPath + "/" + summary.path)
+  }
+
+  @Test("a path that leaves the root, or a source with no root, gives no file URL")
+  func aPathOutsideTheRootGivesNoFileURL() throws {
+    let root = URL(fileURLWithPath: "/grant/.claude", isDirectory: true)
+    let roots: [ImportSourceAgent: URL] = [.claudeCode: root]
+    func summary(_ source: ImportSourceAgent, path: String) -> ExternalSessionSummary {
+      ExternalSessionSummary(
+        source: source.rawValue, sourceID: "id", path: path, size: 1,
+        modified: Date(timeIntervalSince1970: 0), state: .read)
+    }
+
+    #expect(
+      AgentSessionImporter.fileURL(of: summary(.claudeCode, path: "projects/a/b.jsonl"), roots: roots)?.path
+        == "/grant/.claude/projects/a/b.jsonl")
+    #expect(AgentSessionImporter.fileURL(of: summary(.claudeCode, path: "../outside.jsonl"), roots: roots) == nil)
+    #expect(AgentSessionImporter.fileURL(of: summary(.codex, path: "sessions/a.jsonl"), roots: roots) == nil)
+  }
+
+  @Test("a changed session of the change stream of the host has its file URL")
+  func aChangedSessionHasItsFileURL() async throws {
+    let fixture = try await Self.fixture(name: "changes-file-url")
+    defer { await fixture.close() }
+    let host: any ExternalSessionHost = fixture.harness.agent.sessionImporter
+    var changes = host.externalSessionChanges(folder: nil).makeAsyncIterator()
+    _ = await changes.next()
+
+    try await host.rebuildExternalSessionIndex(source: ImportSourceAgent.claudeCode.rawValue)
+    var changed: ExternalSessionSummary?
+    while changed == nil, let change = await changes.next() {
+      changed = change.changed.first { $0.id == Self.session }
+    }
+
+    #expect(changed?.fileURL != nil)
   }
 }

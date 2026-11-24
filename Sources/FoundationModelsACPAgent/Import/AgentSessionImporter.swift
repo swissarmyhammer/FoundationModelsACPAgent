@@ -66,6 +66,9 @@ struct AgentSessionImporter: Sendable {
   /// The store of the history of each new session.
   private let historyStore: any ImportedHistoryStore
 
+  /// The earlier copies of each external session.
+  let continuations: ExternalSessionContinuations
+
   /// Makes the importer.
   ///
   /// - Parameters:
@@ -80,6 +83,7 @@ struct AgentSessionImporter: Sendable {
     self.index = index
     self.directory = directory
     self.historyStore = historyStore
+    self.continuations = ExternalSessionContinuations(directory: directory)
   }
 
   /// Replaces all the roots of the index. A root that is new starts a build of the index. The
@@ -138,6 +142,7 @@ struct AgentSessionImporter: Sendable {
     let summary = try await directory.importSession(
       request, transcript: ImportedTranscript.make(from: imported.updates))
     try writeHistory(of: imported, for: summary)
+    await continuations.add(summary)
     ACPAgentTelemetry.logger(.session).info(
       "The importer made a new session from a session of another agent.",
       metadata: ACPAgentTelemetry.sessionMetadata(SessionId(rawValue: summary.id.description)))
