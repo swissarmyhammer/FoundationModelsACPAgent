@@ -35,6 +35,10 @@ import Synchronization
 ///   rebuild gives the same id.
 /// - A `.toolCalls` entry gives one tool call for each call in it.
 /// - A `toolCallStarted` marker joins the token of the run of its call to the id of the call.
+/// - The end event of a run (an `OperationEvent` of the kind `completed`) gives the final status
+///   of its call, as the settlement of the run does live. A run in the background (an event of
+///   the run holds its pending envelope) that did not end in the journal keeps its call
+///   `in_progress`: the process stopped while it ran, and a resume runs it again.
 /// - A `.toolOutput` entry gives the `completed` status of the call that it answers, with its
 ///   output. An output that is the pending envelope of the run of the call keeps the call
 ///   `in_progress`, as live: the run goes on in the background. An output that holds the events of a run (`OperationEventSegment`) is a record of the
@@ -107,12 +111,25 @@ enum RecordedHistoryRebuild {
         await translator.project(sessionEvent)
       }
     }
+    var runs = BackgroundRuns()
     for event in events {
       // The marker of a started call joins the token of its run to the id of the call, as the
       // live session does. Thus a call whose output is the pending envelope of its run stays
       // open (``ACPEventTranslator`` keeps it `in_progress`).
       for (callId, token) in Self.runJoins(in: event) {
         runCallJoins.record(toolCallID: callId, for: RunToken(token))
+        runs.calls[token] = callId
+      }
+      // The end of a run gives the final status of its call, as the settlement does live.
+      let ends = runs.read(event.operationEvents)
+      if !ends.isEmpty {
+        for held in heldResponses {
+          await give(held)
+        }
+        heldResponses = []
+        for end in ends {
+          await translator.project(.runSettled(end))
+        }
       }
       let recorded = reader.read(event)
       guard !recorded.updates.isEmpty || !recorded.events.isEmpty else {
@@ -134,6 +151,13 @@ enum RecordedHistoryRebuild {
     for held in heldResponses {
       await give(held)
     }
+    // A run in the background that did not end in the journal was still running when the
+    // process stopped. Its call is open, as the live history keeps it: an SDK output that the
+    // stop recorded (the text of a cancel by the shutdown) is not its end.
+    for callId in runs.openCallIds {
+      history.apply(
+        .toolCallUpdate(ToolCallUpdate(toolCallId: ToolCallId(rawValue: callId), status: .value(.inProgress))))
+    }
     let snapshot = history.snapshot
     let mailMessageIds = Set(reader.deliveredMail.map { MessageId(rawValue: $0.description) })
     guard !snapshot.entries.isEmpty else {
@@ -141,6 +165,45 @@ enum RecordedHistoryRebuild {
     }
     return Rebuilt(
       history: snapshot.withEarlierBuildDeliveryRecords(), mailMessageIds: mailMessageIds)
+  }
+
+  /// The runs in the background of a journal: the runs whose events hold a pending envelope, and
+  /// the runs that ended.
+  struct BackgroundRuns {
+    /// The id of the call of each run, by the token of the run.
+    var calls: [String: String] = [:]
+
+    /// The token of each run that went to the background: an event of the run holds its
+    /// pending envelope.
+    private var detached: Set<String> = []
+
+    /// The token of each run that ended.
+    private var ended: Set<String> = []
+
+    /// Reads the run events of one recorded event.
+    ///
+    /// - Parameter events: The run events, in order.
+    /// - Returns: The end events of the runs, in order.
+    mutating func read(_ events: [OperationEvent]) -> [OperationEvent] {
+      var ends: [OperationEvent] = []
+      for event in events {
+        switch event.kind {
+        case .completed:
+          ended.insert(event.correlationID)
+          ends.append(event)
+        default:
+          if PendingRunEnvelope.isRendered(text: event.detail) {
+            detached.insert(event.correlationID)
+          }
+        }
+      }
+      return ends
+    }
+
+    /// The id of the call of each run that went to the background and did not end, sorted.
+    var openCallIds: [String] {
+      detached.subtracting(ended).compactMap { calls[$0] }.sorted()
+    }
   }
 
   /// The joins of the runs that the `toolCallStarted` marker `event` records: the id of each

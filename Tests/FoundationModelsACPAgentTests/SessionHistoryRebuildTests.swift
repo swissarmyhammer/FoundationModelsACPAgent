@@ -525,14 +525,12 @@ import Testing
     #expect(Set(merged.entries.map(\.id)) == Set(file.entries.map(\.id)))
   }
 
-  /// A call whose output is the pending envelope of its run stays open in the rebuild, as it does
-  /// live: the `toolCallStarted` marker of the call joins the token of the run to the id of the
-  /// call. A shutdown during the run can record that output before the stop (Testudo ^e664zq),
-  /// and the replay of a resume must then still give the open call.
-  @Test func aCallWhoseOutputIsThePendingEnvelopeOfItsRunStaysOpen() async throws {
-    let mail = MailID()
-    let callId = "call-1"
-    let token = ULID.generate().description
+  /// The rendered pending envelope of a run, as the tool returns it.
+  ///
+  /// - Parameter token: The completion token of the run.
+  /// - Returns: The rendered envelope.
+  /// - Throws: The error of the encode.
+  private static func renderedEnvelope(token: String) throws -> String {
     let encoder = JSONEncoder()
     encoder.outputFormatting = .withoutEscapingSlashes
     let next = try #require(
@@ -542,10 +540,27 @@ import Testing
         encoding: .utf8))
     let envelope = #"{"pending":true,"completionToken":"\#(token)","next":\#(next)}"#
     #expect(PendingRunEnvelope.isRendered(text: envelope))
+    return envelope
+  }
+
+  /// The journal of a background call of the `agent` tool: the prompt, the marker of the start
+  /// of the call with the token of its run, the run event that holds the pending envelope, the
+  /// call, and the SDK output of the call.
+  ///
+  /// - Parameters:
+  ///   - callId: The id of the call.
+  ///   - token: The token of the run.
+  ///   - output: The text of the SDK output of the call.
+  ///   - end: The outcome of the end event of the run, or `nil` for a run with no end.
+  /// - Returns: The journal.
+  /// - Throws: The error of the arguments of the call.
+  private static func backgroundCallJournal(
+    callId: String, token: String, output: String, end: OperationOutcome?
+  ) throws -> JournalBuilder {
     var journal = JournalBuilder()
     journal.add(
       .prompt(Transcript.Prompt(segments: [.text(Transcript.TextSegment(content: "Run it."))])),
-      adding: [JournalBuilder.delivery(of: "Run it.", mail: mail)])
+      adding: [JournalBuilder.delivery(of: "Run it.", mail: MailID())])
     journal.add(
       kind: .toolCallStarted, text: nil,
       entry: TranscriptEntryPayload(
@@ -553,6 +568,10 @@ import Testing
         toolCalls: [
           ToolCallPayload(id: callId, toolName: "agent", argumentsJSON: "{}", correlationID: token)
         ]))
+    journal.addRunEvent(
+      OperationEvent(
+        tool: "agent", op: "run agent", correlationID: token, kind: .progress,
+        detail: try renderedEnvelope(token: token)))
     journal.add(
       .toolCalls(
         Transcript.ToolCalls([
@@ -561,14 +580,62 @@ import Testing
     journal.add(
       .toolOutput(
         Transcript.ToolOutput(
-          id: callId, toolName: "agent", segments: [.text(Transcript.TextSegment(content: envelope))])))
+          id: callId, toolName: "agent", segments: [.text(Transcript.TextSegment(content: output))])))
+    if let end {
+      journal.addRunEvent(
+        OperationEvent(
+          tool: "agent", op: "run agent", correlationID: token, kind: .completed, detail: "Done.",
+          outcome: end))
+    }
+    return journal
+  }
 
+  /// The status of the call `callId` in the rebuild of `journal`.
+  ///
+  /// - Parameters:
+  ///   - callId: The id of the call.
+  ///   - journal: The journal.
+  /// - Returns: The status of the one entry of the call, or `nil` when the history has no entry.
+  private static func rebuiltStatus(of callId: String, in journal: JournalBuilder) async
+    -> PatchField<FoundationModelsACP.ToolCallStatus>?
+  {
     let rebuilt = await RecordedHistoryRebuild.rebuilt(
       from: journal.events, sessionId: SessionId(rawValue: journal.sessionId.description))
+    return rebuilt.history.entries.compactMap { entry -> ToolCallUpdate? in
+      guard case .toolCall(let call) = entry.kind, call.toolCallId.rawValue == callId else {
+        return nil
+      }
+      return call
+    }.first?.status
+  }
 
-    let calls = Self.toolCallUpdates(of: callId, in: rebuilt.history.replayUpdates(from: .start))
-    #expect(calls.count == 1)
-    #expect(calls.first?.status == .value(.inProgress))
+  /// A background call whose run did not end in the journal stays open in the rebuild, as it
+  /// does live. The stop of the process can record an SDK output of the call before the stop:
+  /// the pending envelope, or the text of the cancel of the call by the shutdown. The replay of
+  /// a resume must then still give the open call (Testudo ^e664zq).
+  @Test(arguments: ["envelope", "Agent worker was cancelled."])
+  func aBackgroundCallWhoseRunDidNotEndStaysOpen(output: String) async throws {
+    let token = ULID.generate().description
+    let text = output == "envelope" ? try Self.renderedEnvelope(token: token) : output
+    let journal = try Self.backgroundCallJournal(
+      callId: "call-1", token: token, output: text, end: nil)
+
+    #expect(await Self.rebuiltStatus(of: "call-1", in: journal) == .value(.inProgress))
+  }
+
+  /// A background call whose run ended in the journal gets the status of the end of the run, as
+  /// it does live.
+  @Test func aBackgroundCallWhoseRunEndedGetsTheStatusOfTheEnd() async throws {
+    let token = ULID.generate().description
+    let succeeded = try Self.backgroundCallJournal(
+      callId: "call-1", token: token, output: try Self.renderedEnvelope(token: token),
+      end: .succeeded)
+    let failed = try Self.backgroundCallJournal(
+      callId: "call-1", token: token, output: try Self.renderedEnvelope(token: token),
+      end: .failed)
+
+    #expect(await Self.rebuiltStatus(of: "call-1", in: succeeded) == .value(.completed))
+    #expect(await Self.rebuiltStatus(of: "call-1", in: failed) == .value(.failed))
   }
 
   // MARK: - The rebuild of a journal
@@ -609,6 +676,16 @@ import Testing
           routerId: routerId, sessionId: sessionId, seq: events.count,
           ts: Date(timeIntervalSinceReferenceDate: Double(events.count)), kind: kind, text: text,
           entry: entry))
+    }
+
+    /// Adds the `.toolOutput` entry that records one event of a run, as Router writes it.
+    ///
+    /// - Parameter event: The event of the run.
+    mutating func addRunEvent(_ event: OperationEvent) {
+      let segment = OperationEventSegment(content: event).transcriptSegment
+      add(
+        .toolOutput(
+          Transcript.ToolOutput(id: ULID.generate().description, toolName: event.tool, segments: [segment])))
     }
 
     /// The mail record segment that delivers the user message `prompt` with the id `mail`.
