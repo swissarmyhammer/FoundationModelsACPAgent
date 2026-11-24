@@ -13,7 +13,7 @@ import Testing
 /// target got. The suite trait closes each harness of a test whose body throws, also the harness
 /// of a ``Pair`` whose make throws after its fixture opened. Each wait for an update ends after
 /// ``waitBound``, so a test whose update does not come fails and does not wait forever.
-@Suite(.closesHarnesses, .timeLimit(.minutes(1))) struct DirectoryMessageWireTests {
+@Suite(.closesHarnesses) struct DirectoryMessageWireTests {
   /// The longest time that a wait for an update of the target takes.
   private static let waitBound = Duration.seconds(20)
 

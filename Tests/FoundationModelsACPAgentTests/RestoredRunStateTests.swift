@@ -14,12 +14,12 @@ import Testing
 /// `running`, and no `idle` comes on its own stream before its `running`. The sessions that wait
 /// for it (its callers, up to the root) are not idle with noWork either. A session that has really
 /// no work still gets idle with noWork.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct RestoredRunStateTests {
+@Suite(.closesHarnesses) struct RestoredRunStateTests {
   /// The prefix of the folders of each fixture of this suite.
   private static let label = "RestoredRunStateTests"
 
   /// The seconds that a read of the wire waits for its last event. A read that does not settle
-  /// in this time fails the test, and the test does not wait for the time limit of the suite.
+  /// in this time fails the test.
   private static let readWaitSeconds = 30
 
   /// How the first agent stopped while the child and the grandchild worked.

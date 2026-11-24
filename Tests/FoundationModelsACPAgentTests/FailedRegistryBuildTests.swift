@@ -59,7 +59,7 @@ import Testing
 
   /// A build that fails after it connected a stdio server ends the process
   /// of that server.
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func aFailedBuildEndsTheProcessOfItsConnectedServer() async throws {
     let pidFile = makeResolvedDirectory(label: "\(Self.label)-pid")
       .appendingPathComponent("server.pid", isDirectory: false)

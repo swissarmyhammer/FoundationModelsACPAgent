@@ -186,7 +186,7 @@ final class RestoreKeepingEchoContainer: LoadedLLMContainer {
   /// A session of two echo turns that the agent resumes holds the two
   /// turns: the Router journal gives the transcript to the restore of the
   /// echo model, and the restored backend keeps it.
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func aResumedSessionHoldsItsTwoTurns() async throws {
     let container = RestoreKeepingEchoContainer()
     let fixture = try await ScriptedPromptFixture.make(

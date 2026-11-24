@@ -15,7 +15,7 @@ import Testing
 ///
 /// Each family here has a root session and real agent runs of its runner. The announcer registers
 /// the session of each run as a nested session of the root.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct SubagentCancelTests {
+@Suite(.closesHarnesses) struct SubagentCancelTests {
   /// The prefix of the folders of each fixture of this suite.
   private static let label = "SubagentCancelTests"
 

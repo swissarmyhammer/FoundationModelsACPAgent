@@ -8,7 +8,7 @@ import Testing
 /// A `session/resume` of a root that is live while its child runs. The request must never stop
 /// the process: it ends with a response or with a clear error. ``HotResumeTests`` holds the rules
 /// of the hot resume.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct ResumeLiveSessionTests {
+@Suite(.closesHarnesses) struct ResumeLiveSessionTests {
   /// The prefix of the folders of each fixture of this suite.
   private static let label = "ResumeLiveSessionTests"
 

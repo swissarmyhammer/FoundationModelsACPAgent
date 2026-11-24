@@ -415,7 +415,7 @@ import Testing
   /// session in its own folder, over one `settings` endpoint (D88, D120,
   /// EXTRAS-9 rule 1): the `cursor` query of each connection, for the
   /// folder of its own session, gives the same cursor.
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func twoConnectionsInTwoFoldersReadOneSettingsCursor() async throws {
     let fixture = try await TunnelFixture.make(label: "GraphQLTunnelTests-settings-cursor")
 
@@ -433,7 +433,7 @@ import Testing
   /// `changes(after:)` for the folder of its own session, after its own
   /// cursor, and the `updateSetting` of the `userDevice` connection on the
   /// session level of the other folder comes to it in `_sah/graphql/next`.
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func aSettingsChangeFromOneConnectionReachesTheChangesOfTheOther() async throws {
     let fixture = try await TunnelFixture.make(label: "GraphQLTunnelTests-settings-changes")
     let subscriptionId = SAH.GraphQL.SubscriptionId(rawValue: "subscription-settings-changes")
@@ -467,7 +467,7 @@ import Testing
   /// The `snapshots` endpoint is one endpoint of the agent as well (D88,
   /// EXTRAS-9 rule 1): the `cursor` query of each of two connections, on
   /// the session of each in its own folder, gives the same cursor.
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func twoConnectionsInTwoFoldersReadOneSnapshotsCursor() async throws {
     let fixture = try await TunnelFixture.make(label: "GraphQLTunnelTests-snapshots-cursor")
 

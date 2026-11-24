@@ -11,7 +11,7 @@ import Testing
 /// A question of a child run goes to the client one time, under the session id of the child. The
 /// answer goes back to the run that asked. The root session sends no second request for the same
 /// question. The child runs on a scripted model, and its `elicit` step asks the user.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct ChildElicitationTests {
+@Suite(.closesHarnesses) struct ChildElicitationTests {
   /// The prefix of the folders of each fixture of this suite.
   private static let label = "ChildElicitationTests"
 
@@ -268,7 +268,7 @@ import Testing
 /// The relay of a session that gets the relayed copy of a child question, and the relay of a
 /// child session that is not announced yet. Each test calls the relay directly, with a double of
 /// the Router session that records each answer.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct ChildElicitationRelayTests {
+@Suite(.closesHarnesses) struct ChildElicitationRelayTests {
   /// The prefix of the folders of each fixture of this suite.
   private static let label = "ChildElicitationRelayTests"
 

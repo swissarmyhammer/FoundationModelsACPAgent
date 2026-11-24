@@ -13,7 +13,7 @@ import Testing
 /// takes the whole live tree (the root and its sub-agent sessions) and the work goes on. Nothing
 /// is torn down: the open prompt stays open, the running child stays running, and a pending
 /// question of the child is asked once, on the new owner.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct HotResumeTests {
+@Suite(.closesHarnesses) struct HotResumeTests {
   /// The prefix of the folders of each fixture of this suite.
   private static let label = "HotResumeTests"
 

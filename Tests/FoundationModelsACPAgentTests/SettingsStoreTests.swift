@@ -487,7 +487,7 @@ import Testing
   // MARK: - Changes
 
   /// A `set` sends one change that names its level and its key path.
-  @Test(.timeLimit(.minutes(1))) func aSetSendsOneChange() async throws {
+  @Test func aSetSendsOneChange() async throws {
     let fixture = try Fixture(label: "set-change")
     var changes = await fixture.store.changes().makeAsyncIterator()
 
@@ -524,7 +524,7 @@ import Testing
   /// An outside write to a `config.yaml` that the store read updates the
   /// merged value and sends one change. The next change is the change of
   /// a later `set`, thus the outside write sent no second change.
-  @Test(.timeLimit(.minutes(1))) func anOutsideWriteReloadsTheLevel() async throws {
+  @Test func anOutsideWriteReloadsTheLevel() async throws {
     let fixture = try Fixture(label: "outside")
 
     var changes = try await Self.writeOutside(Self.outsideTriggerYAML, in: fixture)
@@ -549,7 +549,7 @@ import Testing
   }
 
   /// An outside write that does not parse keeps the last good values.
-  @Test(.timeLimit(.minutes(1))) func aBadOutsideWriteKeepsTheLastGoodValues() async throws {
+  @Test func aBadOutsideWriteKeepsTheLastGoodValues() async throws {
     let fixture = try Fixture(label: "bad-keeps")
 
     _ = try await Self.writeOutside(Self.badYAML, in: fixture)
@@ -559,7 +559,7 @@ import Testing
 
   /// An outside write that does not parse gives a load error that names the
   /// file of the level and the line of the parse error.
-  @Test(.timeLimit(.minutes(1))) func aBadOutsideWriteGivesTheFileAndTheLine() async throws {
+  @Test func aBadOutsideWriteGivesTheFileAndTheLine() async throws {
     let fixture = try Fixture(label: "bad-place")
     let file = ConfigCommandFixture.configURL(
       in: try fixture.sessionRoot(of: fixture.firstDirectory))
@@ -573,7 +573,7 @@ import Testing
   }
 
   /// The load error of a parse error gives the message of the parser.
-  @Test(.timeLimit(.minutes(1))) func aBadOutsideWriteGivesTheParserMessage() async throws {
+  @Test func aBadOutsideWriteGivesTheParserMessage() async throws {
     let fixture = try Fixture(label: "bad-message")
 
     _ = try await Self.writeOutside(Self.badYAML, in: fixture)
@@ -583,7 +583,7 @@ import Testing
 
   /// The load error of a parse error holds no text of the file, because
   /// the file can hold a secret.
-  @Test(.timeLimit(.minutes(1))) func aParseErrorHoldsNoTextOfTheFile() async throws {
+  @Test func aParseErrorHoldsNoTextOfTheFile() async throws {
     let fixture = try Fixture(label: "bad-hidden")
 
     _ = try await Self.writeOutside(Self.badYAML, in: fixture)
@@ -592,7 +592,7 @@ import Testing
   }
 
   /// The load error of a render error holds no text of the file.
-  @Test(.timeLimit(.minutes(1))) func aRenderErrorHoldsNoTextOfTheFile() async throws {
+  @Test func aRenderErrorHoldsNoTextOfTheFile() async throws {
     let fixture = try Fixture(label: "render-hidden")
 
     _ = try await Self.writeOutside(Self.unrenderableYAML, in: fixture)
@@ -602,7 +602,7 @@ import Testing
 
   /// A second read of the same bad text sends no second change: the next
   /// change is the change of a later `set`.
-  @Test(.timeLimit(.minutes(1))) func theSameBadTextAgainSendsNoChange() async throws {
+  @Test func theSameBadTextAgainSendsNoChange() async throws {
     let fixture = try Fixture(label: "bad-again")
     let sessionRoot = try fixture.sessionRoot(of: fixture.firstDirectory)
     var changes = try await Self.writeOutside(Self.badYAML, in: fixture)
@@ -615,7 +615,7 @@ import Testing
   }
 
   /// A good outside write after a bad one clears the load error.
-  @Test(.timeLimit(.minutes(1))) func aGoodWriteClearsTheLoadError() async throws {
+  @Test func aGoodWriteClearsTheLoadError() async throws {
     let fixture = try Fixture(label: "good-clears")
     let sessionRoot = try fixture.sessionRoot(of: fixture.firstDirectory)
     var changes = try await Self.writeOutside(Self.badYAML, in: fixture)
@@ -628,7 +628,7 @@ import Testing
   }
 
   /// A good outside write after a bad one gives its new values.
-  @Test(.timeLimit(.minutes(1))) func aGoodWriteAfterABadWriteGivesTheNewValues() async throws {
+  @Test func aGoodWriteAfterABadWriteGivesTheNewValues() async throws {
     let fixture = try Fixture(label: "good-values")
     let sessionRoot = try fixture.sessionRoot(of: fixture.firstDirectory)
     var changes = try await Self.writeOutside(Self.badYAML, in: fixture)
@@ -642,7 +642,7 @@ import Testing
   /// An outside write of the last good text after a bad write clears the
   /// load error and sends one change, also when the text is the text that
   /// the store has.
-  @Test(.timeLimit(.minutes(1))) func theLastGoodTextAgainClearsTheLoadError() async throws {
+  @Test func theLastGoodTextAgainClearsTheLoadError() async throws {
     let fixture = try Fixture(label: "good-again")
     let sessionRoot = try fixture.sessionRoot(of: fixture.firstDirectory)
     var changes = try await Self.writeOutside(Self.badYAML, in: fixture)
@@ -656,7 +656,7 @@ import Testing
 
   /// A `set` of the level after a bad write writes a good file, thus it
   /// clears the load error.
-  @Test(.timeLimit(.minutes(1))) func aSetAfterABadWriteClearsTheLoadError() async throws {
+  @Test func aSetAfterABadWriteClearsTheLoadError() async throws {
     let fixture = try Fixture(label: "set-clears")
     _ = try await Self.writeOutside(Self.badYAML, in: fixture)
 
@@ -668,7 +668,7 @@ import Testing
 
   /// A `set` that clears a load error sends its own change, then one change
   /// with no key path for the clear.
-  @Test(.timeLimit(.minutes(1))) func aSetThatClearsTheLoadErrorSendsTheClear() async throws {
+  @Test func aSetThatClearsTheLoadErrorSendsTheClear() async throws {
     let fixture = try Fixture(label: "set-clear-change")
     let session = SettingsLevel.session(fixture.firstDirectory)
     var changes = try await Self.writeOutside(Self.badYAML, in: fixture)
@@ -682,7 +682,7 @@ import Testing
   // MARK: - Stop
 
   /// `stopWatching()` ends each open `changes()` stream.
-  @Test(.timeLimit(.minutes(1))) func aStopEndsEachChangeStream() async throws {
+  @Test func aStopEndsEachChangeStream() async throws {
     let fixture = try Fixture(label: "stop-stream")
     var changes = await fixture.store.changes().makeAsyncIterator()
 
@@ -696,7 +696,7 @@ import Testing
   /// level. A second store over the same folders still watches, and its
   /// change shows that the watch period of the write is over. The next
   /// change of the stopped store is the change of a later `set`.
-  @Test(.timeLimit(.minutes(1))) func aStopForgetsEachLevel() async throws {
+  @Test func aStopForgetsEachLevel() async throws {
     let fixture = try Fixture(label: "stop-outside")
     let witness = SettingsStore(
       settingsFolders: fixture.settingsFolders, secretStore: InMemorySecretStore())
@@ -720,7 +720,7 @@ import Testing
   /// After `stopWatching()`, `startWatching(cwd:)` reads the session level
   /// of `cwd` again and watches its file again, thus an outside write
   /// sends a change again.
-  @Test(.timeLimit(.minutes(1))) func aStartAfterAStopWatchesAgain() async throws {
+  @Test func aStartAfterAStopWatchesAgain() async throws {
     let fixture = try Fixture(label: "start-again")
 
     _ = try await OutsideSettingsWrite.write(

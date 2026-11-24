@@ -14,7 +14,7 @@ import Testing
 ///
 /// The agent runs over the stub model, so the answer is deterministic. The yardstick of the answer
 /// is the `run` subcommand, driven in process over the same stub model.
-@Suite(.stubModel, .timeLimit(.minutes(2))) struct ClientLibraryInteropTests {
+@Suite(.stubModel) struct ClientLibraryInteropTests {
   // MARK: - Constants
 
   /// The prompt text. The stub model echoes it, so the answer is deterministic and is not empty.

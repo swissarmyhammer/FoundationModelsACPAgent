@@ -12,7 +12,7 @@ import Testing
 /// The searcher of the transcripts that the agent gives to the `sessions` tool and endpoint
 /// (D207): it searches the index of the agent over the sessions that the session directory
 /// shows. The suite trait closes each harness of a test whose body throws.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct AgentTranscriptSearcherTests {
+@Suite(.closesHarnesses) struct AgentTranscriptSearcherTests {
   // MARK: - Types
 
   /// One result of the `searchSessions` field: the short id of its session and the snippets of

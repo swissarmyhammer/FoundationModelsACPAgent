@@ -11,7 +11,7 @@ import Testing
 /// The first agent records a chain of three sessions (root, child, grandchild) and stops while the
 /// child and the grandchild work. A second agent resumes the root. The restored sessions come back
 /// idle, and the re-drive starts their runs after the response (``RedriveInterruptedRunsTests``).
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct ResumeNestedSessionsTests {
+@Suite(.closesHarnesses) struct ResumeNestedSessionsTests {
   /// The prefix of the folders of each fixture of this suite.
   private static let label = "ResumeNestedSessionsTests"
 

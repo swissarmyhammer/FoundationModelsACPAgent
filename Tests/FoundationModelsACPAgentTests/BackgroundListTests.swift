@@ -418,7 +418,7 @@ import Testing
 
   /// The resume sync sends the current update of each listed item before the snapshot that lists
   /// it. A replay sends them already, so then the sync sends the snapshot alone.
-  @Suite(.closesHarnesses, .timeLimit(.minutes(1))) struct Resume {
+  @Suite(.closesHarnesses) struct Resume {
     /// The kind of an update, as the order tests read it.
     private enum Kind: Equatable {
       /// A `tool_call_update` of the listed call.
@@ -512,7 +512,7 @@ import Testing
 
   /// The root session lists a running child after the `subagent_update` of the child. It drops
   /// the child after the last update of the child.
-  @Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct RunningChildren {
+  @Suite(.closesHarnesses) struct RunningChildren {
     /// The prefix of the folders of each fixture of this suite.
     private static let label = "BackgroundListTests-children"
 

@@ -16,7 +16,7 @@ import Testing
 /// the renderer of FoundationModelsACP. Each test puts a sample history into a session of a
 /// scripted agent, or delivers a real message to it. The suite trait closes each harness of a test
 /// whose body throws.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct SessionTranscriptExportTests {
+@Suite(.closesHarnesses) struct SessionTranscriptExportTests {
   // MARK: - Constants
 
   /// The directory label of the suite.

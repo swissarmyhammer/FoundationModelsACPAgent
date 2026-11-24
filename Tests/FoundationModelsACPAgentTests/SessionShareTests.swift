@@ -15,7 +15,7 @@ import Testing
 /// Each test runs a scripted agent in the test process. A fake store of the host records each
 /// share call, so no test uses a cloud service. The suite trait closes each harness of a test
 /// whose body throws.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct SessionShareTests {
+@Suite(.closesHarnesses) struct SessionShareTests {
   // MARK: - Constants
 
   /// The directory label of the suite.

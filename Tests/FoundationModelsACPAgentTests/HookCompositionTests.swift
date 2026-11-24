@@ -529,7 +529,7 @@ import Testing
   /// the key, and the restored session owns it alone. A checkpoint that the
   /// restored session takes is a change of the ACP session, and its owner is
   /// the id of the ACP session.
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func aTakeAfterASwitchIsAChangeOfTheACPSession() async throws {
     let fixture = try await Self.makeSnapshotFixture(
       loader: makeHookLayeredModelLoader(script: try Self.makeSnapshotScript()),

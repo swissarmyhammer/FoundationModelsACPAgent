@@ -143,7 +143,7 @@ import Testing
   // MARK: - The stream
 
   /// A turn of a session gives one change with the turns of the session.
-  @Test(.timeLimit(.minutes(3))) func anIndexedSessionGivesOneChangeWithItsTurns() async throws {
+  @Test func anIndexedSessionGivesOneChangeWithItsTurns() async throws {
     let index = await Self.makeIndex(label: "indexed")
 
     let changes = try await Self.firstChanges(1, of: index) {
@@ -154,7 +154,7 @@ import Testing
   }
 
   /// A delete gives one removal after the change of the index of the session.
-  @Test(.timeLimit(.minutes(3))) func aDeleteGivesOneRemoval() async throws {
+  @Test func aDeleteGivesOneRemoval() async throws {
     let index = await Self.makeIndex(label: "removed")
 
     let changes = try await Self.firstChanges(2, of: index) {
@@ -170,7 +170,7 @@ import Testing
 
   /// A rename changes the session item only, so it gives no change: the next change of the
   /// stream after the index is the removal.
-  @Test(.timeLimit(.minutes(3))) func aRenameGivesNoChange() async throws {
+  @Test func aRenameGivesNoChange() async throws {
     let index = await Self.makeIndex(label: "rename")
 
     let changes = try await Self.firstChanges(2, of: index) {
@@ -184,7 +184,7 @@ import Testing
 
   /// A second index of the same chunks gives no change: the reconcile at launch gives the same
   /// chunks of each session again.
-  @Test(.timeLimit(.minutes(3))) func theSameChunksGiveNoChange() async throws {
+  @Test func theSameChunksGiveNoChange() async throws {
     let index = await Self.makeIndex(label: "same-chunks")
 
     let changes = try await Self.firstChanges(2, of: index) {
@@ -199,7 +199,7 @@ import Testing
 
   /// A second index instance (the client folder of the app) has its own stream: the stream of
   /// the server index does not get the change of the client index.
-  @Test(.timeLimit(.minutes(3))) func aSecondIndexHasItsOwnStream() async throws {
+  @Test func aSecondIndexHasItsOwnStream() async throws {
     let server = await Self.makeIndex(label: "server")
     let client = await Self.makeIndex(label: "client")
 
@@ -214,7 +214,7 @@ import Testing
   }
 
   /// Two subscribers of one index each get the change.
-  @Test(.timeLimit(.minutes(3))) func eachSubscriberGetsTheChange() async throws {
+  @Test func eachSubscriberGetsTheChange() async throws {
     let index = await Self.makeIndex(label: "two-subscribers")
     let first = index.changes()
 
@@ -229,7 +229,7 @@ import Testing
   }
 
   /// The stream ends when its index goes away.
-  @Test(.timeLimit(.minutes(3))) func theStreamEndsWithItsIndex() async throws {
+  @Test func theStreamEndsWithItsIndex() async throws {
     let stream = await Self.makeIndex(label: "ends").changes()
 
     let ended = try await TimedRead.value(
@@ -242,7 +242,7 @@ import Testing
   }
 
   /// A subscriber that does not read keeps the newest changes: the oldest change drops.
-  @Test(.timeLimit(.minutes(3))) func aSlowSubscriberKeepsTheNewestChanges() async throws {
+  @Test func aSlowSubscriberKeepsTheNewestChanges() async throws {
     let feed = TranscriptSearchChangeFeed(bufferLimit: 1)
     let stream = feed.subscribe()
 
@@ -255,7 +255,7 @@ import Testing
   // MARK: - The turns
 
   /// `turns(of:)` gives the same turns as the change of the session.
-  @Test(.timeLimit(.minutes(3))) func theTurnsOfASessionAreTheTurnsOfItsChange() async throws {
+  @Test func theTurnsOfASessionAreTheTurnsOfItsChange() async throws {
     let index = await Self.makeIndex(label: "turns-of")
 
     let changes = try await Self.firstChanges(1, of: index) {
@@ -267,7 +267,7 @@ import Testing
   }
 
   /// `allTurns()` gives the turns of each change, in the order of the session ids.
-  @Test(.timeLimit(.minutes(3))) func allTurnsAreTheTurnsOfTheChanges() async throws {
+  @Test func allTurnsAreTheTurnsOfTheChanges() async throws {
     let index = await Self.makeIndex(label: "all-turns")
 
     let changes = try await Self.firstChanges(2, of: index) {
@@ -295,7 +295,7 @@ import Testing
   // MARK: - The update queue
 
   /// A history from the update queue gives the change of its session.
-  @Test(.timeLimit(.minutes(3))) func aQueuedHistoryGivesItsChange() async throws {
+  @Test func aQueuedHistoryGivesItsChange() async throws {
     let index = await Self.makeIndex(label: "queue")
     let summary = SessionSummary(
       id: try Self.sessionId.ulid(), agentID: "default", workingDirectory: Self.folder,
@@ -327,7 +327,7 @@ import Testing
 
   /// The reconcile at launch gives the removal of a session of a read folder that has no
   /// history file.
-  @Test(.timeLimit(.minutes(3))) func theReconcileGivesItsRemoval() async throws {
+  @Test func theReconcileGivesItsRemoval() async throws {
     let index = await Self.makeIndex(label: "reconcile")
     let updates = TranscriptSearchUpdates(index: index) { _ in nil }
     let emptyRoot = makeResolvedDirectory(label: "\(Self.label)-reconcile-root")

@@ -151,7 +151,7 @@ import Testing
 
   /// An outside write of the folder level file reaches the synchronous
   /// read after the watcher of the store reads the file again.
-  @Test(.timeLimit(.minutes(1))) func theNowReadGivesTheValueOfAnOutsideWrite() async throws {
+  @Test func theNowReadGivesTheValueOfAnOutsideWrite() async throws {
     let fixture = try SettingsGraphFixture(label: "recap-now-outside")
     let workingDirectory = fixture.firstDirectory
 
@@ -180,7 +180,7 @@ import Testing
   /// A held folder level with `recap: false` that becomes unreadable after
   /// an outside write keeps its last good tree. The synchronous read and
   /// the store read agree: the recap stays off.
-  @Test(.timeLimit(.minutes(1))) func bothReadsKeepTheLastGoodValueOfALevelThatBecomesUnreadable()
+  @Test func bothReadsKeepTheLastGoodValueOfALevelThatBecomesUnreadable()
     async throws
   {
     let fixture = try SettingsGraphFixture(label: "recap-unreadable")

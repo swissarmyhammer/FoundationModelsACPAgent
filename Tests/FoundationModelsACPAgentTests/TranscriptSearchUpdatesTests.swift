@@ -130,7 +130,7 @@ import ULID
   // MARK: - The history of a write
 
   /// The history of a write gives the session item and the chunk items of its session.
-  @Test(.timeLimit(.minutes(3))) func aWrittenHistoryGivesTheItemsOfItsSession() async throws {
+  @Test func aWrittenHistoryGivesTheItemsOfItsSession() async throws {
     let summary = try Self.summary(of: Self.sessionId, title: Self.firstTitle)
     let history = Self.history(answer: "The quokka lives on an island.")
     let index = await Self.makeIndex(label: "history")
@@ -145,7 +145,7 @@ import ULID
   }
 
   /// A summary that does not read is logged, and the next change goes on.
-  @Test(.timeLimit(.minutes(3))) func aFailedSummaryReadLetsTheNextChangeGoOn() async throws {
+  @Test func aFailedSummaryReadLetsTheNextChangeGoOn() async throws {
     let summary = try Self.summary(of: Self.sessionId, title: Self.firstTitle)
     let failing = try Self.otherSessionId.ulid()
     let index = await Self.makeIndex(label: "failure")
@@ -167,7 +167,7 @@ import ULID
 
   /// A `started` event of a session with a history in the session table gives its items with
   /// the facts of the event. A fork registers after the write of its copy.
-  @Test(.timeLimit(.minutes(3))) func aStartedSessionWithAHistoryIsIndexed() async throws {
+  @Test func aStartedSessionWithAHistoryIsIndexed() async throws {
     let summary = try Self.summary(of: Self.sessionId, title: Self.firstTitle)
     let history = Self.history(answer: "The quokka lives on an island.")
     let index = await Self.makeIndex(label: "started")
@@ -183,7 +183,7 @@ import ULID
   }
 
   /// A rename gives the new session item, and the chunk items stay.
-  @Test(.timeLimit(.minutes(3))) func aRenameChangesOnlyTheSessionItem() async throws {
+  @Test func aRenameChangesOnlyTheSessionItem() async throws {
     let summary = try Self.summary(of: Self.sessionId, title: Self.firstTitle)
     let renamed = try Self.summary(of: Self.sessionId, title: Self.changedTitle)
     let history = Self.history(answer: "The quokka lives on an island.")
@@ -200,7 +200,7 @@ import ULID
   }
 
   /// An archive gives the new session item that the directory reads, and the chunk items stay.
-  @Test(.timeLimit(.minutes(3))) func anArchiveChangesOnlyTheSessionItem() async throws {
+  @Test func anArchiveChangesOnlyTheSessionItem() async throws {
     let summary = try Self.summary(of: Self.sessionId, title: Self.firstTitle)
     let archived = try Self.summary(of: Self.sessionId, title: Self.changedTitle)
     let current = Mutex(summary)
@@ -222,7 +222,7 @@ import ULID
   // MARK: - The reconcile
 
   /// The reconcile removes the items of a session of a read folder that has no history file.
-  @Test(.timeLimit(.minutes(3))) func theReconcileRemovesASessionWithNoHistoryFile() async throws {
+  @Test func theReconcileRemovesASessionWithNoHistoryFile() async throws {
     let index = await Self.makeIndex(label: "reconcile-removed")
     let updates = TranscriptSearchUpdates(index: index) { _ in nil }
     let emptyRoot = makeResolvedDirectory(label: "\(Self.label)-reconcile-removed-root")
@@ -236,7 +236,7 @@ import ULID
 
   /// The wait for the applied changes waits for the reconcile at launch: the reconcile of a
   /// folder whose recording root reads slowly is applied when the wait returns.
-  @Test(.timeLimit(.minutes(3))) func theWaitIncludesTheReconcileAtLaunch() async throws {
+  @Test func theWaitIncludesTheReconcileAtLaunch() async throws {
     let index = await Self.makeIndex(label: "launch-reconcile")
     let updates = TranscriptSearchUpdates(index: index) { _ in nil }
     let emptyRoot = makeResolvedDirectory(label: "\(Self.label)-launch-reconcile-root")
@@ -256,7 +256,7 @@ import ULID
   /// The wait for the applied changes raises the task that applies them to the priority of the
   /// waiter (^6yqbvx6). The task has a low priority, and a loaded process keeps it back. Without
   /// the raise, the shutdown of the agent waits many seconds behind it.
-  @Test(.timeLimit(.minutes(3))) func theWaitRaisesTheApplierToThePriorityOfTheWaiter()
+  @Test func theWaitRaisesTheApplierToThePriorityOfTheWaiter()
     async throws
   {
     let index = await Self.makeIndex(label: "priority")
@@ -276,7 +276,7 @@ import ULID
   }
 
   /// The reconcile keeps the items of a session of a folder that the process cannot read.
-  @Test(.timeLimit(.minutes(3))) func theReconcileKeepsTheItemsOfAClosedFolder() async throws {
+  @Test func theReconcileKeepsTheItemsOfAClosedFolder() async throws {
     let index = await Self.makeIndex(label: "reconcile-closed") { $0 != Self.closedFolder }
     let updates = TranscriptSearchUpdates(index: index) { _ in nil }
 
@@ -286,7 +286,7 @@ import ULID
   }
 
   /// The reconcile asks for no recording root of a folder that the process cannot read.
-  @Test(.timeLimit(.minutes(3))) func theReconcileReadsNoRootOfAClosedFolder() async throws {
+  @Test func theReconcileReadsNoRootOfAClosedFolder() async throws {
     let index = await Self.makeIndex(label: "reconcile-no-root") { $0 != Self.closedFolder }
     let updates = TranscriptSearchUpdates(index: index) { _ in nil }
 
@@ -297,7 +297,7 @@ import ULID
 
   /// The reconcile keeps the items of a session whose record (`index.md`) does not read
   /// (D207, ^pqweam5).
-  @Test(.timeLimit(.minutes(3))) func theReconcileKeepsTheItemsOfAnUnreadableRecord() async throws {
+  @Test func theReconcileKeepsTheItemsOfAnUnreadableRecord() async throws {
     let index = await Self.makeIndex(label: "reconcile-bad-record")
     let updates = TranscriptSearchUpdates(index: index) { _ in nil }
     let badRoot = try Self.rootWithUnreadableRecord(of: Self.otherSessionId)

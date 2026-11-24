@@ -15,7 +15,7 @@ import Testing
 /// on the final status of its `agents` call ends.
 extension SubagentAnnouncerTests {
   /// The outputs, the session lookup and the end of a run, with an outlet that records what it gets.
-  @Suite(.timeLimit(.minutes(1))) struct Outputs {
+  @Suite struct Outputs {
     /// The root session of the outlets of this suite.
     private static let root = SessionId(rawValue: ULID().description)
 

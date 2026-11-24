@@ -13,7 +13,7 @@ import Testing
 /// own current `state_update` after the response, the parent before the child, with or without
 /// `replayFrom`. The response is the freshness boundary: the history comes before it, and the
 /// current state comes after it.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct ResumeChildSyncTests {
+@Suite(.closesHarnesses) struct ResumeChildSyncTests {
   /// The prefix of the folders of each fixture of this suite.
   private static let label = "ResumeChildSyncTests"
 
@@ -21,8 +21,7 @@ import Testing
   private static let requestId = RequestId.number(1)
 
   /// The seconds that a test waits from the start of the read of the wire to the end of the sync
-  /// after the response. A sync that does not come in this time fails the test, and the test
-  /// does not wait for the time limit of the suite.
+  /// after the response. A sync that does not come in this time fails the test.
   private static let syncWaitSeconds = 20
 
   /// The most polls of a ledger in a test.

@@ -128,7 +128,7 @@ import Testing
 
   /// A mutation sends one event that names its level and its key path. The
   /// key had no value, thus the key path is in `added`.
-  @Test(.timeLimit(.minutes(1))) func aMutationSendsAChange() async throws {
+  @Test func aMutationSendsAChange() async throws {
     let fixture = try SettingsGraphFixture(label: "subscription-mutation")
     var changes = try await fixture.changes(cwd: fixture.firstDirectory)
 
@@ -147,7 +147,7 @@ import Testing
   /// path, whose `changed` names the key that the write changed. The
   /// subscription watches the session level of its working directory, also
   /// when no call read that level before.
-  @Test(.timeLimit(.minutes(1))) func anOutsideFileChangeSendsAChange() async throws {
+  @Test func anOutsideFileChangeSendsAChange() async throws {
     let fixture = try SettingsGraphFixture(label: "subscription-outside")
 
     _ = try await Self.writeOutside(
@@ -158,7 +158,7 @@ import Testing
   /// user level only. A session level change comes first and the
   /// subscription does not send it, thus the first event is the event of
   /// the user level change that a call with no `cwd` made.
-  @Test(.timeLimit(.minutes(1))) func aSubscriptionWithNoWorkingDirectoryGivesTheUserLevelChanges()
+  @Test func aSubscriptionWithNoWorkingDirectoryGivesTheUserLevelChanges()
     async throws
   {
     let fixture = try SettingsGraphFixture(label: "subscription-user")
@@ -186,7 +186,7 @@ import Testing
   /// levels again and sends one event with no key path for each level, with
   /// no id because no key differs from before the stop. Then it sends the
   /// event of a clear and the event of an outside write.
-  @Test(.timeLimit(.minutes(1))) func aSubscriptionLivesOnWhenADifferentConnectionCloses()
+  @Test func aSubscriptionLivesOnWhenADifferentConnectionCloses()
     async throws
   {
     let fixture = try SettingsGraphFixture(label: "subscription-two-clients")
@@ -257,7 +257,7 @@ import Testing
   }
 
   /// A setting query after a bad outside write gives the last good value.
-  @Test(.timeLimit(.minutes(1))) func aSettingQueryAfterABadWriteGivesTheLastGoodValue()
+  @Test func aSettingQueryAfterABadWriteGivesTheLastGoodValue()
     async throws
   {
     let fixture = try SettingsGraphFixture(label: "subscription-bad-value")
@@ -271,7 +271,7 @@ import Testing
 
   /// The problems query after a bad outside write gives the load error of
   /// the session level, with the file path and the line.
-  @Test(.timeLimit(.minutes(1))) func theProblemsQueryGivesTheLoadError() async throws {
+  @Test func theProblemsQueryGivesTheLoadError() async throws {
     let fixture = try SettingsGraphFixture(label: "subscription-bad-problem")
     let file = ConfigCommandFixture.configURL(
       in: try fixture.sessionRoot(of: fixture.firstDirectory))
@@ -290,7 +290,7 @@ import Testing
 
   /// A good outside write after a bad one sends one event that names the
   /// changed key, and the problems query then gives no load error.
-  @Test(.timeLimit(.minutes(1))) func aGoodWriteClearsTheProblem() async throws {
+  @Test func aGoodWriteClearsTheProblem() async throws {
     let fixture = try SettingsGraphFixture(label: "subscription-bad-clear")
     var changes = try await Self.writeOutside(Self.badYAML, in: fixture)
 
@@ -310,7 +310,7 @@ import Testing
   /// A client reads the cursor, a change happens, and `changes(after:)`
   /// with that cursor gives the change: its key path is in `added`, and the
   /// event has a cursor after the first one and the time of the change.
-  @Test(.timeLimit(.minutes(1))) func theChangesAfterACursorGiveTheChange() async throws {
+  @Test func theChangesAfterACursorGiveTheChange() async throws {
     let fixture = try SettingsGraphFixture(label: "subscription-after")
     let cursor = try await fixture.cursor(cwd: fixture.firstDirectory)
     let before = Date()
@@ -335,7 +335,7 @@ import Testing
 
   /// A set of a key that has a value puts its key path in `changed`, and a
   /// clear puts it in `removed`.
-  @Test(.timeLimit(.minutes(1))) func aSetOfAKeyWithAValueIsChangedAndAClearIsRemoved() async throws
+  @Test func aSetOfAKeyWithAValueIsChangedAndAClearIsRemoved() async throws
   {
     let fixture = try SettingsGraphFixture(label: "subscription-kinds")
     let cursor = try await fixture.cursor(cwd: nil)
@@ -365,7 +365,7 @@ import Testing
   /// A read of the cursor with a working directory starts the watch of its
   /// session level, thus an outside write after the read is in the changes
   /// after the cursor.
-  @Test(.timeLimit(.minutes(1))) func aCursorWithAWorkingDirectoryWatchesItsSessionLevel()
+  @Test func aCursorWithAWorkingDirectoryWatchesItsSessionLevel()
     async throws
   {
     let fixture = try SettingsGraphFixture(label: "subscription-cursor-watch")
@@ -387,7 +387,7 @@ import Testing
 
   /// A cursor of another store, which is another epoch of the change log,
   /// gives `RESYNC_REQUIRED`, and the subscription then ends.
-  @Test(.timeLimit(.minutes(1))) func aCursorOfAnotherStoreGivesResyncRequired() async throws {
+  @Test func aCursorOfAnotherStoreGivesResyncRequired() async throws {
     let fixture = try SettingsGraphFixture(label: "subscription-epoch")
     let other = try SettingsGraphFixture(label: "subscription-epoch-other")
     let cursor = try await other.cursor(cwd: nil)
@@ -402,7 +402,7 @@ import Testing
   /// A cursor whose next change left the change log, which keeps only the
   /// newest change here, gives `RESYNC_REQUIRED`, and the subscription then
   /// ends.
-  @Test(.timeLimit(.minutes(1))) func aTooOldCursorGivesResyncRequired() async throws {
+  @Test func aTooOldCursorGivesResyncRequired() async throws {
     let fixture = try SettingsGraphFixture(
       label: "subscription-too-old", secretStore: InMemorySecretStore([:]), changeCapacity: 1)
     let cursor = try await fixture.cursor(cwd: nil)

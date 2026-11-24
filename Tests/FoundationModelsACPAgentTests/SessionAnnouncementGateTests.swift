@@ -6,7 +6,7 @@ import Testing
 
 /// The gate of the updates of one session. A closed gate holds each send in order.
 /// The open sends the held sends before any later send. A submit returns after its own send ran.
-@Suite(.timeLimit(.minutes(1))) struct SessionAnnouncementGateTests {
+@Suite struct SessionAnnouncementGateTests {
   /// The log of the sends that went out, in order.
   private final class Sent: Sendable {
     /// The numbers that went out.

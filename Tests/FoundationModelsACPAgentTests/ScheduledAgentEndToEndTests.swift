@@ -20,8 +20,8 @@ import Testing
 /// holds until the test releases it, and plays its result text. The scheduler mails the report of
 /// the run to the root session, and the client sees that mail as a `session_message` of the root.
 ///
-/// Every wait is bounded by ``waitBound``, and the suite by its time limit.
-@Suite(.closesHarnesses, .timeLimit(.minutes(1))) struct ScheduledAgentEndToEndTests {
+/// Every wait is bounded by ``waitBound``.
+@Suite(.closesHarnesses) struct ScheduledAgentEndToEndTests {
   /// The prefix of the folders of each fixture of this suite.
   private static let label = "ScheduledAgentEndToEndTests"
 

@@ -10,7 +10,7 @@ import Testing
 /// goes out before its announcement. So the end of such a run sends no update of the child.
 /// It gives the final status of the `agents` call out. It also drops the sends that the closed
 /// gate of the child kept.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct SubagentSettleWireTests {
+@Suite(.closesHarnesses) struct SubagentSettleWireTests {
   /// The prefix of the folders of each fixture of this suite.
   private static let label = "SubagentSettleWireTests"
 

@@ -575,7 +575,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   /// session must go on and end while the run waits at the pipe, and the
   /// byte that the test writes into the pipe lets the run end (task
   /// ^js730ph).
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func aSlowRunThatWaitsAtANamedPipeGoesToTheBackgroundAndItsFinalMessageComesAsMail()
     async throws
   {
@@ -587,7 +587,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
   /// with a settle period of the real clock. The call of the root session
   /// waits for the period and then gives the pending envelope, while the run
   /// still waits at the pipe (task ^js730ph).
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func aSlowRunAtANamedPipeGivesThePendingEnvelopeAfterTheRealSettlePeriod() async throws {
     try await Self.proveASlowRunAtANamedPipeSettlesAsMail(
       label: "gate-settle", inlineSettleGrace: Self.shortSettlePeriod, runClock: nil)

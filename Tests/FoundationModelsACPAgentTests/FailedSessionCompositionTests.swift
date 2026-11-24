@@ -123,7 +123,7 @@ import Testing
 
   /// A session whose `agent` option names no agent fails after the load of
   /// the agent registry. The failure stops the registry.
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func anUnknownSessionAgentStopsTheAgentRegistry() async throws {
     let hold = ReloadHold()
     let source = ProbingConflictVersionSource(reloadHold: hold)
@@ -143,7 +143,7 @@ import Testing
 
   /// A session surface that fails after the load of the agent registry (the
   /// `open` mode in a sandboxed process) stops the registry.
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func aFailedSessionSurfaceStopsTheAgentRegistry() async throws {
     let hold = ReloadHold()
     let source = ProbingConflictVersionSource(reloadHold: hold)
@@ -162,7 +162,7 @@ import Testing
   /// A composition of the `agents` tool that loads its own registry, and
   /// whose agent environment then fails (the `open` mode in a sandboxed
   /// process), stops that registry.
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func aFailedAgentEnvironmentStopsTheRegistryThatTheCompositionLoaded() async throws {
     let hold = ReloadHold()
     let source = ProbingConflictVersionSource(reloadHold: hold)

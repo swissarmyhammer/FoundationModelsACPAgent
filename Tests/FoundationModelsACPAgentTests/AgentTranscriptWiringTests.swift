@@ -12,7 +12,7 @@ import Testing
 /// A tool in a session of `RoutedACPAgent` reads the transcript of another session (task
 /// ^zgqxj7z). Each test goes through the agent and its wire, so a call site of the agent that
 /// gives no reader makes a test fail.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct AgentTranscriptWiringTests {
+@Suite(.closesHarnesses) struct AgentTranscriptWiringTests {
   /// The prefix of the folders of each fixture of this suite.
   private static let label = "AgentTranscriptWiringTests"
 

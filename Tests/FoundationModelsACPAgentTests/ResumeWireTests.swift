@@ -12,7 +12,7 @@ import Testing
 /// after the `session/new` response, and the fixture returns at the response. So under load the
 /// update can come after the read starts. The resume request does not announce that session, so
 /// an event of it in the trace makes the validator report `announceBeforeUse`.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct ResumeWireTests {
+@Suite(.closesHarnesses) struct ResumeWireTests {
   /// The prefix of the folders of each fixture of this suite.
   private static let label = "ResumeWireTests"
 

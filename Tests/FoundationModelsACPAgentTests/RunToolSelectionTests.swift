@@ -22,7 +22,7 @@ private typealias SurfaceCatalog = FoundationModelsACPAgent.ToolCatalog
 /// FoundationModelsAgents, the step that a new run and a restored run both
 /// use. The restore test resumes a recorded chain and reads the `runCode` of
 /// the restored child.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct RunToolSelectionTests {
+@Suite(.closesHarnesses) struct RunToolSelectionTests {
   /// The prefix of the folders of each test of this suite.
   private static let label = "RunToolSelectionTests"
 

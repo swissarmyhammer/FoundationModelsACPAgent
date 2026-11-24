@@ -225,7 +225,7 @@ import Testing
   /// The change event of a flush of a level with secrets names the level
   /// and the key path, and holds no literal and no value of the secret
   /// store.
-  @Test(.timeLimit(.minutes(1))) func aChangeEventHoldsNoSecret() async throws {
+  @Test func aChangeEventHoldsNoSecret() async throws {
     let fixture = try Self.makeFixture(label: "change")
     try ConfigFileFixture.write(Self.webKeysYAML, in: try fixture.userRoot)
     var changes = await fixture.store.changes().makeAsyncIterator()

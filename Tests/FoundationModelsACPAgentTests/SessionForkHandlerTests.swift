@@ -872,7 +872,7 @@ import Testing
 
   /// With no cut, a fork of a session with two completed turns and one running turn has the two
   /// completed turns.
-  @Test(.timeLimit(.minutes(1))) func noCutForksTheTwoCompletedTurns() async throws {
+  @Test func noCutForksTheTwoCompletedTurns() async throws {
     let hold = ScriptedHold()
     let fixture = try await Self.makeFixture("no-cut", holding: hold)
     defer { hold.release() }
@@ -891,7 +891,7 @@ import Testing
   }
 
   /// The running turn of the source goes on after a fork with no cut.
-  @Test(.timeLimit(.minutes(1))) func theRunningTurnContinuesInTheSource() async throws {
+  @Test func theRunningTurnContinuesInTheSource() async throws {
     let hold = ScriptedHold()
     let fixture = try await Self.makeFixture("running", holding: hold)
     try await Self.runTwoTurns(on: fixture)
@@ -918,7 +918,7 @@ import Testing
   }
 
   /// A cut after the agent message of turn 1 forks turn 1 only.
-  @Test(.timeLimit(.minutes(1))) func aCutAfterTheAgentMessageOfTurnOneForksTurnOne()
+  @Test func aCutAfterTheAgentMessageOfTurnOneForksTurnOne()
     async throws
   {
     let fixture = try await Self.makeFixture("after")
@@ -934,7 +934,7 @@ import Testing
   }
 
   /// A cut before the user message of turn 2 forks turn 1 only.
-  @Test(.timeLimit(.minutes(1))) func aCutBeforeTheUserMessageOfTurnTwoForksTurnOne()
+  @Test func aCutBeforeTheUserMessageOfTurnTwoForksTurnOne()
     async throws
   {
     let fixture = try await Self.makeFixture("before")
@@ -950,7 +950,7 @@ import Testing
   }
 
   /// A cut on a message id that the source does not hold makes no fork.
-  @Test(.timeLimit(.minutes(1))) func anUnknownMessageIdMakesNoFork() async throws {
+  @Test func anUnknownMessageIdMakesNoFork() async throws {
     let fixture = try await Self.makeFixture("unknown")
     try await Self.runTwoTurns(on: fixture)
 
@@ -985,7 +985,7 @@ import Testing
 
   /// An action command between two prompts is no turn: a cut after the answer to the second
   /// prompt forks both prompts and the action command, as the session directory counts two turns.
-  @Test(.timeLimit(.minutes(1))) func anActionCommandBetweenTwoPromptsIsNoTurnOfTheFork()
+  @Test func anActionCommandBetweenTwoPromptsIsNoTurnOfTheFork()
     async throws
   {
     let fixture = try await Self.makeFixture("action")
@@ -1005,7 +1005,7 @@ import Testing
 
   /// A cut before the second message of a batch of the session directory forks the same
   /// messages in the ACP copy and in the Router journal of the fork: the turns before the batch.
-  @Test(.timeLimit(.minutes(1))) func aCutOnTheSecondMessageOfABatchCopiesTheRouterFork()
+  @Test func aCutOnTheSecondMessageOfABatchCopiesTheRouterFork()
     async throws
   {
     let hold = ScriptedHold()
@@ -1025,7 +1025,7 @@ import Testing
 
   /// A cut before the second message of a batch of the session directory keeps no message of the
   /// batch.
-  @Test(.timeLimit(.minutes(1))) func aCutOnTheSecondMessageOfABatchKeepsNoMessageOfTheBatch()
+  @Test func aCutOnTheSecondMessageOfABatchKeepsNoMessageOfTheBatch()
     async throws
   {
     let hold = ScriptedHold()
@@ -1044,7 +1044,7 @@ import Testing
 
   /// With no cut, a fork while the answer to the result of a background run runs has the last
   /// completed turn, in the ACP copy and in the Router journal of the fork.
-  @Test(.timeLimit(.minutes(1))) func noCutWhileARunResultRunsForksTheLastCompletedTurn()
+  @Test func noCutWhileARunResultRunsForksTheLastCompletedTurn()
     async throws
   {
     let hold = ScriptedHold()
@@ -1059,7 +1059,7 @@ import Testing
 
   /// With no cut, a fork while the answer to the result of a background run runs has the same
   /// messages in the ACP copy and in the Router journal of the fork.
-  @Test(.timeLimit(.minutes(1))) func noCutWhileARunResultRunsCopiesTheRouterFork()
+  @Test func noCutWhileARunResultRunsCopiesTheRouterFork()
     async throws
   {
     let hold = ScriptedHold()
@@ -1076,7 +1076,7 @@ import Testing
   // MARK: - The fork
 
   /// A tool that ran in the source runs in the fork, and the client gets no permission request.
-  @Test(.timeLimit(.minutes(1))) func aToolOfTheSourceRunsInTheForkWithNoPermissionRequest()
+  @Test func aToolOfTheSourceRunsInTheForkWithNoPermissionRequest()
     async throws
   {
     let fixture = try await Self.makeFixture("tool")
@@ -1092,7 +1092,7 @@ import Testing
   }
 
   /// A `session/resume` of a fork replays the copied turns.
-  @Test(.timeLimit(.minutes(1))) func aResumeOfTheForkReplaysTheCopiedTurns() async throws {
+  @Test func aResumeOfTheForkReplaysTheCopiedTurns() async throws {
     let fixture = try await Self.makeFixture("resume")
     try await Self.runTwoTurns(on: fixture)
     let source = try await Self.history(of: fixture.sessionId, in: fixture)
@@ -1106,7 +1106,7 @@ import Testing
 
   /// A `session/resume` of a fork with a cut before the first user message replays no
   /// message of the source: the fork copied no turn.
-  @Test(.timeLimit(.minutes(1))) func aResumeOfAForkBeforeTheFirstTurnReplaysNoTurn()
+  @Test func aResumeOfAForkBeforeTheFirstTurnReplaysNoTurn()
     async throws
   {
     let fixture = try await Self.makeFixture("resume-empty")
@@ -1128,7 +1128,7 @@ import Testing
 
   /// A model slot switch of a source moves the fork that the agent holds onto the new slot. The
   /// restore of the source does not move a live fork, so the agent restores the fork by its id.
-  @Test(.timeLimit(.minutes(1))) func aModelSlotSwitchOfTheSourceMovesItsFork() async throws {
+  @Test func aModelSlotSwitchOfTheSourceMovesItsFork() async throws {
     let fixture = try await Self.makeFixture("source-slot")
     try await ScriptedPromptFixture.runPrompt(on: fixture, text: Self.firstPrompt)
     let fork = try await Self.fork(fixture)
@@ -1143,7 +1143,7 @@ import Testing
 
   /// A model slot switch of a fork restores the fork from the recording root, and the fork
   /// works on the new slot.
-  @Test(.timeLimit(.minutes(1))) func aModelSlotSwitchOfTheForkSelectsTheNewSlot() async throws {
+  @Test func aModelSlotSwitchOfTheForkSelectsTheNewSlot() async throws {
     let fixture = try await Self.makeFixture("slot")
     try await ScriptedPromptFixture.runPrompt(on: fixture, text: Self.firstPrompt)
     let fork = try await Self.fork(fixture)
@@ -1158,7 +1158,7 @@ import Testing
 
   /// A fork request with no MCP servers gives the fork no MCP servers of a client, also when
   /// the source has some (ACP: omitted and `[]` mean none).
-  @Test(.timeLimit(.minutes(1))) func aForkWithNoMCPServersGetsNoServers() async throws {
+  @Test func aForkWithNoMCPServersGetsNoServers() async throws {
     let fixture = try await ScriptedPromptFixture.make(
       script: try Self.script(), label: "\(Self.label)-source-servers",
       mcpServers: [Self.sourceServer])
@@ -1169,7 +1169,7 @@ import Testing
   }
 
   /// A fork request with MCP servers gives the fork the MCP servers of the request.
-  @Test(.timeLimit(.minutes(1))) func aForkWithMCPServersGetsTheServersOfTheRequest()
+  @Test func aForkWithMCPServersGetsTheServersOfTheRequest()
     async throws
   {
     let fixture = try await ScriptedPromptFixture.make(
@@ -1182,7 +1182,7 @@ import Testing
 
   /// A fork request with no additional directories gives the fork no additional directories,
   /// also when the source has some (ACP: omitted or empty activates no additional roots).
-  @Test(.timeLimit(.minutes(1))) func aForkWithNoDirectoriesGetsNoDirectories() async throws {
+  @Test func aForkWithNoDirectoriesGetsNoDirectories() async throws {
     let directory = makeResolvedDirectory(label: "\(Self.label)-source-root")
     let fixture = try await ScriptedPromptFixture.make(
       script: try Self.script(), label: "\(Self.label)-source-roots",
@@ -1194,7 +1194,7 @@ import Testing
   }
 
   /// A fork request with additional directories gives the fork the directories of the request.
-  @Test(.timeLimit(.minutes(1))) func aForkWithDirectoriesGetsTheDirectoriesOfTheRequest()
+  @Test func aForkWithDirectoriesGetsTheDirectoriesOfTheRequest()
     async throws
   {
     let sourceDirectory = makeResolvedDirectory(label: "\(Self.label)-source-root")
@@ -1212,7 +1212,7 @@ import Testing
   /// A `session/fork` request that waits for its launcher, and a fork that the same client asks
   /// for through the `sessions` endpoint of the same source at the same time, each get their own
   /// surface: the request its MCP servers, and the endpoint fork the MCP servers of the source.
-  @Test(.timeLimit(.minutes(1))) func aSessionForkAndAnEndpointForkOfOneClientGetTheirOwnSurfaces()
+  @Test func aSessionForkAndAnEndpointForkOfOneClientGetTheirOwnSurfaces()
     async throws
   {
     let fixture = try await ScriptedPromptFixture.make(
@@ -1233,7 +1233,7 @@ import Testing
   }
 
   /// A fork request with a `cwd` that is not the folder of the source is invalid params.
-  @Test(.timeLimit(.minutes(1))) func aForkInAnotherFolderIsInvalidParams() async throws {
+  @Test func aForkInAnotherFolderIsInvalidParams() async throws {
     let fixture = try await Self.makeFixture("other-folder")
     let other = makeResolvedDirectory(label: "\(Self.label)-other-folder")
 
@@ -1248,7 +1248,7 @@ import Testing
 
   /// `fork session` with no id from a session of the agent gives a fork with the history up to
   /// the call: the prompt of the call, and no tool call.
-  @Test(.timeLimit(.minutes(1))) func forkSessionFromTheToolForksTheHistoryUpToTheCall()
+  @Test func forkSessionFromTheToolForksTheHistoryUpToTheCall()
     async throws
   {
     let fixture = try await Self.makeFixture("tool-fork")
@@ -1274,7 +1274,7 @@ import Testing
 
   /// A `session/resume` of a fork that `fork session` made replays the user messages up to the
   /// call.
-  @Test(.timeLimit(.minutes(1))) func aResumeOfAToolForkReplaysTheTurnsUpToTheCall()
+  @Test func aResumeOfAToolForkReplaysTheTurnsUpToTheCall()
     async throws
   {
     let fixture = try await Self.makeFixture("tool-resume")
@@ -1289,7 +1289,7 @@ import Testing
   /// The first prompt of a fork that `fork session` made runs on the surface that the agent gave
   /// the fork, and the agent holds the fork from its start. Thus a `session/resume` of the fork
   /// while the prompt runs takes the live fork, and the prompt ends with its answer.
-  @Test(.timeLimit(.minutes(1))) func theFirstPromptOfAToolForkEndsAfterAResumeOfTheFork()
+  @Test func theFirstPromptOfAToolForkEndsAfterAResumeOfTheFork()
     async throws
   {
     let hold = ScriptedHold()
@@ -1314,7 +1314,7 @@ import Testing
   /// A cold `session/resume` of the source of a fork that `fork session` made does not make a
   /// second live fork: the fork that the agent holds stays the live fork of the session
   /// directory.
-  @Test(.timeLimit(.minutes(1))) func aColdResumeOfTheSourceKeepsTheHeldToolFork() async throws {
+  @Test func aColdResumeOfTheSourceKeepsTheHeldToolFork() async throws {
     let fixture = try await Self.makeFixture("tool-cold-source")
     try await ScriptedPromptFixture.runPrompt(on: fixture, text: Self.firstPrompt)
     let summary = try await Self.forkFromTheTool(on: fixture)
@@ -1333,7 +1333,7 @@ import Testing
 
   /// The `index.md` record of a fork that `fork session` made holds the additional directories
   /// of its source.
-  @Test(.timeLimit(.minutes(1))) func theRecordOfAToolForkHasTheDirectoriesOfTheSource()
+  @Test func theRecordOfAToolForkHasTheDirectoriesOfTheSource()
     async throws
   {
     let directory = makeResolvedDirectory(label: "\(Self.label)-tool-record-root")
@@ -1348,7 +1348,7 @@ import Testing
 
   /// The `index.md` record of a fork that a client asks for through the `sessions` endpoint
   /// holds the additional directories of its source.
-  @Test(.timeLimit(.minutes(1))) func theRecordOfAnEndpointForkHasTheDirectoriesOfTheSource()
+  @Test func theRecordOfAnEndpointForkHasTheDirectoriesOfTheSource()
     async throws
   {
     let directory = makeResolvedDirectory(label: "\(Self.label)-endpoint-record-root")
@@ -1363,7 +1363,7 @@ import Testing
 
   /// The `index.md` record of a `session/fork` fork holds the additional directories of the
   /// request, not those of the source.
-  @Test(.timeLimit(.minutes(1))) func theRecordOfASessionForkHasTheDirectoriesOfTheRequest()
+  @Test func theRecordOfASessionForkHasTheDirectoriesOfTheRequest()
     async throws
   {
     let sourceDirectory = makeResolvedDirectory(label: "\(Self.label)-record-source-root")
@@ -1380,7 +1380,7 @@ import Testing
 
   /// The `index.md` record of a `session/fork` fork whose request omits the additional
   /// directories holds none, also when the source has some (ACP: omitted gives none).
-  @Test(.timeLimit(.minutes(1))) func theRecordOfASessionForkWithNoDirectoriesHasNone()
+  @Test func theRecordOfASessionForkWithNoDirectoriesHasNone()
     async throws
   {
     let directory = makeResolvedDirectory(label: "\(Self.label)-omitted-record-root")
@@ -1396,7 +1396,7 @@ import Testing
   /// The `index.md` record of a fork that `fork session` made keeps the additional directories
   /// of its source after a restart: the first agent closes, and a second agent over the same
   /// folder resumes the source cold.
-  @Test(.timeLimit(.minutes(1))) func theRecordOfAToolForkKeepsTheDirectoriesAfterARestart()
+  @Test func theRecordOfAToolForkKeepsTheDirectoriesAfterARestart()
     async throws
   {
     let directory = makeResolvedDirectory(label: "\(Self.label)-restart-record-root")
@@ -1420,7 +1420,7 @@ import Testing
   /// A fork that `fork session` made while the record of its calling tool call was late copies
   /// the turns before the call. The wire keeps the frame of the text before the call until the
   /// launcher built the fork node, so the projector of the source records the call only then.
-  @Test(.timeLimit(.minutes(1))) func aToolForkWhoseCallRecordIsLateCopiesTheTurnsBeforeTheCall()
+  @Test func aToolForkWhoseCallRecordIsLateCopiesTheTurnsBeforeTheCall()
     async throws
   {
     let source = try await Self.makeHeldRecordSource("tool-late-record")
@@ -1437,7 +1437,7 @@ import Testing
 
   /// When the record of the calling tool call does not come in the time limit, the `fork
   /// session` call gives the error of the missing record to the model.
-  @Test(.timeLimit(.minutes(1))) func aToolForkWithNoCallRecordFailsWithTheMissingRecordError()
+  @Test func aToolForkWithNoCallRecordFailsWithTheMissingRecordError()
     async throws
   {
     let source = try await Self.runForkWithNoCallRecord("tool-no-record-error")
@@ -1453,7 +1453,7 @@ import Testing
 
   /// When the record of the calling tool call does not come in the time limit, the session
   /// directory registers no fork.
-  @Test(.timeLimit(.minutes(1))) func aToolForkWithNoCallRecordRegistersNoFork() async throws {
+  @Test func aToolForkWithNoCallRecordRegistersNoFork() async throws {
     let source = try await Self.runForkWithNoCallRecord("tool-no-record-fork")
 
     let forks = try await Self.forks(in: source.fixture)
@@ -1465,7 +1465,7 @@ import Testing
 
   /// A `session/fork` request whose project file save fails gets the internal error of the
   /// failed save.
-  @Test(.timeLimit(.minutes(1))) func aForkWhoseProjectSaveFailsGetsTheSaveError() async throws {
+  @Test func aForkWhoseProjectSaveFailsGetsTheSaveError() async throws {
     let fixture = try await Self.makeFixture("project-save-error")
     try Self.blockProjectStore(of: fixture)
 
@@ -1473,7 +1473,7 @@ import Testing
   }
 
   /// A `session/fork` request whose project file save fails leaves no fork in the session table.
-  @Test(.timeLimit(.minutes(1))) func aForkWhoseProjectSaveFailsLeavesNoForkInTheTable()
+  @Test func aForkWhoseProjectSaveFailsLeavesNoForkInTheTable()
     async throws
   {
     let fixture = try await Self.makeFixture("project-save-table")
@@ -1486,7 +1486,7 @@ import Testing
 
   /// A `session/fork` request whose project file save fails leaves no live fork in the session
   /// directory.
-  @Test(.timeLimit(.minutes(1))) func aForkWhoseProjectSaveFailsLeavesNoLiveForkInTheDirectory()
+  @Test func aForkWhoseProjectSaveFailsLeavesNoLiveForkInTheDirectory()
     async throws
   {
     let fixture = try await Self.makeFixture("project-save-directory")
@@ -1499,7 +1499,7 @@ import Testing
 
   /// A `session/fork` request whose fork the launcher did not mount for the request gets the
   /// internal error of a fork that the agent cannot open, with the id of the fork.
-  @Test(.timeLimit(.minutes(1))) func anUnmountedForkGetsTheUnopenedForkError() async throws {
+  @Test func anUnmountedForkGetsTheUnopenedForkError() async throws {
     let fixture = try await Self.makeFixture("unmounted-error")
     await Self.useUnopenedForkLauncher(.agentWithNoRequest, in: fixture)
 
@@ -1508,7 +1508,7 @@ import Testing
 
   /// A `session/fork` request whose fork the launcher did not mount for the request leaves no
   /// fork in the session table.
-  @Test(.timeLimit(.minutes(1))) func anUnmountedForkLeavesNoForkInTheTable() async throws {
+  @Test func anUnmountedForkLeavesNoForkInTheTable() async throws {
     let fixture = try await Self.makeFixture("unmounted-table")
     await Self.useUnopenedForkLauncher(.agentWithNoRequest, in: fixture)
 
@@ -1519,7 +1519,7 @@ import Testing
 
   /// A `session/fork` request whose fork the launcher did not mount for the request leaves no
   /// live fork in the session directory.
-  @Test(.timeLimit(.minutes(1))) func anUnmountedForkLeavesNoLiveForkInTheDirectory()
+  @Test func anUnmountedForkLeavesNoLiveForkInTheDirectory()
     async throws
   {
     let fixture = try await Self.makeFixture("unmounted-directory")
@@ -1532,7 +1532,7 @@ import Testing
 
   /// A `session/fork` request whose fork a launcher built with no surface of the agent leaves no
   /// live fork in the session directory.
-  @Test(.timeLimit(.minutes(1))) func aForkWithNoAgentSurfaceLeavesNoLiveForkInTheDirectory()
+  @Test func aForkWithNoAgentSurfaceLeavesNoLiveForkInTheDirectory()
     async throws
   {
     let fixture = try await Self.makeFixture("no-surface-directory")

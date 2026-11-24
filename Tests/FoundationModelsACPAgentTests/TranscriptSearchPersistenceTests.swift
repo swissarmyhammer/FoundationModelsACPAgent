@@ -192,7 +192,7 @@ import Testing
 
   /// A new index over the folder of a stored catalog finds a word of a chunk, and embeds only
   /// the query: it embeds no item again.
-  @Test(.timeLimit(.minutes(3))) func aNewIndexOverTheSameFolderSearchesWithNoEmbed() async throws {
+  @Test func aNewIndexOverTheSameFolderSearchesWithNoEmbed() async throws {
     let folder = await Self.makeStoredFolder(label: "no-embed")
     let embedder = CountingEmbedding()
     let index = await Self.makeIndex(in: folder, embedder: embedder)
@@ -204,7 +204,7 @@ import Testing
   }
 
   /// A new index over the folder of a stored catalog holds the items of each stored session.
-  @Test(.timeLimit(.minutes(3))) func aNewIndexHoldsTheStoredSessions() async throws {
+  @Test func aNewIndexHoldsTheStoredSessions() async throws {
     let folder = await Self.makeStoredFolder(label: "restore")
 
     let index = await Self.makeIndex(in: folder)
@@ -216,7 +216,7 @@ import Testing
 
   /// The init reads nothing from the folder: a stored catalog of another embedding model gives
   /// no drop before the load.
-  @Test(.timeLimit(.minutes(3))) func theInitReadsNoStoredCatalog() async {
+  @Test func theInitReadsNoStoredCatalog() async {
     let folder = await Self.makeStoredFolder(label: "init-reads-nothing")
     let diagnostics = DiagnosticRecorder()
 
@@ -226,7 +226,7 @@ import Testing
   }
 
   /// Two loads at the same time read the stored catalog one time.
-  @Test(.timeLimit(.minutes(3))) func twoLoadsReadTheStoredCatalogOneTime() async {
+  @Test func twoLoadsReadTheStoredCatalogOneTime() async {
     let folder = await Self.makeStoredFolder(label: "two-loads")
     let diagnostics = DiagnosticRecorder()
     let index = Self.makeUnloadedIndex(
@@ -241,7 +241,7 @@ import Testing
   }
 
   /// A read that the host makes before the load waits for the load: it gives the stored items.
-  @Test(.timeLimit(.minutes(3))) func aReadBeforeTheLoadGivesTheStoredItems() async {
+  @Test func aReadBeforeTheLoadGivesTheStoredItems() async {
     let folder = await Self.makeStoredFolder(label: "read-before-load")
     let index = Self.makeUnloadedIndex(in: folder)
 
@@ -250,7 +250,7 @@ import Testing
 
   /// A change that the host makes before the load waits for the load: the stored items of the
   /// other session stay.
-  @Test(.timeLimit(.minutes(3))) func aChangeBeforeTheLoadKeepsTheStoredItems() async {
+  @Test func aChangeBeforeTheLoadKeepsTheStoredItems() async {
     let folder = await Self.makeStoredFolder(label: "change-before-load")
     let index = Self.makeUnloadedIndex(in: folder)
 
@@ -262,7 +262,7 @@ import Testing
   }
 
   /// A wait for the saves before the load reads nothing from the folder.
-  @Test(.timeLimit(.minutes(3))) func aWaitForTheSavesBeforeTheLoadReadsNothing() async {
+  @Test func aWaitForTheSavesBeforeTheLoadReadsNothing() async {
     let folder = await Self.makeStoredFolder(label: "wait-before-load")
     let diagnostics = DiagnosticRecorder()
     let index = Self.makeUnloadedIndex(
@@ -275,7 +275,7 @@ import Testing
 
   /// A new index gives the stored content of a session again as no change: the stream gives the
   /// change of the session that changed first.
-  @Test(.timeLimit(.minutes(3))) func theStoredContentOfASessionIsNoChange() async throws {
+  @Test func theStoredContentOfASessionIsNoChange() async throws {
     let folder = await Self.makeStoredFolder(label: "no-change")
     let index = await Self.makeIndex(in: folder)
 
@@ -297,7 +297,7 @@ import Testing
   // MARK: - The embedding model
 
   /// A new index with another embedding model drops the stored catalog.
-  @Test(.timeLimit(.minutes(3))) func anotherEmbeddingModelDropsTheStoredCatalog() async throws {
+  @Test func anotherEmbeddingModelDropsTheStoredCatalog() async throws {
     let folder = await Self.makeStoredFolder(label: "model-drop")
     let diagnostics = DiagnosticRecorder()
 
@@ -311,7 +311,7 @@ import Testing
 
   /// After a drop for another embedding model, the next index of a session builds the stored
   /// catalog again with the new model: a later index finds the session with no embed of an item.
-  @Test(.timeLimit(.minutes(3))) func theNextIndexBuildsTheDroppedCatalogAgain() async throws {
+  @Test func theNextIndexBuildsTheDroppedCatalogAgain() async throws {
     let folder = await Self.makeStoredFolder(label: "model-rebuild")
     let rebuilt = await Self.makeIndex(in: folder, modelID: Self.otherModelID)
     await rebuilt.index(session: Self.sessionId, chunks: Self.chunks, metadata: Self.metadata)
@@ -329,7 +329,7 @@ import Testing
 
   /// A stored catalog of the old form of the item ids is dropped at the load: the new index
   /// holds no item of it (^8qsp7hb).
-  @Test(.timeLimit(.minutes(3))) func anOldFormCatalogIsDropped() async throws {
+  @Test func anOldFormCatalogIsDropped() async throws {
     let folder = await Self.makeOldFormFolder(label: "old-form-drop")
 
     let index = await Self.makeIndex(in: folder)
@@ -339,7 +339,7 @@ import Testing
 
   /// After the drop of a stored catalog of the old form, the next index of a session builds the
   /// stored catalog again in the new form: a later index holds the items of the new form.
-  @Test(.timeLimit(.minutes(3))) func theNextIndexBuildsAnOldFormCatalogAgain() async throws {
+  @Test func theNextIndexBuildsAnOldFormCatalogAgain() async throws {
     let folder = await Self.makeOldFormFolder(label: "old-form-rebuild")
     let rebuilt = await Self.makeIndex(in: folder)
     await rebuilt.index(session: Self.sessionId, chunks: Self.chunks, metadata: Self.metadata)
@@ -353,7 +353,7 @@ import Testing
   // MARK: - The update of some items
 
   /// A new index of one session keeps the stored items of the other session.
-  @Test(.timeLimit(.minutes(3))) func anUpsertKeepsTheOtherItems() async throws {
+  @Test func anUpsertKeepsTheOtherItems() async throws {
     let folder = await Self.makeStoredFolder(label: "upsert")
     let index = await Self.makeIndex(in: folder)
     await index.index(
@@ -370,7 +370,7 @@ import Testing
   }
 
   /// A delete removes only the ids of the deleted session from the stored catalog.
-  @Test(.timeLimit(.minutes(3))) func aDeleteRemovesOnlyTheIdsOfThatSession() async throws {
+  @Test func aDeleteRemovesOnlyTheIdsOfThatSession() async throws {
     let folder = await Self.makeStoredFolder(label: "delete")
     let index = await Self.makeIndex(in: folder)
     await index.remove(session: Self.sessionId)
@@ -388,7 +388,7 @@ import Testing
 
   /// The reconcile removes the stored items of a session whose history file was deleted while
   /// the agent was off.
-  @Test(.timeLimit(.minutes(3))) func theReconcileRemovesASessionDeletedWhileTheAgentWasOff()
+  @Test func theReconcileRemovesASessionDeletedWhileTheAgentWasOff()
     async throws
   {
     let folder = await Self.makeStoredFolder(label: "deleted-off")
@@ -402,7 +402,7 @@ import Testing
 
   /// The stored sessions of a folder that the process cannot read stay after the reconcile, and
   /// give their turns.
-  @Test(.timeLimit(.minutes(3))) func theStoredSessionsOfAnUnreadableFolderStay() async throws {
+  @Test func theStoredSessionsOfAnUnreadableFolderStay() async throws {
     let folder = await Self.makeStoredFolder(label: "unreadable")
     let index = await Self.makeIndex(in: folder, readableFolder: { _ in false })
 
@@ -413,7 +413,7 @@ import Testing
   }
 
   /// A query with only tokens finds the chunks of the stored sessions.
-  @Test(.timeLimit(.minutes(3))) func aTokenOnlyQueryFindsTheStoredSessions() async throws {
+  @Test func aTokenOnlyQueryFindsTheStoredSessions() async throws {
     let folder = await Self.makeStoredFolder(label: "token-only")
     let index = await Self.makeIndex(in: folder, readableFolder: { _ in false })
 

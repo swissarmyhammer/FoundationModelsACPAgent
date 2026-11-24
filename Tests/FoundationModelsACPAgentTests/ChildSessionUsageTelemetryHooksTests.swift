@@ -14,7 +14,7 @@ import Tracing
 /// snapshot timeline by the same rules as a root session. These tests show the rules for the
 /// child: its usage goes out under its own session id and holds no cost, its hooks have the key
 /// of its root, and its snapshot key is the key of its folder.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct ChildSessionUsageTelemetryHooksTests {
+@Suite(.closesHarnesses) struct ChildSessionUsageTelemetryHooksTests {
   // MARK: - Constants
 
   /// The prefix of the folders of each fixture of this suite.

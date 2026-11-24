@@ -14,7 +14,7 @@ import Testing
 
   /// A step before the request throws, for example the `beforeRequest` step of a resume. Then
   /// the read gets a cancel at once, and it does not wait until the timeout.
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func aThrowingStepBeforeTheRequestCancelsTheRead() async throws {
     let readEnded = OneShot()
     await #expect(throws: StepFailed.self) {

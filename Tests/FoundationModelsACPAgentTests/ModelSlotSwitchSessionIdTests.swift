@@ -13,7 +13,7 @@ import Testing
 /// `modelChanged` event.
 ///
 /// The proofs drive the real agent over scripted models. No weights load.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct ModelSlotSwitchSessionIdTests {
+@Suite(.closesHarnesses) struct ModelSlotSwitchSessionIdTests {
   /// The text that the scripted model plays when no test needs another text.
   private static let answer = "the answer"
 

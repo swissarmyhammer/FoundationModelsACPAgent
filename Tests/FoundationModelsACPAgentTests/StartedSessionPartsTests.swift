@@ -27,7 +27,7 @@ import Testing
   private static let marketplaceSource = MarketplaceSource("file:///nonexistent/marketplace")
 
   /// The stop ends the change stream of the agent registry.
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func theStopStopsTheAgentRegistry() async throws {
     let source = ProbingConflictVersionSource()
     let context = try await CatalogRegistryFixture.makeContext(

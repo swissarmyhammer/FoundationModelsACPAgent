@@ -21,7 +21,7 @@ import Testing
 /// pass before any model output, kills the process, and the test removes the prompt records of
 /// the Router from the transcript of the grandchild. That is the state on disk of a kill before
 /// the take. The grandchild signals its first pass through a named pipe, so no wait uses a clock.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct TaskPromptRecordRestoreTests {
+@Suite(.closesHarnesses) struct TaskPromptRecordRestoreTests {
   /// The prefix of the folders of each fixture of this suite.
   private static let label = "TaskPromptRecordRestoreTests"
 

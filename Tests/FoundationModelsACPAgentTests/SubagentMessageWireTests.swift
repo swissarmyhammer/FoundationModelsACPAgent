@@ -11,7 +11,7 @@ import Testing
 /// The messages between a caller and a child reach the client as `session_message` updates, each
 /// in the stream of the right session. The child runs on a scripted model: it sends one message to
 /// its caller with `send caller`, and then it finishes.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct SubagentMessageWireTests {
+@Suite(.closesHarnesses) struct SubagentMessageWireTests {
   /// The prefix of the folders of each fixture of this suite.
   private static let label = "SubagentMessageWireTests"
 

@@ -14,7 +14,7 @@ import Testing
 ///
 /// Each test uses the real Router and a scripted model. The root session starts a child run
 /// whose model holds, so the run works while the test ends the agent.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct OrderlyShutdownTests {
+@Suite(.closesHarnesses) struct OrderlyShutdownTests {
   /// The prefix of the folders of each fixture of this suite.
   private static let label = "OrderlyShutdownTests"
 

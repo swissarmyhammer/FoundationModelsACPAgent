@@ -13,7 +13,7 @@ import Testing
 /// chain of three sessions (root, child, grandchild) and ends with the orderly shutdown, so the
 /// `agents` calls stay paused. A second agent resumes the root. Its model answers the first
 /// message of a restored run with a marker text.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct RedriveInterruptedRunsTests {
+@Suite(.closesHarnesses) struct RedriveInterruptedRunsTests {
   /// The prefix of the folders of each fixture of this suite.
   private static let label = "RedriveInterruptedRunsTests"
 

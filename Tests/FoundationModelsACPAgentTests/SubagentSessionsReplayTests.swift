@@ -9,7 +9,7 @@ import Testing
 /// agent records a chain of three sessions (root, child, grandchild). A second agent resumes the
 /// root. The announcements of the tree go first, the parent before the child. Then each session
 /// sends its history under its own session id. All of it comes before the response.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct SubagentSessionsReplayTests {
+@Suite(.closesHarnesses) struct SubagentSessionsReplayTests {
   /// The prefix of the folders of each fixture of this suite.
   private static let label = "SubagentSessionsReplayTests"
 

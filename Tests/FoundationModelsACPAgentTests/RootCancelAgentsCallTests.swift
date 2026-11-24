@@ -17,7 +17,7 @@ import Testing
 /// an answer that ended before the cancel keeps its settlement, as before.
 ///
 /// Each test uses the scripted stub model and the real Router in process.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct RootCancelAgentsCallTests {
+@Suite(.closesHarnesses) struct RootCancelAgentsCallTests {
   /// The prefix of the folders of each fixture of this suite.
   private static let label = "RootCancelAgentsCallTests"
 

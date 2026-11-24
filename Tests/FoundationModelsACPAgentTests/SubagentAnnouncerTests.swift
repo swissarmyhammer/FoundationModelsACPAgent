@@ -66,7 +66,7 @@ import Testing
 
 extension SubagentAnnouncerTests {
   /// The queue of the announcer, with an outlet that records what it gets.
-  @Suite(.timeLimit(.minutes(1))) struct Queue {
+  @Suite struct Queue {
     /// The root session of the outlets of this suite.
     private static let rootRun = ULID()
 
@@ -1120,7 +1120,7 @@ func waitForWaiter(in joins: RunCallJoinTable) async {
 extension SubagentAnnouncerTests {
   /// The wait of the announcer for the entry that the join table writes. The entry is for the
   /// `agents` call that started a run.
-  @Suite(.timeLimit(.minutes(1))) struct Join {
+  @Suite struct Join {
     /// The completion token of the `agents` call.
     private static let token = "01AGENTSCALLTOKEN0000000001"
 

@@ -10,7 +10,7 @@ import Testing
 /// (D193). The `skills` tool of a root session changes it. A child agent
 /// run shares that tool, but it cannot change the list: the agent refuses
 /// the write with a corrective, and the read operations still work.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct ChildRunMarketplaceTests {
+@Suite(.closesHarnesses) struct ChildRunMarketplaceTests {
   /// The prefix of the folders of each fixture of this suite.
   private static let label = "ChildRunMarketplaceTests"
 

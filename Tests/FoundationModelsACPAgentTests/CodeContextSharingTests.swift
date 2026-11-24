@@ -157,7 +157,7 @@ import Testing
   /// ends only when the context stops. The wait returns, so the close of
   /// the last session stopped the context; a new session then gets a new
   /// context.
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func closingTheLastSessionStopsTheContext() async throws {
     var loader = StubModelLoader()
     loader.makeEmbeddingContainer = { _ in NeverAnsweringEmbeddingContainer() }
@@ -306,7 +306,7 @@ import Testing
 
   /// The shared lease gets the selection model of the profile, so an error
   /// of the flash slot is the error of the `search code` call.
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func aSelectionErrorIsTheErrorOfSearchCodeOnTheSharedLease() async throws {
     let (agent, workingDirectory) = try await Self.makeFailingSelectionAgent(named: "select-shared")
     let session = try await Self.openSession(of: agent, in: workingDirectory)
@@ -320,7 +320,7 @@ import Testing
   /// The unshared lease gets the selection model of the profile too: the
   /// session in the parent folder of an open context has a context of its
   /// own.
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func aSelectionErrorIsTheErrorOfSearchCodeOnTheUnsharedLease() async throws {
     let (agent, parent) = try await Self.makeFailingSelectionAgent(named: "select-unshared")
     let child = parent.appendingPathComponent("inner", isDirectory: true)

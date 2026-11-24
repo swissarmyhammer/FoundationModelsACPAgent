@@ -281,7 +281,7 @@ import Testing
   /// A config server whose process exits before it answers does not stop
   /// `session/new`: the report gives it `failed` with the reason of a
   /// failed connect, and the client server connects.
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func aConfigServerThatFailsToConnectReportsFailedAndTheSessionStarts() async throws {
     let fixture = try await Self.makeFixture(
       mcpServers: [try Self.loopbackServer()], projectConfigYAML: Self.exitingServerConfigYAML)

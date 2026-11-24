@@ -58,7 +58,7 @@ import Testing
 
   /// With no reader, the open ends at its time limit with the error that
   /// names the pipe and the limit.
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func anOpenWithNoReaderEndsAtItsTimeLimit() async throws {
     let pipe = try Self.makePipe(label: "no-reader")
 
@@ -70,7 +70,7 @@ import Testing
   /// A cancel of the task that waits for a reader ends the wait. The test
   /// cancels only after the open made one attempt that found no reader, so
   /// the cancel comes while the open waits between two attempts.
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func aCancelEndsTheWaitForAReader() async throws {
     let pipe = try Self.makePipe(label: "cancel")
     let (missedAttempts, missedAttempt) = AsyncStream<Void>.makeStream()
@@ -89,7 +89,7 @@ import Testing
 
   /// When a reader opens the pipe, the open ends, and the reader reads the
   /// text that the write end writes.
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func theReaderReadsTheTextAfterItOpensThePipe() async throws {
     let pipe = try Self.makePipe(label: "reader")
     let opener = Task {

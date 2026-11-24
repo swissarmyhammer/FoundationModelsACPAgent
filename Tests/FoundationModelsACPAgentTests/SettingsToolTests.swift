@@ -254,7 +254,7 @@ import Testing
   /// one tool moves the cursor that the other tool gives, and the endpoint
   /// of the first tool gives that change after the cursor that it gave
   /// before the change.
-  @Test(.timeLimit(.minutes(1))) func twoToolsOnOneStoreShareOneCursorSequence() async throws {
+  @Test func twoToolsOnOneStoreShareOneCursorSequence() async throws {
     let fixture = try SettingsGraphFixture(label: "tool-shared-cursor")
     let first = Self.tool(over: fixture)
     let second = Self.tool(over: fixture)

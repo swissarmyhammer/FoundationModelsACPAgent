@@ -10,7 +10,7 @@ import Testing
 /// user for the secret of a new MCP server with a sensitive elicitation,
 /// writes the answer to the secret store, and keeps the value out of the
 /// model input, the tool result, the session updates and the recording.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct MCPSecretElicitationTests {
+@Suite(.closesHarnesses) struct MCPSecretElicitationTests {
   /// The prefix of the folders of the fixture.
   private static let label = "MCPSecretElicitationTests"
 

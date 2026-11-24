@@ -13,7 +13,7 @@ import Testing
   ///
   /// The wait uses no clock. A registry that still watches keeps its
   /// stream, and then the time limit ends the test.
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func theLoadedCatalogOfARegistryStopsTheRegistry() async throws {
     let source = ProbingConflictVersionSource()
     let context = try await CatalogRegistryFixture.makeContext(

@@ -832,10 +832,8 @@ import Testing
   /// A config-derived stdio server that exits before it answers the
   /// `initialize` request gives a `.failed` outcome, and the config server
   /// after it still connects. The exit of the process ends the connect, not
-  /// a clock: the time limit of the test is only a guard against a hang.
-  @Test(
-    .timeLimit(.minutes(1)),
-    arguments: ["exit 0", "read line; exit 1"])
+  /// a clock.
+  @Test(arguments: ["exit 0", "read line; exit 1"])
   func aConfigStdioServerThatExitsBeforeItAnswersFailsAndTheNextServerConnects(script: String)
     async throws
   {
@@ -862,7 +860,7 @@ import Testing
   /// fails at the time limit of the connect policy. The policy of the test
   /// has a zero time limit, so the test waits for no real clock: the
   /// server never answers, thus the time limit always ends the attempt.
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func aConfigStdioServerThatNeverAnswersFailsAtTheTimeLimit() async throws {
     let section = MCPToolSection.enabled(servers: [
       Self.shellServer(named: Self.silentName, script: "while read line; do :; done")

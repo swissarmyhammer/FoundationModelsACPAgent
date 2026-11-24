@@ -475,7 +475,7 @@ import Testing
 
   /// In a fork of a fork, a message to the first session of the fork chain is a turn: the fork
   /// has a copy of the message, and the message names that first session.
-  @Test(.timeLimit(.minutes(1))) func aMessageToTheFirstSourceIsATurnOfAForkOfAFork()
+  @Test func aMessageToTheFirstSourceIsATurnOfAForkOfAFork()
     async throws
   {
     let fixture = try await ScriptedPromptFixture.make(

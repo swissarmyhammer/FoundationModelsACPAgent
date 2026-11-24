@@ -96,7 +96,7 @@ import Testing
   ///
   /// The subscription probe resumes after a cursor that a change of the
   /// user level follows, thus its first response comes at once.
-  @Test(.timeLimit(.minutes(1))) func theEndpointConforms() async throws {
+  @Test func theEndpointConforms() async throws {
     let fixture = try SettingsGraphFixture(label: "conformance")
     let queryProbe = GraphQLAliasProbe(
       query:

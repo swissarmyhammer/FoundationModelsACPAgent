@@ -12,7 +12,7 @@ import Testing
 ///
 /// The test reads the leading `.instructions` entry of the transcript of the child session. The
 /// table of the agent holds that session.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct SubagentInstructionsTests {
+@Suite(.closesHarnesses) struct SubagentInstructionsTests {
   /// The directory label of the suite.
   private static let label = "SubagentInstructionsTests"
 

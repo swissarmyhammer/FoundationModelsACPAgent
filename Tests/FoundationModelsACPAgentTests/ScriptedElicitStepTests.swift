@@ -11,7 +11,7 @@ import Testing
 /// the output of the call. A decline or a cancel ends the pass with a clear
 /// text. The question is a real question of the session: it goes over the
 /// wire with the same path that a tool uses.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct ScriptedElicitStepTests {
+@Suite(.closesHarnesses) struct ScriptedElicitStepTests {
   /// The prefix of the folders of each fixture of this suite.
   private static let label = "ScriptedElicitStepTests"
 

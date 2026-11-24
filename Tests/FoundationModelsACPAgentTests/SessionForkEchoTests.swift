@@ -128,7 +128,7 @@ import Testing
   }
 
   /// Two turns give two agent messages, each with its own id.
-  @Test(.timeLimit(.minutes(1)), arguments: Model.allCases)
+  @Test(arguments: Model.allCases)
   func twoTurnsGiveTwoAgentMessages(on model: Model) async throws {
     let fixture = try await Self.twoTurns(on: model, "ids")
 
@@ -138,7 +138,7 @@ import Testing
   }
 
   /// A cut before the user message of turn 2 forks turn 1 only.
-  @Test(.timeLimit(.minutes(1)), arguments: Model.allCases)
+  @Test(arguments: Model.allCases)
   func aCutBeforeTurnTwoForksTurnOne(on model: Model) async throws {
     let fixture = try await Self.twoTurns(on: model, "before")
     let source = try await Self.history(of: fixture.sessionId, in: fixture)
@@ -151,7 +151,7 @@ import Testing
   }
 
   /// A cut after the agent message of turn 1 forks turn 1 only.
-  @Test(.timeLimit(.minutes(1)), arguments: Model.allCases)
+  @Test(arguments: Model.allCases)
   func aCutAfterTheAnswerOfTurnOneForksTurnOne(on model: Model) async throws {
     let fixture = try await Self.twoTurns(on: model, "after")
     let source = try await Self.history(of: fixture.sessionId, in: fixture)

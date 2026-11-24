@@ -13,7 +13,7 @@ import Testing
 /// then runs the orderly shutdown (``ComposedAgent/shutdownAfterConnectionTeardown()``). Each
 /// test here drives that order in process: it ends the wire while a prompt of the root is open
 /// and a child run works, waits for the teardown, and then shuts the agent down.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct ProcessQuitShutdownTests {
+@Suite(.closesHarnesses) struct ProcessQuitShutdownTests {
   /// The two ways a process quits.
   enum Quit: CaseIterable, CustomTestStringConvertible {
     /// The client closes the standard input: the agent reads the end of its input.

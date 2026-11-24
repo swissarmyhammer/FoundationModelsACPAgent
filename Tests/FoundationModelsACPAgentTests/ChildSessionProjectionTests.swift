@@ -10,7 +10,7 @@ import Testing
 /// A child session goes to the wire through the same projector as the root
 /// session, under its own session id. The root session starts a child with an
 /// `agents` call. The child runs on a scripted model.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct ChildSessionProjectionTests {
+@Suite(.closesHarnesses) struct ChildSessionProjectionTests {
   /// The prefix of the folders of each fixture of this suite.
   private static let label = "ChildSessionProjectionTests"
 

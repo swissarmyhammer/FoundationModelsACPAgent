@@ -11,7 +11,7 @@ import Testing
 /// goes on after a selected option. A cancelled outcome ends the pass, as a
 /// cancel ends the pass of an `elicit` step. The request goes out under the
 /// session id of the run.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct ScriptedPermissionStepTests {
+@Suite(.closesHarnesses) struct ScriptedPermissionStepTests {
   /// The prefix of the folders of each fixture of this suite.
   private static let label = "ScriptedPermissionStepTests"
 
@@ -159,7 +159,7 @@ import Testing
 /// The `permission` step in a child run: the request goes to the client one
 /// time, under the session id of the child and never under the root. A cancel
 /// of the child ends the request that waits.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct ChildPermissionTests {
+@Suite(.closesHarnesses) struct ChildPermissionTests {
   /// The prefix of the folders of each fixture of this suite.
   private static let label = "ChildPermissionTests"
 

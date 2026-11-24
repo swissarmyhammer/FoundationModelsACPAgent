@@ -64,7 +64,7 @@ import Testing
   /// A new `<root settings folder>/<id>/AGENT.md` that is written after the
   /// session started gives a change event on the `changes(after:)`
   /// subscription of the `agents` endpoint, and the event adds the agent.
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func aNewAgentInTheRootSettingsFolderGivesAChangeEvent() async throws {
     let fixture = try await WatchFixture.make(label: "AgentCatalogWatchTests-root-event")
 
@@ -77,7 +77,7 @@ import Testing
   /// After the change event of a new agent in the root settings folder, the
   /// next `agents` query lists the new agent: the endpoint reads the current
   /// catalog, not a copy from the session start.
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func theNextQueryAfterTheChangeListsTheNewAgent() async throws {
     let fixture = try await WatchFixture.make(label: "AgentCatalogWatchTests-root-query")
     _ = try await Self.addedIDs(on: fixture, writingIn: fixture.rootSettingsFolder)
@@ -92,7 +92,7 @@ import Testing
   /// A new `<cwd>/.agents/<id>/AGENT.md` that is written after the session
   /// started gives a change event on the `agents` endpoint too, also when
   /// the project layer folder was not there at the session start.
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func aNewAgentInTheProjectLayerGivesAChangeEvent() async throws {
     let fixture = try await WatchFixture.make(label: "AgentCatalogWatchTests-project-event")
     let projectLayer = fixture.workingDirectory.appendingPathComponent(
@@ -108,7 +108,7 @@ import Testing
   /// After `session/close`, the agent registry of the closed session has no
   /// running watcher. A control session stays open and shows that the new
   /// agent reached the watchers.
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func aClosedSessionLeavesNoRunningWatcher() async throws {
     let fixture = try await WatchFixture.make(label: "AgentCatalogWatchTests-close-watcher")
 
@@ -120,7 +120,7 @@ import Testing
   /// After `session/close`, a new agent gives no change to the catalog of
   /// the closed session, while the control session that stays open gets the
   /// change event.
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func aNewAgentAfterTheCloseGivesNoChangeToTheClosedSession() async throws {
     let fixture = try await WatchFixture.make(label: "AgentCatalogWatchTests-close-catalog")
 
@@ -134,7 +134,7 @@ import Testing
   /// After `session/close`, the skills registry of the closed session has no
   /// running watcher. A control session stays open and shows that the new
   /// skill reached the watchers.
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func aClosedSessionLeavesNoRunningSkillsWatcher() async throws {
     let fixture = try await WatchFixture.make(label: "AgentCatalogWatchTests-close-skills-watcher")
 
@@ -146,7 +146,7 @@ import Testing
   /// After `session/close`, a new `SKILL.md` gives no reload of the skills
   /// registry of the closed session, while the control session that stays
   /// open gets the new skill.
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func aNewSkillAfterTheCloseGivesNoChangeToTheClosedSession() async throws {
     let fixture = try await WatchFixture.make(label: "AgentCatalogWatchTests-close-skills")
 

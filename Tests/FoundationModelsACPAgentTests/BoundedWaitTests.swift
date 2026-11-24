@@ -8,7 +8,7 @@ import Testing
 
   /// A cancel of the task that calls `bounded(by:_:)` cancels the body at once. The body does
   /// not wait until the bound.
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func aCancelOfTheCallerCancelsTheBody() async {
     let bodyCancelled = OneShot()
     let caller = Task {

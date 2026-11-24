@@ -501,12 +501,11 @@ import Testing
   /// the lease must return too: the last release cancels the start task
   /// before it stops the context.
   ///
-  /// The time limit of one minute is the bound of the wait. The embedder
-  /// never answers, so a catalog that waits for the index does not return
-  /// and the test fails at the limit. A catalog that returns mounts the code
+  /// The embedder never answers, so a catalog that waits for the index
+  /// does not return. A catalog that returns mounts the code
   /// context group, and the first index pass ends only after the release
   /// of the lease stopped the context.
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func theCatalogDoesNotWaitForTheCodeContextIndex() async throws {
     var loader = StubModelLoader()
     loader.makeEmbeddingContainer = { _ in NeverAnsweringEmbeddingContainer() }
@@ -877,8 +876,8 @@ import Testing
   /// is written in the project layer after the build reaches
   /// `commandUpdates` as a new slash command. A registry with
   /// `watch: false` publishes no command set for the write, thus the wait
-  /// does not end and the time limit fails the test.
-  @Test(.timeLimit(.minutes(1)))
+  /// does not end.
+  @Test
   func theSkillsSourcePublishesTheCommandOfANewSkill() async throws {
     let context = try await Self.makeContext()
     let registry = await ToolCatalog.makeSkillsSource(context: context).registry

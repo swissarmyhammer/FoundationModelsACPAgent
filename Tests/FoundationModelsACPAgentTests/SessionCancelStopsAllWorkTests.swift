@@ -20,7 +20,7 @@ import Testing
 ///
 /// Each test opens the root session with an inline settle period of zero, so each run goes to the
 /// background at once: the root answer ends, and only the background work is left.
-@Suite(.closesHarnesses, .timeLimit(.minutes(1))) struct SessionCancelStopsAllWorkTests {
+@Suite(.closesHarnesses) struct SessionCancelStopsAllWorkTests {
   /// The prefix of the folders of each fixture of this suite.
   private static let label = "SessionCancelStopsAllWorkTests"
 

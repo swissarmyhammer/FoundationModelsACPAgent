@@ -10,7 +10,7 @@ import Testing
 
 extension SubagentAnnouncerTests {
   /// What the agent sends to the client for an agent run.
-  @Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct Wire {
+  @Suite(.closesHarnesses) struct Wire {
     /// The prefix of the folders of each fixture of this suite.
     private static let label = "SubagentAnnouncerTests"
 

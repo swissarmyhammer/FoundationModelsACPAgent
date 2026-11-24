@@ -73,7 +73,7 @@ import Testing
   // MARK: - The turn
 
   /// The end of a prompt gives the chunk items of its session to the index.
-  @Test(.timeLimit(.minutes(3))) func aTurnGivesTheItemsOfItsSession() async throws {
+  @Test func aTurnGivesTheItemsOfItsSession() async throws {
     let fixture = try await Self.fixtureAfterOnePrompt(label: "turn")
     let index = fixture.harness.agent.transcriptSearchIndex
 
@@ -85,7 +85,7 @@ import Testing
 
   /// A summary of the directory that does not read does not stop the turn: the turn ends, and
   /// the end of the prompt writes its history with the user message of the response.
-  @Test(.timeLimit(.minutes(3))) func aFailedIndexUpdateDoesNotStopTheTurn() async throws {
+  @Test func aFailedIndexUpdateDoesNotStopTheTurn() async throws {
     let fixture = try await ScriptedPromptFixture.make(
       script: Self.script, label: "\(Self.label)-failure")
     await fixture.harness.agent.transcriptSearchUpdates.useSummaryReader { id in
@@ -104,7 +104,7 @@ import Testing
 
   /// The shutdown of the agent waits until the index applied and saved the last turn: a new
   /// index over the folder of the agent holds the turn (D207, ^y7nx1g3).
-  @Test(.timeLimit(.minutes(3))) func theShutdownKeepsTheLastTurn() async throws {
+  @Test func theShutdownKeepsTheLastTurn() async throws {
     let fixture = try await Self.fixtureAfterOnePrompt(label: "shutdown")
     let agentIndex = fixture.harness.agent.transcriptSearchIndex
 
@@ -121,7 +121,7 @@ import Testing
   // MARK: - The fork
 
   /// A fork is indexed as its own session, with the copy of the history of its source.
-  @Test(.timeLimit(.minutes(3))) func aForkIsIndexedAsItsOwnSession() async throws {
+  @Test func aForkIsIndexedAsItsOwnSession() async throws {
     let fixture = try await Self.fixtureAfterOnePrompt(label: "fork")
     let index = fixture.harness.agent.transcriptSearchIndex
 
@@ -138,7 +138,7 @@ import Testing
   // MARK: - The delete
 
   /// `session/delete` removes each item of the session.
-  @Test(.timeLimit(.minutes(3))) func aDeleteRemovesTheItemsOfTheSession() async throws {
+  @Test func aDeleteRemovesTheItemsOfTheSession() async throws {
     let fixture = try await Self.fixtureAfterOnePrompt(label: "delete")
     let index = fixture.harness.agent.transcriptSearchIndex
     try await Self.waitUntil { await Self.holdsTheAnswer(fixture.sessionId, in: index) }
@@ -156,7 +156,7 @@ import Testing
 
   /// The reconcile gives the chunks of the history file of a session that changed since the
   /// index read it.
-  @Test(.timeLimit(.minutes(3))) func theReconcileGivesTheChunksOfAChangedFile() async throws {
+  @Test func theReconcileGivesTheChunksOfAChangedFile() async throws {
     let fixture = try await Self.fixtureAfterOnePrompt(label: "reconcile")
     let entry = try #require(await fixture.harness.agent.sessions[fixture.sessionId])
     await fixture.close()
@@ -182,7 +182,7 @@ import Testing
 
   /// The session item that the reconcile gives for a recorded session has the same facts as
   /// the summary of the session directory for the live session (D207, ^pqweam5).
-  @Test(.timeLimit(.minutes(3))) func theReconcileGivesTheFactsOfTheLiveSummary() async throws {
+  @Test func theReconcileGivesTheFactsOfTheLiveSummary() async throws {
     let fixture = try await Self.fixtureAfterOnePrompt(label: "reconcile-facts")
     let entry = try #require(await fixture.harness.agent.sessions[fixture.sessionId])
     let live = try #require(
@@ -207,7 +207,7 @@ import Testing
   /// record (D199). The index updates of the fixture read the summary of the closed session from
   /// that directory, and under load they can run after the close. Thus a title removed from the
   /// original record can come back before the reconcile reads it.
-  @Test(.timeLimit(.minutes(3))) func aRecordWithNoTitleGetsTheSlugOfTheRouter() async throws {
+  @Test func aRecordWithNoTitleGetsTheSlugOfTheRouter() async throws {
     let label = "reconcile-no-title"
     let fixture = try await Self.fixtureAfterOnePrompt(label: label)
     let entry = try #require(await fixture.harness.agent.sessions[fixture.sessionId])

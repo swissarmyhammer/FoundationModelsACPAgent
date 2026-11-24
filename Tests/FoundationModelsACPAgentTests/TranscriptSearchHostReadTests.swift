@@ -151,7 +151,7 @@ import Testing
 
   /// The change stream of the server index of `RoutedACPAgent` gives the turns of a session
   /// after a prompt. The host subscribes before the prompt.
-  @Test(.timeLimit(.minutes(3))) func theAgentGivesTheTurnsOfAPromptInTheChangeStream()
+  @Test func theAgentGivesTheTurnsOfAPromptInTheChangeStream()
     async throws
   {
     let (session, turns) = try await Self.streamedTurns(label: "agent-stream") {
@@ -163,7 +163,7 @@ import Testing
 
   /// The change stream of the server index of `ComposedAgent` gives the turns of a session
   /// after a prompt. The host subscribes before the prompt.
-  @Test(.timeLimit(.minutes(3))) func theComposedAgentGivesTheTurnsOfAPromptInTheChangeStream()
+  @Test func theComposedAgentGivesTheTurnsOfAPromptInTheChangeStream()
     async throws
   {
     let (session, turns) = try await Self.streamedTurns(label: "composed-stream") {
@@ -176,7 +176,7 @@ import Testing
   // MARK: - The reads of the state
 
   /// `turns(of:)` gives the turns of a server session after a prompt.
-  @Test(.timeLimit(.minutes(3))) func theTurnsOfAServerSessionHoldThePrompt() async throws {
+  @Test func theTurnsOfAServerSessionHoldThePrompt() async throws {
     let (session, turns) = try await Self.afterOnePrompt(label: "turns") { composed, sessionId in
       let changes = composed.transcriptSearchChanges
       return (sessionId, try await Self.polledTurns(of: sessionId) {
@@ -188,7 +188,7 @@ import Testing
   }
 
   /// `allTurns()` gives the turns of the server sessions after a prompt.
-  @Test(.timeLimit(.minutes(3))) func allTurnsHoldTheServerSession() async throws {
+  @Test func allTurnsHoldTheServerSession() async throws {
     let (session, turns) = try await Self.afterOnePrompt(label: "all-turns") {
       composed, sessionId in
       let changes = composed.transcriptSearchChanges

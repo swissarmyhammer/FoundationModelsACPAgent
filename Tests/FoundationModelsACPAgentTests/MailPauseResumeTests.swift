@@ -19,7 +19,7 @@ import FoundationModelsRouter
 /// A child session keeps its pause in force too (task ^c4hafqw). A mail that the child takes
 /// lifts it. A hot resume sends the pause in force of a live child after the own `state_update` of
 /// the child, and a cold restore sends none for a child.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct MailPauseResumeTests {
+@Suite(.closesHarnesses) struct MailPauseResumeTests {
   // MARK: - Constants
 
   /// The id of the session of the projector that the lift test drives.

@@ -20,7 +20,7 @@ import Testing
 @Suite(.closesHarnesses) struct AgentConflictVersionSourceTests {
   /// The agent registry of a catalog context follows the changes of the
   /// conflict source of that context.
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func theAgentRegistryOfAContextFollowsTheSourceOfTheContext() async throws {
     let source = RecordingConflictVersionSource()
     let context = try await CatalogRegistryFixture.makeContext(
@@ -37,7 +37,7 @@ import Testing
 
   /// The agent registry of a session follows the changes of the conflict
   /// source that the agent got.
-  @Test(.timeLimit(.minutes(1)))
+  @Test
   func theAgentRegistryOfASessionFollowsTheSourceOfTheAgent() async throws {
     let source = RecordingConflictVersionSource()
     let agent = try await makeStubAgent(

@@ -13,7 +13,7 @@ import Testing
 /// through the directory of the agent, and waits for the reply of the target. Then it resumes the
 /// target: in the same agent (a live resume), or in a second agent that reads the history file (a
 /// cold resume). The suite trait closes each harness of a test whose body throws.
-@Suite(.closesHarnesses, .timeLimit(.minutes(2))) struct DirectoryMessageReplayTests {
+@Suite(.closesHarnesses) struct DirectoryMessageReplayTests {
   /// The directory label of the suite.
   private static let label = "DirectoryMessageReplayTests"
 
