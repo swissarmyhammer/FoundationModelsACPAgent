@@ -208,6 +208,62 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     }
   }
 
+  /// Plays one pass of the script for `prompt`, and streams its text as fragments. Each fragment
+  /// also carries each reasoning entry of the pass whose text changed since the fragment before
+  /// (``ResponseFragment/reasoning``), as the snapshot of a live SDK call does. Thus Router sends
+  /// a thought before the text that comes after it in the pass: a thought shows where it starts
+  /// (Testudo ^ras4xe9). The reasoning reaches the transcript before the text of a later step,
+  /// so the order does not depend on the timing of the transcript stream.
+  ///
+  /// - Parameters:
+  ///   - prompt: The prompt the pass answers.
+  ///   - maxTokens: The token ceiling, which the script ignores.
+  /// - Returns: A stream of the fragments of the pass. It ends with the error of a play that
+  ///   throws.
+  public func streamResponseFragments(to prompt: String, maxTokens: Int?)
+    -> AsyncThrowingStream<ResponseFragment, Error>
+  {
+    AsyncThrowingStream { continuation in
+      let playback = Task {
+        var reported: [String: Int] = [:]
+        do {
+          _ = try await playPass(prompt: prompt) { delta in
+            let changed = self.passReasoning().filter { reported[$0.entryId] != $0.text.utf8.count }
+            for entry in changed {
+              reported[entry.entryId] = entry.text.utf8.count
+            }
+            continuation.yield(ResponseFragment(text: delta, reasoning: changed))
+          }
+          continuation.finish()
+        } catch {
+          continuation.finish(throwing: error)
+        }
+      }
+      continuation.onTermination = { _ in playback.cancel() }
+    }
+  }
+
+  /// The reasoning entries of the pass in flight: each `.reasoning` entry after the last
+  /// `.prompt` entry, with all of its text so far, in transcript order.
+  ///
+  /// - Returns: The entries.
+  private func passReasoning() -> [InFlightReasoning] {
+    synthesized.withLock { state in
+      let start = state.entries.lastIndex { entry in
+        if case .prompt = entry { return true }
+        return false
+      } ?? -1
+      return state.entries.dropFirst(start + 1).compactMap { entry -> InFlightReasoning? in
+        guard case .reasoning(let reasoning) = entry else { return nil }
+        let text = reasoning.segments.compactMap { segment -> String? in
+          guard case .text(let text) = segment else { return nil }
+          return text.content
+        }.joined(separator: "\n")
+        return InFlightReasoning(entryId: reasoning.id, text: text)
+      }
+    }
+  }
+
   /// Makes a fork that starts from the entries of this backend now.
   ///
   /// - Returns: A new backend with a sibling of the playbook.
