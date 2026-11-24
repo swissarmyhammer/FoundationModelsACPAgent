@@ -556,8 +556,11 @@ actor PromptStateOwner {
   private var isEnding = false
 
   /// The waiters suspended in ``waitForPromptEnd()`` until the terminator
-  /// goes out.
-  private var endWaiters: [CheckedContinuation<Void, Never>] = []
+  /// goes out, by the key of each wait.
+  private var endWaiters: [UInt64: CheckedContinuation<Void, Never>] = [:]
+
+  /// The key of the next wait of ``waitForPromptEnd()``.
+  private var nextEndWaiterToken: UInt64 = 0
 
   /// Creates the owner of one prompt of the session of `ledger`.
   ///
@@ -603,8 +606,8 @@ actor PromptStateOwner {
     isEnding = true
     await ledger.promptEnded(PromptExecution.idleState(for: stop), started: didStart)
     stopReason = reason
-    let waiters = endWaiters
-    endWaiters = []
+    let waiters = endWaiters.values
+    endWaiters = [:]
     for waiter in waiters {
       waiter.resume()
     }
@@ -615,13 +618,34 @@ actor PromptStateOwner {
   /// awaits it, so the client learns the prompt ended before the close
   /// response. If not, a client with a spinner does not learn that the
   /// prompt ended. It returns at once when the prompt already ended.
+  ///
+  /// It also returns when its task is cancelled, before the prompt ended. So
+  /// a cancelled close does not wait for a prompt that never ends.
   func waitForPromptEnd() async {
     guard stopReason == nil else {
       return
     }
-    await withCheckedContinuation { continuation in
-      endWaiters.append(continuation)
+    let token = nextEndWaiterToken
+    nextEndWaiterToken += 1
+    await withTaskCancellationHandler {
+      await withCheckedContinuation { continuation in
+        guard !Task.isCancelled else {
+          continuation.resume()
+          return
+        }
+        endWaiters[token] = continuation
+      }
+    } onCancel: {
+      Task { await self.resumeEndWaiter(token) }
     }
+  }
+
+  /// Resumes one wait of ``waitForPromptEnd()`` whose task was cancelled. A
+  /// wait that ended before does not change.
+  ///
+  /// - Parameter token: The key of the wait.
+  private func resumeEndWaiter(_ token: UInt64) {
+    endWaiters.removeValue(forKey: token)?.resume()
   }
 
   /// Records that `session/cancel` asked this prompt to stop. The

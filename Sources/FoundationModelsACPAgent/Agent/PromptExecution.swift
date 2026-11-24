@@ -712,6 +712,10 @@ extension RoutedACPAgent {
   /// reason from the prompt-state owner. An accepted prompt always has a
   /// connection.
   ///
+  /// When the connection discards the work, the discard of the prompt ends
+  /// the prompt (``discardPrompt(_:sessionId:)``), and the span and the
+  /// measurement end after it.
+  ///
   /// - Parameters:
   ///   - span: The span of the prompt.
   ///   - measurement: The measurement of the prompt.
@@ -721,12 +725,14 @@ extension RoutedACPAgent {
     span: any Span, measurement: PromptMeasurement, owner: PromptStateOwner,
     connection: AgentSideConnection
   ) {
-    connection.afterRespondingToCurrentRequest {
+    let endTelemetry: @Sendable () async -> Void = {
       await owner.waitForPromptEnd()
       let stopReason = await owner.stopReason
       RequestTracing.endPromptSpan(span, stopReason: stopReason)
       measurement.record(stopReason: stopReason)
     }
+    connection.afterRespondingToCurrentRequest(
+      endTelemetry, onDiscard: { Task { await endTelemetry() } })
   }
 
   /// Accepts one prompt: the work of ``prompt(_:)`` before the response.
@@ -856,12 +862,36 @@ extension RoutedACPAgent {
       contentResolver: ResourceLinkResolver(readVerb: entry.surface.filesReadVerb))
     // The prompt span context goes with the work, so each Router
     // submission span of the prompt is a child of the prompt span.
-    connection.afterRespondingInCurrentInstrumentationContext {
-      await execution.run(mailId: mailId, session: session, projector: projector) { _ in
+    connection.afterRespondingInCurrentInstrumentationContext(
+      {
+        await execution.run(mailId: mailId, session: session, projector: projector) { _ in
+          await self.promptFinished(owner, sessionId: sessionId)
+        }
+      },
+      onDiscard: discardPrompt(owner, sessionId: sessionId))
+    return PromptResponse(messageId: messageId)
+  }
+
+  /// Gives the `onDiscard` handler of the deferred run of one prompt.
+  ///
+  /// When the connection closes while the handler of `session/prompt` runs, the connection writes
+  /// no response and the deferred run never runs (Testudo ^7w2b5nn). The handler then ends the
+  /// prompt as `cancelled` and does its end work, as the deferred run does. If not, the owner stays
+  /// in the open prompts of the session, and a close of the session waits for ever for its end.
+  ///
+  /// - Parameters:
+  ///   - owner: The prompt-state owner of the prompt.
+  ///   - sessionId: The session of the prompt.
+  /// - Returns: The handler. The connection calls it one time, outside the actor.
+  nonisolated func discardPrompt(
+    _ owner: PromptStateOwner, sessionId: SessionId
+  ) -> @Sendable () -> Void {
+    {
+      Task {
+        await owner.promptDidEnd(stop: .cancelled)
         await self.promptFinished(owner, sessionId: sessionId)
       }
     }
-    return PromptResponse(messageId: messageId)
   }
 
   /// Stops all the work of one session, at once: a cancel is a command,

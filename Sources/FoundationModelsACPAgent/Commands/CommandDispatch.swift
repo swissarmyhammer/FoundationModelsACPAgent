@@ -293,10 +293,12 @@ extension RoutedACPAgent {
           prompt: prompt, messageID: messageId.rawValue, reply: reply)
       }
       let recordingExecution = execution
-      connection.afterRespondingInCurrentInstrumentationContext {
-        await recordingExecution.run()
-        await self.promptFinished(owner, sessionId: sessionId)
-      }
+      connection.afterRespondingInCurrentInstrumentationContext(
+        {
+          await recordingExecution.run()
+          await self.promptFinished(owner, sessionId: sessionId)
+        },
+        onDiscard: discardPrompt(owner, sessionId: sessionId))
       return (PromptResponse(messageId: messageId), owner)
     case .modelPrompt(let text, let owner):
       let response = scheduleModelPrompt(
