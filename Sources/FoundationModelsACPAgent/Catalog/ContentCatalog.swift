@@ -16,6 +16,9 @@ public struct ContentCatalog: Sendable {
 
   /// The typed sessions of other agents (part 5), for each source with a root.
   public let externalSessions: ExternalSessionContentCatalog
+
+  /// The setting `spotlight.enabled` of each known folder (part 6).
+  public let folderSettings: SpotlightFolderSettings
 }
 
 /// One change of a part of the content catalog. A change stream holds the newest changes that
@@ -44,6 +47,7 @@ extension RoutedACPAgent {
         directory: sessionDirectory, readableFolder: transcriptSearchIndex.readableFolder,
         removals: contentRemovalFeed),
       turns: transcriptSearchChanges,
-      externalSessions: ExternalSessionContentCatalog(index: sessionImporter.index))
+      externalSessions: ExternalSessionContentCatalog(index: sessionImporter.index),
+      folderSettings: SpotlightFolderSettings(store: settingsStore))
   }
 }

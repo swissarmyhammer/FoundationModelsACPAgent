@@ -405,7 +405,7 @@ public actor SettingsStore {
   ///
   /// - Returns: The stream. It ends when the caller stops to iterate it, or
   ///   when ``stopWatching()`` runs.
-  public func changes() -> AsyncStream<SettingsChange> {
+  public nonisolated func changes() -> AsyncStream<SettingsChange> {
     let (stream, continuation) = AsyncStream.makeStream(of: SettingsChange.self)
     let token = UUID()
     subscribers.withLock { $0[token] = continuation }
