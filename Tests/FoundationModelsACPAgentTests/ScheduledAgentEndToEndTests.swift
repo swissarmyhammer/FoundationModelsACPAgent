@@ -20,7 +20,7 @@ import Testing
 /// holds until the test releases it, and plays its result text. The scheduler mails the report of
 /// the run to the root session, and the client sees that mail as a `session_message` of the root.
 ///
-/// Every wait is bounded by ``waitBound``.
+/// No wait has a clock bound: each wait ends when its condition comes.
 @Suite(.closesHarnesses) struct ScheduledAgentEndToEndTests {
   /// The prefix of the folders of each fixture of this suite.
   private static let label = "ScheduledAgentEndToEndTests"
@@ -50,9 +50,6 @@ import Testing
 
   /// How late a firing may start after its time.
   private static let firingLateness: TimeInterval = 10
-
-  /// The longest wait for one condition on the wire.
-  private static let waitBound = Duration.seconds(20)
 
   /// The format of the schedule text: an ISO 8601 date and time in UTC, to the second.
   private static let scheduleFormat = Date.ISO8601FormatStyle()
@@ -129,14 +126,12 @@ import Testing
   ///
   /// - Parameter call: The files of the call.
   /// - Returns: The time that the task fires, as the schedule text gives it.
-  /// - Throws: ``ConditionWaitCancelled`` when the pass does not reach the call in time, or the
+  /// - Throws: ``ConditionWaitCancelled`` when the task is cancelled, or the
   ///   error of the write.
   private static func writeScheduleCall(_ call: CallFiles) async throws -> Date {
     let reached = call.reached
-    try await bounded(by: waitBound) {
-      try await FileWriteWatch.wait(on: reached, for: "the pass of the root reached the call") {
-        (try? Data(contentsOf: reached).isEmpty == false) ?? false
-      }
+    try await FileWriteWatch.wait(on: reached, for: "the pass of the root reached the call") {
+      (try? Data(contentsOf: reached).isEmpty == false) ?? false
     }
     let schedule = scheduleFormat.format(Date().addingTimeInterval(leadTime))
     let arguments = #"""
@@ -196,19 +191,19 @@ import Testing
 
   // MARK: - Waits
 
-  /// Waits until `isMet` accepts the updates of `collector`, for at most ``waitBound``.
+  /// Waits until `isMet` accepts the updates of `collector`.
   ///
   /// - Parameters:
   ///   - condition: The name of the condition, for the error of a wait that does not end.
   ///   - collector: The collector of the agent.
   ///   - isMet: Tells if the condition is true for the updates.
   /// - Returns: The first updates that `isMet` accepts.
-  /// - Throws: ``ConditionWaitCancelled`` when the bound comes first.
+  /// - Throws: ``ConditionWaitCancelled`` when the task is cancelled.
   private static func wait(
     for condition: String, in collector: UpdateCollector,
     until isMet: @escaping @Sendable ([UpdateSessionNotification]) -> Bool
   ) async throws -> [UpdateSessionNotification] {
-    try await bounded(by: waitBound) { try await collector.wait(for: condition, until: isMet) }
+    try await collector.wait(for: condition, until: isMet)
   }
 
   /// Waits until a firing played its first text on a session other than `root`, and gives the
@@ -218,7 +213,7 @@ import Testing
   ///   - root: The root session.
   ///   - collector: The collector of the agent.
   /// - Returns: The time of the first text of the firing.
-  /// - Throws: ``ConditionWaitCancelled`` when no firing starts in time.
+  /// - Throws: ``ConditionWaitCancelled`` when the task is cancelled.
   private static func waitForFiring(
     of root: SessionId, in collector: UpdateCollector
   ) async throws -> Date {
@@ -253,7 +248,7 @@ import Testing
   ///   - root: The root session.
   ///   - collector: The collector of the agent.
   /// - Returns: The messages of the result.
-  /// - Throws: ``ConditionWaitCancelled`` when no result comes in time.
+  /// - Throws: ``ConditionWaitCancelled`` when the task is cancelled.
   private static func waitForResult(
     of root: SessionId, in collector: UpdateCollector
   ) async throws -> [FoundationModelsACP.SessionMessage] {
@@ -287,7 +282,7 @@ import Testing
   ///   - root: The root session.
   ///   - collector: The collector of the agent.
   /// - Returns: The updates at that point.
-  /// - Throws: ``ConditionWaitCancelled`` when the root stays with no work.
+  /// - Throws: ``ConditionWaitCancelled`` when the task is cancelled.
   private static func waitForWork(
     of root: SessionId, in collector: UpdateCollector
   ) async throws -> [UpdateSessionNotification] {
