@@ -143,6 +143,9 @@ struct AgentSessionImporter: Sendable {
       request, transcript: ImportedTranscript.make(from: imported.updates))
     try writeHistory(of: imported, for: summary)
     await continuations.add(summary)
+    // The row of the source has one more copy now. Each subscriber of its changes gets the row
+    // again, so an open view of the source shows the copy (Testudo ^bq170kn).
+    await index.republish(matching: session.sourceID, of: agent)
     ACPAgentTelemetry.logger(.session).info(
       "The importer made a new session from a session of another agent.",
       metadata: ACPAgentTelemetry.sessionMetadata(SessionId(rawValue: summary.id.description)))

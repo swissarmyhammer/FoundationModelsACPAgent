@@ -1271,6 +1271,25 @@ extension ExternalSessionIndex {
     return summary
   }
 
+  /// Publishes the row of one session in the state `read` again, with no read of its file. The
+  /// host calls it when a field that the host adds to the row changed, for example a new copy of
+  /// the session. The subscribers get the row in `changed`, with the folder filter of each
+  /// change.
+  ///
+  /// - Parameters:
+  ///   - source: The id of the session, or the path of its file.
+  ///   - agent: The source agent.
+  /// - Returns: False when the index has no such session in the state `read`, and so publishes
+  ///   nothing.
+  @discardableResult
+  func republish(matching source: String, of agent: ImportSourceAgent) -> Bool {
+    guard let path = path(matching: source, of: agent), let entry = roots[agent]?.entries[path],
+      entry.summary.state == .read
+    else { return false }
+    publish(changed: [entry])
+    return true
+  }
+
   /// The path of the entry whose id or file path is `source`.
   private func path(matching source: String, of agent: ImportSourceAgent) -> String? {
     guard let root = roots[agent] else { return nil }

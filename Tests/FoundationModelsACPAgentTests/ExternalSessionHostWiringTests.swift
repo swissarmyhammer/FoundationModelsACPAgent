@@ -339,6 +339,31 @@ import Testing
     #expect(changed?.fileURL != nil)
   }
 
+  @Test(
+    "a continue gives the source row with the new copy to a subscriber of its folder and of each folder",
+    arguments: [claudeFolder, nil])
+  func aContinueGivesTheSourceRowToASubscriber(folder: URL?) async throws {
+    let fixture = try await Self.fixture(name: "copy-change-\(folder == nil ? "all" : "folder")")
+    defer { await fixture.close() }
+    let host: any ExternalSessionHost = fixture.harness.agent.sessionImporter
+    var changes = host.externalSessionChanges(folder: folder).makeAsyncIterator()
+    _ = await changes.next()
+
+    let copy = try await host.continueExternalSession(
+      ExternalSessionContinueRequest(
+        session: Self.session,
+        folder: makeResolvedDirectory(label: "\(Self.label)-copy-change-folder")))
+    var changed: ExternalSessionSummary?
+    while changed == nil, let change = await changes.next() {
+      changed = change.changed.first { $0.id == Self.session && !$0.continuedSessions.isEmpty }
+    }
+
+    #expect(
+      changed?.continuedSessions
+        == [ExternalSessionContinuation(sessionID: copy.id, createdAt: copy.createdAt)])
+    #expect(changed?.fileURL != nil)
+  }
+
   @Test("the lookup of one session gives the row of the page, with its file URL and its copies")
   func theLookupGivesTheRowOfThePage() async throws {
     let fixture = try await Self.fixture(name: "lookup")
