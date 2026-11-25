@@ -733,6 +733,96 @@ import Testing
     #expect(await Self.rebuiltStatus(of: "call-1", in: failed) == .value(.failed))
   }
 
+  /// The shape of turn 4 of the session "what is your name" (Testudo): the run events of each
+  /// background call (the pending envelope, then the end) come in the journal before the SDK
+  /// entries of the passes, because Router writes those entries in one batch at the end of the
+  /// turn. Each thought shows where it starts: before the tool call of its pass. The rebuild must
+  /// not make a call row at the end of its run before the entries of the pass.
+  @Test func theRunEventsBeforeTheEntriesOfTheirPassesKeepEachThoughtBeforeItsCall()
+    async throws
+  {
+    var journal = JournalBuilder()
+    journal.add(
+      .prompt(Transcript.Prompt(segments: [.text(Transcript.TextSegment(content: "Find it."))])),
+      adding: [JournalBuilder.delivery(of: "Find it.", mail: MailID())])
+    let calls = ["call-1", "call-2"]
+    var tokens: [String] = []
+    for callId in calls {
+      let token = ULID.generate().description
+      tokens.append(token)
+      journal.add(
+        kind: .toolCallStarted, text: nil,
+        entry: TranscriptEntryPayload(
+          entryId: "started-call-\(callId)",
+          toolCalls: [
+            ToolCallPayload(id: callId, toolName: "runCode", argumentsJSON: "{}", correlationID: token)
+          ]))
+      journal.addRunEvent(
+        OperationEvent(
+          tool: "runCode", op: "runCode", correlationID: token, kind: .progress,
+          detail: try Self.renderedEnvelope(token: token)))
+      journal.addRunEvent(
+        OperationEvent(
+          tool: "runCode", op: "runCode", correlationID: token, kind: .completed, detail: "Done.",
+          outcome: .succeeded))
+    }
+    func reasoning(_ text: String) -> Transcript.Entry {
+      .reasoning(Transcript.Reasoning(segments: [.text(Transcript.TextSegment(content: text))]))
+    }
+    func response(_ text: String) -> Transcript.Entry {
+      .response(Transcript.Response(segments: [.text(Transcript.TextSegment(content: text))]))
+    }
+    for (index, callId) in calls.enumerated() {
+      journal.add(response(""))
+      journal.add(reasoning("Thought \(index + 1)."))
+      journal.add(
+        .toolCalls(
+          Transcript.ToolCalls([
+            Transcript.ToolCall(
+              id: callId, toolName: "runCode", arguments: try GeneratedContent(json: "{}"))
+          ])))
+      journal.add(
+        .toolOutput(
+          Transcript.ToolOutput(
+            id: callId, toolName: "runCode",
+            segments: [.text(Transcript.TextSegment(content: "Output \(index + 1)."))])))
+    }
+    journal.add(response("The answer."))
+    journal.add(reasoning("The last thought."))
+
+    let rebuilt = await RecordedHistoryRebuild.rebuilt(
+      from: journal.events, sessionId: SessionId(rawValue: journal.sessionId.description))
+    let order = rebuilt.history.transcriptUpdates.compactMap { update -> String? in
+      switch update {
+      case .userMessage: "user"
+      case .agentMessage: "agent"
+      case .agentThought: "thought"
+      case .toolCallUpdate(let call): call.toolCallId.rawValue
+      default: nil
+      }
+    }
+
+    #expect(order == ["user", "thought", "call-1", "thought", "call-2", "thought", "agent"])
+    #expect(await Self.rebuiltStatus(of: "call-1", in: journal) == .value(.completed))
+  }
+
+  /// A file that a build before the order fix of the run events wrote (it has
+  /// `recordsModelOrder` and no `recordsRunOrder`) reads as a file that is not in the order of
+  /// the model, so the next resume puts it in the order of the journal again.
+  @Test func aFileWithNoRunOrderMarkerIsNotInTheOrderOfTheModel() throws {
+    let directory = makeResolvedDirectory(label: "SessionHistoryRebuildTests-run-order")
+    let file = SessionHistoryFile.url(in: directory)
+    let update = SessionUpdate.userMessage(
+      UserMessage(messageId: MessageId(rawValue: "m1"), content: .value([.text(TextContent(text: "Hi."))])))
+    let updates = try JSONSerialization.jsonObject(with: JSONEncoder().encode([update]))
+    let old: [String: Any] = ["updates": updates, "recordsMailDelivery": true, "recordsModelOrder": true]
+    try JSONSerialization.data(withJSONObject: old).write(to: file)
+    #expect(try SessionHistoryFile.readFile(from: directory)?.recordsModelOrder == false)
+
+    try SessionHistoryFile.write(try #require(try SessionHistoryFile.read(from: directory)), in: directory)
+    #expect(try SessionHistoryFile.readFile(from: directory)?.recordsModelOrder == true)
+  }
+
   // MARK: - The rebuild of a journal
 
   /// The events of one journal, as Router writes them, for the rebuild proofs.

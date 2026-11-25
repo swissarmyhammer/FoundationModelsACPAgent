@@ -55,6 +55,13 @@ enum SessionHistoryFile {
     /// thought, message. This build writes `true`. A file of an earlier build has no member,
     /// and can hold the thoughts of a turn after its answer (``RecordedHistoryMerge``).
     let recordsModelOrder: Bool?
+
+    /// Whether the transcript holds each call row at the place of its pass, also when the run
+    /// events of the call come before the entries of the pass in the journal (the rebuild after
+    /// this fix). This build writes `true`. A file with `recordsModelOrder` and no member was
+    /// put in order by a build before the fix, and can hold each call row before the thoughts
+    /// of its turn: it reads as a file that is not in the order of the model.
+    let recordsRunOrder: Bool?
   }
 
   /// The history in a file, with the facts of the build that wrote it.
@@ -81,7 +88,7 @@ enum SessionHistoryFile {
   static func write(_ history: SessionMergeEngine, in directory: URL) throws {
     let contents = Contents(
       updates: history.transcriptUpdates + history.stateUpdates, recordsMailDelivery: true,
-      recordsModelOrder: true)
+      recordsModelOrder: true, recordsRunOrder: true)
     let data = try JSONEncoder().encode(contents)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     try data.write(to: url(in: directory), options: .atomic)
@@ -149,7 +156,7 @@ enum SessionHistoryFile {
     return Read(
       history: recordsMailDelivery ? history : history.withEarlierBuildDeliveryRecords(),
       recordsMailDelivery: recordsMailDelivery,
-      recordsModelOrder: contents.recordsModelOrder == true)
+      recordsModelOrder: contents.recordsModelOrder == true && contents.recordsRunOrder == true)
   }
 
   /// An update with the tool output one time. A build before ACPAgent 44850640 wrote the

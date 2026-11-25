@@ -112,6 +112,13 @@ enum RecordedHistoryRebuild {
       }
     }
     var runs = BackgroundRuns()
+    // The id of each call that a `toolCalls` entry gave to the history.
+    var givenCallIds: Set<String> = []
+    // The ends of the runs whose call no `toolCalls` entry gave yet, by the id of the call. Router
+    // writes the run events of a turn live, and the SDK entries of the passes can come later in
+    // one batch: an end goes out after the entry of its call, so the call row is at the place of
+    // its pass, after the thought of the pass.
+    var heldEnds: [String: [OperationEvent]] = [:]
     for event in events {
       // The marker of a started call joins the token of its run to the id of the call, as the
       // live session does. Thus a call whose output is the pending envelope of its run stays
@@ -121,7 +128,14 @@ enum RecordedHistoryRebuild {
         runs.calls[token] = callId
       }
       // The end of a run gives the final status of its call, as the settlement does live.
-      let ends = runs.read(event.operationEvents)
+      var ends: [OperationEvent] = []
+      for end in runs.read(event.operationEvents) {
+        if let callId = runs.calls[end.correlationID], !givenCallIds.contains(callId) {
+          heldEnds[callId, default: []].append(end)
+        } else {
+          ends.append(end)
+        }
+      }
       if !ends.isEmpty {
         for held in heldResponses {
           await give(held)
@@ -147,9 +161,23 @@ enum RecordedHistoryRebuild {
         heldResponses = []
         await give(recorded)
       }
+      if event.kind == .toolCalls {
+        for call in EventFields(of: event)?.entry?.toolCalls ?? [] {
+          givenCallIds.insert(call.id)
+          for end in heldEnds.removeValue(forKey: call.id) ?? [] {
+            await translator.project(.runSettled(end))
+          }
+        }
+      }
     }
     for held in heldResponses {
       await give(held)
+    }
+    // The end of a run whose call no entry gave: the call row comes from the end, at the end.
+    for callId in heldEnds.keys.sorted() {
+      for end in heldEnds[callId] ?? [] {
+        await translator.project(.runSettled(end))
+      }
     }
     // A run in the background that did not end in the journal was still running when the
     // process stopped. Its call is open, as the live history keeps it: an SDK output that the
