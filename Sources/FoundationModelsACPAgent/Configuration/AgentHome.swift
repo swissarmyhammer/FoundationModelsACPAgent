@@ -37,8 +37,9 @@ public struct AgentHome: Sendable, Equatable {
     case xdg(configHome: URL)
 
     /// The layout of a host root: each user layer is in ``synced``. The
-    /// configuration and the agents are in the root itself, the skills
-    /// in `_skills/`, and the rules in `_rules/` (``SettingsFolders``).
+    /// configuration and the agents are in the root itself, and the skills
+    /// in `_skills/`. The rules are in `Rules/` next to the root
+    /// (``SettingsFolders``, D63).
     case rooted
   }
 

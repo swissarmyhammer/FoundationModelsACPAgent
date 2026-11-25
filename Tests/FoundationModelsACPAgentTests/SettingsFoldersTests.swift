@@ -178,9 +178,6 @@ struct SettingsFoldersTests {
       projectDotfolder: ToolCatalog.skillsDotfolderName,
       builtinDefaults: BuiltinSkills.directory),
     KindCase(kind: .agents, userPathInRoot: "", projectDotfolder: ToolCatalog.agentsDotfolderName),
-    KindCase(
-      kind: .rules, userPathInRoot: SettingsFolders.rulesFolderName,
-      projectDotfolder: SettingsFolders.rulesDotfolderName),
   ]
 
   /// The user layer root that a case expects in `root`.
@@ -323,6 +320,68 @@ struct SettingsFoldersTests {
       .stack(for: kindCase.kind, workingDirectory: fixture.workingDirectory)
 
     #expect(!stack.layers.contains { $0.source == .defaults })
+  }
+
+  // MARK: - The rules folders (D63)
+
+  /// The rules folder of the project layer, `<cwd>/.agents/rules/`.
+  ///
+  /// - Parameter fixture: The fixture.
+  /// - Returns: The folder.
+  private static func projectRulesFolder(of fixture: Fixture) -> URL {
+    fixture.workingDirectory
+      .appendingPathComponent(".agents", isDirectory: true)
+      .appendingPathComponent("rules", isDirectory: true)
+  }
+
+  /// With a root, the rules stack is `<iCloud container>/Rules/` (the
+  /// folder `Rules/` next to the synced root) under
+  /// `<cwd>/.agents/rules/`, with no defaults layer (D63).
+  @Test func withARootTheRulesAreNextToTheRootAndInTheAgentsDotfolder() throws {
+    let fixture = Fixture(label: "rules-root")
+
+    let stack = try fixture.settingsFolders(hasRoot: true)
+      .stack(for: .rules, workingDirectory: fixture.workingDirectory)
+
+    let expected = DotfolderStack(layers: [
+      DotfolderStack.Layer(
+        source: .user,
+        root: fixture.root.deletingLastPathComponent()
+          .appendingPathComponent("Rules", isDirectory: true)),
+      DotfolderStack.Layer(source: .project, root: Self.projectRulesFolder(of: fixture)),
+    ])
+    #expect(Self.layerList(of: stack) == Self.layerList(of: expected))
+  }
+
+  /// With no root, the rules stack is `$XDG_CONFIG_HOME/agents/rules/`
+  /// under `<cwd>/.agents/rules/`, with no defaults layer (D63).
+  @Test func withNoRootTheRulesAreInTheAgentsFolders() throws {
+    let fixture = Fixture(label: "rules-no-root")
+
+    let stack = try fixture.settingsFolders(hasRoot: false)
+      .stack(for: .rules, workingDirectory: fixture.workingDirectory)
+
+    let expected = DotfolderStack(layers: [
+      DotfolderStack.Layer(
+        source: .user,
+        root: fixture.configHome
+          .appendingPathComponent("agents", isDirectory: true)
+          .appendingPathComponent("rules", isDirectory: true)),
+      DotfolderStack.Layer(source: .project, root: Self.projectRulesFolder(of: fixture)),
+    ])
+    #expect(Self.layerList(of: stack) == Self.layerList(of: expected))
+  }
+
+  /// No rules layer is the old `<cwd>/.rules/`, which Zed uses for a file.
+  @Test(arguments: [true, false])
+  func noRulesLayerIsTheRulesDotfolder(hasRoot: Bool) throws {
+    let fixture = Fixture(label: "rules-no-dotfolder-\(hasRoot)")
+    let old = fixture.workingDirectory.appendingPathComponent(".rules", isDirectory: true)
+
+    let stack = try fixture.settingsFolders(hasRoot: hasRoot)
+      .stack(for: .rules, workingDirectory: fixture.workingDirectory)
+
+    #expect(!stack.layers.contains { $0.root.standardizedFileURL == old.standardizedFileURL })
   }
 
   // MARK: - The layers with no root
@@ -643,9 +702,10 @@ struct SettingsFoldersTests {
         .standardizedFileURL.path)
   }
 
-  /// With a root, the settings folders `<root>/_skills/` and
-  /// `<root>/_rules/` are not agents, also when each holds an `AGENT.md`,
-  /// and they give no diagnostic.
+  /// With a root, the settings folder `<root>/_skills/` and a
+  /// `<root>/_rules/` folder (the name of the rules folder of an agent,
+  /// D63) are not agents, also when each holds an `AGENT.md`, and they give
+  /// no diagnostic.
   @Test func withARootTheSettingsFoldersOfTheRootAreNotAgents() async throws {
     let fixture = Fixture(label: "agents-settings")
     try Self.writeAgent(id: SettingsFolders.skillsFolderName, under: fixture.root)

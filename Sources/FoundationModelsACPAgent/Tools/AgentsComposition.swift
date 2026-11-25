@@ -266,7 +266,8 @@ enum AgentsComposition {
   /// `agents/<id>/AGENT.md`; in one layer the `<id>/` copy wins. The root
   /// `AGENT.md` of a layer is the default agent. A child folder whose name is
   /// not a valid agent id is not an agent. It gives no diagnostic. So the
-  /// settings folders `_skills/` and `_rules/` of the root are not agents.
+  /// settings folder `_skills/` of the root and a `_rules/` folder (the
+  /// name of the rules folder of an agent, D63) are not agents.
   ///
   /// The registry watches (`watch: true`). After its first build, a
   /// `DotfolderWatcher` watches the root of each local layer, the root

@@ -18,13 +18,22 @@ import FoundationModelsMultitool
 /// 2. The user level, which the ``AgentHome`` of the host gives (task
 ///    ^98a44n7). With a custom home it is a folder in the synced root:
 ///    `<synced>/` for `config.yaml` and `Instructions.md`, `<synced>/_skills/`
-///    for the skills, `<synced>/_rules/` for the rules, and `<synced>/` for
-///    the agents. The settings folders in the root start with `_`, because a
-///    name that starts with `_` is never a valid agent id. With the XDG home
-///    of the `acp-agent` CLI, it is the XDG folder of the dotfolder name of
-///    the kind, `$XDG_CONFIG_HOME/<dotfolder>/` or `~/.config/<dotfolder>/`.
+///    for the skills, and `<synced>/` for the agents. The settings folders
+///    in the root start with `_`, because a name that starts with `_` is
+///    never a valid agent id. With the XDG home of the `acp-agent` CLI, it
+///    is the XDG folder of the dotfolder name of the kind,
+///    `$XDG_CONFIG_HOME/<dotfolder>/` or `~/.config/<dotfolder>/`.
 /// 3. The session level: the project dotfolder `<cwd>/.<dotfolder>/` of the
 ///    working directory of the session. It wins.
+///
+/// The rules follow TestudoApp decision D63 and the plan of
+/// FoundationModelsRules, not the pattern above:
+///
+/// - The user level of a custom home is `Rules/` next to the synced root
+///   (`<iCloud container>/Rules/` next to `Agents/`). With the XDG home, it
+///   is `$XDG_CONFIG_HOME/agents/rules/`.
+/// - The session level is `<cwd>/.agents/rules/`. The name `.rules` is not
+///   used, because Zed has a `.rules` file.
 ///
 /// The home always gives the user layer, thus no stack derives a folder of
 /// the home directory or of `XDG_CONFIG_HOME` on its own.
@@ -41,19 +50,29 @@ public struct SettingsFolders: Sendable {
     /// The agents, under the dotfolder name `agents`.
     case agents
 
-    /// The rules, under the dotfolder name `rules`. FoundationModelsRules
-    /// reads no stack yet, thus only the folders are set here.
+    /// The rules, in the folders of D63: ``rulesUserFolderName`` next to
+    /// the synced root, or `agents/rules/` in the XDG config home, and
+    /// `<cwd>/.agents/rules/`. FoundationModelsRules reads no stack yet,
+    /// thus only the folders are set here.
     case rules
   }
 
   /// The folder in the synced root of a custom home that holds the skills.
   public static let skillsFolderName = "_skills"
 
-  /// The folder in the synced root of a custom home that holds the rules.
+  /// The folder in an agent folder that holds the rules of that agent:
+  /// the agent layer of D63, `<agent folder>/_rules/`. The name starts with
+  /// `_`, thus a `_rules/` folder in the synced root is never an agent.
   public static let rulesFolderName = "_rules"
 
-  /// The dotfolder name of the rules stack.
+  /// The name of the rules stack: the prefix of its defaults variable
+  /// `RULES_DEFAULTS_DIR`, and the folder of the rules in the agents
+  /// dotfolder (`<cwd>/.agents/rules/`, `$XDG_CONFIG_HOME/agents/rules/`).
   public static let rulesDotfolderName = "rules"
+
+  /// The folder next to the synced root of a custom home that holds the
+  /// user rules: `<iCloud container>/Rules/` next to `Agents/` (D63).
+  public static let rulesUserFolderName = "Rules"
 
   /// The dotfolder name of the host: the dotfolder name of the
   /// configuration stack.
@@ -91,12 +110,49 @@ public struct SettingsFolders: Sendable {
   /// - Returns: The stack.
   public func stack(for kind: Kind, workingDirectory: URL) -> DotfolderStack {
     let dotfolder = dotfolderName(of: kind)
+    if case .rules = kind {
+      return rulesStack(workingDirectory: workingDirectory)
+    }
     return DotfolderStack(
       name: dotfolder, workingDirectory: workingDirectory,
       defaultsDirectory: Self.builtinDirectory(of: kind),
       userDirectory: home.userLayerRoot(
         dotfolder: dotfolder, folderInRoot: Self.folderInRoot(of: kind)),
       environment: environment)
+  }
+
+  /// The rules stack of D63: the defaults layer of `RULES_DEFAULTS_DIR`,
+  /// when it is set, the user rules folder of the home, and
+  /// `<workingDirectory>/.agents/rules/`.
+  ///
+  /// - Parameter workingDirectory: The working directory of the session.
+  /// - Returns: The stack.
+  private func rulesStack(workingDirectory: URL) -> DotfolderStack {
+    let derived = DotfolderStack(
+      name: Self.rulesDotfolderName, workingDirectory: workingDirectory,
+      userDirectory: rulesUserFolder, environment: environment)
+    let project = workingDirectory
+      .appendingPathComponent(".\(ToolCatalog.agentsDotfolderName)", isDirectory: true)
+      .appendingPathComponent(Self.rulesDotfolderName, isDirectory: true)
+    return DotfolderStack(
+      layers: derived.layers.map {
+        $0.source == .project ? DotfolderStack.Layer(source: .project, root: project) : $0
+      })
+  }
+
+  /// The user rules folder of the home: ``rulesUserFolderName`` next to
+  /// the synced root of a custom home, or `<config home>/agents/rules/` of
+  /// the XDG home.
+  private var rulesUserFolder: URL {
+    switch home.settingsLayout {
+    case .xdg(let configHome):
+      configHome
+        .appendingPathComponent(ToolCatalog.agentsDotfolderName, isDirectory: true)
+        .appendingPathComponent(Self.rulesDotfolderName, isDirectory: true)
+    case .rooted:
+      home.synced.deletingLastPathComponent()
+        .appendingPathComponent(Self.rulesUserFolderName, isDirectory: true)
+    }
   }
 
   /// The dotfolder name of the stack of `kind`.
@@ -143,12 +199,10 @@ public struct SettingsFolders: Sendable {
   /// - Returns: The folder name, or `nil` for the synced root itself.
   private static func folderInRoot(of kind: Kind) -> String? {
     switch kind {
-    case .configuration, .agents:
+    case .configuration, .agents, .rules:
       nil
     case .skills:
       skillsFolderName
-    case .rules:
-      rulesFolderName
     }
   }
 }

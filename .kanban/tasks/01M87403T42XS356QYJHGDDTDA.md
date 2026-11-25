@@ -1,7 +1,7 @@
 ---
 assignees:
 - claude-code
-position_column: todo
+position_column: done
 position_ordinal: '80'
 title: 'Rules folders: follow D63 (<cwd>/.agents/rules/, the user rules folders)'
 ---

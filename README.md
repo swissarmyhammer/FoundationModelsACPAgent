@@ -625,7 +625,8 @@ levels over the built-in level. The session level wins over the user level.
 - **The session level** is the project dotfolder of the working directory of
   each session: `<cwd>/.<name>/` for `config.yaml` and `Instructions.md`,
   `<cwd>/.skills/` for the skills, `<cwd>/.agents/` for the agents, and
-  `<cwd>/.rules/` for the rules.
+  `<cwd>/.agents/rules/` for the rules (TestudoApp decision D63; the name
+  `.rules` is not used, because Zed has a `.rules` file).
 - **The user level** comes from the home of the host (`AgentHome`), which
   `ComposedAgent.compose` and `RoutedACPAgent.init` take as `home:`.
 
@@ -728,7 +729,7 @@ uses the XDG home.
 |---|---|---|
 | `config.yaml`, `Instructions.md` | `<synced>/` | `$XDG_CONFIG_HOME/<name>/` (default `~/.config/<name>/`) |
 | skills | `<synced>/_skills/` | `$XDG_CONFIG_HOME/skills/` |
-| rules | `<synced>/_rules/` | `$XDG_CONFIG_HOME/rules/` |
+| rules | `Rules/` next to `<synced>/` (D63) | `$XDG_CONFIG_HOME/agents/rules/` |
 | agents | `<synced>/` | `$XDG_CONFIG_HOME/agents/` |
 | hook data and snapshots | `<local>/hooks/` | `$XDG_DATA_HOME/<name>/hooks/` (default `~/.local/share/<name>/hooks/`) |
 | skills marketplace cache | `<local>/skills-marketplace/` | `SKILLS_MARKETPLACE_CACHE`, or its default folder |
@@ -741,7 +742,7 @@ With a custom home, no stack holds a folder in the home directory or in
 an agent is `<synced>/<id>/AGENT.md` (or `<synced>/agents/<id>/AGENT.md`), and
 the session level is `<cwd>/.agents/`, never the working directory itself. A
 folder in the synced root whose name starts with `_` holds settings: it is
-never a valid agent id, so `<synced>/_skills/` and `<synced>/_rules/` are not
+never a valid agent id, so `<synced>/_skills/` and a `<synced>/_rules/` folder are not
 agents and give no diagnostic. The built-in level is the defaults folder that
 `<NAME>_DEFAULTS_DIR` names, for example `SKILLS_DEFAULTS_DIR`, and the
 compiled-in `builtin.config.yaml`. `acp-agent config path` shows the layers of
