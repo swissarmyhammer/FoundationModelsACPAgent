@@ -378,7 +378,30 @@ import Testing
     #expect(meta["afterMessageId"] == .string(try #require(expected.last?.id)))
     let lastIndex = try #require(replayUpdates.lastIndex { Self.isModelChangedNotice($0) })
     #expect(ReplayedMessage.replayed(in: Array(replayUpdates[..<lastIndex])) == expected)
+    _ = try await second.fixture.harness.connection.closeSession(
+      CloseSessionRequest(sessionId: first.fixture.sessionId))
     await second.fixture.close()
+
+    // The history keeps the notice: a later resume replays it at the same place, and a second
+    // move adds a second notice after it.
+    let secondOlder = "stub/oldest-standard"
+    _ = try Self.replaceModel(in: index, with: secondOlder)
+    let third = try await ResumeSessionFixture.make(
+      label: "SessionResumeTests-other-model-third", workingDirectory: first.fixture.cwd)
+    let thirdBefore = await third.fixture.collector.updates.count
+    _ = try await third.fixture.harness.connection.resumeSession(
+      first.makeResumeRequest(replayFrom: .start(ReplayFromStart())))
+    let thirdUpdates = Array(await third.fixture.collector.updates.dropFirst(thirdBefore))
+      .map(\.update)
+    let thirdNotices = Self.modelChangedNotices(in: thirdUpdates)
+    #expect(thirdNotices.count == 2)
+    #expect(thirdNotices.first == notice)
+    #expect(
+      thirdNotices.last?.title
+        == "This session was recorded with \(secondOlder). It continues with \(resident).")
+    let firstNoticeIndex = try #require(thirdUpdates.firstIndex { Self.isModelChangedNotice($0) })
+    #expect(ReplayedMessage.replayed(in: Array(thirdUpdates[..<firstNoticeIndex])) == expected)
+    await third.fixture.close()
   }
 
   /// Whether an update is the notice of a model change of a resume.
@@ -444,6 +467,7 @@ import Testing
   /// - Returns: The model that the file held before.
   /// - Throws: The error of the read or of the write, or a failed requirement when the file
   ///   names no model.
+  @discardableResult
   private static func replaceModel(in file: URL, with model: String) throws -> String {
     let text = try String(contentsOf: file, encoding: .utf8)
     let pattern = try Regex(#"(model:\s*\n\s*repo:\s*)(\S+)"#)

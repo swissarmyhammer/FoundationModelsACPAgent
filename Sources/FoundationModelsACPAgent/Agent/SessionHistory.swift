@@ -326,10 +326,13 @@ extension SessionMergeEngine {
   /// delivery (``MailDeliveryRecord``) and without a record of the date of an entry
   /// (``EntryDateRecord``), which no client gets. The export of a session as Markdown renders the
   /// same updates (``RoutedACPAgent/transcriptMarkdown(of:includeThoughts:)``).
+  ///
+  /// A kept notice of a model change (``ModelChangeNoticeRecord``) goes out as the `notice` that
+  /// it holds, at its place in the transcript.
   var replayedTranscriptUpdates: [SessionUpdate] {
     transcriptUpdates.filter {
       !$0.isMailDeliveryPause && !$0.isMailDeliveryRecord && !$0.isEntryDateRecord
-    }
+    }.map { ModelChangeNoticeRecord.notice(in: $0).map(SessionUpdate.notice) ?? $0 }
   }
 }
 
@@ -893,5 +896,38 @@ extension RoutedACPAgent {
         metadata: ACPAgentTelemetry.errorMetadata(error, sessionId: sessionId))
       return []
     }
+  }
+}
+
+/// The record of a notice of a model change in the retained history.
+///
+/// A `notice` is not history in ACP: the merge engine does not keep it. A model change is a fact
+/// of the session, so the history keeps its notice as an entry of a private update type, at its
+/// place in the transcript. The replay sends the `notice` that the entry holds
+/// (``SessionMergeEngine/replayedTranscriptUpdates``). No client gets the private type.
+enum ModelChangeNoticeRecord {
+  /// The update type of the entry.
+  static let updateType = "_model_change_notice"
+
+  /// The entry that keeps `notice`.
+  ///
+  /// - Parameter notice: The notice.
+  /// - Returns: The update of the entry, or `nil` when the notice does not encode.
+  static func record(of notice: Notice) -> SessionUpdate? {
+    guard let data = try? JSONEncoder().encode(notice),
+      let payload = try? JSONDecoder().decode(FoundationModelsACP.JSONValue.self, from: data)
+    else { return nil }
+    return .unknown(updateType, payload)
+  }
+
+  /// The notice that an entry keeps.
+  ///
+  /// - Parameter update: An update of the history.
+  /// - Returns: The notice, or `nil` for another update.
+  static func notice(in update: SessionUpdate) -> Notice? {
+    guard case .unknown(updateType, let payload) = update,
+      let data = try? JSONEncoder().encode(payload)
+    else { return nil }
+    return try? JSONDecoder().decode(Notice.self, from: data)
   }
 }

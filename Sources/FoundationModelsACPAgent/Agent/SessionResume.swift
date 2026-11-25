@@ -209,12 +209,14 @@ extension RoutedACPAgent {
     let activation = cold.activation
     let history = cold.history
 
+    // A session that moved to another model says so at the end of its history, before the
+    // replay, so the replay sends the notice and each later replay sends it at the same place.
+    if let change = restored.modelChanges.first(where: { $0.session == rootId }) {
+      recordModelChangeNotice(change, in: params.sessionId)
+    }
     // The restore of the nested sessions can add the open calls of the root to its history.
-    let replayedHistory = sessions[params.sessionId]?.history ?? history
-    try await replayHistory(replayedHistory, from: replayCursor, sessionId: params.sessionId)
-    // A session that moved to another model says so after its history.
-    await announceModelChange(
-      of: restored, rootId: rootId, after: replayedHistory, sessionId: params.sessionId)
+    try await replayHistory(
+      sessions[params.sessionId]?.history ?? history, from: replayCursor, sessionId: params.sessionId)
     // A restored run that the agent drives again is work, and so is each caller that waits for
     // it. The current state of the root and the snapshots of the children say so.
     await holdRestoredWork(of: params.sessionId)
@@ -560,41 +562,35 @@ extension RoutedACPAgent {
       data: .object(["detail": .string(String(describing: error))]))
   }
 
-  /// Sends the notice of a model change: the restore moved the root to another model of its
-  /// slot (a session that was recorded before the profile changed). The notice comes after the
-  /// replay, so it is at the end of the history that the client shows, and before the first new
-  /// turn. A notice is not history, so the agent does not keep it, and a later resume sends no
-  /// notice: the session runs on the current model then.
+  /// Keeps the notice of a model change at the end of the history of a session, and writes the
+  /// history file: the restore moved the session to another model of its slot (a session that
+  /// was recorded before the profile changed). The replay sends the notice
+  /// (``ModelChangeNoticeRecord``), so each later resume shows it at the same place, and a later
+  /// move adds one more notice. A root and a nested session use it.
   ///
   /// The notice: severity `info`; the title "This session was recorded with <recorded model>. It
   /// continues with <current model>."; `_meta` with `kind` "modelChanged", `recordedModel`,
-  /// `model`, and `afterMessageId` (the id of the last message of the history, or no member when
-  /// the history has no message).
+  /// `model`, and `afterMessageId` (the id of the last message of the history before the notice,
+  /// or no member when the history has no message).
   ///
   /// - Parameters:
-  ///   - restored: The result of the restore.
-  ///   - rootId: The recorded id of the root.
-  ///   - history: The history that the resume replays.
-  ///   - sessionId: The resumed session.
-  private func announceModelChange(
-    of restored: RestoredSession, rootId: ULID, after history: SessionMergeEngine,
-    sessionId: SessionId
-  ) async {
-    guard let change = restored.modelChanges.first(where: { $0.session == rootId }),
-      let connection = connections.path(forSession: sessionId)?.connection
-    else { return }
+  ///   - change: The move of the session.
+  ///   - sessionId: The session that moved.
+  func recordModelChangeNotice(_ change: RestoredSession.ModelChange, in sessionId: SessionId) {
+    guard let entry = sessions[sessionId] else { return }
     ACPAgentTelemetry.logger(.sessionResume).notice(
       "The resume moved the session to the resident model of its slot.",
       metadata: ACPAgentTelemetry.sessionMetadata(sessionId).merging([
         "recordedModel": .string(change.recordedModel.stringValue),
         "model": .string(change.model.stringValue),
       ]) { $1 })
-    await connection.post(
-      .notice(Self.modelChangeNotice(change, after: history.replayUpdates(from: .start))),
-      in: sessionId)
+    let notice = Self.modelChangeNotice(change, after: entry.history.replayedTranscriptUpdates)
+    guard let record = ModelChangeNoticeRecord.record(of: notice) else { return }
+    entry.retainedHistory.apply(record)
+    writeHistory(of: sessionId, indexesSearch: false)
   }
 
-  /// The notice of a model change. See ``announceModelChange(of:rootId:after:sessionId:)``.
+  /// The notice of a model change. See ``recordModelChangeNotice(_:in:)``.
   ///
   /// - Parameters:
   ///   - change: The move of the session.
