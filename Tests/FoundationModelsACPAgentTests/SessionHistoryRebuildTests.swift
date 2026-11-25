@@ -351,6 +351,101 @@ import Testing
       })
   }
 
+  /// (f) A history file of a build before ACPAgent 44850640 holds each tool output two times: the
+  /// summary of Router (the texts of the output joined with a newline) before the output (the
+  /// "jensen" session, Testudo ^fgbds9q). The resume replays each output one time, and the file
+  /// that it writes again holds each output one time.
+  @Test func aFileWithEachToolOutputTwoTimesReplaysEachOutputOneTime() async throws {
+    var outputs: [[ToolCallContent]] = []
+    try await Self.resumeAfterDamage(
+      prompts: [Self.firstPrompt, Self.secondPrompt],
+      damage: { file in
+        try Self.writeOldFormat(of: file)
+        let doubled = try Self.writeEachToolOutputTwoTimes(of: file)
+        #expect(doubled > 0)
+        let damaged = try #require(try SessionHistoryFile.read(from: file.deletingLastPathComponent()))
+        outputs = Self.toolOutputs(in: damaged.replayUpdates(from: .start))
+      },
+      read: { resumed, replay, _, _ in
+        #expect(!outputs.isEmpty)
+        #expect(Self.toolOutputs(in: replay) == outputs)
+        #expect(Self.toolOutputs(in: replay).allSatisfy { $0.count == 1 })
+        let written = try #require(try SessionHistoryFile.readFile(from: resumed.directory))
+        let data = try Data(contentsOf: SessionHistoryFile.url(in: resumed.directory))
+        let contents = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let updates = try #require(contents["updates"] as? [[String: Any]])
+        let written2 = updates.filter { $0["sessionUpdate"] as? String == "tool_call_update" }
+          .compactMap { $0["content"] as? [[String: Any]] }
+        #expect(!written2.isEmpty && written2.allSatisfy { $0.count == 1 })
+        #expect(Self.toolOutputs(in: written.history.replayUpdates(from: .start)) == outputs)
+      })
+  }
+
+  /// The repair removes the summary before the output and nothing else: two different texts,
+  /// and a summary that is not the texts of the output, stay.
+  @Test func theRepairOfARepeatedToolOutputKeepsAnotherContent() {
+    func text(_ value: String) -> ToolCallContent {
+      .content(Content(content: .text(TextContent(text: value))))
+    }
+    func update(_ content: [ToolCallContent]) -> SessionUpdate {
+      var call = ToolCallUpdate(toolCallId: ToolCallId(rawValue: "call-1"))
+      call.content = .value(content)
+      return .toolCallUpdate(call)
+    }
+
+    #expect(
+      SessionHistoryFile.withoutRepeatedToolOutput(update([text("a\nb"), text("a"), text("b")]))
+        == update([text("a"), text("b")]))
+    #expect(
+      SessionHistoryFile.withoutRepeatedToolOutput(update([text("a"), text("b")]))
+        == update([text("a"), text("b")]))
+    #expect(
+      SessionHistoryFile.withoutRepeatedToolOutput(update([text("a b"), text("a"), text("b")]))
+        == update([text("a b"), text("a"), text("b")]))
+  }
+
+  /// The content of each tool call update with content, in order.
+  ///
+  /// - Parameter updates: The updates.
+  /// - Returns: The content of each update.
+  private static func toolOutputs(in updates: [SessionUpdate]) -> [[ToolCallContent]] {
+    updates.compactMap { update in
+      guard case .toolCallUpdate(let call) = update, case .value(let content) = call.content,
+        !content.isEmpty
+      else { return nil }
+      return content
+    }
+  }
+
+  /// Writes the history file `file` again with each tool output two times, as a build before
+  /// ACPAgent 44850640 wrote it: the texts of the output, joined with a newline, before the
+  /// output.
+  ///
+  /// - Parameter file: The history file.
+  /// - Returns: The count of the tool call updates that it changed.
+  /// - Throws: The error of the read or of the write.
+  private static func writeEachToolOutputTwoTimes(of file: URL) throws -> Int {
+    var contents = try #require(
+      try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+    var updates = try #require(contents["updates"] as? [[String: Any]])
+    var changed = 0
+    for index in updates.indices {
+      guard updates[index]["sessionUpdate"] as? String == "tool_call_update",
+        let content = updates[index]["content"] as? [[String: Any]], !content.isEmpty
+      else { continue }
+      let texts = content.compactMap { ($0["content"] as? [String: Any])?["text"] as? String }
+      guard texts.count == content.count else { continue }
+      let summary: [String: Any] = [
+        "type": "content", "content": ["type": "text", "text": texts.joined(separator: "\n")],
+      ]
+      updates[index]["content"] = [summary] + content
+      changed += 1
+    }
+    contents["updates"] = updates
+    try JSONSerialization.data(withJSONObject: contents).write(to: file, options: .atomic)
+    return changed
+  }
+
   /// (e) A history file that holds fewer turns than the Router journal (a build before ACPAgent
   /// 44850640 wrote the file only at the end of a turn) replays each turn of the journal: the
   /// turn that the file lacks comes after the turns of the file (Testudo ^fgbds9q).

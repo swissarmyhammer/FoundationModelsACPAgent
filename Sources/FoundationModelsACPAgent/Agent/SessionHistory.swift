@@ -144,7 +144,7 @@ enum SessionHistoryFile {
       return nil
     }
     let contents = try JSONDecoder().decode(Contents.self, from: Data(contentsOf: file))
-    let history = SessionMergeEngine(replaying: contents.updates)
+    let history = SessionMergeEngine(replaying: contents.updates.map(withoutRepeatedToolOutput))
     let recordsMailDelivery = contents.recordsMailDelivery == true
     return Read(
       history: recordsMailDelivery ? history : history.withEarlierBuildDeliveryRecords(),
@@ -152,11 +152,41 @@ enum SessionHistoryFile {
       recordsModelOrder: contents.recordsModelOrder == true)
   }
 
+  /// An update with the tool output one time. A build before ACPAgent 44850640 wrote the
+  /// content of a tool call update as the summary of Router, then the output: the summary is the
+  /// texts of the output, joined with a newline, so each output was in the file two times. A
+  /// content whose first text is the texts of the rest, joined with a newline, loses that first
+  /// text. Another update does not change.
+  ///
+  /// - Parameter update: The update of the file.
+  /// - Returns: The update with the output one time.
+  static func withoutRepeatedToolOutput(_ update: SessionUpdate) -> SessionUpdate {
+    guard case .toolCallUpdate(var call) = update, case .value(let content) = call.content,
+      content.count >= 2, let summary = text(of: content[0])
+    else { return update }
+    let texts = content.dropFirst().map(text(of:))
+    guard texts.allSatisfy({ $0 != nil }), summary == texts.compactMap({ $0 }).joined(separator: "\n")
+    else { return update }
+    call.content = .value(Array(content.dropFirst()))
+    return .toolCallUpdate(call)
+  }
+
+  /// The text of a text block of tool content, or `nil` for another kind.
+  ///
+  /// - Parameter content: The tool content.
+  /// - Returns: The text, or `nil`.
+  private static func text(of content: ToolCallContent) -> String? {
+    guard case .content(let block) = content, case .text(let text) = block.content else {
+      return nil
+    }
+    return text.text
+  }
+
   /// The URL of the file in `directory`.
   ///
   /// - Parameter directory: The transcript directory of the session.
   /// - Returns: The file URL.
-  private static func url(in directory: URL) -> URL {
+  static func url(in directory: URL) -> URL {
     directory.appendingPathComponent(fileName, isDirectory: false)
   }
 }
