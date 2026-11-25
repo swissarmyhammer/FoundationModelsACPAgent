@@ -115,6 +115,10 @@ extension RoutedACPAgent {
       let history = await retainedHistory(
         kept: nil, directory: session.recordingDirectory, sessionId: sessionId)
       try await registerNestedSession(session, parent: parent, history: history)
+      // A nested session that moved to another model says so in its own history.
+      for change in run.modelChanges where change.session == run.id {
+        recordModelChangeNotice(change, in: sessionId)
+      }
     } catch {
       ACPAgentTelemetry.logger(.sessionResume).error(
         "The session of a restored run did not register. The run has no session of its own.",

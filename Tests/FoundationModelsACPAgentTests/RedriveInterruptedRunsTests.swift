@@ -418,6 +418,42 @@ import Testing
     await wire.fixture.close()
   }
 
+  // MARK: - A child recorded on another model
+
+  /// A child that was recorded on another model of its slot (the profile changed after the
+  /// recording) restores on the resident model, and its own replay holds one notice of the move.
+  @Test
+  func aChildRecordedOnAnotherModelReplaysANoticeOfTheMove() async throws {
+    let recording = try await ResumeNestedSessionsTests.recordShutDownChain()
+    let index = try #require(
+      FileManager.default.enumerator(at: recording.cwd, includingPropertiesForKeys: nil)?
+        .compactMap { $0 as? URL }
+        .first {
+          $0.lastPathComponent == "index.md"
+            && $0.deletingLastPathComponent().lastPathComponent == recording.child.rawValue
+        })
+    let text = try String(contentsOf: index, encoding: .utf8)
+    let match = try #require(text.firstMatch(of: try Regex(#"(model:\s*\n\s*repo:\s*)(\S+)"#)))
+    let range = try #require(match.output[2].range)
+    let resident = String(text[range])
+    let older = "stub/older-standard"
+    try text.replacingCharacters(in: range, with: older).write(
+      to: index, atomically: true, encoding: .utf8)
+
+    let wire = try await Self.resumeAndRedrive(recording, replaying: true)
+
+    let notices = wire.trace.compactMap { event -> Notice? in
+      guard case .update(wire.recording.child, .notice(let notice)) = event,
+        case .object(let meta)? = notice.meta, meta["kind"] == .string("modelChanged")
+      else { return nil }
+      return notice
+    }
+    #expect(notices.count == 1)
+    #expect(
+      notices.first?.title == "This session was recorded with \(older). It continues with \(resident).")
+    await wire.fixture.close()
+  }
+
   // MARK: - A child that cannot be re-driven
 
   /// A child whose definition is gone cannot run again. Its original call ends as `lost`, and the
