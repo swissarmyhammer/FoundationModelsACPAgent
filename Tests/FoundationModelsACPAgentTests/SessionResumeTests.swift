@@ -333,6 +333,87 @@ import Testing
     await resume.fixture.close()
   }
 
+  /// A session that was recorded on another model of its slot (the profile changed after the
+  /// recording, for example from a 4-bit to an 8-bit model) opens and replays each message. It
+  /// does not fail with "Internal error". The session moves to the resident model.
+  @Test
+  func aSessionRecordedOnAnotherModelOpensAndReplays() async throws {
+    var first = try await ResumeSessionFixture.make(label: "SessionResumeTests-other-model")
+    try await first.runPrompt("first question")
+    try await first.runPrompt("second question")
+    let expected = ReplayedMessage.live(in: await first.fixture.collector.updates.map(\.update))
+    let root = try first.recordingRoot
+    _ = try await first.fixture.harness.connection.closeSession(
+      CloseSessionRequest(sessionId: first.fixture.sessionId))
+    await first.fixture.close()
+    let index = try Self.indexFile(under: root, of: first.fixture.sessionId)
+    let resident = try Self.replaceModel(in: index, with: Self.olderModel)
+
+    let second = try await ResumeSessionFixture.make(
+      label: "SessionResumeTests-other-model-second", workingDirectory: first.fixture.cwd)
+    let countBefore = await second.fixture.collector.updates.count
+    _ = try await second.fixture.harness.connection.resumeSession(
+      first.makeResumeRequest(replayFrom: .start(ReplayFromStart())))
+    let replayUpdates = Array(await second.fixture.collector.updates.dropFirst(countBefore))
+      .map(\.update)
+
+    #expect(ReplayedMessage.replayed(in: replayUpdates) == expected)
+    let text = try String(contentsOf: index, encoding: .utf8)
+    #expect(text.contains(resident) && !text.contains(Self.olderModel))
+    await second.fixture.close()
+  }
+
+  /// A restore that fails gives the client a message that tells the cause, not only
+  /// "Internal error", and the data holds the detail.
+  @Test
+  func aFailedRestoreGivesAMessageWithTheCause() throws {
+    let error = SessionTreeRestorationError.noDurableRecordingsRoot
+    let failure = RoutedACPAgent.restoreFailure(error)
+
+    #expect(failure.code == .internalError)
+    #expect(failure.message.contains(try #require(error.errorDescription)))
+    #expect(failure.message != RequestError.internalError().message)
+  }
+
+  /// A model that the stub profile does not hold: the model of a recording before the profile
+  /// changed.
+  private static let olderModel = "stub/older-standard"
+
+  /// The `index.md` of the folder of a session under `root`.
+  ///
+  /// - Parameters:
+  ///   - root: The recording root.
+  ///   - sessionId: The session.
+  /// - Returns: The file.
+  /// - Throws: A failed requirement when no folder of the session holds the file.
+  private static func indexFile(under root: URL, of sessionId: SessionId) throws -> URL {
+    let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)?
+      .compactMap { $0 as? URL }
+      .filter {
+        $0.lastPathComponent == "index.md"
+          && $0.deletingLastPathComponent().lastPathComponent == sessionId.rawValue
+      } ?? []
+    return try #require(files.first)
+  }
+
+  /// Replaces the recorded model (the `repo` of `model`) in an `index.md` with `model`.
+  ///
+  /// - Parameters:
+  ///   - file: The `index.md`.
+  ///   - model: The new model.
+  /// - Returns: The model that the file held before.
+  /// - Throws: The error of the read or of the write, or a failed requirement when the file
+  ///   names no model.
+  private static func replaceModel(in file: URL, with model: String) throws -> String {
+    let text = try String(contentsOf: file, encoding: .utf8)
+    let pattern = try Regex(#"(model:\s*\n\s*repo:\s*)(\S+)"#)
+    let match = try #require(text.firstMatch(of: pattern))
+    let old = try #require(match.output[2].substring.map(String.init))
+    try text.replacingCharacters(in: try #require(match.output[2].range), with: model)
+      .write(to: file, atomically: true, encoding: .utf8)
+    return old
+  }
+
   /// A new agent over the same project resumes a session that an earlier
   /// agent ran, and replays each message with the id that the earlier
   /// agent gave it. The earlier agent wrote the retained history beside

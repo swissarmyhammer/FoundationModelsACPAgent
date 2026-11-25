@@ -1596,6 +1596,10 @@ extension RoutedLLM {
   ///   - switchingModel: `false` (the default) to restore the session onto the model that it
   ///     was recorded on. `true` to restore it onto this model, with the same id (the model
   ///     slot switch). The caller suspends and closes the old session first.
+  ///   - acceptingResidentModel: `true` to restore each session onto the resident model of its
+  ///     recorded slot, also when the session was recorded on another model of that slot (a
+  ///     resume after a change of the profile). `false` (the default) refuses that restore with
+  ///     `SessionTreeRestorationError.modelMismatch`.
   /// - Returns: The restored session and its reports, with the host rules of
   ///   ``makeBudgetedSession(instructions:workingDirectory:recordingRoot:tools:compaction:repetition:inlineSettleGrace:)``.
   /// - Throws: Whatever Router's restore throws.
@@ -1608,7 +1612,8 @@ extension RoutedLLM {
     hookSessionKey: String? = nil,
     claimingRuns: Set<RunKey> = [],
     transcriptReader: (any SessionTranscriptReader)?,
-    switchingModel: Bool = false
+    switchingModel: Bool = false,
+    acceptingResidentModel: Bool = false
   ) async throws -> RestoredSession {
     try await restoreSession(
       id: id,
@@ -1621,7 +1626,8 @@ extension RoutedLLM {
       hookSessionKey: hookSessionKey,
       claimingRuns: claimingRuns,
       transcriptReader: transcriptReader,
-      switchingModel: switchingModel)
+      switchingModel: switchingModel,
+      acceptingResidentModel: acceptingResidentModel)
   }
 }
 

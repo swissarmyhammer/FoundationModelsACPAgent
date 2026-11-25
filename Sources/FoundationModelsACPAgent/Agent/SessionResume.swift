@@ -486,8 +486,14 @@ extension RoutedACPAgent {
   /// A replay-only composition assembled no instructions, so the restore
   /// keeps the recorded instructions and writes no divergence event.
   ///
+  /// A session that was recorded on another model of its slot (the profile
+  /// changed after the recording) restores onto the resident model of that
+  /// slot, and Router records the move: the user sees the full history and
+  /// continues on the current model.
+  ///
   /// A restore that throws releases what the composed surface holds —
-  /// the surface never mounts, so nothing else would.
+  /// the surface never mounts, so nothing else would. The log has the error,
+  /// and the client receives a message that tells the cause.
   ///
   /// - Parameters:
   ///   - rootId: The recorded root session's id.
@@ -500,7 +506,8 @@ extension RoutedACPAgent {
   ///     sessions complete.
   /// - Returns: The restored session and its reports.
   /// - Throws: `RequestError.unknownSession` when the recording is
-  ///   gone, or whatever the restore throws.
+  ///   gone, the `RequestError` that the restore throws, or an internal
+  ///   `RequestError` whose message tells the cause of another failure.
   private func restoreRecordedSession(
     _ rootId: ULID, sessionId: SessionId, composition: SessionComposition,
     userPresence: UserPresence,
@@ -518,7 +525,8 @@ extension RoutedACPAgent {
         userPresence: userPresence,
         hookSessionKey: hookLineage.sessionKey,
         claimingRuns: claimingRuns,
-        transcriptReader: transcriptReader)
+        transcriptReader: transcriptReader,
+        acceptingResidentModel: true)
       logRestoreReports(of: restored, sessionId: sessionId)
       return restored
     } catch {
@@ -527,8 +535,26 @@ extension RoutedACPAgent {
       if case TranscriptTreeError.sessionNotFound = error {
         throw RequestError.unknownSession(id: sessionId)
       }
-      throw error
+      ACPAgentTelemetry.logger(.session).error(
+        "The recorded session did not restore.",
+        metadata: ACPAgentTelemetry.errorMetadata(error, sessionId: sessionId))
+      if error is RequestError {
+        throw error
+      }
+      throw Self.restoreFailure(error)
     }
+  }
+
+  /// The error that the client receives for a restore that failed: an internal error whose
+  /// message tells the cause, and whose data holds the detail.
+  ///
+  /// - Parameter error: The error of the restore.
+  /// - Returns: The request error.
+  static func restoreFailure(_ error: any Error) -> RequestError {
+    let cause = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
+    return RequestError(
+      code: .internalError, message: "The recorded session did not restore: \(cause)",
+      data: .object(["detail": .string(String(describing: error))]))
   }
 
   /// Logs what the restore could not re-apply: each missing tool name,
