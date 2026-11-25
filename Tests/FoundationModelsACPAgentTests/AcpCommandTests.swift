@@ -97,7 +97,8 @@ import Testing
     let workspace = makeResolvedDirectory(label: "AcpCommandTests-early-repo")
     let composed = try await AgentComposition.compose(
       workingDirectory: workspace,
-      environment: try ComposedPromptFixture.makeStubEnvironment(configHome: configHome))
+      environment: try ComposedPromptFixture.makeStubEnvironment(configHome: configHome),
+      homeDirectory: makeResolvedDirectory(label: "AcpCommandTests-home"))
     let (peer, agentEnd) = InMemoryTransport.pair()
     defer { peer.close() }
     try await peer.write(try Self.initializeFrame())
@@ -173,7 +174,8 @@ import Testing
     #expect(startLoad.configuration.compaction.toolOutputLimit == Self.startDirectoryLimit)
 
     let composed = try await AgentComposition.compose(
-      workingDirectory: startDirectory, environment: environment)
+      workingDirectory: startDirectory, environment: environment,
+      homeDirectory: makeResolvedDirectory(label: "AcpCommandTests-home"))
     let agent = composed.agent
     _ = try await agent.initialize(AgentClientHarness.makeInitializeRequest())
 
@@ -201,7 +203,8 @@ import Testing
     let workspace = makeResolvedDirectory(label: "AcpCommandTests-no-code-context-repo")
     let composed = try await AgentComposition.compose(
       workingDirectory: workspace,
-      environment: try ComposedPromptFixture.makeStubEnvironment(configHome: configHome))
+      environment: try ComposedPromptFixture.makeStubEnvironment(configHome: configHome),
+      homeDirectory: makeResolvedDirectory(label: "AcpCommandTests-home"))
     let agent = composed.agent
     _ = try await agent.initialize(AgentClientHarness.makeInitializeRequest())
 

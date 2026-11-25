@@ -108,15 +108,18 @@ private let agentsDependencyName = "FoundationModelsAgents"
 private let codeContextDependencyName = "FoundationModelsCodeContext"
 
 /// The kanban package: the board of a session folder as a GraphQL endpoint
-/// (`KanbanGraph`) and as a tool (`KanbanTool`). Only the `acp-agent`
-/// executable composition links it, so the library stays free of it: the
-/// library gives a seam (`SessionToolFactory`), and the executable fills it.
+/// (`KanbanGraph`) and as a tool (`KanbanTool`). Only the Kanban adapter
+/// target links it, so the library stays free of it: the library gives a
+/// seam (`SessionToolFactory`), and the adapter fills it.
 private let kanbanDependencyName = "FoundationModelsKanban"
 
-/// The adapter of the boards part of the content catalog (D214, part 3) over
-/// `KanbanHost`: `KanbanBoardContentSource`. A product of its own, so that
-/// the `acp-agent` executable and a host app (Testudo) give one adapter to
-/// `useBoardContentSource(_:)`, and the library stays free of Kanban.
+/// The adapters over `KanbanHost`: the boards part of the content catalog
+/// (D214, part 3), `KanbanBoardContentSource`, and the `kanban` tool of each
+/// session, `KanbanOperationTool.sessionToolFactory`. A product of its own,
+/// so that the `acp-agent` executable and a host app (Testudo) give the same
+/// adapters to `useBoardContentSource(_:)` and to
+/// `ComposedAgent.compose(..., sessionToolFactories:)`, and the library stays
+/// free of Kanban.
 private let kanbanAdapterTargetName = "\(packageName)Kanban"
 
 /// The ranker package: the selection tier and the text-embedding protocol
@@ -517,6 +520,7 @@ let package = Package(
             dependencies: [
                 .target(name: packageName),
                 makeFamilyProduct(name: kanbanDependencyName),
+                makeFamilyProduct(name: extrasDependencyName),
             ],
             path: "Sources/\(kanbanAdapterTargetName)"
         ),

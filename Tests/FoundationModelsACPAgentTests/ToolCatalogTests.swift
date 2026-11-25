@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModels
+import FoundationModelsACPAgentKanban
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsCodeContext
 import FoundationModelsExtras
@@ -10,7 +11,6 @@ import FoundationModelsSkills
 import Testing
 
 @testable import FoundationModelsACPAgent
-@testable import acp_agent
 
 /// The composition matrix of `ToolCatalog`: the
 /// session tools a default context mounts, the enable and disable codec,

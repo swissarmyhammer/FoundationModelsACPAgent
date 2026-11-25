@@ -1,12 +1,12 @@
 import Foundation
 import FoundationModelsACP
+import FoundationModelsACPAgentKanban
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsExtras
 import FoundationModelsKanban
 import Testing
 
 @testable import FoundationModelsACPAgent
-@testable import acp_agent
 
 /// A resumed session gets the tag, and so the actor, that it had before
 /// (`SessionTagStore`): `undoChange(input: {})` after a resume reaches the
@@ -33,7 +33,7 @@ import Testing
       query: "mutation { addTask(input: { title: \"before the resume\" }) { title } }",
       variables: [:], operationName: nil, viewer: nil)
     _ = try await harness.connection.closeSession(CloseSessionRequest(sessionId: sessionId))
-    await harness.agent.registerSessionToolFactories([AgentComposition.kanbanToolFactory])
+    await harness.agent.registerSessionToolFactories([KanbanOperationTool.sessionToolFactory])
 
     _ = try await harness.connection.resumeSession(resume.makeResumeRequest())
 

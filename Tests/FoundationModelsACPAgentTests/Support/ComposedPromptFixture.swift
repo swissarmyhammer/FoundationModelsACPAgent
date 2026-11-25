@@ -90,7 +90,8 @@ enum ComposedPromptFixture {
     wire: HarnessWire = .makeInMemory()
   ) async throws -> Outcome {
     let composed = try await AgentComposition.compose(
-      workingDirectory: workspace, environment: environment)
+      workingDirectory: workspace, environment: environment,
+      homeDirectory: makeResolvedDirectory(label: "ComposedPromptFixture-home"))
     #expect(composed.modelSource == .stub)
     let harness = await AgentClientHarness.makeRecording(agent: composed.agent, wire: wire)
     _ = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())

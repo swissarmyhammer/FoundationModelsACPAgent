@@ -224,6 +224,10 @@ enum AgentComposition {
   ///     start-up configuration loads from.
   ///   - environment: The environment that ``home(environment:)`` reads
   ///     the home from.
+  ///   - homeDirectory: The home folder of the user, which holds the
+  ///     folders of the import roots (``importRoots(environment:homeDirectory:)``).
+  ///     The real home folder by default. A test gives a temporary folder,
+  ///     so the agent does not index the real sessions of other agents.
   ///   - progress: The progress object the resolution reports into, or
   ///     `nil` for a fresh unobserved one. A caller that draws the
   ///     download bar of cli-plan.md §5.7 makes the object first, hands
@@ -236,6 +240,7 @@ enum AgentComposition {
   static func compose(
     workingDirectory: URL,
     environment: [String: String],
+    homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
     reporting progress: ResolutionProgress? = nil
   ) async throws -> ComposedAgent {
     let composed = try await ComposedAgent.compose(
@@ -247,35 +252,12 @@ enum AgentComposition {
       modelSource: modelSource(),
       stubChunkGate: stubChunkGate(),
       stubScript: stubScript(),
-      sessionToolFactories: [kanbanToolFactory],
+      sessionToolFactories: [KanbanOperationTool.sessionToolFactory],
       reporting: progress,
-      importRoots: importRoots(
-        environment: environment,
-        homeDirectory: FileManager.default.homeDirectoryForCurrentUser))
+      importRoots: importRoots(environment: environment, homeDirectory: homeDirectory))
     // The boards of the content catalog (D214) read the folders through the shared host.
     composed.useBoardContentSource(KanbanBoardContentSource())
     return composed
-  }
-
-  /// The factory of the `kanban` tool of each session. It asks the shared
-  /// ``KanbanHost`` for a view of the board of the folder of the session. The
-  /// host keeps one engine for each folder, and the view lives as long as the
-  /// tool holds it, so the release of the session releases the view. The
-  /// Multitool registry of the session mounts the tool under the noun
-  /// `kanban`, and the model reaches it with `tools.kanban.runKanban`. The model
-  /// writes through this view with the actor of the session. A tunnel call of
-  /// a person reaches the same graph, and the graph records the actor of its
-  /// viewer. The actor name has the tag of the session, so the `undoChange`
-  /// of one session does not reverse the change of another session in the
-  /// same folder. The factory makes no tool when `tools.kanban` is off.
-  static let kanbanToolFactory: SessionToolFactory = { context in
-    guard context.tools.kanban.mountedOptions != nil else { return [] }
-    let graph = try await KanbanHost.shared.session(
-      workingDirectory: context.workingDirectory, actor: context.actorName)
-    return [
-      SessionOperationMount(
-        noun: KanbanOperationTool.noun, tool: KanbanOperationTool(KanbanTool(graph: graph)))
-    ]
   }
 
   /// Makes the loader of `workingDirectory`'s stack under

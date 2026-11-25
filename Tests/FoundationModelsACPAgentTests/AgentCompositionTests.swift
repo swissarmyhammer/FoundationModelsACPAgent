@@ -1,5 +1,7 @@
 import ACPImport
 import Foundation
+import FoundationModelsACP
+import FoundationModelsACPAgentKanban
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsRouter
 import FoundationModelsSkills
@@ -107,7 +109,8 @@ import Testing
     let environment = try ComposedPromptFixture.makeStubEnvironment(configHome: configHome)
 
     let composed = try await AgentComposition.compose(
-      workingDirectory: workspace, environment: environment)
+      workingDirectory: workspace, environment: environment,
+      homeDirectory: makeResolvedDirectory(label: "AgentCompositionTests-home"))
 
     #expect(
       composed.agent.secretStore as? KeychainSecretStore
@@ -142,9 +145,32 @@ import Testing
     let environment = try ComposedPromptFixture.makeStubEnvironment(configHome: configHome)
 
     let composed = try await AgentComposition.compose(
-      workingDirectory: workspace, environment: environment)
+      workingDirectory: workspace, environment: environment,
+      homeDirectory: makeResolvedDirectory(label: "AgentCompositionTests-home"))
 
     #expect(composed.agent.toolMode == .open)
+  }
+
+  // MARK: - The kanban tool
+
+  /// The composition of the CLI gives the `kanban` tool to each session:
+  /// the session has the `kanban` endpoint.
+  @Test func theCompositionOfTheCLIGivesTheKanbanToolToEachSession() async throws {
+    let configHome = makeResolvedDirectory(label: "AgentCompositionTests-kanban-config")
+    let workspace = makeResolvedDirectory(label: "AgentCompositionTests-kanban-repo")
+    let environment = try ComposedPromptFixture.makeStubEnvironment(configHome: configHome)
+    let composed = try await AgentComposition.compose(
+      workingDirectory: workspace, environment: environment,
+      homeDirectory: makeResolvedDirectory(label: "AgentCompositionTests-home"))
+    let harness = await AgentClientHarness.makeRecording(agent: composed.agent)
+    _ = try await harness.connection.initialize(AgentClientHarness.makeInitializeRequest())
+
+    let session = try await harness.connection.newSession(
+      NewSessionRequest(cwd: AbsolutePath(rawValue: workspace.path)))
+
+    let endpoints = await composed.agent.sessions[session.sessionId]?.surface.graphQLEndpoints ?? []
+    #expect(endpoints.map(\.name).contains(KanbanOperationTool.noun))
+    await harness.close()
   }
 
   // MARK: - The stub composition
@@ -217,7 +243,8 @@ import Testing
     let workspace = makeResolvedDirectory(label: "AgentCompositionTests-router-repo")
     let environment = try ComposedPromptFixture.makeStubEnvironment(configHome: configHome)
     let composed = try await AgentComposition.compose(
-      workingDirectory: workspace, environment: environment)
+      workingDirectory: workspace, environment: environment,
+      homeDirectory: makeResolvedDirectory(label: "AgentCompositionTests-home"))
     let root = try Self.recordingRoot(of: workspace)
 
     let session = composed.agent.residentProfile.standard.makeSession(

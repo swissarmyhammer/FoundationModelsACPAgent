@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModels
 import FoundationModelsACP
+import FoundationModelsACPAgentKanban
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsExtras
 import FoundationModelsKanban
@@ -8,7 +9,6 @@ import GraphQL
 import Testing
 
 @testable import FoundationModelsACPAgent
-@testable import acp_agent
 
 /// The seam that gives the tools of each session (`SessionToolFactory`), and
 /// the `kanban` tool that the `acp-agent` executable mounts through it.
@@ -67,9 +67,39 @@ import Testing
       workingDirectory: makeResolvedDirectory(label: "kanban-switch-\(enabled)"),
       agentName: AgentClientHarness.dotfolderName, sessionTag: "switch01", tools: tools)
 
-    let mounts = try await AgentComposition.kanbanToolFactory(context)
+    let mounts = try await KanbanOperationTool.sessionToolFactory(context)
 
     #expect(mounts.map(\.noun) == (enabled ? [KanbanOperationTool.noun] : []))
+  }
+
+  /// The title of the task that a `runCode` snippet adds.
+  private static let runCodeTaskTitle = "added in runCode"
+
+  /// A session of an agent with the public factory of the `kanban` tool
+  /// runs `tools.kanban.runKanban` in `runCode`, and the task that the call
+  /// adds is on the board of ``KanbanHost/shared`` for the folder of the
+  /// session. A host such as Testudo gives the factory in this way.
+  @Test
+  func aRunCodeSnippetAddsATaskThroughThePublicFactory() async throws {
+    let code = """
+      return await tools.kanban.runKanban({
+        query: "mutation { addTask(input: { title: \\"\(Self.runCodeTaskTitle)\\" }) { title } }"
+      });
+      """
+    let fixture = try await ScriptedPromptFixture.make(
+      script: try ScriptedPromptFixture.makeToolPromptScript(code: code),
+      label: "SessionToolFactoryTests-run-code",
+      sessionToolFactories: [KanbanOperationTool.sessionToolFactory])
+
+    _ = try await ScriptedPromptFixture.runPrompt(on: fixture, text: "add the task")
+    await fixture.close()
+
+    let graph = try await KanbanHost.shared.session(
+      workingDirectory: fixture.cwd, actor: "SessionToolFactoryTests reader")
+    let answer = try await graph.execute(
+      query: "{ tasks { edges { node { title } } } }", variables: [:], operationName: nil,
+      viewer: nil)
+    #expect(answer.contains(Self.runCodeTaskTitle), "\(answer)")
   }
 
   /// A session of the executable composition has a `kanban` endpoint in the
@@ -211,7 +241,7 @@ struct KanbanFixture {
   /// Makes the fixture.
   static func make(label: String, sessions count: Int) async throws -> KanbanFixture {
     let agent = try await SessionToolFactoryTests.makeAgent(label: label)
-    await agent.registerSessionToolFactories([AgentComposition.kanbanToolFactory])
+    await agent.registerSessionToolFactories([KanbanOperationTool.sessionToolFactory])
     let claimed = GraphQLActor(id: "icloud/ABC", name: "Pat Person")
     let plain = AgentClientHarness.makeInitializeRequest()
     let claiming = InitializeRequest(

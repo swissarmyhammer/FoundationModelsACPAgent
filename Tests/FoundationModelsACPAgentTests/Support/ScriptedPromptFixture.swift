@@ -160,6 +160,9 @@ struct ScriptedPromptFixture {
   ///     in-memory store.
   ///   - hostTools: The tools that the agent mounts in each session after
   ///     its own tools, registered before `session/new`.
+  ///   - sessionToolFactories: The factories of tools for each session,
+  ///     registered before `session/new`, as a host gives them to
+  ///     `ComposedAgent.compose`.
   ///   - inlineSettleGrace: How long a tool call waits for its run inline
   ///     before the run goes to the background. A test of a background run
   ///     gives `0`, so each run goes to the background at once.
@@ -191,6 +194,7 @@ struct ScriptedPromptFixture {
     hookVisitors: [any HookVisitor] = [],
     secretStore: any SecretStore = InMemorySecretStore(),
     hostTools: [any FoundationModels.Tool] = [],
+    sessionToolFactories: [SessionToolFactory] = [],
     inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
     sessionShareHost: SessionShareHost? = nil,
     importRoots: [ImportSourceAgent: URL] = [:],
@@ -212,6 +216,7 @@ struct ScriptedPromptFixture {
       hookVisitors: hookVisitors,
       secretStore: secretStore,
       hostTools: hostTools,
+      sessionToolFactories: sessionToolFactories,
       inlineSettleGrace: inlineSettleGrace,
       sessionShareHost: sessionShareHost,
       importRoots: importRoots,
@@ -266,6 +271,9 @@ struct ScriptedPromptFixture {
   ///     in-memory store.
   ///   - hostTools: The tools that the agent mounts in each session after
   ///     its own tools, registered before `session/new`.
+  ///   - sessionToolFactories: The factories of tools for each session,
+  ///     registered before `session/new`, as a host gives them to
+  ///     `ComposedAgent.compose`.
   ///   - inlineSettleGrace: How long a tool call waits for its run inline
   ///     before the run goes to the background. A test of a background run
   ///     gives `0`, so each run goes to the background at once.
@@ -298,6 +306,7 @@ struct ScriptedPromptFixture {
     hookVisitors: [any HookVisitor] = [],
     secretStore: any SecretStore = InMemorySecretStore(),
     hostTools: [any FoundationModels.Tool] = [],
+    sessionToolFactories: [SessionToolFactory] = [],
     inlineSettleGrace: TimeInterval = CatalogContext.defaultInlineSettleGrace,
     sessionShareHost: SessionShareHost? = nil,
     importRoots: [ImportSourceAgent: URL] = [:],
@@ -328,6 +337,7 @@ struct ScriptedPromptFixture {
     await agent.registerCommandProviders(commandProviders)
     await agent.registerHookVisitors(hookVisitors)
     await agent.registerHostTools(hostTools)
+    await agent.registerSessionToolFactories(sessionToolFactories)
     if let mailOnlyAnswerLimit {
       await agent.useMailOnlyAnswerLimit(mailOnlyAnswerLimit)
     }
