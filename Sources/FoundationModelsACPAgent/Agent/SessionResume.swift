@@ -210,8 +210,11 @@ extension RoutedACPAgent {
     let history = cold.history
 
     // The restore of the nested sessions can add the open calls of the root to its history.
-    try await replayHistory(
-      sessions[params.sessionId]?.history ?? history, from: replayCursor, sessionId: params.sessionId)
+    let replayedHistory = sessions[params.sessionId]?.history ?? history
+    try await replayHistory(replayedHistory, from: replayCursor, sessionId: params.sessionId)
+    // A session that moved to another model says so after its history.
+    await announceModelChange(
+      of: restored, rootId: rootId, after: replayedHistory, sessionId: params.sessionId)
     // A restored run that the agent drives again is work, and so is each caller that waits for
     // it. The current state of the root and the snapshots of the children say so.
     await holdRestoredWork(of: params.sessionId)
@@ -555,6 +558,77 @@ extension RoutedACPAgent {
     return RequestError(
       code: .internalError, message: "The recorded session did not restore: \(cause)",
       data: .object(["detail": .string(String(describing: error))]))
+  }
+
+  /// Sends the notice of a model change: the restore moved the root to another model of its
+  /// slot (a session that was recorded before the profile changed). The notice comes after the
+  /// replay, so it is at the end of the history that the client shows, and before the first new
+  /// turn. A notice is not history, so the agent does not keep it, and a later resume sends no
+  /// notice: the session runs on the current model then.
+  ///
+  /// The notice: severity `info`; the title "This session was recorded with <recorded model>. It
+  /// continues with <current model>."; `_meta` with `kind` "modelChanged", `recordedModel`,
+  /// `model`, and `afterMessageId` (the id of the last message of the history, or no member when
+  /// the history has no message).
+  ///
+  /// - Parameters:
+  ///   - restored: The result of the restore.
+  ///   - rootId: The recorded id of the root.
+  ///   - history: The history that the resume replays.
+  ///   - sessionId: The resumed session.
+  private func announceModelChange(
+    of restored: RestoredSession, rootId: ULID, after history: SessionMergeEngine,
+    sessionId: SessionId
+  ) async {
+    guard let change = restored.modelChanges.first(where: { $0.session == rootId }),
+      let connection = connections.path(forSession: sessionId)?.connection
+    else { return }
+    ACPAgentTelemetry.logger(.sessionResume).notice(
+      "The resume moved the session to the resident model of its slot.",
+      metadata: ACPAgentTelemetry.sessionMetadata(sessionId).merging([
+        "recordedModel": .string(change.recordedModel.stringValue),
+        "model": .string(change.model.stringValue),
+      ]) { $1 })
+    await connection.post(
+      .notice(Self.modelChangeNotice(change, after: history.replayUpdates(from: .start))),
+      in: sessionId)
+  }
+
+  /// The notice of a model change. See ``announceModelChange(of:rootId:after:sessionId:)``.
+  ///
+  /// - Parameters:
+  ///   - change: The move of the session.
+  ///   - history: The updates of the history before the notice.
+  /// - Returns: The notice.
+  static func modelChangeNotice(_ change: RestoredSession.ModelChange, after history: [SessionUpdate])
+    -> Notice
+  {
+    var meta: [String: FoundationModelsACP.JSONValue] = [
+      "kind": .string("modelChanged"),
+      "recordedModel": .string(change.recordedModel.stringValue),
+      "model": .string(change.model.stringValue),
+    ]
+    if let last = history.reversed().lazy.compactMap(Self.messageId(of:)).first {
+      meta["afterMessageId"] = .string(last.rawValue)
+    }
+    return Notice(
+      severity: .info,
+      title:
+        "This session was recorded with \(change.recordedModel.stringValue). It continues with \(change.model.stringValue).",
+      meta: .object(meta))
+  }
+
+  /// The id of the message of an update: a user message, an agent message or a thought.
+  ///
+  /// - Parameter update: The update.
+  /// - Returns: The id, or `nil` for another update.
+  private static func messageId(of update: SessionUpdate) -> MessageId? {
+    switch update {
+    case .userMessage(let message): message.messageId
+    case .agentMessage(let message): message.messageId
+    case .agentThought(let message): message.messageId
+    default: nil
+    }
   }
 
   /// Logs what the restore could not re-apply: each missing tool name,

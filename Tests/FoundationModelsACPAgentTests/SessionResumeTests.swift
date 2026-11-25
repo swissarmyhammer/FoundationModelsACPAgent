@@ -360,7 +360,47 @@ import Testing
     #expect(ReplayedMessage.replayed(in: replayUpdates) == expected)
     let text = try String(contentsOf: index, encoding: .utf8)
     #expect(text.contains(resident) && !text.contains(Self.olderModel))
+    // One notice after the replay tells the move, with the place in the transcript.
+    let notices = Self.modelChangedNotices(in: replayUpdates)
+    #expect(notices.count == 1)
+    let notice = try #require(notices.first)
+    #expect(
+      notice.title
+        == "This session was recorded with \(Self.olderModel). It continues with \(resident).")
+    #expect(notice.severity == .info)
+    guard case .object(let meta)? = notice.meta else {
+      Issue.record("The notice has no _meta.")
+      return
+    }
+    #expect(meta["kind"] == .string("modelChanged"))
+    #expect(meta["recordedModel"] == .string(Self.olderModel))
+    #expect(meta["model"] == .string(resident))
+    #expect(meta["afterMessageId"] == .string(try #require(expected.last?.id)))
+    let lastIndex = try #require(replayUpdates.lastIndex { Self.isModelChangedNotice($0) })
+    #expect(ReplayedMessage.replayed(in: Array(replayUpdates[..<lastIndex])) == expected)
     await second.fixture.close()
+  }
+
+  /// Whether an update is the notice of a model change of a resume.
+  ///
+  /// - Parameter update: The update.
+  /// - Returns: `true` for that notice.
+  private static func isModelChangedNotice(_ update: SessionUpdate) -> Bool {
+    guard case .notice(let notice) = update, case .object(let meta)? = notice.meta else {
+      return false
+    }
+    return meta["kind"] == .string("modelChanged")
+  }
+
+  /// The notices of a model change of a resume in `updates`.
+  ///
+  /// - Parameter updates: The updates.
+  /// - Returns: The notices, in order.
+  private static func modelChangedNotices(in updates: [SessionUpdate]) -> [Notice] {
+    updates.compactMap { update in
+      guard isModelChangedNotice(update), case .notice(let notice) = update else { return nil }
+      return notice
+    }
   }
 
   /// A restore that fails gives the client a message that tells the cause, not only
@@ -438,6 +478,7 @@ import Testing
 
     #expect(expected.count == 6)
     #expect(ReplayedMessage.replayed(in: replayUpdates) == expected)
+    #expect(Self.modelChangedNotices(in: replayUpdates).isEmpty)
     await second.fixture.close()
   }
 
