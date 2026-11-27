@@ -16,8 +16,24 @@ comments:
     - evidence: swift test, 2938 tests in 316 suites passed, 0 failures, 0 warnings (1 known issue is the pre-existing withKnownIssue in HarnessSmokeTests).
     - next: /review
   timestamp: 2026-11-27T20:50:42.553725+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m8fcfdfh7yhc91zc9ne304qd
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (13b6fc8b) — 0 findings, 0 confirmed, 2 refuted; 7 validator runs attempted, 0 failed; 9 files reviewed; not reviewed: 2 .kanban files (.reviewignore), ARCHITECTURE.md (no validator)
+    - next: none — task moved to done
+  timestamp: 2026-11-27T20:52:14.449315+00:00
+- actor: claude-code
+  id: 01m8fcfpevqjkk4g5ms7zw8vyq
+  text: |-
+    ### finish iteration 1 — clean
+    - implement: changed — 10 files
+    - test: green — swift test 2938 passed
+    - commit: 13b6fc8b
+    - review: clean
+  timestamp: 2026-11-27T20:52:23.643915+00:00
+position_column: done
+position_ordinal: ffffffc580
 title: profile fit source of config show and doctor ignores the cluster section
 ---
 `ComposedAgent.makeProfileFitSource` (used by `config show`, `doctor`, `AgentComposition.fallbackProfileName`) builds its Router with the cluster off, while `compose` now builds its Router with the user-level `cluster:` section (^j1vfmkf). With a cluster enabled, the Router sizes the `standard` slot with the cluster planner, so the fallback profile (the largest bundled profile that fits) can differ between the agent and those commands; the doc of makeProfileFitSource says "It gives the same fit as the router of compose". Decide whether the fit source should read the section too (it would then run cluster discovery for a fit), and make the doc true either way.
