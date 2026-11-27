@@ -69,10 +69,14 @@ public struct AgentConfiguration: Codable, Equatable, Sendable {
   /// agent does not read them.
   public var spotlight = SpotlightConfiguration()
 
+  /// The Mac cluster of the Router (``ClusterConfiguration``). The agent reads the user level
+  /// only, before it builds the Router.
+  public var cluster = ClusterConfiguration()
+
   /// The YAML spelling of each top-level section.
   public enum CodingKeys: String, CodingKey, CaseIterable {
     case profile, tools, compaction, repetition, theme, keymap, fonts, statusline, sessions
-    case spotlight
+    case spotlight, cluster
   }
 
   /// The top-level sections that the configuration had before D187:
@@ -108,6 +112,8 @@ public struct AgentConfiguration: Codable, Equatable, Sendable {
       try container.decodeIfPresent(SessionsConfiguration.self, forKey: .sessions) ?? sessions
     spotlight =
       try container.decodeIfPresent(SpotlightConfiguration.self, forKey: .spotlight) ?? spotlight
+    cluster =
+      try container.decodeIfPresent(ClusterConfiguration.self, forKey: .cluster) ?? cluster
   }
 }
 
@@ -147,6 +153,7 @@ extension AgentConfiguration {
     CodingKeys.statusline.stringValue: .checked(StatusLineConfiguration.topKeys),
     CodingKeys.sessions.stringValue: .checked(SessionsConfiguration.knownKeys),
     CodingKeys.spotlight.stringValue: .checked(SpotlightConfiguration.knownKeys),
+    CodingKeys.cluster.stringValue: .checked(ClusterConfiguration.knownKeys),
   ]
 }
 

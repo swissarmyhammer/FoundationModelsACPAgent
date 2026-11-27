@@ -139,6 +139,15 @@ private let rankerDependencyName = "FoundationModelsRanker"
 /// identity stays one and this declaration adds no checkout.
 private let metadataRegistryDependencyName = "FoundationModelsMetadataRegistry"
 
+/// The Mac cluster package: `ClusterMode`, `ClusterOptions`, `WorkerSource`
+/// and `ClusterReport`. Router takes a mode and options in its init and does
+/// not re-export the package, thus the library names its types itself: the
+/// `cluster:` section of `config.yaml` makes them, and the `doctor` command
+/// shows the report of the router. Router declares it from the same URL and
+/// the same branch, so the package identity stays one and this declaration
+/// adds no checkout.
+private let clusterDependencyName = "FoundationModelsCluster"
+
 /// The Client role: the driver of every test level above a plain unit test.
 /// Do not write a test client.
 ///
@@ -405,6 +414,7 @@ private let familyDependencyNames = [
     codeContextDependencyName,
     rankerDependencyName,
     metadataRegistryDependencyName,
+    clusterDependencyName,
 ]
 
 /// Makes the `.package(url:branch:)` dependency of a family package hosted

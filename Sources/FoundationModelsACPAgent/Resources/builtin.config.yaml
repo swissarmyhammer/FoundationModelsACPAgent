@@ -87,6 +87,35 @@ spotlight:
   # An item for each command.
   commands: true
 
+# The Mac cluster of the Router: Macs cabled with Thunderbolt that run one
+# model together. There is one Router for each process, thus the agent reads
+# this section at the user level only, at its launch; it ignores the section
+# at the session level of a folder. The stub model ignores it. Do not put a
+# password or the text of a key here; give the path of a key file. A path
+# that starts with ~ is under the home folder. For example:
+#
+#   cluster:
+#     enabled: true
+#     hosts: [m5u2.local]
+#     sshKey: ~/.ssh/id_ed25519
+#     policy: whenFaster
+#     workerDirectory: ~/fmcluster
+#
+# `acp-agent doctor` shows the cluster report of the Router when the cluster
+# is enabled.
+cluster:
+  # When true, the Router may run a model across the Macs. When false, each
+  # model runs on this Mac.
+  enabled: false
+  # The optional keys: hosts (the host names of the Macs; absent finds them
+  # with Bonjour), sshKey (the key file of the SSH login; absent uses the SSH
+  # agent and ~/.ssh) and workerDirectory (the folder of fmcluster-worker and
+  # mlx.metallib; absent uses the worker bundled in the app).
+  # When the Router splits a model: whenFaster (when the cluster is measured
+  # faster), whenNeeded (only when the model does not fit on this Mac) or
+  # always.
+  policy: whenFaster
+
 tools:
   # The files tools: read, write, search and edit the files of the session.
   files:

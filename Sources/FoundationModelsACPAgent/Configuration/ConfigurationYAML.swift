@@ -135,6 +135,9 @@ public enum ConfigurationYAML {
       "The sessions: recap turns the one-sentence recap of each session on or off.",
     AgentConfiguration.CodingKeys.spotlight.stringValue:
       "The Spotlight items of the app: one switch for each kind of item, and enabled for all items.",
+    AgentConfiguration.CodingKeys.cluster.stringValue:
+      "The Mac cluster of the Router, read at the user level only: enabled, hosts, sshKey, policy "
+        + "and workerDirectory.",
   ]
 
   /// The YAML spelling of the `profile` section.

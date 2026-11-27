@@ -73,6 +73,7 @@ public struct SettingsTool: GraphQLEndpointTool, OperationDescribing {
     such as "large" or "small"; the models tool lists the profiles, and a change applies at the next \
     launch. The key path ["sessions", "recap"] takes true or false: \(SessionsConfiguration.recapDescription) \
     \(SpotlightConfiguration.help) \
+    \(ClusterConfiguration.help) \
     \(StatusLineConfiguration.help)
     """
 
