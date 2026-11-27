@@ -1,6 +1,7 @@
 import ACPImport
 import Foundation
 import FoundationModelsACP
+import FoundationModelsCluster
 import FoundationModelsExtras
 import FoundationModelsHooks
 import FoundationModelsRouter
@@ -467,7 +468,7 @@ public struct ComposedAgent: Sendable {
   ) throws -> Router {
     switch modelSource {
     case .live:
-      makeLiveRouter(
+      try makeLiveRouter(
         recordingInto: recordingsDirectory, hooks: hooks, home: home,
         huggingFaceTokenProvider: huggingFaceTokenProvider, cluster: cluster)
     case .stub:
@@ -536,19 +537,23 @@ public struct ComposedAgent: Sendable {
   ///   - cluster: The `cluster:` section of the user level.
   /// - Returns: The router. Its construction loads no model and asks no
   ///   network endpoint.
+  /// - Throws: ``ConfigurationError/unresolvedSecret(keyPath:reference:)``
+  ///   for a login secret of `cluster` with no value.
   static func makeLiveRouter(
     recordingInto recordingsDirectory: URL? = nil, hooks: HookDispatcher? = nil,
     home: AgentHome, huggingFaceTokenProvider: TokenProvider, cluster: ClusterConfiguration
-  ) -> Router {
-    Router(
+  ) throws -> Router {
+    let mode = try cluster.mode
+    let options = cluster.options
+    return Router(
       cacheDir: home.routerCacheDirectory,
       recordingsDir: recordingsDirectory,
       metadataSource: HuggingFaceMetadataSource(tokenProvider: huggingFaceTokenProvider),
       loader: makeLiveModelLoader(
         modelCacheDirectory: home.modelCacheDirectory, tokenProvider: huggingFaceTokenProvider,
-        cluster: cluster),
-      cluster: cluster.mode,
-      clusterOptions: cluster.options,
+        cluster: mode, clusterOptions: options),
+      cluster: mode,
+      clusterOptions: options,
       hooks: hooks)
   }
 
@@ -592,17 +597,20 @@ public struct ComposedAgent: Sendable {
   ///   - offline: `true` to send no Hub request, `false` to ask the Hub for
   ///     the files that the cache does not have, or `nil` (the default) to
   ///     read `HF_HUB_OFFLINE`. A unit test gives `true`.
-  ///   - cluster: The `cluster:` section of the user level. The loader gets
-  ///     the same mode and options as the router, as Router asks of a
-  ///     clustered router. The default is the cluster off.
+  ///   - cluster: The cluster mode of the router (``ClusterConfiguration/mode``).
+  ///     The loader gets the same mode and options as the router, as Router
+  ///     asks of a clustered router. The default is `.off`.
+  ///   - clusterOptions: The cluster options of the router
+  ///     (``ClusterConfiguration/options``). The default is the defaults of
+  ///     `ClusterOptions`.
   /// - Returns: The live loader over that cache.
   static func makeLiveModelLoader(
     modelCacheDirectory: URL, tokenProvider: TokenProvider, offline: Bool? = nil,
-    cluster: ClusterConfiguration = ClusterConfiguration()
+    cluster: ClusterMode = .off, clusterOptions: ClusterOptions = ClusterOptions()
   ) -> LiveModelLoader {
     LiveModelLoader(
       cacheDirectory: modelCacheDirectory, tokenProvider: tokenProvider, offline: offline,
-      cluster: cluster.mode, clusterOptions: cluster.options)
+      cluster: cluster, clusterOptions: clusterOptions)
   }
 
   /// Makes the loader of the stub path.

@@ -15,6 +15,10 @@ public enum ConfigurationError: Error, Equatable, Sendable, CustomStringConverti
   /// has. The error lists the valid keys, because a person cannot see
   /// them in the document.
   case unknownMapKey(section: String, key: String, validKeys: [String])
+  /// A secret reference `keychain:<name>` that must have a value has none
+  /// in the secret store, such as a login secret of the `cluster` section.
+  /// The error names the reference, and never a value.
+  case unresolvedSecret(keyPath: String, reference: String)
 
   /// A human-readable reason that names the section and the key.
   public var description: String {
@@ -28,6 +32,10 @@ public enum ConfigurationError: Error, Equatable, Sendable, CustomStringConverti
       return
         "\(ConfigurationLoader.configFileName): unknown key \"\(key)\" in section \"\(section)\"; "
         + "the valid keys are \(validKeys.joined(separator: ", "))"
+    case .unresolvedSecret(let keyPath, let reference):
+      return
+        "\(ConfigurationLoader.configFileName): \(keyPath) names "
+        + "\(ConfiguredSecret.referencePrefix)\(reference), which has no value in the Keychain"
     }
   }
 }
@@ -444,7 +452,8 @@ public struct ConfigurationLoader: Sendable {
 
   /// Loads the `cluster:` section of the user level: the builtin file, the
   /// defaults layer and the user layer, with no project layer
-  /// (``ClusterConfiguration``).
+  /// (``ClusterConfiguration``). Each login secret gets the value of its
+  /// `keychain:<name>` reference from ``secretStore``.
   ///
   /// There is one Router for each process, and the host builds it before
   /// ``load()``, thus the section of the session level of a folder does not
@@ -455,8 +464,12 @@ public struct ConfigurationLoader: Sendable {
   ///   sets it, or when it is null, as ``load()`` reads a null section.
   /// - Throws: ``ConfigurationError/unknownKey(section:key:)`` for a key
   ///   that the section does not have; `YAMLValueDecodingError` for a value
-  ///   that does not decode, such as a `policy` that is not a policy; what
-  ///   ``load()`` throws for a layer that cannot be read.
+  ///   that does not decode, such as a `policy` that is not a policy, or a
+  ///   login that the rules of the section refuse;
+  ///   ``ConfigurationError/unresolvedSecret(keyPath:reference:)`` for a
+  ///   login secret whose reference has no value in ``secretStore``; the
+  ///   error of the store for a reference it cannot read; what ``load()``
+  ///   throws for a layer that cannot be read.
   public func loadUserCluster() throws -> ClusterConfiguration {
     let userStack = DotfolderStack(layers: stack.layers.filter { $0.source != .project })
     let document = try LayeredYAMLDocument.load(
@@ -471,7 +484,7 @@ public struct ConfigurationLoader: Sendable {
     }
     try ConfigurationError.checkKeys(
       of: body, against: ClusterConfiguration.knownKeys, section: sectionKey)
-    return try body.decoded(as: ClusterConfiguration.self)
+    return try body.decoded(as: ClusterConfiguration.self).resolvingSecrets(through: secretStore)
   }
 
   /// Checks, decodes and resolves a merged dotfolder tree: the steps of

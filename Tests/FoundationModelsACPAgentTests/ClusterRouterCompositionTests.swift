@@ -90,11 +90,11 @@ import Testing
   /// A key that the section does not have is an error of the read of the user level.
   @Test func anUnknownKeyOfTheUserLevelIsAnError() throws {
     let fixture = ConfigurationLoaderTests.Fixture()
-    fixture.writeConfig("cluster:\n  password: secret\n", in: fixture.userDirectory)
+    fixture.writeConfig("cluster:\n  passphrase: secret\n", in: fixture.userDirectory)
 
     #expect(
       throws: ConfigurationError.unknownKey(
-        section: ClusterConfiguration.sectionKey, key: "password")
+        section: ClusterConfiguration.sectionKey, key: "passphrase")
     ) {
       try fixture.makeLoader().loadUserCluster()
     }
@@ -133,7 +133,7 @@ import Testing
 
     let loader = try #require(
       Mirror(reflecting: router).descendant(Self.loaderPath[0]) as? LiveModelLoader)
-    #expect(loader.cluster == section.mode)
+    #expect(try loader.cluster == section.mode)
   }
 
   /// The stub Router ignores the section.
@@ -156,6 +156,6 @@ import Testing
       for: .live, home: AgentHomeFixture.make(label: Self.label),
       huggingFaceTokenProvider: .environment, userLevelOf: loader)
 
-    #expect(router.cluster == (try Self.enabledSection().mode))
+    #expect(try router.cluster == Self.enabledSection().mode)
   }
 }

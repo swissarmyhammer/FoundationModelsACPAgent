@@ -102,14 +102,14 @@ import Testing
     let section = try Self.section(
       of: "cluster:\n  enabled: false\n  sshKey: \(Self.sshKeyValue)\n")
 
-    #expect(section.mode == .off)
+    #expect(try section.mode == .off)
   }
 
   /// `sshKey` is a key file, with `~` expanded to the home folder.
   @Test func theSSHKeyIsAKeyFileUnderTheHomeFolder() throws {
     let section = try Self.enabledSection(with: "sshKey: \(Self.sshKeyValue)")
 
-    #expect(Self.keyPath(of: section.mode) == Self.homePath(Self.sshKeyRelativePath))
+    #expect(Self.keyPath(of: try section.mode) == Self.homePath(Self.sshKeyRelativePath))
   }
 
   /// `hosts` gives the hosts of the options.
@@ -174,9 +174,9 @@ import Testing
 
     #expect(
       throws: ConfigurationError.unknownKey(
-        section: ClusterConfiguration.sectionKey, key: "password")
+        section: ClusterConfiguration.sectionKey, key: "passphrase")
     ) {
-      try fixture.loadProjectConfig("cluster:\n  password: secret\n")
+      try fixture.loadProjectConfig("cluster:\n  passphrase: secret\n")
     }
   }
 }
