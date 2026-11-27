@@ -489,7 +489,7 @@ import Testing
   /// A `set` sends one change that names its level and its key path.
   @Test func aSetSendsOneChange() async throws {
     let fixture = try Fixture(label: "set-change")
-    var changes = await fixture.store.changes().makeAsyncIterator()
+    var changes = fixture.store.changes().makeAsyncIterator()
 
     try await fixture.store.set(.double(Self.userTrigger), at: Self.triggerKeyPath, level: .user)
 
@@ -515,7 +515,7 @@ import Testing
       expecting: SettingsChange(level: .session(fixture.firstDirectory), keyPath: nil)
     ) {
       _ = try await fixture.store.merged(for: fixture.firstDirectory)
-      return await fixture.store.changes().makeAsyncIterator()
+      return fixture.store.changes().makeAsyncIterator()
     } nextChange: { changes in
       await changes.next()
     }
@@ -684,7 +684,7 @@ import Testing
   /// `stopWatching()` ends each open `changes()` stream.
   @Test func aStopEndsEachChangeStream() async throws {
     let fixture = try Fixture(label: "stop-stream")
-    var changes = await fixture.store.changes().makeAsyncIterator()
+    var changes = fixture.store.changes().makeAsyncIterator()
 
     await fixture.store.stopWatching()
 
@@ -704,9 +704,9 @@ import Testing
     try ConfigFileFixture.write(Self.sessionTriggerYAML, in: sessionRoot)
     #expect(try await fixture.mergedTrigger(for: fixture.firstDirectory) == Self.sessionTrigger)
     _ = try await witness.merged(for: fixture.firstDirectory)
-    var witnessChanges = await witness.changes().makeAsyncIterator()
+    var witnessChanges = witness.changes().makeAsyncIterator()
     await fixture.store.stopWatching()
-    var changes = await fixture.store.changes().makeAsyncIterator()
+    var changes = fixture.store.changes().makeAsyncIterator()
 
     try ConfigFileFixture.write(Self.outsideTriggerYAML, in: sessionRoot)
 
@@ -730,7 +730,7 @@ import Testing
     ) {
       #expect(try await fixture.mergedTrigger(for: fixture.firstDirectory) == Self.sessionTrigger)
       await fixture.store.stopWatching()
-      let changes = await fixture.store.changes().makeAsyncIterator()
+      let changes = fixture.store.changes().makeAsyncIterator()
       try await fixture.store.startWatching(cwd: fixture.firstDirectory)
       return changes
     } nextChange: { changes in

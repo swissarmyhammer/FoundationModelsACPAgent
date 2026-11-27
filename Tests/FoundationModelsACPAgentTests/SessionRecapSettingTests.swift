@@ -160,7 +160,7 @@ import Testing
       expecting: SettingsChange(level: .session(workingDirectory), keyPath: nil)
     ) {
       try await fixture.store.startWatching(cwd: workingDirectory)
-      return await fixture.store.changes().makeAsyncIterator()
+      return fixture.store.changes().makeAsyncIterator()
     } nextChange: { changes in
       await changes.next()
     }

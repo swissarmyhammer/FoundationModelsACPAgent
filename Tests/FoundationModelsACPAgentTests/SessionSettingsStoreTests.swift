@@ -42,7 +42,7 @@ import Testing
     let agent = try await AgentClientHarness.makeInitializedAgent(
       label: "SessionSettingsStoreTests-close")
     let harness = await AgentClientHarness.makeRecording(agent: agent)
-    var changes = await agent.settingsStore.changes().makeAsyncIterator()
+    var changes = agent.settingsStore.changes().makeAsyncIterator()
 
     await harness.close()
     await agent.closeOpenSessions()

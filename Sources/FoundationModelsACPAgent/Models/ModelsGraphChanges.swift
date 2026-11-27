@@ -117,7 +117,7 @@ final class ModelsGraphChangeFeed: Sendable {
     self.watch = watch
     let store = engine.store
     let settingsWatch = Task {
-      let changes = await store.changes()
+      let changes = store.changes()
       try? await store.startWatching(cwd: nil)
       return changes
     }

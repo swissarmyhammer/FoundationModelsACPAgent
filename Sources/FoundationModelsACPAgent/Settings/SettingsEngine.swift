@@ -324,7 +324,7 @@ struct SettingsEngine: Sendable {
     LoggedEntry, Error
   > {
     let directory = try cwd.map(Self.workingDirectory)
-    let stops = await store.changes()
+    let stops = store.changes()
     try await SettingsGraphError.withCodedErrors {
       try await store.startWatching(cwd: directory)
     }
@@ -389,7 +389,7 @@ struct SettingsEngine: Sendable {
       guard !Task.isCancelled else {
         return
       }
-      stops = await store.changes()
+      stops = store.changes()
       do {
         try await SettingsGraphError.withCodedErrors {
           try await store.resumeWatching(cwd: cwd)

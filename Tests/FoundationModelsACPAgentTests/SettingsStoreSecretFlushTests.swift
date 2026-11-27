@@ -228,7 +228,7 @@ import Testing
   @Test func aChangeEventHoldsNoSecret() async throws {
     let fixture = try Self.makeFixture(label: "change")
     try ConfigFileFixture.write(Self.webKeysYAML, in: try fixture.userRoot)
-    var changes = await fixture.store.changes().makeAsyncIterator()
+    var changes = fixture.store.changes().makeAsyncIterator()
 
     try await fixture.store.set(.double(Self.triggers[0]), at: Self.triggerKeyPath, level: .user)
 
