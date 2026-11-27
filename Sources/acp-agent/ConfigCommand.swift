@@ -141,7 +141,7 @@ extension AcpAgentCommand {
       ///     Keychain of the CLI.
       ///   - fitSource: The fit source of the choice of the default
       ///     profile, or `nil` (the default) for the router of the model
-      ///     choice of the CLI (``AgentComposition/fallbackProfileName(environment:fitSource:)``).
+      ///     choice of the CLI (``AgentComposition/fallbackProfileName(workingDirectory:environment:secretStore:fitSource:)``).
       /// - Returns: The report.
       /// - Throws: `DotfolderNameError`, the configuration load
       ///   error, or the encoding error.
@@ -150,7 +150,8 @@ extension AcpAgentCommand {
         fitSource: (any ProfileFitEstimating)? = nil
       ) async throws -> CommandReport {
         let fallbackProfileName = await AgentComposition.fallbackProfileName(
-          environment: environment, fitSource: fitSource)
+          workingDirectory: workingDirectoryOptions.directoryURL, environment: environment,
+          secretStore: secretStore, fitSource: fitSource)
         let loaded = try AgentComposition.makeConfigurationLoader(
           workingDirectory: workingDirectoryOptions.directoryURL, environment: environment,
           secretStore: secretStore, fallbackProfileName: fallbackProfileName

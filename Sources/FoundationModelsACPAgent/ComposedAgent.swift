@@ -560,28 +560,42 @@ public struct ComposedAgent: Sendable {
   /// Makes the fit source of the choice of the default profile for a host
   /// that has no agent, such as the `config show` and `doctor` commands of
   /// the `acp-agent` CLI. It gives the same fit as the router of
-  /// ``compose(name:workingDirectory:home:mode:sandboxProbe:openTestudoDownloadURL:agentName:environment:modelSource:stubChunkGate:stubScript:secretStore:userDeviceTokens:huggingFaceTokenProvider:modelStorage:sessionToolFactories:reporting:profileFitSource:)``,
-  /// and it loads no model.
+  /// ``compose(name:workingDirectory:home:mode:sandboxProbe:openTestudoDownloadURL:agentName:environment:modelSource:stubChunkGate:stubScript:secretStore:userDeviceTokens:huggingFaceTokenProvider:modelStorage:sessionToolFactories:reporting:profileFitSource:readableFolder:sessionShareHost:importRoots:)``:
+  /// its router is the router of
+  /// ``makeRouter(for:gatedBy:scriptedBy:recordingInto:hooks:home:huggingFaceTokenProvider:userLevelOf:)``,
+  /// with the cluster mode of the `cluster:` section of the user level, and
+  /// it loads no model.
+  ///
+  /// Making the source reads no configuration file and no Keychain item,
+  /// because a Keychain read can prompt the person: the first fit reads the
+  /// section and builds the router (``DeferredRouterFitSource``). With an
+  /// enabled section, a fit can thus run the discovery of the cluster.
   ///
   /// - Parameters:
   ///   - modelSource: The model path. ``ModelSource/live`` sizes the models
-  ///     with Hugging Face metadata, against the memory of this machine;
-  ///     ``ModelSource/stub`` sizes the stub models against the stub
-  ///     machine.
+  ///     with Hugging Face metadata, against the memory of this machine or
+  ///     of the cluster of the section; ``ModelSource/stub`` sizes the stub
+  ///     models against the stub machine.
   ///   - home: The home of the host. The live path keeps the metadata cache
   ///     in ``AgentHome/routerCacheDirectory``.
   ///   - huggingFaceTokenProvider: The provider of the Hugging Face token of
   ///     each sizing request. The default `.environment` reads `HF_TOKEN`,
   ///     then `~/.cache/huggingface/token`. The stub path ignores it.
-  /// - Returns: The fit source: the router of
-  ///   ``makeRouter(for:gatedBy:scriptedBy:recordingInto:hooks:home:huggingFaceTokenProvider:)``
-  ///   with no recording and no hooks.
-  /// - Throws: The directory-creation error of the stub cache.
+  ///   - loader: The configuration loader whose user level gives the
+  ///     `cluster:` section (``ConfigurationLoader/loadUserCluster()``).
+  /// - Returns: The fit source. When the section does not load, or the
+  ///   router cannot be built, each fit is a report that does not fit, with
+  ///   the error as its failure, so the choice is the smallest profile.
   public static func makeProfileFitSource(
     for modelSource: ModelSource, home: AgentHome,
-    huggingFaceTokenProvider: TokenProvider = .environment
-  ) throws -> any ProfileFitEstimating {
-    try makeRouter(for: modelSource, home: home, huggingFaceTokenProvider: huggingFaceTokenProvider)
+    huggingFaceTokenProvider: TokenProvider = .environment,
+    userLevelOf loader: ConfigurationLoader
+  ) -> any ProfileFitEstimating {
+    DeferredRouterFitSource {
+      try makeRouter(
+        for: modelSource, home: home, huggingFaceTokenProvider: huggingFaceTokenProvider,
+        userLevelOf: loader)
+    }
   }
 
   /// Makes the loader of the live path over one model cache folder and one

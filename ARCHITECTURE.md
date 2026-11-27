@@ -344,6 +344,9 @@ bundled file names only the keys that differ from those defaults.
   can be read. The read is async and a load is not, so the host makes the choice one time before
   the load and gives the name to the loader and to the `SettingsStore`. `ComposedAgent.compose`,
   `RoutedACPAgent` and the `config show` and `doctor` commands of the CLI call the same function.
+  The commands read the fit from `ComposedAgent.makeProfileFitSource`, whose router has the cluster
+  mode of the `cluster:` section of the user level, as the router of the agent has; it builds that
+  router at the first fit, so making it reads no Keychain item.
 - **The reads.** `ProfileLayers` reads the disk at each call, and needs no cache. The loader, the
   `models` engine, the doctor and the CLI read through it.
 - **The writes.** `ProfileStore` saves and deletes the file of the user layer or of a project

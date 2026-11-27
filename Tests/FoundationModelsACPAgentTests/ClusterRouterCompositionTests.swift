@@ -29,6 +29,18 @@ import Testing
       workerDirectory: /tmp/fmcluster
     """
 
+  /// The Keychain reference of the password of ``passwordLoginYAML``.
+  private static let passwordReference = "cluster-password"
+
+  /// The `config.yaml` text of an enabled password login, whose password is a Keychain
+  /// reference.
+  private static let passwordLoginYAML = """
+    cluster:
+      enabled: true
+      user: ml
+      password: keychain:\(passwordReference)
+    """
+
   /// The path of stored properties from a `Router` to its loader.
   private static let loaderPath = ["loader"]
 
@@ -55,6 +67,21 @@ import Testing
     try ComposedAgent.makeRouter(
       for: modelSource, home: AgentHomeFixture.make(label: label), huggingFaceTokenProvider: .environment,
       cluster: cluster)
+  }
+
+  /// The fit source of the CLI over the user level that `loader` reads, as `config show` and
+  /// `doctor` make it.
+  ///
+  /// - Parameters:
+  ///   - loader: The configuration loader.
+  ///   - modelSource: The model path.
+  /// - Returns: The fit source.
+  private static func makeFitSource(
+    userLevelOf loader: ConfigurationLoader, modelSource: ComposedAgent.ModelSource = .live
+  ) -> any ProfileFitEstimating {
+    ComposedAgent.makeProfileFitSource(
+      for: modelSource, home: AgentHomeFixture.make(label: label),
+      huggingFaceTokenProvider: .environment, userLevelOf: loader)
   }
 
   /// The folder of a worker source of a folder.
@@ -156,5 +183,44 @@ import Testing
       huggingFaceTokenProvider: .environment, userLevelOf: loader)
 
     #expect(try router.cluster == Self.enabledSection().mode)
+  }
+
+  // MARK: - The fit source
+
+  /// The Router of the fit source of `config show` and `doctor` has the mode of the section of
+  /// the user level, as the Router of the composition has.
+  @Test func theRouterOfTheFitSourceHasTheModeOfTheUserLevel() async throws {
+    let fixture = ConfigurationLoaderTests.Fixture()
+    fixture.writeConfig(Self.enabledYAML, in: fixture.userDirectory)
+    let source = Self.makeFitSource(userLevelOf: try fixture.makeLoader())
+
+    let router = try await #require(source as? DeferredRouterFitSource).router()
+    #expect(try router.cluster == Self.enabledSection().mode)
+  }
+
+  /// Making the fit source reads no Keychain item: the section is read at the first fit,
+  /// because a Keychain read can prompt the person.
+  @Test func makingTheFitSourceReadsNoSecret() throws {
+    let fixture = ConfigurationLoaderTests.Fixture()
+    fixture.writeConfig(Self.passwordLoginYAML, in: fixture.userDirectory)
+    let store = CountingSecretStore()
+
+    _ = Self.makeFitSource(userLevelOf: try fixture.makeLoader(secretStore: store))
+
+    #expect(store.reads.count == 0)
+  }
+
+  /// A fit reads the section of the user level: a password with no value in the Keychain gives
+  /// a report that does not fit, with the error of the section as its failure.
+  @Test func aSectionThatDoesNotLoadGivesNoFit() async throws {
+    let fixture = ConfigurationLoaderTests.Fixture()
+    fixture.writeConfig(Self.passwordLoginYAML, in: fixture.userDirectory)
+    let source = Self.makeFitSource(
+      userLevelOf: try fixture.makeLoader(secretStore: InMemorySecretStore([:])), modelSource: .stub)
+    let profile = try #require(BundledProfiles.all.first)
+
+    let unresolved = ConfigurationError.unresolvedSecret(
+      keyPath: "cluster.password", reference: Self.passwordReference)
+    #expect(await source.fitReport(of: profile).failure == String(describing: unresolved))
   }
 }

@@ -308,7 +308,8 @@ struct ConfigInitTests {
     try AgentComposition.makeConfigurationLoader(
       workingDirectory: fixture.workspace, environment: fixture.environment,
       fallbackProfileName: await AgentComposition.fallbackProfileName(
-        environment: fixture.environment, fitSource: fitSource))
+        workingDirectory: fixture.workspace, environment: fixture.environment,
+        fitSource: fitSource))
   }
 
   /// The written file sets no `profile` key, so the default by fit

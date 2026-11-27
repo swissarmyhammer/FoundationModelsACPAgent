@@ -122,7 +122,7 @@ extension AcpAgentCommand {
     ///     injects a figure, for the same reason.
     ///   - fallbackProfileName: The profile of the load where no layer
     ///     sets `profile`. ``run()`` gives
-    ///     ``AgentComposition/fallbackProfileName(environment:fitSource:)``,
+    ///     ``AgentComposition/fallbackProfileName(workingDirectory:environment:secretStore:fitSource:)``,
     ///     the choice of the agent. The default is
     ///     ``BundledProfiles/smallestName``, so a test reads no fit.
     /// - Returns: The components, in the order the report lists them.
@@ -170,7 +170,7 @@ extension AcpAgentCommand {
           workingDirectory: workingDirectoryOptions.directoryURL,
           environment: environment,
           fallbackProfileName: await AgentComposition.fallbackProfileName(
-            environment: environment))
+            workingDirectory: workingDirectoryOptions.directoryURL, environment: environment))
       ).run()
       try Self.write(
         report, asJSON: asJSON,
