@@ -156,6 +156,17 @@ import Testing
     #expect(try Self.decode("kvBits: 4\n").kvCacheQuantization == .bits4)
   }
 
+  /// `cluster: off` keeps the models of the profile on this Mac
+  /// (task ^j1vfmkf).
+  @Test func clusterOffKeepsTheModelsOnThisMac() throws {
+    #expect(try Self.decode("cluster: off\n").cluster == .off)
+  }
+
+  /// No `cluster` follows the cluster mode of the router.
+  @Test func noClusterFollowsTheRouter() throws {
+    #expect(try Self.decode("").cluster == nil)
+  }
+
   /// No `kvBits` gives an unquantized KV cache, also when the bundled
   /// `large` has `kvBits: 8`.
   @Test func noKVBitsGiveAnUnquantizedKVCache() throws {

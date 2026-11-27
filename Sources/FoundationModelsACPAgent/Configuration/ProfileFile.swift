@@ -65,11 +65,17 @@ enum ProfileFile {
   static let nameKey = "name"
 
   /// The keys of a profile file: the keys of Router's `ProfileDefinition`.
-  /// `kvBits` is a key of the file before Router decodes it.
+  /// `kvBits` is a key of the file before Router decodes it. `cluster: off`
+  /// keeps the models of the profile on this Mac, whatever the `cluster:`
+  /// section of `config.yaml` says.
   static let knownKeys: Set<String> = [
     nameKey, "description", "standard", "flash", "embedding", "decision", "context",
-    "decisionContext", "kvBits",
+    "decisionContext", "kvBits", clusterKey,
   ]
+
+  /// The key that keeps the models of a profile on this Mac: its one value
+  /// is `off` (Router's `ProfileClusterSetting`).
+  static let clusterKey = "cluster"
 
   /// Decodes the text of a profile file.
   ///
@@ -107,6 +113,10 @@ enum ProfileFile {
   {
     var keys = try checkedKeys(of: tree, name: name, path: path)
     keys[nameKey] = .string(name)
+    // YAML reads a bare `off` as the Boolean false; the file means the word.
+    if keys[clusterKey] == .bool(false) {
+      keys[clusterKey] = .string(ProfileClusterSetting.off.rawValue)
+    }
     do {
       return try YAMLValue.dictionary(keys).decoded(as: ProfileDefinition.self)
     } catch {
