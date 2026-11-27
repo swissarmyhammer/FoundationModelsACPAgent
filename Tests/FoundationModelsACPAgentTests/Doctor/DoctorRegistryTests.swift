@@ -25,7 +25,7 @@ struct DoctorRegistryTests {
   private static let toolsCategory = "tools"
 
   /// The number of components the registry states.
-  private static let registeredComponentCount = 5
+  private static let registeredComponentCount = 6
 
   // MARK: - Helpers
 
@@ -49,8 +49,8 @@ struct DoctorRegistryTests {
   // MARK: - The registry
 
   /// The registry states the configuration component, the home component,
-  /// the profile component, the transcripts component and the runtime
-  /// component, in that order.
+  /// the profile component, the transcripts component, the runtime
+  /// component and the cluster component, in that order.
   @Test func theRegistryStatesTheComponentsInPlanOrder() {
     let fixture = ConfigCommandFixture(label: "DoctorRegistryTests-registry")
 
@@ -60,7 +60,7 @@ struct DoctorRegistryTests {
     #expect(
       components.map(\.doctorCategory) == [
         ConfigurationDoctor.category, HomeDoctor.category, ProfileDoctor.category,
-        TranscriptsDoctor.category, RuntimeDoctor.category,
+        TranscriptsDoctor.category, RuntimeDoctor.category, ClusterRouterDoctor.category,
       ])
   }
 

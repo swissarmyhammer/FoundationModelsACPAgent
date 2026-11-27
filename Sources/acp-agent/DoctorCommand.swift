@@ -86,7 +86,10 @@ extension AcpAgentCommand {
     /// the shell has no sandbox to probe (ACPA-19). All five
     /// read one load of `config.yaml` and one home, which this function
     /// makes once and hands to each of them, so a `doctor` run reads the
-    /// stack a single time.
+    /// stack a single time. The cluster component comes last (task
+    /// ^j1vfmkf): it reads the `cluster:` section of the user level, as the
+    /// agent does before it builds its Router, and when the section is
+    /// enabled it shows the cluster report of a live Router built with it.
     ///
     /// The home is the home of the loader
     /// (``AgentComposition/home(environment:)``), the same home as the
@@ -154,6 +157,7 @@ extension AcpAgentCommand {
         ),
         TranscriptsDoctor(name: loader.name, workingDirectory: workingDirectory),
         RuntimeDoctor(workingDirectory: workingDirectory, settingsFolders: loader.settingsFolders),
+        ClusterRouterDoctor(loader: loader, home: home),
       ]
     }
 

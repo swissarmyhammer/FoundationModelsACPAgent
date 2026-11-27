@@ -125,7 +125,9 @@ flash:
 ```
 
 The keys are `description`, `standard`, `flash`, `embedding`, `decision`,
-`context`, `decisionContext` and `kvBits`. Each key is optional. A key that the
+`context`, `decisionContext`, `kvBits` and `cluster`. Each key is optional.
+`cluster: off` keeps the models of the profile on this Mac, whatever the
+`cluster` section of `config.yaml` says. A key that the
 file leaves out takes the default of Router's `ProfileDefinition` — not a key
 of another profile (a shipped profile included), not of the selected profile,
 and not of another layer:
@@ -698,6 +700,39 @@ of `spotlight.enabled` only.
 ```yaml
 spotlight:
   tasks: false
+```
+
+### The Mac cluster
+
+The `cluster` section of `config.yaml` lets the Router run a model across Macs
+cabled with Thunderbolt (FoundationModelsCluster). There is one Router for each
+process, thus the agent reads the section at the user level only, at its
+launch, and ignores it at the session level of a folder. The stub model ignores
+it.
+
+| Key | Default | What it sets |
+|---|---|---|
+| `cluster.enabled` | `false` | When `true`, the Router may split a model across the Macs. |
+| `cluster.hosts` | none | The host names of the Macs. None finds them with Bonjour. |
+| `cluster.sshKey` | none | The key file of the SSH login. None uses the SSH agent and `~/.ssh`. |
+| `cluster.sshKeyPassphrase` | none | The passphrase of `sshKey`. It needs `sshKey`. |
+| `cluster.adminPassword` | none | The admin password that turns off Thunderbolt Bridge on a Mac. |
+| `cluster.user` | none | The user of a password login. It needs `password`. |
+| `cluster.password` | none | The password of a password login, the same on each Mac. It needs `user`, and takes no `sshKey`, `sshKeyPassphrase` or `adminPassword`. |
+| `cluster.policy` | `whenFaster` | `whenFaster`, `whenNeeded` (only when a model does not fit on this Mac) or `always`. |
+| `cluster.workerDirectory` | none | The folder of `fmcluster-worker` and `mlx.metallib`. None uses the worker bundled in the app. |
+
+Each secret takes only a `keychain:<name>` reference, and a literal secret is a
+load error. A `~` at the start of a path is the home folder. Fast synch is
+always on. `acp-agent doctor` shows the cluster report of the Router when the
+section is enabled, in the `cluster` group (`acp-agent doctor --json` for the
+report as JSON).
+
+```yaml
+cluster:
+  enabled: true
+  hosts: [m5u2.local]
+  sshKey: ~/.ssh/id_ed25519
 ```
 
 ### The home
