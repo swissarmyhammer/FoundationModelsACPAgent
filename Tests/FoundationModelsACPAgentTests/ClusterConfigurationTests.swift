@@ -129,9 +129,15 @@ import Testing
     #expect(try Self.enabledSection(with: "policy: \(word)").options.policy == policy)
   }
 
-  /// A `policy` word in another case decodes, as `theme` and `keymap` do.
-  @Test func aPolicyWordInAnotherCaseDecodes() throws {
-    #expect(try Self.enabledSection(with: "policy: WhenNeeded").options.policy == .whenNeeded)
+  /// A `policy` word in another case decodes, as `theme` and `keymap` do: the
+  /// camelCase choices match in all capitals and in all small letters too.
+  @Test(arguments: [
+    ("WhenNeeded", ClusterOptions.Policy.whenNeeded),
+    ("WHENFASTER", ClusterOptions.Policy.whenFaster),
+    ("whenfaster", ClusterOptions.Policy.whenFaster),
+  ])
+  func aPolicyWordInAnotherCaseDecodes(word: String, policy: ClusterOptions.Policy) throws {
+    #expect(try Self.enabledSection(with: "policy: \(word)").options.policy == policy)
   }
 
   /// A `policy` that is not a policy fails with an error that names the
