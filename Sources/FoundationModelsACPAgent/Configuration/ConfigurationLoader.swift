@@ -440,14 +440,24 @@ public struct ConfigurationLoader: Sendable {
   ///   such as a `theme` that is not a theme; ``ProfileFileError`` for a
   ///   selected profile file that does not decode.
   public func load() throws -> LoadedConfiguration {
-    let document = try LayeredYAMLDocument.load(
-      Self.configFileName,
-      from: stack,
-      engine: TemplateEngine(partials: stack),
-      context: TemplateContext())
+    let document = try loadDocument(from: stack)
     return try loadedConfiguration(
       dotfolderRoot: document.root,
       sources: Self.sources(in: document.root, sourceOf: document.source(of:)))
+  }
+
+  /// Reads, renders and merges `config.yaml` over the layers of `layers`: the one read path of
+  /// ``load()`` and ``loadUserCluster()``.
+  ///
+  /// - Parameter layers: The layers to read, which also give the partials of the templates.
+  /// - Returns: The merged document of the layers.
+  /// - Throws: `LayeredYAMLDocumentError` for a layer that cannot be read, rendered or parsed.
+  private func loadDocument(from layers: DotfolderStack) throws -> LayeredYAMLDocument {
+    try LayeredYAMLDocument.load(
+      Self.configFileName,
+      from: layers,
+      engine: TemplateEngine(partials: layers),
+      context: TemplateContext())
   }
 
   /// Loads the `cluster:` section of the user level: the builtin file, the
@@ -472,11 +482,7 @@ public struct ConfigurationLoader: Sendable {
   ///   throws for a layer that cannot be read.
   public func loadUserCluster() throws -> ClusterConfiguration {
     let userStack = DotfolderStack(layers: stack.layers.filter { $0.source != .project })
-    let document = try LayeredYAMLDocument.load(
-      Self.configFileName,
-      from: userStack,
-      engine: TemplateEngine(partials: userStack),
-      context: TemplateContext())
+    let document = try loadDocument(from: userStack)
     let sectionKey = ClusterConfiguration.sectionKey
     guard let body = try layeredRoot(over: document.root).value(at: [sectionKey]), body != .null
     else {

@@ -81,7 +81,7 @@ public struct ClusterConfiguration: Codable, Equatable, Sendable, KeyCheckedSect
   private static let sshLoginKeys: [CodingKeys] = [.sshKey, .adminPassword, .sshKeyPassphrase]
 
   /// The `policy` key: when the Router splits a model across the Macs.
-  public enum Policy: String, Codable, CaseIterable, Sendable {
+  public enum Policy: String, Codable, CaseIterable, Sendable, CaseInsensitiveChoice {
     /// When the cluster is measured faster than this Mac.
     case whenFaster
 
@@ -100,24 +100,8 @@ public struct ClusterConfiguration: Codable, Equatable, Sendable, KeyCheckedSect
       }
     }
 
-    /// Decodes one policy word, in any case, as `theme` and `keymap` decode.
-    ///
-    /// - Parameter decoder: The decoder of the value.
-    /// - Throws: `DecodingError` that names the choices when the word is not a policy.
-    public init(from decoder: any Decoder) throws {
-      let container = try decoder.singleValueContainer()
-      let word = try container.decode(String.self)
-      guard let policy = Self.allCases.first(where: { $0.rawValue.lowercased() == word.lowercased() })
-      else {
-        let choices = Self.allCases.map(\.rawValue).joined(separator: ", ")
-        throw DecodingError.dataCorruptedError(
-          in: container,
-          debugDescription:
-            "\(ClusterConfiguration.sectionKey).\(CodingKeys.policy.stringValue) must be one of: "
-            + "\(choices) (got \"\(word)\")")
-      }
-      self = policy
-    }
+    /// The YAML spelling of the key, for the error text.
+    static var keyName: String { CodingKeys.policy.stringValue }
   }
 
   /// The default: the cluster is off.

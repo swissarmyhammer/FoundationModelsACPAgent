@@ -12,8 +12,8 @@ comments:
     - vs one Mac on 13447: Inkling 4bit+MTP 22 min (inkling24); Qwen q8kv8 28 min. Cluster is still slower: no MTP (mlx-swift-lm ^rgzk56j) and no KV8 (^2ry6yz7); Inkling ran before the cache fix.
     Next: rerun Inkling on cluster-2b88ac4 (cache fix), then the mlx-swift-lm cards for speed.
   timestamp: 2026-11-27T17:29:26.533407+00:00
-position_column: todo
-position_ordinal: '8280'
+position_column: done
+position_ordinal: ffffffc280
 title: 'Goal: one SWE-bench task runs to a patch on the 2-Mac cluster, with Qwen 27B and with Inkling 2 Mini'
 ---
 ## Goal

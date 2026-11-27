@@ -1,7 +1,6 @@
 import Foundation
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsCluster
-import FoundationModelsExtras
 import Testing
 
 @testable import FoundationModelsACPAgent
@@ -29,22 +28,13 @@ import Testing
 
   // MARK: - Helpers
 
-  /// The `cluster` section of a `config.yaml` text.
-  ///
-  /// - Parameter yaml: The text of the file.
-  /// - Returns: The decoded section.
-  /// - Throws: The parse or the decode error.
-  private static func section(of yaml: String) throws -> ClusterConfiguration {
-    try YAMLValue.parse(yaml).decoded(as: AgentConfiguration.self).cluster
-  }
-
   /// The `cluster` section with `enabled: true` and one more line.
   ///
   /// - Parameter line: The key line under the section, or none.
   /// - Returns: The decoded section.
   /// - Throws: The parse or the decode error.
   private static func enabledSection(with line: String = "") throws -> ClusterConfiguration {
-    try section(of: "cluster:\n  enabled: true\n" + (line.isEmpty ? "" : "  \(line)\n"))
+    try ClusterYAML.cluster(of: "cluster:\n  enabled: true\n" + (line.isEmpty ? "" : "  \(line)\n"))
   }
 
   /// The path of a file under the home folder of the user.
@@ -89,7 +79,7 @@ import Testing
 
   /// A configuration with no `cluster` section keeps the cluster off.
   @Test func anAbsentSectionTurnsTheClusterOff() throws {
-    #expect(try Self.section(of: "theme: dark\n").mode == .off)
+    #expect(try ClusterYAML.cluster(of: "theme: dark\n").mode == .off)
   }
 
   /// `enabled: true` with no key logs in with the SSH agent and `~/.ssh`.
@@ -99,7 +89,7 @@ import Testing
 
   /// `enabled: false` keeps the cluster off, also with a key.
   @Test func enabledFalseKeepsTheClusterOff() throws {
-    let section = try Self.section(
+    let section = try ClusterYAML.cluster(
       of: "cluster:\n  enabled: false\n  sshKey: \(Self.sshKeyValue)\n")
 
     #expect(try section.mode == .off)

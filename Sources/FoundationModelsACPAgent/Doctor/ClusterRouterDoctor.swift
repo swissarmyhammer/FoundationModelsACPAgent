@@ -11,9 +11,10 @@ import HuggingFace
 /// login. Each finding of the report is one more check: an info finding passes, a warning warns,
 /// and a failure is an error with its fix line. The report holds no secret.
 ///
-/// The component applies only when the section is enabled, or when the section does not load: a
-/// login secret with no value in the Keychain does not stop the load of `config.yaml`, thus this
-/// component reports it.
+/// The component reads the section only when the checks run, because a Keychain read can prompt
+/// the person. It reports nothing when the section is not enabled, and an error when the section
+/// does not load: a login secret with no value in the Keychain does not stop the load of
+/// `config.yaml`, thus this component reports it.
 public struct ClusterRouterDoctor: Doctorable {
   // MARK: - Constants
 
@@ -37,22 +38,16 @@ public struct ClusterRouterDoctor: Doctorable {
 
   // MARK: - Types
 
-  /// The `cluster:` section of the user level, as the component read it.
-  enum Section: Sendable {
-    /// The section, with each login secret resolved.
-    case loaded(ClusterConfiguration)
-
-    /// The read of the section failed; the text of the error, which holds no secret value.
-    case failed(String)
-  }
+  /// Reads the `cluster:` section of the user level, with each login secret resolved.
+  typealias SectionSource = @Sendable () throws -> ClusterConfiguration
 
   /// Gives the cluster report of a Router built with a section.
   typealias ReportSource = @Sendable (ClusterConfiguration) async throws -> ClusterReport
 
   // MARK: - Stored state
 
-  /// The section of the user level.
-  private let section: Section
+  /// The read of the section of the user level, which the checks call.
+  let loadSection: SectionSource
 
   /// The source of the report.
   private let report: ReportSource
@@ -65,21 +60,13 @@ public struct ClusterRouterDoctor: Doctorable {
   /// The group its findings belong to.
   public let doctorCategory = ClusterRouterDoctor.category
 
-  /// Whether the checks apply: the section is enabled, or it does not load.
-  public var isApplicable: Bool {
-    switch section {
-    case .loaded(let cluster): cluster.enabled
-    case .failed: true
-    }
-  }
-
   // MARK: - Making
 
   /// Makes the component over the section of the user level that `loader` reads
   /// (``ConfigurationLoader/loadUserCluster()``), and a live Router of `home` for the report.
   ///
-  /// The init reads the configuration files and the Keychain, and builds no Router: the Router
-  /// is built only when the checks run, and only for an enabled section.
+  /// The init reads no configuration file and no Keychain item, and builds no Router: the checks
+  /// read the section, and build the Router only for an enabled section.
   ///
   /// - Parameters:
   ///   - loader: The configuration loader of the `doctor` command.
@@ -89,45 +76,39 @@ public struct ClusterRouterDoctor: Doctorable {
   public init(
     loader: ConfigurationLoader, home: AgentHome, huggingFaceTokenProvider: TokenProvider = .environment
   ) {
-    let section: Section
-    do {
-      section = .loaded(try loader.loadUserCluster())
-    } catch {
-      section = .failed(String(describing: error))
-    }
-    self.init(section: section) { cluster in
+    self.init(section: { try loader.loadUserCluster() }) { cluster in
       try await ComposedAgent.makeLiveRouter(
         home: home, huggingFaceTokenProvider: huggingFaceTokenProvider, cluster: cluster
       ).clusterReport()
     }
   }
 
-  /// Makes the component over a section and a source of the report.
+  /// Makes the component over a read of the section and a source of the report.
   ///
   /// - Parameters:
-  ///   - section: The section of the user level.
+  ///   - section: Reads the section of the user level.
   ///   - report: Gives the cluster report of a Router built with the section.
-  init(section: Section, report: @escaping ReportSource) {
-    self.section = section
+  init(section: @escaping SectionSource, report: @escaping ReportSource) {
+    loadSection = section
     self.report = report
   }
 
   // MARK: - Checks
 
-  /// Reports the status of the cluster report, then one check for each finding.
+  /// Reads the section, then reports the status of the cluster report and one check for each
+  /// finding.
   ///
-  /// - Returns: The checks; one error when the section does not load or the Router cannot be
-  ///   built.
+  /// - Returns: The checks; none when the section is not enabled; one error when the section
+  ///   does not load or the Router cannot be built.
   public func runHealthChecks() async -> [HealthCheck] {
-    switch section {
-    case .failed(let reason):
-      return [Self.sectionError(reason)]
-    case .loaded(let cluster):
-      do {
-        return Self.checks(of: try await report(cluster))
-      } catch {
-        return [Self.sectionError(String(describing: error))]
+    do {
+      let cluster = try loadSection()
+      guard cluster.enabled else {
+        return []
       }
+      return Self.checks(of: try await report(cluster))
+    } catch {
+      return [Self.sectionError(String(describing: error))]
     }
   }
 

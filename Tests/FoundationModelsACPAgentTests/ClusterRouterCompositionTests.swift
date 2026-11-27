@@ -1,7 +1,6 @@
 import Foundation
 import FoundationModelsACPAgentTestSupport
 import FoundationModelsCluster
-import FoundationModelsExtras
 import FoundationModelsRouter
 import Testing
 
@@ -40,7 +39,7 @@ import Testing
   /// - Returns: The section.
   /// - Throws: The parse or the decode error.
   private static func enabledSection() throws -> ClusterConfiguration {
-    try YAMLValue.parse(enabledYAML).decoded(as: AgentConfiguration.self).cluster
+    try ClusterYAML.cluster(of: enabledYAML)
   }
 
   /// The live Router of a section, as the composition makes it.

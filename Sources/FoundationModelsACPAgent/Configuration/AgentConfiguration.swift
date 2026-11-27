@@ -159,7 +159,8 @@ extension AgentConfiguration {
 
 // MARK: - theme and keymap
 
-/// A top-level key whose value is one word from a fixed list.
+/// A key whose value is one word from a fixed list, such as the top-level
+/// `theme` and `keymap` keys and `cluster.policy`.
 ///
 /// The decode ignores case, because a host shows the choices with a capital
 /// letter (`System`, `Vim`). Each other value is an error that names the
@@ -171,11 +172,15 @@ where RawValue == String {
 }
 
 extension CaseInsensitiveChoice {
-  /// Decodes one choice, in any case.
+  /// Decodes one choice, in any case: the word matches the raw value of a choice when the two
+  /// are the same with each letter lowercased, thus a camelCase choice such as `whenFaster`
+  /// decodes as well.
   public init(from decoder: any Decoder) throws {
     let container = try decoder.singleValueContainer()
     let word = try container.decode(String.self)
-    guard let choice = Self(rawValue: word.lowercased()) else {
+    let lowercased = word.lowercased()
+    guard let choice = Self.allCases.first(where: { $0.rawValue.lowercased() == lowercased })
+    else {
       let choices = Self.allCases.map(\.rawValue).joined(separator: ", ")
       throw DecodingError.dataCorruptedError(
         in: container,
