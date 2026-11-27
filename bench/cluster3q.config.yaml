@@ -1,0 +1,28 @@
+# The agent configuration of the cluster3q run: one task (django__django-13447), --timeout 9000, on the 2-Mac cluster (m5u1 head + m5u2), policy always, set in the user-level ~/.config/acp-agent/config.yaml cluster section.
+# Model: user-layer profile q8kv8 (bench/q8kv8.profile.yaml). Build: bench/bin/cluster-2b88ac4 (ACPAgent 3c2f5fdc, Router 2b88ac48 (fallback, sizing, kvBits/drafter drop, prompt-cache room), Extras 8e78ee0f, Cluster 0b560b5, mlx-swift-lm stable aebdd80b, mlx-swift 2d5a12b7), worker beside the binary.
+profile: q8kv8
+tools:
+  files:
+    readOnly: false
+    allowSymlinks: false
+    recordsChanges: false
+  shell:
+    storeDirectory: null
+  skills:
+    marketplaces:
+      - url: https://github.com/swissarmyhammer/skills.git
+        ref: main
+  agents:
+    enabled: true
+  codeContext:
+    autoInstall: true
+    semanticSearch: false
+  web:
+    enabled: true
+  git:
+    enabled: true
+  environment:
+    enabled: true
+  kanban:
+    enabled: true
+  mcp: []

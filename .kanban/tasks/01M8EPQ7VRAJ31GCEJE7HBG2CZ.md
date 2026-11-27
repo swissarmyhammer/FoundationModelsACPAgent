@@ -1,6 +1,17 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01m8f0w2r56rtjwqazng6ws6xm
+  text: |-
+    ### Goal met for one task each — 2026-11-27
+    - cluster2i: Inkling 2 Mini 4bit (profile inkling24, MTP dropped), build cluster-0b560b5 (Router f3624eb9, Cluster 0b560b5 worker cache cap). django__django-13447 RESOLVED, 6878 s, 360 calls, 108k tokens out, 60.4 tok/s; 0 prompt-cache hits (34k uncached/call, TTFT 67 min) — fixed later by Router ^n98hpry.
+    - cluster3q: Qwen 27B 8bit (profile q8kv8, run with fp16 KV and no drafter under policy always), build cluster-2b88ac4 (Router 2b88ac48, Cluster 0b560b5). RESOLVED, 2358 s, 126 calls, 87k out, 43.2 tok/s, 110/126 cache hits (1.7k uncached/call).
+    - Workers 11–25 GB on each Mac, no member loss in either run (so the ^hvygt9p fallback and ^sdqenwv report were not exercised).
+    - vs one Mac on 13447: Inkling 4bit+MTP 22 min (inkling24); Qwen q8kv8 28 min. Cluster is still slower: no MTP (mlx-swift-lm ^rgzk56j) and no KV8 (^2ry6yz7); Inkling ran before the cache fix.
+    Next: rerun Inkling on cluster-2b88ac4 (cache fix), then the mlx-swift-lm cards for speed.
+  timestamp: 2026-11-27T17:29:26.533407+00:00
 position_column: todo
 position_ordinal: '8280'
 title: 'Goal: one SWE-bench task runs to a patch on the 2-Mac cluster, with Qwen 27B and with Inkling 2 Mini'
