@@ -1,0 +1,28 @@
+# The agent configuration of the cluster1i run: one task (django__django-13447), --timeout 9000, on the 2-Mac cluster (m5u1 head + m5u2), policy always, set in the user-level ~/.config/acp-agent/config.yaml cluster section.
+# Model: user-layer profile inkling24 (bench/inkling24.profile.yaml). Build: bench/bin/cluster-40d7f3a (ACPAgent 40d7f3ad, Router f3624eb9, Extras 8e78ee0f, Cluster 0b8d4848, mlx-swift-lm stable 3bd174ed, mlx-swift 2d5a12b7), worker beside the binary.
+profile: inkling24
+tools:
+  files:
+    readOnly: false
+    allowSymlinks: false
+    recordsChanges: false
+  shell:
+    storeDirectory: null
+  skills:
+    marketplaces:
+      - url: https://github.com/swissarmyhammer/skills.git
+        ref: main
+  agents:
+    enabled: true
+  codeContext:
+    autoInstall: true
+    semanticSearch: false
+  web:
+    enabled: true
+  git:
+    enabled: true
+  environment:
+    enabled: true
+  kanban:
+    enabled: true
+  mcp: []
