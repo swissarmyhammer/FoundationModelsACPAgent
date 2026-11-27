@@ -72,8 +72,24 @@ comments:
     - evidence: 1 file — Tests/FoundationModelsACPAgentTests/ClusterConfigurationTests.swift (plus the card checkbox). `swift test --filter ClusterConfigurationTests`: 14 tests in 1 suite passed. `swift test`: 2935 tests in 316 suites passed, 1 known issue (the existing withKnownIssue in HarnessSmokeTests). The only warning is SwiftPM's "missing creator for mutated node" on the mlx-swift_Cmlx bundle, from the build system and not from code. Not committed.
     - next: /review
   timestamp: 2026-11-27T20:37:27.409430+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01m8fbnvqgk6y991gyjwx13034
+  text: |-
+    ### review — clean
+    - evidence: review sha HEAD~1..HEAD (f5291d33): 0 findings, 0 confirmed, 1 refuted, 7 attempted, 0 failed; 1 file reviewed, .kanban/ excluded; all 5 prior findings checked
+    - next: none; task moved to done
+  timestamp: 2026-11-27T20:38:17.072030+00:00
+- actor: claude-code
+  id: 01m8fbp5b5jv66nzpbtwe42sje
+  text: |-
+    ### finish iteration 3 — clean
+    - implement: changed — 1 file
+    - test: green — swift test 2935 passed (1 known issue)
+    - commit: f5291d33
+    - review: clean
+  timestamp: 2026-11-27T20:38:26.917280+00:00
+position_column: done
+position_ordinal: ffffffc380
 title: 'cluster: section in config.yaml passes a Mac cluster mode and options to the Router'
 ---
 ## What
