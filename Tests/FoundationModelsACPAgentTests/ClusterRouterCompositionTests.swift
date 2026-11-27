@@ -1,0 +1,161 @@
+import Foundation
+import FoundationModelsACPAgentTestSupport
+import FoundationModelsCluster
+import FoundationModelsExtras
+import FoundationModelsRouter
+import Testing
+
+@testable import FoundationModelsACPAgent
+
+/// The `cluster:` section reaches the Router (task ^j1vfmkf): the composition reads the section
+/// of the user level before it builds the Router, and gives its mode and options to the Router
+/// and to the live loader. The session level is ignored, and the stub path ignores the section.
+///
+/// No test asks the network and no test loads a model: the live Router is only built.
+@Suite struct ClusterRouterCompositionTests {
+  // MARK: - Constants
+
+  /// The label of the throwaway folders of the suite.
+  private static let label = "ClusterRouterCompositionTests"
+
+  /// A host name of the section.
+  private static let host = "m5u2.local"
+
+  /// The `config.yaml` text of an enabled section with each key.
+  private static let enabledYAML = """
+    cluster:
+      enabled: true
+      hosts: [\(host)]
+      policy: always
+      workerDirectory: /tmp/fmcluster
+    """
+
+  /// The path of stored properties from a `Router` to its loader.
+  private static let loaderPath = ["loader"]
+
+  // MARK: - Helpers
+
+  /// The enabled section of ``enabledYAML``.
+  ///
+  /// - Returns: The section.
+  /// - Throws: The parse or the decode error.
+  private static func enabledSection() throws -> ClusterConfiguration {
+    try YAMLValue.parse(enabledYAML).decoded(as: AgentConfiguration.self).cluster
+  }
+
+  /// The live Router of a section, as the composition makes it.
+  ///
+  /// - Parameters:
+  ///   - cluster: The section.
+  ///   - modelSource: The model path.
+  /// - Returns: The Router.
+  /// - Throws: The error of the construction.
+  private static func makeRouter(
+    cluster: ClusterConfiguration, modelSource: ComposedAgent.ModelSource = .live
+  ) throws -> Router {
+    try ComposedAgent.makeRouter(
+      for: modelSource, home: AgentHomeFixture.make(label: label), huggingFaceTokenProvider: .environment,
+      cluster: cluster)
+  }
+
+  /// The folder of a worker source of a folder.
+  ///
+  /// - Parameter source: The worker source.
+  /// - Returns: The path, or `nil` for a bundled source.
+  private static func directoryPath(of source: WorkerSource) -> String? {
+    guard case .directory(let directory) = source else {
+      return nil
+    }
+    return directory.path
+  }
+
+  // MARK: - The user level
+
+  /// The section of the user level is the section that the loader reads for the Router.
+  @Test func theUserLevelSectionIsRead() throws {
+    let fixture = ConfigurationLoaderTests.Fixture()
+    fixture.writeConfig(Self.enabledYAML, in: fixture.userDirectory)
+
+    #expect(try fixture.makeLoader().loadUserCluster() == Self.enabledSection())
+  }
+
+  /// The section of the session level of a folder does not reach the Router.
+  @Test func theSessionLevelSectionIsIgnored() throws {
+    let fixture = ConfigurationLoaderTests.Fixture()
+    fixture.writeConfig(Self.enabledYAML, in: fixture.projectDirectory)
+
+    #expect(try fixture.makeLoader().loadUserCluster() == ClusterConfiguration())
+  }
+
+  /// A key that the section does not have is an error of the read of the user level.
+  @Test func anUnknownKeyOfTheUserLevelIsAnError() throws {
+    let fixture = ConfigurationLoaderTests.Fixture()
+    fixture.writeConfig("cluster:\n  password: secret\n", in: fixture.userDirectory)
+
+    #expect(
+      throws: ConfigurationError.unknownKey(
+        section: ClusterConfiguration.sectionKey, key: "password")
+    ) {
+      try fixture.makeLoader().loadUserCluster()
+    }
+  }
+
+  // MARK: - The Router
+
+  /// The live Router of an enabled section has the mode of the section.
+  @Test func theLiveRouterHasTheModeOfTheSection() throws {
+    let section = try Self.enabledSection()
+
+    #expect(try Self.makeRouter(cluster: section).cluster == section.mode)
+  }
+
+  /// The live Router of an enabled section has the hosts of the section.
+  @Test func theLiveRouterHasTheHostsOfTheSection() throws {
+    #expect(try Self.makeRouter(cluster: Self.enabledSection()).clusterOptions.hosts == [Self.host])
+  }
+
+  /// The live Router of an enabled section has the policy of the section.
+  @Test func theLiveRouterHasThePolicyOfTheSection() throws {
+    #expect(try Self.makeRouter(cluster: Self.enabledSection()).clusterOptions.policy == .always)
+  }
+
+  /// The live Router of an enabled section has the worker folder of the section.
+  @Test func theLiveRouterHasTheWorkerFolderOfTheSection() throws {
+    let router = try Self.makeRouter(cluster: Self.enabledSection())
+
+    #expect(Self.directoryPath(of: router.clusterOptions.workerSource) == "/tmp/fmcluster")
+  }
+
+  /// The live loader of the Router gets the same mode as the Router.
+  @Test func theLiveLoaderHasTheModeOfTheSection() throws {
+    let section = try Self.enabledSection()
+    let router = try Self.makeRouter(cluster: section)
+
+    let loader = try #require(
+      Mirror(reflecting: router).descendant(Self.loaderPath[0]) as? LiveModelLoader)
+    #expect(loader.cluster == section.mode)
+  }
+
+  /// The stub Router ignores the section.
+  @Test func theStubRouterIgnoresTheSection() throws {
+    let router = try Self.makeRouter(cluster: Self.enabledSection(), modelSource: .stub)
+
+    #expect(router.cluster == .off)
+  }
+
+  // MARK: - The composition
+
+  /// The Router of the composition has the mode of the section of the user level that the
+  /// loader reads.
+  @Test func theRouterOfTheCompositionHasTheModeOfTheUserLevel() throws {
+    let fixture = ConfigurationLoaderTests.Fixture()
+    fixture.writeConfig(Self.enabledYAML, in: fixture.userDirectory)
+    let loader = try fixture.makeLoader()
+
+    let router = try ComposedAgent.makeRouter(
+      for: .live, home: AgentHomeFixture.make(label: Self.label),
+      huggingFaceTokenProvider: .environment, userLevelOf: loader)
+
+    #expect(router.cluster == (try Self.enabledSection().mode))
+  }
+}

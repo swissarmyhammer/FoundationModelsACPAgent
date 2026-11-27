@@ -442,6 +442,38 @@ public struct ConfigurationLoader: Sendable {
       sources: Self.sources(in: document.root, sourceOf: document.source(of:)))
   }
 
+  /// Loads the `cluster:` section of the user level: the builtin file, the
+  /// defaults layer and the user layer, with no project layer
+  /// (``ClusterConfiguration``).
+  ///
+  /// There is one Router for each process, and the host builds it before
+  /// ``load()``, thus the section of the session level of a folder does not
+  /// reach the Router. ``load()`` still checks and decodes the section of
+  /// each layer.
+  ///
+  /// - Returns: The section; the default (the cluster off) when no layer
+  ///   sets it, or when it is null, as ``load()`` reads a null section.
+  /// - Throws: ``ConfigurationError/unknownKey(section:key:)`` for a key
+  ///   that the section does not have; `YAMLValueDecodingError` for a value
+  ///   that does not decode, such as a `policy` that is not a policy; what
+  ///   ``load()`` throws for a layer that cannot be read.
+  public func loadUserCluster() throws -> ClusterConfiguration {
+    let userStack = DotfolderStack(layers: stack.layers.filter { $0.source != .project })
+    let document = try LayeredYAMLDocument.load(
+      Self.configFileName,
+      from: userStack,
+      engine: TemplateEngine(partials: userStack),
+      context: TemplateContext())
+    let sectionKey = ClusterConfiguration.sectionKey
+    guard let body = try layeredRoot(over: document.root).value(at: [sectionKey]), body != .null
+    else {
+      return ClusterConfiguration()
+    }
+    try ConfigurationError.checkKeys(
+      of: body, against: ClusterConfiguration.knownKeys, section: sectionKey)
+    return try body.decoded(as: ClusterConfiguration.self)
+  }
+
   /// Checks, decodes and resolves a merged dotfolder tree: the steps of
   /// ``load()`` after the read of the stack.
   ///

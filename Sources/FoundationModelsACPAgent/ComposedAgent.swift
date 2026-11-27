@@ -248,6 +248,7 @@ public struct ComposedAgent: Sendable {
     // builds and before any tool registers.
     try mode.validate(probe: sandboxProbe)
     let hooks = AgentHooks(dataDirectory: home.hooksDirectory)
+    let settingsFolders = SettingsFolders(name: name, home: home, environment: environment)
     let router = try makeRouter(
       for: modelSource,
       gatedBy: stubChunkGate,
@@ -255,11 +256,14 @@ public struct ComposedAgent: Sendable {
       recordingInto: try makeRecordingsDirectory(),
       hooks: hooks.dispatcher,
       home: home,
-      huggingFaceTokenProvider: huggingFaceTokenProvider)
+      huggingFaceTokenProvider: huggingFaceTokenProvider,
+      userLevelOf: ConfigurationLoader(
+        settingsFolders: settingsFolders, workingDirectory: workingDirectory,
+        secretStore: secretStore))
     let fallbackProfileName = await BundledProfiles.fallbackName(
       using: profileFitSource ?? router)
     let configuration = try ConfigurationLoader(
-      settingsFolders: SettingsFolders(name: name, home: home, environment: environment),
+      settingsFolders: settingsFolders,
       workingDirectory: workingDirectory, secretStore: secretStore,
       fallbackProfileName: fallbackProfileName
     ).load().configuration
@@ -441,6 +445,10 @@ public struct ComposedAgent: Sendable {
   ///     the host. The live path gives it to the loader, for each download,
   ///     and to the `HuggingFaceMetadataSource` of the router, for each
   ///     sizing request. The stub path ignores it.
+  ///   - cluster: The `cluster:` section of the user level
+  ///     (``ClusterConfiguration``). The live path gives its mode and its
+  ///     options to the router and to the live loader. The stub path ignores
+  ///     it. The default is the cluster off.
   /// - Returns: A router over `LiveModelLoader` for ``ModelSource/live``,
   ///   or the library's `EchoModel` router — stub machine, stub
   ///   metadata, echo loader — for ``ModelSource/stub``.
@@ -454,17 +462,14 @@ public struct ComposedAgent: Sendable {
     recordingInto recordingsDirectory: URL? = nil,
     hooks: HookDispatcher? = nil,
     home: AgentHome,
-    huggingFaceTokenProvider: TokenProvider
+    huggingFaceTokenProvider: TokenProvider,
+    cluster: ClusterConfiguration = ClusterConfiguration()
   ) throws -> Router {
     switch modelSource {
     case .live:
-      Router(
-        cacheDir: home.routerCacheDirectory,
-        recordingsDir: recordingsDirectory,
-        metadataSource: HuggingFaceMetadataSource(tokenProvider: huggingFaceTokenProvider),
-        loader: makeLiveModelLoader(
-          modelCacheDirectory: home.modelCacheDirectory, tokenProvider: huggingFaceTokenProvider),
-        hooks: hooks)
+      makeLiveRouter(
+        recordingInto: recordingsDirectory, hooks: hooks, home: home,
+        huggingFaceTokenProvider: huggingFaceTokenProvider, cluster: cluster)
     case .stub:
       EchoModel.makeRouter(
         cacheDirectory: try makeStubCacheDirectory(),
@@ -472,6 +477,79 @@ public struct ComposedAgent: Sendable {
         loader: try makeStubLoader(gatedBy: chunkGate, scriptedBy: stubScript),
         hooks: hooks)
     }
+  }
+
+  /// Makes the router of one model path with the `cluster:` section of the
+  /// user level that `loader` reads (``ConfigurationLoader/loadUserCluster()``):
+  /// the router of ``compose(name:workingDirectory:home:mode:sandboxProbe:openTestudoDownloadURL:agentName:environment:modelSource:stubChunkGate:stubScript:secretStore:userDeviceTokens:huggingFaceTokenProvider:modelStorage:sessionToolFactories:reporting:profileFitSource:readableFolder:sessionShareHost:importRoots:)``.
+  ///
+  /// There is one router for each process, and the composition builds it
+  /// before the load of the configuration, thus it reads the section of the
+  /// user level here, and the section of a session level does not reach
+  /// the router.
+  ///
+  /// - Parameters:
+  ///   - modelSource: The model path to build the router over.
+  ///   - chunkGate: The path of the named pipe of a stub answer, or `nil`.
+  ///   - stubScript: The path of the script file of the stub model, or `nil`.
+  ///   - recordingsDirectory: The recordings root of the router, or `nil`.
+  ///   - hooks: The hook dispatcher of the sessions of the router, or `nil`.
+  ///   - home: The home of the host.
+  ///   - huggingFaceTokenProvider: The provider of the Hugging Face token of
+  ///     the host.
+  ///   - loader: The configuration loader whose user level gives the
+  ///     section.
+  /// - Returns: The router of
+  ///   ``makeRouter(for:gatedBy:scriptedBy:recordingInto:hooks:home:huggingFaceTokenProvider:cluster:)``
+  ///   with the section.
+  /// - Throws: What ``ConfigurationLoader/loadUserCluster()`` throws, and
+  ///   what the router construction throws.
+  static func makeRouter(
+    for modelSource: ModelSource,
+    gatedBy chunkGate: String? = nil,
+    scriptedBy stubScript: String? = nil,
+    recordingInto recordingsDirectory: URL? = nil,
+    hooks: HookDispatcher? = nil,
+    home: AgentHome,
+    huggingFaceTokenProvider: TokenProvider,
+    userLevelOf loader: ConfigurationLoader
+  ) throws -> Router {
+    try makeRouter(
+      for: modelSource, gatedBy: chunkGate, scriptedBy: stubScript,
+      recordingInto: recordingsDirectory, hooks: hooks, home: home,
+      huggingFaceTokenProvider: huggingFaceTokenProvider, cluster: loader.loadUserCluster())
+  }
+
+  /// Makes the router of the live path: the metadata cache and the model
+  /// cache of `home`, a `HuggingFaceMetadataSource` and a `LiveModelLoader`
+  /// over `huggingFaceTokenProvider`, and the cluster mode and options of
+  /// `cluster` on the router and on its loader.
+  ///
+  /// - Parameters:
+  ///   - recordingsDirectory: The recordings root of the router, or `nil`
+  ///     (the default) to record nothing.
+  ///   - hooks: The hook dispatcher of the sessions of the router, or `nil`
+  ///     (the default) for no hooks.
+  ///   - home: The home of the host.
+  ///   - huggingFaceTokenProvider: The provider of the Hugging Face token of
+  ///     each download and each sizing request.
+  ///   - cluster: The `cluster:` section of the user level.
+  /// - Returns: The router. Its construction loads no model and asks no
+  ///   network endpoint.
+  static func makeLiveRouter(
+    recordingInto recordingsDirectory: URL? = nil, hooks: HookDispatcher? = nil,
+    home: AgentHome, huggingFaceTokenProvider: TokenProvider, cluster: ClusterConfiguration
+  ) -> Router {
+    Router(
+      cacheDir: home.routerCacheDirectory,
+      recordingsDir: recordingsDirectory,
+      metadataSource: HuggingFaceMetadataSource(tokenProvider: huggingFaceTokenProvider),
+      loader: makeLiveModelLoader(
+        modelCacheDirectory: home.modelCacheDirectory, tokenProvider: huggingFaceTokenProvider,
+        cluster: cluster),
+      cluster: cluster.mode,
+      clusterOptions: cluster.options,
+      hooks: hooks)
   }
 
   /// Makes the fit source of the choice of the default profile for a host
@@ -514,12 +592,17 @@ public struct ComposedAgent: Sendable {
   ///   - offline: `true` to send no Hub request, `false` to ask the Hub for
   ///     the files that the cache does not have, or `nil` (the default) to
   ///     read `HF_HUB_OFFLINE`. A unit test gives `true`.
+  ///   - cluster: The `cluster:` section of the user level. The loader gets
+  ///     the same mode and options as the router, as Router asks of a
+  ///     clustered router. The default is the cluster off.
   /// - Returns: The live loader over that cache.
   static func makeLiveModelLoader(
-    modelCacheDirectory: URL, tokenProvider: TokenProvider, offline: Bool? = nil
+    modelCacheDirectory: URL, tokenProvider: TokenProvider, offline: Bool? = nil,
+    cluster: ClusterConfiguration = ClusterConfiguration()
   ) -> LiveModelLoader {
     LiveModelLoader(
-      cacheDirectory: modelCacheDirectory, tokenProvider: tokenProvider, offline: offline)
+      cacheDirectory: modelCacheDirectory, tokenProvider: tokenProvider, offline: offline,
+      cluster: cluster.mode, clusterOptions: cluster.options)
   }
 
   /// Makes the loader of the stub path.
