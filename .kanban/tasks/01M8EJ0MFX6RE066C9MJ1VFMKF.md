@@ -6,6 +6,15 @@ comments:
   id: 01m8ej8n108c43y0kve5380zf4
   text: 'Research: Router f3624eb9 (main) has Router(cluster:clusterOptions:) and Router.clusterReport() (Doctor/RouterClusterReport.swift); LiveModelLoader(cluster:clusterOptions:) must get the same mode (Router doc: "a clustered router gets a loader with the same mode"), so makeLiveModelLoader takes the cluster too. Router does not @_exported FoundationModelsCluster, so this package declares it as a family dependency. ClusterOptions is not Equatable (WorkerSource and Policy are Hashable). Extras has ClusterLoader: Doctorable with healthChecks(of:category:) but internal, so the doctor component maps the ClusterReport itself. ACPAgent compose builds the router before ConfigurationLoader.load() (fallback profile fit), so the user-level cluster section is read first from the defaults+user layers of the configuration stack. Package.resolved is gitignored; `swift package update` moved every sibling to main.'
   timestamp: 2026-11-27T13:14:09.824581+00:00
+- actor: claude-code
+  id: 01m8ekhp1aqcw82vgsta1g54vw
+  text: |-
+    ### implement — changed
+    - evidence: commits d3d9fde9 (section), 498684ff (router + live loader + compose), 66f0a99b (login secrets user/password/adminPassword/sshKeyPassphrase, keychain-only, rules, fastSynch test), 09cfa67a (profile `cluster: off`), e20b6c51 (doctor ClusterRouterDoctor). `swift test`: 2934 tests in 316 suites passed (1 known issue, the pre-existing withKnownIssue of HarnessSmokeTests).
+    - discoveries: YAML reads a bare `off` as false, so ProfileFile maps `cluster: false` to "off" before Router decodes it. The full load() does not resolve cluster secrets, so the doctor component reports an unresolved reference itself. The session level of `cluster` is ignored (documented in help, builtin file and README), and load() still checks it. A first compose-level test could not fail first (load() also rejects a bad section); replaced with the seam makeRouter(..., userLevelOf:) that compose calls.
+    - new cards: ^y4ambta (pre-existing needless-await warnings), ^8mr8xt2 (profile fit source of config show/doctor ignores the cluster).
+    - next: /review
+  timestamp: 2026-11-27T13:36:34.346758+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'cluster: section in config.yaml passes a Mac cluster mode and options to the Router'
