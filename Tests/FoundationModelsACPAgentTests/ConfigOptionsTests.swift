@@ -197,9 +197,11 @@ import Testing
     ).updates
     #expect(ScriptedPromptFixture.agentText(in: bothPrompts).contains(Self.flashAnswer))
 
-    // The set response already carried the complete state, so no
-    // push follows it.
-    #expect(await fixture.collector.updates(ofKind: .configOptionUpdate).isEmpty)
+    // The set also posts its complete state one time, for a client that
+    // discards the response. The prompt ends push nothing more.
+    let pushed = Self.pushedStates(in: await fixture.collector.updates(ofKind: .configOptionUpdate))
+    #expect(pushed.count == 1)
+    #expect(pushed.first?.configOptions == response.configOptions)
     await fixture.close()
   }
 

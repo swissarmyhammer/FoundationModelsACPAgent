@@ -199,6 +199,43 @@ import Testing
     #expect(try Self.effortSelect(in: response.configOptions).currentValue.rawValue == Self.lowLevel)
   }
 
+  /// A set to `low` gives the response AND one `config_option_update`
+  /// with `low`, for a client that discards the response. The prompt end
+  /// after it pushes nothing more, because the set recorded the state.
+  @Test func aSetToLowAlsoPostsOneConfigOptionUpdateWithLow() async throws {
+    let fixture = try await Self.makeFixture(
+      loader: Self.makeLoader(standard: Self.threeLevels), label: "EffortOption-set-push")
+
+    let response = try await Self.setEffort(Self.idValue(Self.lowLevel), on: fixture)
+    let updates = try await ScriptedPromptFixture.waitForUpdates(
+      of: fixture.collector, toReach: "one config_option_update"
+    ) { updates in
+      updates.contains { $0.update.kind == .configOptionUpdate }
+    }
+    try await ScriptedPromptFixture.runPrompt(on: fixture, text: "after the set")
+    let pushedCount = await fixture.collector.updates(ofKind: .configOptionUpdate).count
+    await fixture.close()
+
+    #expect(try Self.effortSelect(in: response.configOptions).currentValue.rawValue == Self.lowLevel)
+    let pushed = try #require(Self.pushedOptions(in: updates).first)
+    #expect(try Self.effortSelect(in: pushed).currentValue.rawValue == Self.lowLevel)
+    #expect(pushed == response.configOptions)
+    #expect(pushedCount == 1)
+  }
+
+  /// A set that fails posts no `config_option_update`.
+  @Test func aFailedSetPostsNoConfigOptionUpdate() async throws {
+    let fixture = try await Self.makeFixture(
+      loader: Self.makeLoader(standard: Self.threeLevels), label: "EffortOption-failed-push")
+
+    _ = try? await Self.setEffort(Self.idValue("xhigh"), on: fixture)
+    try await ScriptedPromptFixture.runPrompt(on: fixture, text: "after the failed set")
+    let pushedCount = await fixture.collector.updates(ofKind: .configOptionUpdate).count
+    await fixture.close()
+
+    #expect(pushedCount == 0)
+  }
+
   /// A set to `low` changes the level of the Router session.
   @Test func aSetToLowChangesTheLevelOfTheRouterSession() async throws {
     let fixture = try await Self.makeFixture(
@@ -285,15 +322,21 @@ import Testing
     try await ScriptedPromptFixture.waitForRunning(fixture.collector)
     try await fixture.switchModelSlot(to: .flash)
     hold.release()
+    // The set posts its state at once, while the prompt still runs on the
+    // standard model. The prompt end then posts the levels of the flash
+    // model.
+    let flashNames = Self.flashLevels.sessionLevelNames
     let updates = try await ScriptedPromptFixture.waitForUpdates(
-      of: fixture.collector, toReach: "one config_option_update"
+      of: fixture.collector, toReach: "a config_option_update with the flash levels"
     ) { updates in
-      updates.contains { $0.update.kind == .configOptionUpdate }
+      Self.pushedOptions(in: updates).contains { options in
+        (try? Self.valueIds(of: Self.effortSelect(in: options))) == flashNames
+      }
     }
     await fixture.close()
 
     let pushed = try #require(Self.pushedOptions(in: updates).last)
-    #expect(try Self.valueIds(of: Self.effortSelect(in: pushed)) == Self.flashLevels.sessionLevelNames)
+    #expect(try Self.valueIds(of: Self.effortSelect(in: pushed)) == flashNames)
   }
 
   // MARK: - The profiles.<name>.effort setting

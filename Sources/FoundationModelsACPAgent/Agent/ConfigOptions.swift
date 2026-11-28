@@ -296,7 +296,7 @@ extension RoutedACPAgent {
 
     try await applyModelSlot(slot, to: params.sessionId)
     let options = configOptions(of: params.sessionId, showing: slot)
-    recordAnnouncedConfigOptions(options, for: params.sessionId)
+    await announceSetConfigOptions(options, for: params.sessionId)
     return SetSessionConfigOptionResponse(configOptions: options)
   }
 
@@ -320,8 +320,30 @@ extension RoutedACPAgent {
     }
     try await applyReasoningEffort(valueId.rawValue, to: params.sessionId)
     let options = configOptions(of: params.sessionId)
-    recordAnnouncedConfigOptions(options, for: params.sessionId)
+    await announceSetConfigOptions(options, for: params.sessionId)
     return SetSessionConfigOptionResponse(configOptions: options)
+  }
+
+  /// Records the option state after a successful
+  /// `session/set_config_option`, and posts it to the session as one
+  /// `config_option_update`, in addition to the response.
+  ///
+  /// The response already has the complete state. But a client that
+  /// discards the response (FoundationModelsACPClient before its fix) then
+  /// never shows the new value, because the divergence check of
+  /// ``reconcileConfigOptions(for:)`` finds no divergence after the record.
+  /// The update makes the agent robust for such clients. A client that
+  /// reads the response gets the same state two times, which is safe.
+  ///
+  /// - Parameters:
+  ///   - options: The complete option state after the set.
+  ///   - sessionId: The session of the set.
+  private func announceSetConfigOptions(
+    _ options: [SessionConfigOption], for sessionId: SessionId
+  ) async {
+    recordAnnouncedConfigOptions(options, for: sessionId)
+    await connections.path(forSession: sessionId)?.connection.post(
+      .configOptionUpdate(ConfigOptionUpdate(configOptions: options)), in: sessionId)
   }
 
   /// Gives a reasoning effort level to the Router session of an ACP
