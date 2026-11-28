@@ -1,8 +1,13 @@
 ---
 assignees:
 - claude-code
-position_column: todo
-position_ordinal: '8380'
+comments:
+- actor: claude-code
+  id: 01m8hd7tt1k3t2kz1641573wr7
+  text: 'Duplicate, 2026-11-28. The `cluster` section is already on origin main (card ^j1vfmkf: d3d9fde, 498684f, 09cfa67, e20b6c5). This card was made from a local tree that did not have those commits. Closed with no change.'
+  timestamp: 2026-11-28T15:44:03.393123+00:00
+position_column: done
+position_ordinal: ffffffc680
 title: The agent config has no `cluster` section, so the cluster mode never gets to the Router
 ---
 ## Problem
