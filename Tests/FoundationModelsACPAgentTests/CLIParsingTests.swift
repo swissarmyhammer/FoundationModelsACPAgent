@@ -1,4 +1,5 @@
 import ArgumentParser
+import FoundationModelsACPAgentTestSupport
 import Testing
 
 @testable import FoundationModelsACPAgent
@@ -222,11 +223,20 @@ struct CLIParsingTests {
   }
 
   /// Every subcommand of the tree has a body: no leaf is a stub any
-  /// more. `doctor` was the last one, and it now runs its registry —
-  /// which is empty until the check cards land — and exits 0.
+  /// more. `doctor` was the last one, and it now runs its registry and
+  /// exits 0.
+  ///
+  /// The run uses an empty home of its own (`--home`) and an empty working
+  /// directory (`--cwd`), so it never reads the settings of this machine
+  /// in `~/.config` or a dotfolder of the package. The result thus does not
+  /// depend on the configuration of the user.
   @Test func noSubcommandOfTheTreeIsAStub() async {
-    let outcome = await Self.outcomeError(of: [Self.doctorPrompt])
-      .map(AcpAgentCommand.exitOutcome(for:))
+    let home = makeResolvedDirectory(label: "CLIParsingTests-doctor-home")
+    let workingDirectory = makeResolvedDirectory(label: "CLIParsingTests-doctor-cwd")
+
+    let outcome = await Self.outcomeError(of: [
+      Self.doctorPrompt, "--home", home.path, "--cwd", workingDirectory.path,
+    ]).map(AcpAgentCommand.exitOutcome(for:))
 
     #expect(outcome == nil)
   }
