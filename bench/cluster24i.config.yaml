@@ -1,0 +1,28 @@
+# The agent configuration of the cluster24i run: the 24 mtp24 ids (bench/mtp24.ids.txt), --timeout 9000, on the 2-Mac cluster (m5u1 head + m5u2), policy always, set in the user-level ~/.config/acp-agent/config.yaml cluster section. Compare with inkling24 (one Mac, 22/24 in 18.2 h).
+# Model: user-layer profile inkling24 (bench/inkling24.profile.yaml), MTP kept. Build: bench/bin/cluster-ea2da21 (ACPAgent c4d91d1a, Router ea2da21b, Extras 0145d96, Cluster f555a46 worker, mlx-swift-lm stable f5591ca0, mlx-swift 2d5a12b7), worker beside the binary.
+profile: inkling24
+tools:
+  files:
+    readOnly: false
+    allowSymlinks: false
+    recordsChanges: false
+  shell:
+    storeDirectory: null
+  skills:
+    marketplaces:
+      - url: https://github.com/swissarmyhammer/skills.git
+        ref: main
+  agents:
+    enabled: true
+  codeContext:
+    autoInstall: true
+    semanticSearch: false
+  web:
+    enabled: true
+  git:
+    enabled: true
+  environment:
+    enabled: true
+  kanban:
+    enabled: true
+  mcp: []
