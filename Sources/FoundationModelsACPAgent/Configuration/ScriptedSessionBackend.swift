@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModels
+import FoundationModelsExtras
 import FoundationModelsMultitool
 import FoundationModelsRouter
 import Synchronization
@@ -108,6 +109,11 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
   /// Each fork and each replaced transcript has the same observer.
   private let observer: (any ScriptedBackendObserver)?
 
+  /// The reasoning effort levels of the scripted model (D218). Each fork
+  /// and each replaced transcript has the same levels. A Router session
+  /// over this backend takes its level from them.
+  public let reasoningEffortLevels: ReasoningEffortLevels
+
   /// Creates a backend that plays `playbook` against `tools`.
   ///
   /// - Parameters:
@@ -120,18 +126,23 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
   ///     a fresh session.
   ///   - observer: The observer of the backend, or `nil` (the default)
   ///     to observe nothing and to play each call directly.
+  ///   - reasoningEffortLevels: The reasoning effort levels of the scripted
+  ///     model. The default is `ReasoningEffortLevels.unsupported`: a model
+  ///     with no levels.
   public init(
     playbook: ScriptedPlaybook,
     tools: [any Tool],
     instructions: String? = nil,
     seededEntries: [Transcript.Entry] = [],
-    observer: (any ScriptedBackendObserver)? = nil
+    observer: (any ScriptedBackendObserver)? = nil,
+    reasoningEffortLevels: ReasoningEffortLevels = .unsupported
   ) {
     observer?.backendMade()
     self.playbook = playbook
     self.tools = tools
     self.instructions = instructions
     self.observer = observer
+    self.reasoningEffortLevels = reasoningEffortLevels
     let opening =
       seededEntries.isEmpty
       ? [Self.instructionsEntry(instructions: instructions, tools: tools)]
@@ -285,9 +296,10 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
     makeSibling(seededEntries: Array(transcript))
   }
 
-  /// Makes a backend with a sibling of this playbook, these tools and this
-  /// observer, that starts from `seededEntries`. A fork and a replaced
-  /// transcript thus take the model lock of the same observer.
+  /// Makes a backend with a sibling of this playbook, these tools, this
+  /// observer and these reasoning effort levels, that starts from
+  /// `seededEntries`. A fork and a replaced transcript thus take the model
+  /// lock of the same observer.
   ///
   /// - Parameter seededEntries: The transcript the new backend starts from.
   /// - Returns: The new backend.
@@ -297,7 +309,17 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
       tools: tools,
       instructions: instructions,
       seededEntries: seededEntries,
-      observer: observer)
+      observer: observer,
+      reasoningEffortLevels: reasoningEffortLevels)
+  }
+
+  /// Tells the observer the reasoning effort level of the next calls
+  /// (D218). The Router session calls it before each submission attempt.
+  /// The scripted model plays the same steps at each level.
+  ///
+  /// - Parameter level: The level of the session, or `nil` for no level.
+  public func useReasoningEffort(_ level: String?) {
+    observer?.reasoningEffortWillApply(level)
   }
 
   /// Makes a backend over a sibling of `playbook` that continues the
@@ -312,20 +334,24 @@ public final class ScriptedSessionBackend: LanguageModelSessionBackend {
   ///   - seededEntries: The transcript the new backend starts from, or
   ///     empty for a fresh session.
   ///   - observer: The observer of the new backend, or `nil` for none.
+  ///   - reasoningEffortLevels: The reasoning effort levels of the scripted
+  ///     model.
   /// - Returns: The new backend.
   static func makeSibling(
     of playbook: ScriptedPlaybook,
     tools: [any Tool],
     instructions: String?,
     seededEntries: [Transcript.Entry],
-    observer: (any ScriptedBackendObserver)?
+    observer: (any ScriptedBackendObserver)?,
+    reasoningEffortLevels: ReasoningEffortLevels
   ) -> ScriptedSessionBackend {
     ScriptedSessionBackend(
       playbook: playbook.makeSibling(continuing: seededEntries),
       tools: tools,
       instructions: instructions,
       seededEntries: seededEntries,
-      observer: observer)
+      observer: observer,
+      reasoningEffortLevels: reasoningEffortLevels)
   }
 
   deinit {

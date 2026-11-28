@@ -63,6 +63,16 @@ public enum SettingsGraphError: StoreCodedError, Equatable {
   /// is the dotted key path of the change.
   case nullValue(keyPath: String)
 
+  /// `NO_SESSION`: a call reads or sets the reasoning effort of a session
+  /// (D218), and the call is not a call of the ``SettingsTool`` of a live
+  /// session. A client sets the level with `session/set_config_option`.
+  case noSessionReasoningEffort
+
+  /// `UNKNOWN_EFFORT`: a `setReasoningEffort` call gave a level that is not
+  /// a level of the model of the session (D218). `levels` is each level
+  /// that the session can take, and is empty for a model with no levels.
+  case unknownReasoningEffort(level: String, levels: [String])
+
   /// The code of the error, for example `UNKNOWN_SECTION`.
   public var code: String {
     switch self {
@@ -77,6 +87,8 @@ public enum SettingsGraphError: StoreCodedError, Equatable {
     case .noLevel: "NO_LEVEL"
     case .unreadableSecret: "SECRET_UNREADABLE"
     case .nullValue: "NULL_VALUE"
+    case .noSessionReasoningEffort: "NO_SESSION"
+    case .unknownReasoningEffort: "UNKNOWN_EFFORT"
     case .childRunProfile: ChildAgentRun.refusalCode
     }
   }
@@ -114,6 +126,14 @@ public enum SettingsGraphError: StoreCodedError, Equatable {
     case .nullValue(let keyPath):
       "The value of \(keyPath) is null, and updateSetting does not take null. To remove the key from the "
         + "level, call clearSetting with the same keyPath and level."
+    case .noSessionReasoningEffort:
+      "The reasoning effort is a fact of a live session. Only the settings tool of that session reads and "
+        + "sets it. A client sets it with session/set_config_option."
+    case .unknownReasoningEffort(let level, let levels) where levels.isEmpty:
+      "\"\(level)\" is not a reasoning effort level: the model of this session has no levels."
+    case .unknownReasoningEffort(let level, let levels):
+      "\"\(level)\" is not a reasoning effort level of the model of this session. Give one of these levels: "
+        + "\(levels.joined(separator: ", "))."
     }
   }
 

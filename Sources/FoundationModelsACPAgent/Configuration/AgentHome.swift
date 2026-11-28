@@ -62,6 +62,14 @@ public struct AgentHome: Sendable, Equatable {
   /// The folder of the model cache in the local root of a custom home.
   static let modelsFolderName = "models"
 
+  /// The folder, in ``local``, of the record of the reasoning effort levels
+  /// of each loaded model (``reasoningEffortLevelsFile``).
+  static let reasoningEffortFolderName = "reasoning-effort"
+
+  /// The name of the file of the record of the reasoning effort levels
+  /// (``reasoningEffortLevelsFile``).
+  static let reasoningEffortLevelsFileName = "levels.json"
+
   /// The folder of the metadata cache of the router in the local root of a
   /// custom home.
   static let routerFolderName = "router"
@@ -157,6 +165,17 @@ public struct AgentHome: Sendable, Equatable {
   public var sessionUsageFile: URL {
     local.appendingPathComponent("sessions", isDirectory: true)
       .appendingPathComponent("usage.json", isDirectory: false)
+  }
+
+  /// The file of the reasoning effort levels of each model that an agent of
+  /// this machine loaded (``ReasoningEffortLevelsRecord``, D218):
+  /// `reasoning-effort/levels.json` in ``local``. The file is not in the
+  /// model cache folder, because a cache of a host can be that folder. The
+  /// levels come from the probe of each load on this machine, thus they
+  /// never sync.
+  public var reasoningEffortLevelsFile: URL {
+    local.appendingPathComponent(Self.reasoningEffortFolderName, isDirectory: true)
+      .appendingPathComponent(Self.reasoningEffortLevelsFileName, isDirectory: false)
   }
 
   /// The folder of the transcript search index of this server (D207): the

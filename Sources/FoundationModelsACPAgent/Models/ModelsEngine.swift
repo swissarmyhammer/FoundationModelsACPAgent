@@ -59,8 +59,9 @@ struct ModelsReport: Sendable {
 
 /// The reads of the `models` endpoint: the profile that `profile` selects at
 /// the user level, the profile that the agent launched with, the model that
-/// runs in each slot, the storage of each model, and the fit of each profile
-/// of the user layer and the bundled profiles.
+/// runs in each slot, the storage of each model, the reasoning effort levels
+/// of each model that a load probed, and the fit of each profile of the user
+/// layer and the bundled profiles.
 ///
 /// No read downloads a model or loads a model. Thus a host can make the
 /// endpoint before the first download.
@@ -93,6 +94,21 @@ struct ModelsEngine: Sendable {
 
   /// The fit estimates that the engine read, by the name of the profile.
   let fitCache = ProfileFitCache()
+
+  /// The record of the reasoning effort levels of each loaded model
+  /// (D218), or `nil` when the endpoint gives no levels.
+  let effortLevels: ReasoningEffortLevelsRecord?
+
+  /// The reasoning effort levels of each model that a load on this machine
+  /// probed, by the text form of its reference. The read is one time for
+  /// each call of a field, thus a load of another agent applies at the next
+  /// call.
+  ///
+  /// - Returns: The levels of each recorded model, or none when the
+  ///   endpoint has no record.
+  func recordedEffortLevels() -> [String: ReasoningEffortLevels] {
+    effortLevels?.levels() ?? [:]
+  }
 
   /// The profile files of the layers of the profile store.
   var profileLayers: ProfileLayers {
@@ -228,10 +244,12 @@ struct ModelsEngine: Sendable {
   /// - Throws: What the store throws for a level file.
   func profiles(cwd: URL?) async throws -> [ModelsGraphProfile] {
     let selected = try await selectedName()
+    let effort = recordedEffortLevels()
     var rows: [ModelsGraphProfile] = []
     for entry in profileLayers.list(cwd: cwd) {
       guard let profile = entry.profile else { continue }
-      rows.append(await row(of: profile, layer: entry.layer, selected: selected))
+      rows.append(
+        await row(of: profile, layer: entry.layer, selected: selected, effortLevels: effort))
     }
     return rows
   }
@@ -258,7 +276,9 @@ struct ModelsEngine: Sendable {
       try await profileStore.save(text: text, as: name, level: level)
     }
     let profile = try await ModelsGraphError.withCodedErrors { try profileLayers.read(name, cwd: cwd) }
-    return await row(of: profile, layer: ProfileLayer(level), selected: try await selectedName())
+    return await row(
+      of: profile, layer: ProfileLayer(level), selected: try await selectedName(),
+      effortLevels: recordedEffortLevels())
   }
 
   /// Deletes a profile file through the profile store.
@@ -291,10 +311,13 @@ struct ModelsEngine: Sendable {
   ///   - profile: The profile.
   ///   - layer: The layer of its file.
   ///   - selected: The name of the selected profile.
+  ///   - effortLevels: The reasoning effort levels of each recorded model,
+  ///     by the text form of its reference.
   /// - Returns: The row.
-  private func row(of profile: ProfileDefinition, layer: ProfileLayer, selected: String) async
-    -> ModelsGraphProfile
-  {
+  private func row(
+    of profile: ProfileDefinition, layer: ProfileLayer, selected: String,
+    effortLevels: [String: ReasoningEffortLevels]
+  ) async -> ModelsGraphProfile {
     var models: [ModelsGraphProfileModel] = []
     var reports: [String: ModelsReport] = [:]
     for slot in ModelSlot.allCases {
@@ -304,7 +327,9 @@ struct ModelsEngine: Sendable {
       let report = await reports[ref.stringValue].asyncDefault { await self.report(of: ref) }
       reports[ref.stringValue] = report
       models.append(
-        ModelsGraphProfileModel(slot: ModelsGraphSlot(slot), model: ModelsGraphModelFields(report)))
+        ModelsGraphProfileModel(
+          slot: ModelsGraphSlot(slot), model: ModelsGraphModelFields(report),
+          reasoningEffort: ModelsGraphReasoningEffort.of(ref, in: effortLevels)))
     }
     let parts = Array(reports.values)
     let sizes = parts.map(\.sizeBytes)
@@ -325,7 +350,10 @@ struct ModelsEngine: Sendable {
       budgetBytes: estimate.map { Double($0.budgetBytes) },
       fitError: estimate?.failure,
       contextTokens: estimate?.contextTokens,
-      targetMemory: layer == .bundled ? BundledProfiles.targetMemory(of: profile.name) : nil)
+      targetMemory: layer == .bundled ? BundledProfiles.targetMemory(of: profile.name) : nil,
+      reasoningEffort: profile.standard.first.flatMap {
+        ModelsGraphReasoningEffort.of($0, in: effortLevels)
+      })
   }
 
   /// The disk state of a profile: complete when each model is complete,

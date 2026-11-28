@@ -326,6 +326,23 @@ struct SettingsGraphContext: GraphQLRunContext {
   /// which serves each session.
   let sessionDirectory: String?
 
+  /// The reasoning effort control and the session of a call of the
+  /// ``SettingsTool`` of a live session (D218), or `nil` for a call with no
+  /// session.
+  let reasoningEffort: SessionReasoningEffortAccess?
+
+  /// The reasoning effort access of the call.
+  ///
+  /// - Returns: The access.
+  /// - Throws: ``SettingsGraphError/noSessionReasoningEffort`` when the call
+  ///   has no session.
+  func requiredReasoningEffort() throws -> SessionReasoningEffortAccess {
+    guard let reasoningEffort else {
+      throw SettingsGraphError.noSessionReasoningEffort
+    }
+    return reasoningEffort
+  }
+
   /// Gives the working directory of one field of the call.
   ///
   /// A call of the endpoint can omit `cwd`: then no working directory
@@ -542,6 +559,41 @@ struct SettingsGraphResolver: Sendable {
       code: readBackWarningCode)
   }
 
+  /// Resolves `Query.reasoningEffort` (D218).
+  ///
+  /// - Parameter context: The context of the call, which gives the session
+  ///   of a tool call.
+  /// - Returns: The level of the session and the levels of its model.
+  /// - Throws: ``SettingsGraphError/noSessionReasoningEffort`` for a call
+  ///   that is not a call of the tool of a live session.
+  func reasoningEffort(context: SettingsGraphContext, arguments _: NoArguments) async throws
+    -> SettingsGraphReasoningEffort
+  {
+    let access = try context.requiredReasoningEffort()
+    return try await access.control.reasoningEffort(of: access.session)
+  }
+
+  /// Resolves `Mutation.setReasoningEffort` (D218): the level of the session
+  /// of the tool call changes from its next turn.
+  ///
+  /// - Parameters:
+  ///   - context: The context of the call, which gives the session of a
+  ///     tool call.
+  ///   - arguments: The input object: the new level.
+  /// - Returns: The level of the session and the levels of its model after
+  ///   the change.
+  /// - Throws: ``SettingsGraphError/noSessionReasoningEffort`` for a call
+  ///   that is not a call of the tool of a live session,
+  ///   ``SettingsGraphError/unknownReasoningEffort(level:levels:)`` for a
+  ///   level that is not a level of the model, and the error of Router when
+  ///   it cannot change the level.
+  func setReasoningEffort(
+    context: SettingsGraphContext, arguments: SettingsGraphSetReasoningEffortArguments
+  ) async throws -> SettingsGraphReasoningEffort {
+    let access = try context.requiredReasoningEffort()
+    return try await access.control.setReasoningEffort(arguments.input.level, of: access.session)
+  }
+
   /// Resolves `Query.cursor`.
   ///
   /// - Parameters:
@@ -698,6 +750,24 @@ struct SettingsGraphAPI: API {
           InputField("cwd", at: \.cwd).description(Self.cwdDescription)
         }
         .description("The key and the level of a clearSetting mutation.")
+        Input(SettingsGraphSetReasoningEffortInput.self, as: "SetReasoningEffortInput") {
+          InputField("level", at: \.level)
+            .description("The new level: one of the levels of the reasoningEffort query.")
+        }
+        .description("The new level of a setReasoningEffort mutation.")
+        Type(SettingsGraphReasoningEffort.self, as: "ReasoningEffort") {
+          Field("level", at: \.level)
+            .description("The level of this session, or null when the model of the session has no levels.")
+          Field("levels", at: \.levels)
+            .description(
+              "The levels that this session can take, in the order of the model: setReasoningEffort takes one "
+                + "of them. Empty when the model has no levels.")
+          Field("defaultLevel", at: \.defaultLevel)
+            .description("The default level of the model, or null when the model has no levels.")
+        }
+        .description(
+          "The reasoning effort of this session: how much the model reasons before it answers. Only the "
+            + "settings tool of a session reads and sets it.")
       }
       .addQuery {
         Field("sections", at: SettingsGraphResolver.sections)
@@ -726,6 +796,10 @@ struct SettingsGraphAPI: API {
         .description(
           "The cursor of the newest change of the settings. Read the state, read this cursor, then "
             + "subscribe to changes(after:) with it for each change after the read.")
+        Field("reasoningEffort", at: SettingsGraphResolver.reasoningEffort)
+          .description(
+            "The reasoning effort level of this session and the levels of its model. Only the settings tool "
+              + "of a session reads it; a call of the endpoint gives NO_SESSION.")
       }
       .addMutation {
         Field("updateSetting", at: SettingsGraphResolver.updateSetting) {
@@ -738,6 +812,13 @@ struct SettingsGraphAPI: API {
         .description(
           "Removes one key from one level. The value of a lower level applies again. "
             + Self.resultDescription)
+        Field("setReasoningEffort", at: SettingsGraphResolver.setReasoningEffort) {
+          Argument("input", at: \.input).description("The new level.")
+        }
+        .description(
+          "Sets the reasoning effort level of this session. It applies from the next turn. Only the settings "
+            + "tool of a session sets it; a call of the endpoint gives NO_SESSION. A level that is not a level "
+            + "of the model gives UNKNOWN_EFFORT.")
       }
       .addSubscription {
         SubscriptionField(

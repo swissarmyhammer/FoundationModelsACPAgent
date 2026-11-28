@@ -22,6 +22,11 @@ import Graphiti
 ///   agent run cannot call them (D193).
 /// - `Query.models` gives one row for each slot of the selected profile:
 ///   `STANDARD`, `FLASH`, `EMBEDDING` and `DECISION`. It is read-only.
+/// - Each model of a row, and each profile (its `standard` model), gives
+///   its reasoning effort levels (D218): the levels, the default level, the
+///   Off flag, and the values of a session level. The levels come from the
+///   record of the loads on this machine (``ReasoningEffortLevelsRecord``),
+///   thus a model gives them after its first load, and `null` before it.
 /// - `Subscription.changes(after:)` gives a change when `profile`
 ///   changes at the user level or a profile file changes (`reason: PROFILE`,
 ///   `appliesAt: NEXT_LAUNCH`), or when the disk state of a model of a profile changes
@@ -40,7 +45,7 @@ import Graphiti
 /// makes one endpoint over its settings store (``RoutedACPAgent/modelsEndpoint``).
 /// A host that needs the endpoint before the agent exists, for example before
 /// the first download, makes one with
-/// ``init(store:storage:launched:active:fitEstimator:diskPollInterval:)``.
+/// ``init(store:storage:profiles:launched:active:fitEstimator:effortLevels:diskPollInterval:)``.
 public final class ModelsGraph: GraphQLEndpoint, Sendable {
   /// The name of the endpoint.
   public static let endpointName = "models"
@@ -90,17 +95,23 @@ public final class ModelsGraph: GraphQLEndpoint, Sendable {
   ///     `nil` (the default) when the fit is not known: then each profile
   ///     has the fit `UNKNOWN`. A host gives the estimate of its router
   ///     also before the agent exists.
+  ///   - effortLevels: The record of the reasoning effort levels of each
+  ///     model that a load on this machine probed (D218), or `nil` (the
+  ///     default) when the endpoint gives no levels. A host gives the
+  ///     record of its home (``AgentHome/reasoningEffortLevelsFile``) also
+  ///     before the agent exists.
   ///   - diskPollInterval: The time between two reads of the disk while a
   ///     subscriber is open.
   public convenience init(
     store: SettingsStore, storage: any ModelStorageSource, profiles: ProfileStore? = nil,
     launched: ProfileConfiguration? = nil, active: [ModelSlot: ModelRef] = [:],
     fitEstimator: (any ProfileFitEstimating)? = nil,
+    effortLevels: ReasoningEffortLevelsRecord? = nil,
     diskPollInterval: Duration = ModelsGraph.defaultDiskPollInterval
   ) {
     self.init(
       store: store, storage: storage, profiles: profiles, launched: launched, active: active,
-      fitEstimator: fitEstimator, diskPollInterval: diskPollInterval,
+      fitEstimator: fitEstimator, effortLevels: effortLevels, diskPollInterval: diskPollInterval,
       isChildRun: ChildAgentRun.isCurrent)
   }
 
@@ -114,6 +125,7 @@ public final class ModelsGraph: GraphQLEndpoint, Sendable {
   ///   - launched: The profile section of the launch, or `nil`.
   ///   - active: The model that runs in each slot.
   ///   - fitEstimator: The source of the fit estimate, or `nil`.
+  ///   - effortLevels: The record of the reasoning effort levels, or `nil`.
   ///   - diskPollInterval: The time between two reads of the disk.
   ///   - isChildRun: Tells if a call runs in a child agent run. A test gives
   ///     its own answer.
@@ -121,6 +133,7 @@ public final class ModelsGraph: GraphQLEndpoint, Sendable {
     store: SettingsStore, storage: any ModelStorageSource, profiles: ProfileStore? = nil,
     launched: ProfileConfiguration? = nil, active: [ModelSlot: ModelRef] = [:],
     fitEstimator: (any ProfileFitEstimating)? = nil,
+    effortLevels: ReasoningEffortLevelsRecord? = nil,
     diskPollInterval: Duration = ModelsGraph.defaultDiskPollInterval,
     isChildRun: @escaping @Sendable () -> Bool
   ) {
@@ -128,7 +141,7 @@ public final class ModelsGraph: GraphQLEndpoint, Sendable {
       store: store,
       profileStore: profiles ?? ProfileStore(settingsFolders: store.settingsFolders),
       isChildRun: isChildRun, storage: storage, launched: launched, active: active,
-      fitEstimator: fitEstimator)
+      fitEstimator: fitEstimator, effortLevels: effortLevels)
     feed = ModelsGraphChangeFeed(
       engine: engine, diskPollInterval: diskPollInterval, capacity: Self.changeLogCapacity)
   }
@@ -203,6 +216,7 @@ struct ModelsGraphResolver: Sendable {
     -> [ModelsGraphSlotModel]
   {
     var rows: [ModelsGraphSlotModel] = []
+    let effortLevels = context.engine.recordedEffortLevels()
     for slot in ModelSlot.allCases {
       let candidates = try await context.engine.candidates(of: slot)
       guard let first = candidates.first else {
@@ -214,7 +228,8 @@ struct ModelsGraphResolver: Sendable {
           model: ModelsGraphModelFields(await context.engine.report(of: first)),
           candidates: candidates.map(\.graphQLMap),
           active: context.engine.active[slot]?.stringValue,
-          restartRequired: context.engine.restartRequired(for: slot, candidates: candidates)))
+          restartRequired: context.engine.restartRequired(for: slot, candidates: candidates),
+          reasoningEffort: ModelsGraphReasoningEffort.of(first, in: effortLevels)))
     }
     return rows
   }
@@ -365,6 +380,7 @@ struct ModelsGraphAPI: API {
           Value(.now).description("Now: the change is a fact of the disk.")
         }
         .description("When a change takes effect.")
+        reasoningEffortType()
         slotModelType()
         profileModelType()
         profileType()
@@ -452,8 +468,33 @@ struct ModelsGraphAPI: API {
         .description("True when the model of the slot differs from the launch of the running agent. " + appliesText)
       Field("storageError", at: \.storageError)
         .description("The error of a storage read, or null. Then the size is null.")
+      Field("reasoningEffort", at: \.reasoningEffort).description(reasoningEffortFieldText)
     }
     .description("The model of one slot of the selected profile.")
+  }
+
+  /// The text of the description of a `reasoningEffort` field of a model.
+  private static let reasoningEffortFieldText =
+    "The reasoning effort levels of the model, or null when no load on this machine probed the model. "
+    + "A model gives its levels after its first load."
+
+  /// The `ReasoningEffort` type.
+  private static func reasoningEffortType() -> SchemaType {
+    Type(ModelsGraphReasoningEffort.self, as: "ReasoningEffort") {
+      Field("levels", at: \.levels)
+        .description(
+          "The levels of the model in the order of the probe, with the names of the model. Empty when the "
+            + "model has no levels.")
+      Field("defaultLevel", at: \.defaultLevel)
+        .description("The level that the model uses when no level is given, or null when the model has no levels.")
+      Field("hasOff", at: \.hasOff).description("True when the model can turn its reasoning off.")
+      Field("sessionLevels", at: \.sessionLevels)
+        .description(
+          "The values that the effort of a session and the setting profiles.<name>.effort take: each level, "
+            + "then Off when hasOff is true. Empty when the model has no levels.")
+    }
+    .description(
+      "The reasoning effort levels of one model, which the probe of its chat template found when it loaded.")
   }
 
   /// The `ProfileModel` type.
@@ -471,6 +512,7 @@ struct ModelsGraphAPI: API {
       Field("state", at: \.state).description("The disk state of the model and its drafter.")
       Field("storageError", at: \.storageError)
         .description("The error of a storage read, or null. Then the size is null.")
+      Field("reasoningEffort", at: \.reasoningEffort).description(reasoningEffortFieldText)
     }
     .description("The model of one slot of a profile: the first candidate of the slot.")
   }
@@ -509,6 +551,10 @@ struct ModelsGraphAPI: API {
         .description(
           "The memory of the Mac that a bundled profile is for, such as \"32 GB\". Null for a profile file of the "
             + "user or the project.")
+      Field("reasoningEffort", at: \.reasoningEffort)
+        .description(
+          "The reasoning effort levels of the standard model of the profile: the values of the setting "
+            + "profiles.<name>.effort. Null when no load on this machine probed that model.")
     }
     .description("One profile: the models of the four slots, which the user selects together.")
   }

@@ -1,6 +1,7 @@
 import Foundation
 import FoundationModels
 import FoundationModelsACPAgent
+import FoundationModelsExtras
 import FoundationModelsRouter
 import Synchronization
 
@@ -33,6 +34,30 @@ public actor PromptRecorder {
   /// - Parameter prompt: The prompt the backend received.
   public func record(prompt: String) {
     prompts.append(prompt)
+  }
+}
+
+/// Records the reasoning effort level that the Router session states before
+/// each submission attempt (D218), so a harness test asserts the level of
+/// each turn of the model.
+public final class ReasoningEffortRecorder: Sendable {
+  /// The stated levels, in arrival order. `nil` is a submission with no
+  /// level.
+  private let stated = Mutex<[String?]>([])
+
+  /// Creates a recorder that has recorded nothing.
+  public init() {}
+
+  /// The stated levels, in arrival order.
+  public var levels: [String?] {
+    stated.withLock { $0 }
+  }
+
+  /// Records one stated level.
+  ///
+  /// - Parameter level: The level of the session, or `nil` for no level.
+  func record(_ level: String?) {
+    stated.withLock { $0.append(level) }
   }
 }
 
@@ -85,6 +110,10 @@ struct ScriptedTestObserver: ScriptedBackendObserver {
   /// The test hooks of the transcript delivery.
   let deliveryHooks: TranscriptDeliveryHooks
 
+  /// The recorder of the reasoning effort level of each submission, or
+  /// `nil`.
+  var effortRecorder: ReasoningEffortRecorder?
+
   func backendMade() {
     lifetimes?.backendMade()
   }
@@ -106,9 +135,33 @@ struct ScriptedTestObserver: ScriptedBackendObserver {
   func updateStreamEnded() {
     deliveryHooks.beforeObserverRemoval()
   }
+
+  func reasoningEffortWillApply(_ level: String?) {
+    effortRecorder?.record(level)
+  }
 }
 
 extension ScriptedLLMContainer {
+  /// Creates a container of a model with reasoning effort levels (D218),
+  /// whose every session plays `script` from the start at each call.
+  ///
+  /// - Parameters:
+  ///   - script: The script every session plays.
+  ///   - reasoningEffortLevels: The levels of the scripted model.
+  ///   - effortRecorder: The recorder of the level of each submission, or
+  ///     `nil` (the default) to record nothing.
+  public init(
+    script: [ScriptedPassStep], reasoningEffortLevels: ReasoningEffortLevels,
+    effortRecorder: ReasoningEffortRecorder? = nil
+  ) {
+    var observer = ScriptedTestObserver(
+      recorder: nil, passCounter: nil, lifetimes: nil, deliveryHooks: TranscriptDeliveryHooks())
+    observer.effortRecorder = effortRecorder
+    self.init(
+      playbook: .everyPass(script), observer: observer,
+      reasoningEffortLevels: reasoningEffortLevels)
+  }
+
   /// Creates a container whose every session plays `script` from the start
   /// at each call.
   ///

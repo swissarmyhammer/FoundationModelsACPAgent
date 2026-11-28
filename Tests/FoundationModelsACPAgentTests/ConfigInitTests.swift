@@ -105,14 +105,16 @@ struct ConfigInitTests {
   /// The keys one section schema states.
   ///
   /// - Parameter schema: The schema of one top-level section.
-  /// - Returns: The checked keys, or the tool roster's own keys.
+  /// - Returns: The checked keys, or the tool roster's own keys. A section
+  ///   of named entries, such as `profiles`, states no key of its own: each
+  ///   key is a name of the user.
   private static func knownKeys(of schema: AgentConfiguration.SectionSchema) -> Set<String> {
     switch schema {
     case .checked(let keys), .checkedWithRetired(let keys, _):
       return keys
     case .toolRoster:
       return ToolsConfiguration.knownKeys
-    case .scalar, .retired:
+    case .namedEntries, .scalar, .retired:
       return []
     }
   }

@@ -123,6 +123,19 @@ cluster:
   # always.
   policy: whenFaster
 
+# The settings of each model profile, by the name of the profile (D218).
+# effort is the default reasoning effort of the new sessions on that
+# profile: a level of the standard model of the profile. The models tool
+# gives the levels of each profile. A value that is not a level of the model
+# gives a warning, and the session takes the default level of the model.
+# Set it at the user level, or at the session level of a folder for the
+# sessions of that folder only, for example:
+#
+#   profiles:
+#     large:
+#       effort: low
+profiles: {}
+
 tools:
   # The files tools: read, write, search and edit the files of the session.
   files:

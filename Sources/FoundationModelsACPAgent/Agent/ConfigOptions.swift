@@ -11,16 +11,22 @@ import FoundationModelsRouter
 /// `chosen.stringValue`, because `ModelRef`'s `repo` and `revision` are
 /// internal and `stringValue` is the only public read.
 ///
-/// The second option is the `agent` select (ACPA-1, ``AgentOption``). A
+/// The second option is the reasoning effort select of category
+/// `thought_level` (D218, ``EffortOption``): the levels of the model of the
+/// session, and the level of the Router session. A session whose model has
+/// no levels does not show it. A set changes the level of the Router
+/// session from its next turn.
+///
+/// The third option is the `agent` select (ACPA-1, ``AgentOption``). A
 /// session that has no agent catalog does not show it. The agent is set
 /// only at `session/new`.
 ///
 /// One construction serves every announcement: the `session/new`
 /// response, the `session/set_config_option` response, and the
 /// `config_option_update` push each carry the complete list this type
-/// builds — never a delta. `mode`, `thought_level` and a `model_config`
-/// context size are intentionally absent: nothing on the Router side
-/// peers with them. No groups.
+/// builds — never a delta. `mode` and a `model_config` context size are
+/// intentionally absent: nothing on the Router side peers with them. No
+/// groups.
 enum ConfigOptions {
   /// The wire id of the one model-slot select option.
   static let modelOptionId = SessionConfigId(rawValue: "model")
@@ -44,18 +50,23 @@ enum ConfigOptions {
   static let defaultSlot: ModelSlot = .standard
 
   /// The complete, priority-ordered option list for one session:
-  /// the model-slot select, then the agent select when the session has
-  /// one.
+  /// the model-slot select, then the reasoning effort select when the
+  /// model of the session has levels, then the agent select when the
+  /// session has one.
   ///
   /// - Parameters:
   ///   - profile: The resident profile whose slots are offered.
   ///   - selectedSlot: The slot the session currently generates on.
+  ///   - effort: The reasoning effort select of the session, or `nil`
+  ///     (the default) for none.
   ///   - agent: The agent select of the session, or `nil` for none.
   /// - Returns: The complete state every announcement carries.
   static func options(
-    profile: LanguageModelProfile, selectedSlot: ModelSlot, agent: AgentOption?
+    profile: LanguageModelProfile, selectedSlot: ModelSlot, effort: EffortOption? = nil,
+    agent: AgentOption?
   ) -> [SessionConfigOption] {
     [modelOption(profile: profile, selectedSlot: selectedSlot)]
+      + (effort.map { [$0.option] } ?? [])
       + (agent.map { [$0.option] } ?? [])
   }
 
@@ -219,7 +230,8 @@ extension RequestError {
 
 extension RoutedACPAgent {
   /// Applies one config-option set: validates the
-  /// session and the option, switches the model slot, and answers the
+  /// session and the option, switches the model slot or changes the
+  /// reasoning effort level, and answers the
   /// COMPLETE option state — `configOptions` is required and never a
   /// delta. The response is the announcement, so no push follows a
   /// successful set.
@@ -233,9 +245,12 @@ extension RoutedACPAgent {
   ///   the tagged value.
   /// - Returns: The complete option state after the set.
   /// - Throws: The order rule's error, `unknownSession`,
-  ///   `closedSession`, `unknownConfigOption`,
-  ///   `invalidConfigOptionValue`, or `agentFixedAtSessionStart` for the
-  ///   `agent` option, which only `session/new` sets.
+  ///   `closedSession`, `unknownConfigOption` (also for the `effort` option
+  ///   of a session whose model has no levels),
+  ///   `invalidConfigOptionValue`, `agentFixedAtSessionStart` for the
+  ///   `agent` option, which only `session/new` sets, or
+  ///   `RequestError.internalError` when the slot switch or the reasoning
+  ///   effort change fails.
   public func setSessionConfigOption(
     _ params: SetSessionConfigOptionRequest
   ) async throws -> SetSessionConfigOptionResponse {
@@ -265,6 +280,11 @@ extension RoutedACPAgent {
     if params.configId == ConfigOptions.agentOptionId, entry.agentOption != nil {
       throw RequestError.agentFixedAtSessionStart(id: params.configId)
     }
+    if params.configId == ConfigOptions.effortOptionId,
+      let effort = ConfigOptions.EffortOption(session: entry.session)
+    {
+      return try await setReasoningEffort(params, offeredBy: effort)
+    }
     guard params.configId == ConfigOptions.modelOptionId else {
       throw RequestError.unknownConfigOption(id: params.configId)
     }
@@ -275,10 +295,81 @@ extension RoutedACPAgent {
     }
 
     try await applyModelSlot(slot, to: params.sessionId)
-    let options = ConfigOptions.options(
-      profile: residentProfile, selectedSlot: slot, agent: entry.agentOption)
+    let options = configOptions(of: params.sessionId, showing: slot)
     recordAnnouncedConfigOptions(options, for: params.sessionId)
     return SetSessionConfigOptionResponse(configOptions: options)
+  }
+
+  /// Applies one set of the reasoning effort option (D218): the Router
+  /// session takes the level from its next turn, and the response carries
+  /// the complete option state with the new level.
+  ///
+  /// - Parameters:
+  ///   - params: The request: the session, the option id and the tagged
+  ///     value.
+  ///   - effort: The reasoning effort select of the session now.
+  /// - Returns: The complete option state after the set.
+  /// - Throws: `invalidConfigOptionValue` for a value that is not a level of
+  ///   the select, and `RequestError.internalError` when Router cannot
+  ///   change the level.
+  private func setReasoningEffort(
+    _ params: SetSessionConfigOptionRequest, offeredBy effort: ConfigOptions.EffortOption
+  ) async throws -> SetSessionConfigOptionResponse {
+    guard case .id(let valueId) = params.value, effort.contains(valueId) else {
+      throw RequestError.invalidConfigOptionValue(id: params.configId)
+    }
+    try await applyReasoningEffort(valueId.rawValue, to: params.sessionId)
+    let options = configOptions(of: params.sessionId)
+    recordAnnouncedConfigOptions(options, for: params.sessionId)
+    return SetSessionConfigOptionResponse(configOptions: options)
+  }
+
+  /// Gives a reasoning effort level to the Router session of an ACP
+  /// session (D218). Router fits the level to the model of the session and
+  /// writes it to the `index.md` of the session. The level applies from the
+  /// next turn. A model slot switch that runs ends first, so the level goes
+  /// to the session that answers the next turn.
+  ///
+  /// - Parameters:
+  ///   - level: The new level, or `nil` for the default level of the model.
+  ///   - sessionId: The ACP session.
+  /// - Throws: `RequestError.internalError` when Router cannot change the
+  ///   level.
+  func applyReasoningEffort(_ level: String?, to sessionId: SessionId) async throws {
+    await awaitSlotSwitch(of: sessionId)
+    guard let session = sessions[sessionId]?.session else {
+      throw RequestError.unknownSession(id: sessionId)
+    }
+    do {
+      try await sessionDirectory.setReasoningEffort(level, of: session.id)
+    } catch {
+      ACPAgentTelemetry.logger(.session).error(
+        "Router could not change the reasoning effort of the session. The session keeps its level.",
+        metadata: ACPAgentTelemetry.errorMetadata(error, sessionId: sessionId))
+      throw RequestError.internalError(detail: "the reasoning effort change failed")
+    }
+  }
+
+  /// The complete option state of a session now: the slot of the session
+  /// (or `slot`), the reasoning effort of its Router session, and its agent
+  /// select.
+  ///
+  /// - Parameters:
+  ///   - sessionId: The ACP session.
+  ///   - slot: The slot to show, or `nil` (the default) for the slot of the
+  ///     session. A slot switch that waits for an open prompt shows the new
+  ///     slot.
+  /// - Returns: The complete option state, or the state of the default slot
+  ///   with no effort and no agent when the table has no such session.
+  func configOptions(of sessionId: SessionId, showing slot: ModelSlot? = nil)
+    -> [SessionConfigOption]
+  {
+    let entry = sessions[sessionId]
+    return ConfigOptions.options(
+      profile: residentProfile,
+      selectedSlot: slot ?? entry?.selectedSlot ?? ConfigOptions.defaultSlot,
+      effort: entry.flatMap { ConfigOptions.EffortOption(session: $0.session) },
+      agent: entry?.agentOption)
   }
 
   /// Records the option state the client last saw, so the divergence
@@ -301,8 +392,11 @@ extension RoutedACPAgent {
   /// diverges from the truth: when resolution lands on a
   /// different model than the option shows, `currentValue` — and the
   /// labels beside it — must be corrected, or the client's selector
-  /// claims a model the agent does not run. The push carries the
-  /// complete list. When the announced state is already the truth,
+  /// claims a model the agent does not run. The same holds for the
+  /// reasoning effort select: a model change gives the levels of the new
+  /// model, and a change of the level that no client request carries (the
+  /// `settings` tool of the session) gives the new level. The push carries
+  /// the complete list. When the announced state is already the truth,
   /// nothing goes out.
   ///
   /// The end of each prompt runs this check, so a divergence is corrected
@@ -311,8 +405,7 @@ extension RoutedACPAgent {
   /// - Parameter sessionId: The session to reconcile.
   func reconcileConfigOptions(for sessionId: SessionId) async {
     guard let entry = sessions[sessionId] else { return }
-    let truth = ConfigOptions.options(
-      profile: residentProfile, selectedSlot: entry.selectedSlot, agent: entry.agentOption)
+    let truth = configOptions(of: sessionId)
     guard truth != entry.announcedConfigOptions else { return }
     recordAnnouncedConfigOptions(truth, for: sessionId)
     await connections.path(forSession: sessionId)?.connection.post(

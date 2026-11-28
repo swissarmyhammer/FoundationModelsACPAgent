@@ -72,11 +72,15 @@ public struct AgentConfiguration: Codable, Equatable, Sendable {
   /// The Mac cluster of the Router (``ClusterConfiguration``). The agent reads the user level
   /// only, before it builds the Router.
   public var cluster = ClusterConfiguration()
+  /// The settings of each model profile, by the name of the profile
+  /// (``ProfilesConfiguration``, D218): the default reasoning effort of the
+  /// new sessions on that profile.
+  public var profiles = ProfilesConfiguration()
 
   /// The YAML spelling of each top-level section.
   public enum CodingKeys: String, CodingKey, CaseIterable {
     case profile, tools, compaction, repetition, theme, keymap, fonts, statusline, sessions
-    case spotlight, cluster
+    case spotlight, cluster, profiles
   }
 
   /// The top-level sections that the configuration had before D187:
@@ -114,6 +118,8 @@ public struct AgentConfiguration: Codable, Equatable, Sendable {
       try container.decodeIfPresent(SpotlightConfiguration.self, forKey: .spotlight) ?? spotlight
     cluster =
       try container.decodeIfPresent(ClusterConfiguration.self, forKey: .cluster) ?? cluster
+    profiles =
+      try container.decodeIfPresent(ProfilesConfiguration.self, forKey: .profiles) ?? profiles
   }
 }
 
@@ -128,6 +134,10 @@ extension AgentConfiguration {
     /// The `tools:` roster: a known tool's body keys are
     /// checked, and an unknown tool key is a warning only.
     case toolRoster
+    /// A mapping from a name to a body, such as the `profiles:` section:
+    /// each key is a name of the user, and the body of each name decodes
+    /// exactly these keys; any other key in a body is an error.
+    case namedEntries(Set<String>)
     /// One value and no keys. The decode of the section checks the value.
     case scalar
     /// A section that the configuration no longer has
@@ -154,6 +164,7 @@ extension AgentConfiguration {
     CodingKeys.sessions.stringValue: .checked(SessionsConfiguration.knownKeys),
     CodingKeys.spotlight.stringValue: .checked(SpotlightConfiguration.knownKeys),
     CodingKeys.cluster.stringValue: .checked(ClusterConfiguration.knownKeys),
+    CodingKeys.profiles.stringValue: .namedEntries(ProfileSettings.knownKeys),
   ]
 }
 

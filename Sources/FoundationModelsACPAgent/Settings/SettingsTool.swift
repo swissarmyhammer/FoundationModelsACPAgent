@@ -74,8 +74,16 @@ public struct SettingsTool: GraphQLEndpointTool, OperationDescribing {
     launch. The key path ["sessions", "recap"] takes true or false: \(SessionsConfiguration.recapDescription) \
     \(SpotlightConfiguration.help) \
     \(ClusterConfiguration.help) \
-    \(StatusLineConfiguration.help)
+    \(StatusLineConfiguration.help) \
+    \(ProfilesConfiguration.help) \
+    \(SettingsTool.reasoningEffortHelp)
     """
+
+  /// The help of the reasoning effort of the session of the tool (D218).
+  static let reasoningEffortHelp =
+    "Query `reasoningEffort { level levels defaultLevel }` for the reasoning effort level of this session "
+    + "and the levels of its model. Change it with the mutation `setReasoningEffort(input: {level:})` and one of "
+    + "those levels; the change applies from the next turn of this session."
 
   /// The name of the tool: `settings`.
   public let name = SettingsGraph.endpointName

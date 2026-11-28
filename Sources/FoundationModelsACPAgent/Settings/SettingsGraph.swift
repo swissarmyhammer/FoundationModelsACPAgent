@@ -37,6 +37,11 @@ import GraphQL
 ///   `Query.cursor` gives the cursor of the newest change. With no `cwd`, the
 ///   subscription gives the changes of the user level only. A cursor that the
 ///   change log cannot resume ends it with `RESYNC_REQUIRED`.
+/// - `Query.reasoningEffort` and `Mutation.setReasoningEffort(input:)` read
+///   and set the reasoning effort level of the session of a ``SettingsTool``
+///   call (D218): the agent changes the level of its own session. A call of
+///   the endpoint has no session, and both give `NO_SESSION`
+///   (``SettingsGraphError/noSessionReasoningEffort``).
 ///
 /// The change log is the log of the store
 /// (``SettingsStore/loggedChanges(after:where:)``), and the agent makes one
@@ -87,6 +92,10 @@ public final class SettingsGraph: GraphQLEndpoint, Sendable {
   /// The Graphiti engine of the endpoint.
   private let api: SettingsGraphAPI
 
+  /// The reasoning effort control of the agent, which the agent binds after
+  /// it makes the endpoint (``bind(reasoningEffort:)``).
+  private let reasoningEffort = SessionReasoningEffortBinding()
+
   /// Makes the endpoint over a store.
   ///
   /// - Parameter store: The store of the agent settings.
@@ -98,6 +107,15 @@ public final class SettingsGraph: GraphQLEndpoint, Sendable {
   /// The schema of the endpoint in SDL.
   public var schema: String {
     api.sdl
+  }
+
+  /// Binds the reasoning effort control of the agent (D218), so that the
+  /// ``SettingsTool`` of each session reads and sets the level of its
+  /// session. The agent calls it one time, in its initializer.
+  ///
+  /// - Parameter control: The control of the agent.
+  func bind(reasoningEffort control: any SessionReasoningEffortControl) {
+    reasoningEffort.bind(control)
   }
 
   /// Runs one GraphQL document.
@@ -139,7 +157,10 @@ public final class SettingsGraph: GraphQLEndpoint, Sendable {
   ) async throws -> String {
     try await api.respond(
       to: query, variables: variables, operationName: operationName, rules: Self.rules,
-      formattedWith: .sortedKeys, context: SettingsGraphContext(sessionDirectory: sessionDirectory))
+      formattedWith: .sortedKeys,
+      context: SettingsGraphContext(
+        sessionDirectory: sessionDirectory,
+        reasoningEffort: reasoningEffort.access(sessionDirectory: sessionDirectory)))
   }
 
   /// Starts one GraphQL subscription.
@@ -156,6 +177,7 @@ public final class SettingsGraph: GraphQLEndpoint, Sendable {
   ) async throws -> AsyncThrowingStream<String, Error> {
     try await api.subscribe(
       to: query, variables: variables, operationName: operationName, rules: Self.rules,
-      formattedWith: .sortedKeys, context: SettingsGraphContext(sessionDirectory: nil))
+      formattedWith: .sortedKeys,
+      context: SettingsGraphContext(sessionDirectory: nil, reasoningEffort: nil))
   }
 }

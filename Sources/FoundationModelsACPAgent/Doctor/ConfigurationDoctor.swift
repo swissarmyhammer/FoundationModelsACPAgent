@@ -129,7 +129,10 @@ public struct ConfigurationDoctor: Doctorable {
       return removal + ", and select a profile with \"profile: <name>\""
     case .unknownProfile(_, let available, _):
       return "set \"profile\" to one of \(available.joined(separator: ", ")), or \(removal)"
-    case .unknownSection, .unknownToolSection, .cannotDisable, .retiredKey, .retiredSection:
+    case .unknownEffort(_, _, let levels, _) where !levels.isEmpty:
+      return "set \"\(warning.sectionKeyPath)\" to one of \(levels.joined(separator: ", ")), or \(removal)"
+    case .unknownSection, .unknownToolSection, .cannotDisable, .retiredKey, .retiredSection,
+      .unknownEffort:
       return removal
     }
   }

@@ -735,6 +735,42 @@ cluster:
   sshKey: ~/.ssh/id_ed25519
 ```
 
+### The reasoning effort
+
+A model whose chat template has `reasoning_effort` levels gives each session
+one more config option (D218): a `select` of category `thought_level`, id
+`effort`, name "Reasoning Effort". Its values are the levels of the model in
+the order of the probe, with the names of the model, and "Off" last when the
+model can turn its reasoning off. Its current value is the level of the Router
+session. A set with `session/set_config_option` changes the level from the next
+turn. A model with no levels gives no such option. When the model of the session
+changes, the next announcement gives the levels of the new model.
+
+The `profiles.<name>.effort` key of `config.yaml` is the default level of the
+new sessions on the profile `<name>`. `session/new` gives it to the Router
+session. A value that is not a level of the model gives a configuration warning
+in the log, and the session takes the default level of the model. A host reads
+and sets the key through the `settings` endpoint, and the model through the
+`settings` tool, at the `USER` level or at the `SESSION` level, as each other
+key.
+
+```yaml
+profiles:
+  large:
+    effort: low
+```
+
+The `settings` tool of a session also reads the level of its own session with
+the query `reasoningEffort { level levels defaultLevel }`, and changes it with
+the mutation `setReasoningEffort(input: {level:})`. A call of the `settings` endpoint has
+no session and gets `NO_SESSION`.
+
+The `models` endpoint gives the levels, the default level and the Off flag of
+each model (`reasoningEffort`), and of the `standard` model of each profile. The
+agent records the levels of its resident models in
+`reasoning-effort/levels.json` of the local root of the home, thus a model gives
+its levels after its first load on this machine, and `null` before it.
+
 ### The home
 
 The home holds each folder outside the project that the agent reads or

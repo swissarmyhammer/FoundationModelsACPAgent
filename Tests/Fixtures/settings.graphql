@@ -160,6 +160,30 @@ input ClearSettingInput {
   cwd: String
 }
 
+"""The new level of a setReasoningEffort mutation."""
+input SetReasoningEffortInput {
+  """The new level: one of the levels of the reasoningEffort query."""
+  level: String!
+}
+
+"""
+The reasoning effort of this session: how much the model reasons before it answers. Only the settings tool of a session reads and sets it.
+"""
+type ReasoningEffort {
+  """
+  The level of this session, or null when the model of the session has no levels.
+  """
+  level: String
+
+  """
+  The levels that this session can take, in the order of the model: setReasoningEffort takes one of them. Empty when the model has no levels.
+  """
+  levels: [String!]!
+
+  """The default level of the model, or null when the model has no levels."""
+  defaultLevel: String
+}
+
 type Query {
   """The sections of the settings: the first key of each key path."""
   sections: [String!]!
@@ -198,6 +222,11 @@ type Query {
     """
     cwd: String
   ): String!
+
+  """
+  The reasoning effort level of this session and the levels of its model. Only the settings tool of a session reads it; a call of the endpoint gives NO_SESSION.
+  """
+  reasoningEffort: ReasoningEffort!
 }
 
 type Mutation {
@@ -216,6 +245,14 @@ type Mutation {
     """The key and the level."""
     input: ClearSettingInput!
   ): Setting
+
+  """
+  Sets the reasoning effort level of this session. It applies from the next turn. Only the settings tool of a session sets it; a call of the endpoint gives NO_SESSION. A level that is not a level of the model gives UNKNOWN_EFFORT.
+  """
+  setReasoningEffort(
+    """The new level."""
+    input: SetReasoningEffortInput!
+  ): ReasoningEffort!
 }
 
 type Subscription {

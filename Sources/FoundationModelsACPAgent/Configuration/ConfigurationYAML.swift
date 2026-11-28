@@ -138,6 +138,8 @@ public enum ConfigurationYAML {
     AgentConfiguration.CodingKeys.cluster.stringValue:
       "The Mac cluster of the Router, read at the user level only: enabled, hosts, sshKey, policy "
         + "and workerDirectory.",
+    AgentConfiguration.CodingKeys.profiles.stringValue:
+      "The settings of each model profile, by its name: effort is the default reasoning effort of new sessions.",
   ]
 
   /// The YAML spelling of the `profile` section.
@@ -285,7 +287,8 @@ public enum ConfigurationYAML {
   ///   - section: The section's YAML spelling.
   /// - Returns: The body with a `null` for each key the encoding left
   ///   out; `value` unchanged for a body that is not a mapping and for
-  ///   the open-ended `tools:` roster, whose own keys always encode.
+  ///   the open-ended `tools:` roster and `profiles:` section, whose own
+  ///   keys always encode.
   private static func completed(value: Any, forSection section: String) -> Any {
     guard let mapping = value as? [String: Any],
       let schema = AgentConfiguration.sectionSchemas[section]
@@ -296,7 +299,7 @@ public enum ConfigurationYAML {
     switch schema {
     case .checked(let keys), .checkedWithRetired(let keys, _):
       knownKeys = keys
-    case .toolRoster, .scalar, .retired:
+    case .toolRoster, .namedEntries, .scalar, .retired:
       return value
     }
     return mapping.merging(knownKeys.map { ($0, NSNull() as Any) }) { present, _ in present }

@@ -716,6 +716,11 @@ public actor RoutedACPAgent: Agent {
       index: externalSessionIndex, directory: router.sessionDirectory,
       historyStore: AgentImportedHistoryStore(
         name: settingsFolders.name, searchUpdates: transcriptSearchUpdates))
+    // The probe of each load found the reasoning effort levels of the chat models of the
+    // resident profile (D218). The record keeps them for the models endpoint, thus a profile
+    // that is not loaded later gives the levels of its models after their first load.
+    let effortLevels = ReasoningEffortLevelsRecord(fileURL: home.reasoningEffortLevelsFile)
+    effortLevels.record(ReasoningEffortLevelsRecord.levels(of: residentProfile))
     modelsEndpoint = ModelsGraph(
       store: settingsStore,
       storage: modelStorage ?? ModelStorage(cacheDirectory: home.modelCacheDirectory),
@@ -724,11 +729,15 @@ public actor RoutedACPAgent: Agent {
         .standard: residentProfile.standard.chosen, .flash: residentProfile.flash.chosen,
         .embedding: residentProfile.embedding.chosen, .decision: residentProfile.decision.chosen,
       ],
-      fitEstimator: router)
+      fitEstimator: router,
+      effortLevels: effortLevels)
     let directoryRoots = recordingRootsOfTheDirectory()
     await router.sessionDirectory.useRecordingRoots { await directoryRoots() }
     // The directory restores a recorded root session through the agent (ACPA-9).
     await router.sessionDirectory.use(launcher: AgentSessionLauncher(agent: self))
+    // The settings tool of each session reads and sets the reasoning effort of that session
+    // through the agent (D218).
+    settingsEndpoint.bind(reasoningEffort: AgentReasoningEffortControl(agent: self))
     // The Pinned and Recent lists of this server are in a file of the state of this machine,
     // not in the recording of each session (D118 (e)).
     await router.sessionDirectory.use(

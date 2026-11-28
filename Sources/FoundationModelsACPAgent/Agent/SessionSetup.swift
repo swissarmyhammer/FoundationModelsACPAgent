@@ -784,7 +784,8 @@ extension RoutedACPAgent {
     // The hooks see the key of the working directory.
     // Each session of that folder shares the key, so they share one snapshot timeline.
     let hookLineage = HookLineage(workingDirectory: workingDirectory, origin: .new)
-    let session = ConfigOptions.handle(for: composition.startSlot, of: residentProfile)
+    let handle = ConfigOptions.handle(for: composition.startSlot, of: residentProfile)
+    let session = handle
       .makeBudgetedSession(
         instructions: composition.instructions,
         workingDirectory: workingDirectory,
@@ -798,6 +799,7 @@ extension RoutedACPAgent {
         hookLineage: hookLineage,
         agentID: composition.agent?.choice.id,
         agentName: composition.agent?.name,
+        reasoningEffort: startEffort(of: composition, on: handle),
         transcriptReader: transcriptReader)
     let sessionId = SessionId(rawValue: session.id.description)
     SnapshotSessionKeys.shared.record(hookLineage.sessionKey, for: sessionId)
@@ -825,6 +827,26 @@ extension RoutedACPAgent {
     sessions[activation.sessionId]?.retainedHistory.seed(from: response)
     announceName(of: session, sessionId: activation.sessionId)
     return response
+  }
+
+  /// The start level of the reasoning effort of a new root session (D218):
+  /// the `profiles.<name>.effort` setting of the folder of the session for
+  /// the resident profile. A value that is not a level of the model of the
+  /// session gives a configuration warning in the log, and the session
+  /// takes the default level of the model. `session/new` does not fail.
+  ///
+  /// - Parameters:
+  ///   - composition: The composition of the session, with the merged
+  ///     configuration of its folder.
+  ///   - handle: The model handle that the session is made on.
+  /// - Returns: The level, or `nil` for the default level of the model.
+  private func startEffort(of composition: SessionComposition, on handle: RoutedLLM) -> String? {
+    let profileName = residentProfile.definitionName
+    let start = ConfigOptions.startEffort(
+      setting: composition.configuration.profiles.effort(of: profileName),
+      levels: handle.reasoningEffortLevels, profileName: profileName)
+    start.warning?.log()
+    return start.level
   }
 
   /// Sends the name of a new root session in one `session_info_update`
@@ -947,11 +969,14 @@ extension RoutedACPAgent {
         registry: commands))
 
     // The first announcement of the config-option list is one select over the profile's chat slots,
+    // then the reasoning effort select when the model of the session has levels (D218),
     // then the agent select when the session has an agent catalog.
     // The model select starts on the slot the session was just made on: the slot of its agent.
+    // The effort select starts on the level of the Router session.
     // The announced state is recorded, so the divergence check compares against what the client actually saw.
     let configOptions = ConfigOptions.options(
       profile: residentProfile, selectedSlot: composition.startSlot,
+      effort: ConfigOptions.EffortOption(session: session),
       agent: composition.agent?.option)
 
     // The one reader of the events of the session starts before anything can mail the session.
@@ -1411,7 +1436,7 @@ extension RoutedACPAgent {
 
 extension RoutedLLM {
   /// Vends one session with the derived auto-compaction budget
-  /// (``budgetedConfiguration(instructions:workingDirectory:recordingRoot:tools:compaction:repetition:inlineSettleGrace:userPresence:mailOnlyAnswerLimit:hookLineage:agentID:agentName:transcriptReader:)``).
+  /// (``budgetedConfiguration(instructions:workingDirectory:recordingRoot:tools:compaction:repetition:inlineSettleGrace:userPresence:mailOnlyAnswerLimit:hookLineage:agentID:agentName:reasoningEffort:transcriptReader:)``).
   /// `session/new` vends through this one door.
   ///
   /// - Parameters:
@@ -1433,6 +1458,8 @@ extension RoutedLLM {
   ///     (the default) for none.
   ///   - agentName: The name of the agent of the session, or `nil` (the
   ///     default) for none.
+  ///   - reasoningEffort: The reasoning effort level of the session, or
+  ///     `nil` (the default) for the default level of the model.
   ///   - transcriptReader: The reader that a tool of the session uses to
   ///     read the transcript of a session.
   /// - Returns: A new session over this model, with automatic compaction on.
@@ -1449,6 +1476,7 @@ extension RoutedLLM {
     hookLineage: HookLineage? = nil,
     agentID: String? = nil,
     agentName: String? = nil,
+    reasoningEffort: String? = nil,
     transcriptReader: (any SessionTranscriptReader)?
   ) -> any RoutedSession {
     makeSession(
@@ -1458,14 +1486,14 @@ extension RoutedLLM {
         repetition: repetition, inlineSettleGrace: inlineSettleGrace,
         userPresence: userPresence, mailOnlyAnswerLimit: mailOnlyAnswerLimit,
         hookLineage: hookLineage, agentID: agentID, agentName: agentName,
-        transcriptReader: transcriptReader))
+        reasoningEffort: reasoningEffort, transcriptReader: transcriptReader))
   }
 
   /// The configuration of one session with the derived auto-compaction budget.
   /// The context size comes from the model, never from configuration.
   /// `compaction` carries the fractions and the tool-output cap.
   /// This model carries the resolved working context that the fractions measure against.
-  /// A new session (``makeBudgetedSession(instructions:workingDirectory:recordingRoot:tools:compaction:repetition:inlineSettleGrace:userPresence:mailOnlyAnswerLimit:hookLineage:agentID:agentName:transcriptReader:)``)
+  /// A new session (``makeBudgetedSession(instructions:workingDirectory:recordingRoot:tools:compaction:repetition:inlineSettleGrace:userPresence:mailOnlyAnswerLimit:hookLineage:agentID:agentName:reasoningEffort:transcriptReader:)``)
   /// and an imported session (``RoutedACPAgent/importTarget(for:)``) take it, so the two
   /// cannot differ.
   ///
@@ -1498,6 +1526,11 @@ extension RoutedLLM {
   ///   - agentName: The name of the agent of the session, or `nil` (the
   ///     default) for none (``ComposedSessionAgent/name``). Router makes the
   ///     default name of the session from it, else from `agentID` (D199 (b)).
+  ///   - reasoningEffort: The reasoning effort level that the session asks
+  ///     for at its start (D218), or `nil` (the default) for the default
+  ///     level of the model. `session/new` gives the
+  ///     `profiles.<name>.effort` setting. Router fits it to the levels of
+  ///     the model.
   ///   - transcriptReader: The reader that a tool of the session uses to read the
   ///     transcript of a session (``RoutedACPAgent/transcriptReader``).
   ///     Every session that the agent makes gets it.
@@ -1520,6 +1553,7 @@ extension RoutedLLM {
     hookLineage: HookLineage? = nil,
     agentID: String? = nil,
     agentName: String? = nil,
+    reasoningEffort: String? = nil,
     transcriptReader: (any SessionTranscriptReader)?
   ) -> SessionConfiguration {
     // The resolved context decides two things that a reader cannot see otherwise.
@@ -1559,6 +1593,7 @@ extension RoutedLLM {
       hookOrigin: hookLineage?.origin,
       agentID: agentID,
       agentName: agentName,
+      reasoningEffort: reasoningEffort,
       transcriptReader: transcriptReader)
   }
 
@@ -1632,7 +1667,7 @@ extension RoutedLLM {
 }
 
 /// The host rules that every Router session of the agent carries. A new
-/// session (``RoutedACPAgent/makeBudgetedSession(instructions:workingDirectory:recordingRoot:tools:compaction:repetition:inlineSettleGrace:userPresence:mailOnlyAnswerLimit:hookLineage:agentID:agentName:transcriptReader:)``)
+/// session (``RoutedACPAgent/makeBudgetedSession(instructions:workingDirectory:recordingRoot:tools:compaction:repetition:inlineSettleGrace:userPresence:mailOnlyAnswerLimit:hookLineage:agentID:agentName:reasoningEffort:transcriptReader:)``)
 /// and a restored session (``RoutedACPAgent/restoreSessionWithHostChecks(id:recordingRoot:instructions:tools:userPresence:hookSessionKey:claimingRuns:transcriptReader:)``)
 /// both read the rules here, so the two cannot differ.
 private enum HostRules {

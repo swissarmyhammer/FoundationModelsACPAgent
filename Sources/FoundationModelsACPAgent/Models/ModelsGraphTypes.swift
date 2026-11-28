@@ -196,6 +196,49 @@ struct ModelsGraphModelFields: Sendable {
   }
 }
 
+/// The `ReasoningEffort` object: the reasoning effort levels of one model
+/// (D218), which the probe of its chat template found at its first load on
+/// this machine (``ReasoningEffortLevelsRecord``).
+struct ModelsGraphReasoningEffort: Sendable {
+  /// The levels of the model, in the order of the probe, with the names of
+  /// the model. Empty for a model with no levels.
+  let levels: [String]
+
+  /// The level that the model uses with no `reasoning_effort`, or `nil`
+  /// for a model with no levels.
+  let defaultLevel: String?
+
+  /// True when the model can turn its reasoning off.
+  let hasOff: Bool
+
+  /// The values that a session on the model and the
+  /// `profiles.<name>.effort` setting take: each level, then "Off" when the
+  /// model has an Off level. Empty for a model with no levels.
+  let sessionLevels: [String]
+
+  /// The object of the levels of a model.
+  ///
+  /// - Parameter levels: The levels of the model.
+  init(_ levels: ReasoningEffortLevels) {
+    self.levels = levels.levels
+    defaultLevel = levels.defaultLevel
+    hasOff = levels.hasOff
+    sessionLevels = levels.sessionLevelNames
+  }
+
+  /// The object of the levels of a model in a record of the levels.
+  ///
+  /// - Parameters:
+  ///   - ref: The model.
+  ///   - recorded: The levels of each recorded model, by the text form of
+  ///     its reference.
+  /// - Returns: The object, or `nil` when no load on this machine probed
+  ///   the model.
+  static func of(_ ref: ModelRef, in recorded: [String: ReasoningEffortLevels]) -> Self? {
+    recorded[ref.stringValue].map(Self.init)
+  }
+}
+
 /// The `SlotModel` object: the selected model of one slot.
 struct ModelsGraphSlotModel: Sendable {
   /// The slot.
@@ -212,6 +255,10 @@ struct ModelsGraphSlotModel: Sendable {
 
   /// True when the settings differ from the launch of the running agent.
   let restartRequired: Bool
+
+  /// The reasoning effort levels of the first candidate, or `nil` when no
+  /// load on this machine probed it.
+  let reasoningEffort: ModelsGraphReasoningEffort?
 
   var repo: String { model.repo }
   var path: String? { model.path }
@@ -231,6 +278,10 @@ struct ModelsGraphProfileModel: Sendable {
 
   /// The fields of the first candidate of the slot in the profile.
   let model: ModelsGraphModelFields
+
+  /// The reasoning effort levels of the first candidate, or `nil` when no
+  /// load on this machine probed it.
+  let reasoningEffort: ModelsGraphReasoningEffort?
 
   var repo: String { model.repo }
   var path: String? { model.path }
@@ -296,6 +347,11 @@ struct ModelsGraphProfile: Sendable {
   /// The memory of the Mac that a bundled profile is for, such as
   /// "32 GB", or `nil` for a profile file of the user or the project.
   let targetMemory: String?
+
+  /// The reasoning effort levels of the `standard` model of the profile,
+  /// which the `profiles.<name>.effort` setting takes, or `nil` when no
+  /// load on this machine probed that model.
+  let reasoningEffort: ModelsGraphReasoningEffort?
 }
 
 /// The arguments of `Query.profiles`.

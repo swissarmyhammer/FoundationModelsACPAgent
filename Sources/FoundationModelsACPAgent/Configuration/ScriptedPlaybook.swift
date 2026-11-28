@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModels
+import FoundationModelsExtras
 import FoundationModelsRouter
 import Synchronization
 
@@ -249,6 +250,20 @@ public protocol ScriptedBackendObserver: Sendable {
 
   /// An update stream of the transcript ended. The backend still has it.
   func updateStreamEnded()
+
+  /// The Router session states the reasoning effort level of its next
+  /// calls (D218, `LanguageModelSessionBackend.useReasoningEffort(_:)`).
+  ///
+  /// - Parameter level: The level of the session, or `nil` for no level.
+  func reasoningEffortWillApply(_ level: String?)
+}
+
+extension ScriptedBackendObserver {
+  /// Default ``reasoningEffortWillApply(_:)``: an observer that does not
+  /// read the reasoning effort ignores it.
+  ///
+  /// - Parameter level: The level of the session. Unread.
+  public func reasoningEffortWillApply(_ level: String?) {}
 }
 
 /// The hold of the model by one pass. The pass leaves the model for each
@@ -284,15 +299,26 @@ public struct ScriptedLLMContainer: LoadedLLMContainer {
   /// nothing.
   public let observer: (any ScriptedBackendObserver)?
 
+  /// The reasoning effort levels of the scripted model (D218). Each backend
+  /// of the container gives the same levels.
+  public let reasoningEffortLevels: ReasoningEffortLevels
+
   /// Creates a container whose every session plays `playbook`.
   ///
   /// - Parameters:
   ///   - playbook: The playbook of each session.
   ///   - observer: The observer of each backend, or `nil` (the default)
   ///     to observe nothing.
-  public init(playbook: ScriptedPlaybook, observer: (any ScriptedBackendObserver)? = nil) {
+  ///   - reasoningEffortLevels: The reasoning effort levels of the scripted
+  ///     model. The default is `ReasoningEffortLevels.unsupported`: a model
+  ///     with no levels.
+  public init(
+    playbook: ScriptedPlaybook, observer: (any ScriptedBackendObserver)? = nil,
+    reasoningEffortLevels: ReasoningEffortLevels = .unsupported
+  ) {
     self.playbook = playbook
     self.observer = observer
+    self.reasoningEffortLevels = reasoningEffortLevels
   }
 
   /// Makes a scripted backend that plays a sibling of the playbook.
@@ -335,8 +361,8 @@ public struct ScriptedLLMContainer: LoadedLLMContainer {
     makeBackend(tools: tools, seededEntries: Array(transcript))
   }
 
-  /// Makes one backend of this container: a sibling of the playbook and
-  /// this observer.
+  /// Makes one backend of this container: a sibling of the playbook, this
+  /// observer and these reasoning effort levels.
   ///
   /// - Parameters:
   ///   - tools: The tools of the session.
@@ -352,7 +378,8 @@ public struct ScriptedLLMContainer: LoadedLLMContainer {
       tools: tools,
       instructions: instructions,
       seededEntries: seededEntries,
-      observer: observer)
+      observer: observer,
+      reasoningEffortLevels: reasoningEffortLevels)
   }
 }
 

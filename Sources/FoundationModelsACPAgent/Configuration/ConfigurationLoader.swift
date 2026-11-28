@@ -101,6 +101,15 @@ public enum ConfigurationWarning: Equatable, Sendable, CustomStringConvertible {
   /// uses.
   case unknownProfile(name: String, available: [String], fallback: String)
 
+  /// A `profiles.<name>.effort` value that is not a reasoning effort level
+  /// of the model of a new session (D218). The session takes the default
+  /// level of the model, and `session/new` continues. `profile` is the name
+  /// of the profile, `value` is the value of the key, `levels` is each
+  /// level that a session on the model can take (empty for a model with no
+  /// levels), and `defaultLevel` is the default level of the model, or
+  /// `nil` for a model with no levels.
+  case unknownEffort(profile: String, value: String, levels: [String], defaultLevel: String?)
+
   /// What replaces a key that is no longer used, for the message of the
   /// warning.
   ///
@@ -145,7 +154,27 @@ public enum ConfigurationWarning: Equatable, Sendable, CustomStringConvertible {
       return
         "\(ConfigurationLoader.configFileName): no profile is named \"\(name)\"; the profiles are: "
         + "\(available.joined(separator: ", ")); the agent uses the profile \"\(fallback)\""
+    case .unknownEffort(let profile, let value, let levels, let defaultLevel):
+      return
+        "\(ConfigurationLoader.configFileName): \"\(value)\" of \"\(sectionKeyPath)\" is not a reasoning "
+        + "effort level of the model of the profile \"\(profile)\"; "
+        + Self.effortHint(levels: levels, defaultLevel: defaultLevel)
     }
+  }
+
+  /// The levels of a model and the level that a session takes in place of
+  /// a value that is not a level, for the message of the warning.
+  ///
+  /// - Parameters:
+  ///   - levels: Each level of the model, or none.
+  ///   - defaultLevel: The default level of the model, or `nil`.
+  /// - Returns: The hint.
+  private static func effortHint(levels: [String], defaultLevel: String?) -> String {
+    guard !levels.isEmpty, let defaultLevel else {
+      return "the model has no levels, thus the session has no level"
+    }
+    return "the levels are: \(levels.joined(separator: ", ")); the session uses the default level "
+      + "\"\(defaultLevel)\""
   }
 }
 
@@ -176,6 +205,8 @@ extension ConfigurationWarning {
       "The configuration has a key that is no longer used. The loader ignored the key."
     case .unknownProfile:
       "The configuration selects a profile that no layer has. The agent uses the fallback profile."
+    case .unknownEffort:
+      "The reasoning effort of a profile is not a level of the model. The session uses the default level."
     }
   }
 
@@ -195,6 +226,10 @@ extension ConfigurationWarning {
       name
     case .unknownProfile:
       AgentConfiguration.CodingKeys.profile.stringValue
+    case .unknownEffort(let profile, _, _, _):
+      [
+        ProfilesConfiguration.sectionKey, profile, ProfileSettings.CodingKeys.effort.stringValue,
+      ].joined(separator: LoadedConfiguration.keyPathSeparator)
     }
   }
 }
@@ -724,6 +759,30 @@ public struct ConfigurationLoader: Sendable {
     }
   }
 
+  /// Checks the body of each name of a section of named entries, such as
+  /// `profiles:`. A name can be any key. Each key in the body of a name
+  /// must be a known key.
+  ///
+  /// - Parameters:
+  ///   - body: The body of the section.
+  ///   - knownKeys: The keys that the body of each name decodes.
+  ///   - section: The YAML spelling of the section.
+  /// - Throws: `ConfigurationError.unknownKey` for the first key, in the
+  ///   order of the names and then of the keys, that a body does not
+  ///   decode. The section of the error is the dotted path of the name,
+  ///   such as `profiles.large`.
+  private static func checkNamedEntryKeys(
+    of body: YAMLValue, against knownKeys: Set<String>, section: String
+  ) throws {
+    guard case .dictionary(let entries) = body else {
+      return
+    }
+    for entry in entries.sorted(by: { $0.key < $1.key }) {
+      try ConfigurationError.checkKeys(
+        of: entry.value, against: knownKeys, section: "\(section).\(entry.key)")
+    }
+  }
+
   /// The warnings one top-level section gives, after its keys pass.
   ///
   /// - Returns: The unknown-section warning when no schema section has
@@ -753,6 +812,9 @@ public struct ConfigurationLoader: Sendable {
       }
     case .toolRoster:
       return try ToolsConfiguration.schemaWarnings(inBody: body)
+    case .namedEntries(let knownKeys):
+      try checkNamedEntryKeys(of: body, against: knownKeys, section: name)
+      return []
     case .scalar:
       return []
     case .retired:

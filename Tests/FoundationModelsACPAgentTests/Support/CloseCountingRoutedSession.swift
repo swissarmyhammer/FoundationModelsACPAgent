@@ -77,6 +77,9 @@ actor CloseCountingRoutedSession: RoutedSession {
   /// The mutable facts of the real session.
   nonisolated var facts: SessionFacts { wrapped.facts }
 
+  /// The reasoning effort levels of the model of the real session.
+  nonisolated var reasoningEffortLevels: ReasoningEffortLevels { wrapped.reasoningEffortLevels }
+
   /// The context fill of the real session.
   var contextFill: Double {
     get async { await wrapped.contextFill }
